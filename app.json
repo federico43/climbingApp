@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.fdqg18.testApp"
     },
     "web": {
       "output": "static",
@@ -33,16 +34,29 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+           "backgroundColor": "#ffffff",
           "dark": {
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1b3d57ef-f88f-43e2-b867-61510ebda092"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1b3d57ef-f88f-43e2-b867-61510ebda092"
+      }
     }
   }
 }

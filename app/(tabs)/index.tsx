@@ -1,98 +1,226 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import CustomButton from '@/components/customButton'
+//custom button I made. 
+import LogBoulderModal from '@/components/logBoulderModal';
+//Modal component that holds the log logic too.
+import { View, Text,} from 'react-native'
+import { ConsumeAuth } from '@/components/auth-context'
+import {useState } from "react";
+import { BarChart } from "react-native-gifted-charts";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet,Dimensions} from "react-native";
+import { useBoulderGraph } from '@/hooks/BoulderGraphToolKit'; 
+import {Gesture, GestureDetector} from 'react-native-gesture-handler'
+import { useRouter } from "expo-router"
+import { useFocusEffect } from '@react-navigation/native'
+import { useCallback } from 'react'
+export default function index() {
+  useFocusEffect(
+  useCallback(() => {
+    setRefreshKey(prev => prev + 1)
+  }, [])
+)
+  //help handle the change of the graph. 
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const refreshGraph = () => setRefreshKey(prev => prev + 1)
+  
+  const GRAPH_WIDTH = Dimensions.get("window").width * 0.8
+  
+  //user Related information 
+  const {signOut, userName, User} = ConsumeAuth()
+  
+  //Main variables needed to properly show the graph. 
+  const {levelTable,stackData,stats,height,weekLabel,normalized, legend}= useBoulderGraph(refreshKey, weekOffset)
+  
+  //Modal related.
+  const [modalVisible, setModalVisible] = useState(false)
+  const openModal = () => setModalVisible(true)
+  
+  //change screens 
+  const router = useRouter()
+  
+  //get day details
+  function handleDayPress(item: any) {
+  if (!item?.date) return
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+  router.push({
+    pathname: "/daylogScreen",
+    params: {
+      date: item.date.toISOString()
+    }
+  })
+}
+  const swipeGesture = Gesture.Pan()
+  .runOnJS(true)
+  .onEnd((event) => {
 
-export default function HomeScreen() {
+    const x = event.translationX
+
+    if (x < -20) {
+      if (weekOffset<0){
+        setWeekOffset(prev => prev + 1)
+        console.log("x)")
+      }
+      
+    }
+
+    if (x > 20) {
+
+      setWeekOffset(prev => prev - 1)
+      
+    }
+
+  })
+
+    
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    
+    <SafeAreaView style={styles.container}>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+  {/* HEADER */}
+  <Text style={styles.userName}>
+    {userName}'s Recorded Boulders
+  </Text>
+
+  {/* GRAPH */}
+  <GestureDetector gesture={swipeGesture}>
+    <View style={styles.graphCard}>
+      <Text style={styles.weekLabel}>
+        {weekLabel}
+      </Text>
+      <BarChart
+        stackData={stackData}
+        width={GRAPH_WIDTH}
+        height={height*30}
+        maxValue={height}
+        yAxisThickness={0}
+        xAxisThickness={0}
+        noOfSections={height}
+        scrollToEnd={true}
+          // 👈 reduce space before first bar
+        spacing={10}          // 👈 reduce space BETWEEN bars
+        //barWidth={18}
+        onPress={(item:any) => handleDayPress(item)}
+      />
+      <View style={styles.legendContainer}>
+        <Text> Difficulty:</Text>
+         
+        {legend?.map((item, index) => (
+          <View key={index} style={styles.legendItem}>
+            <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+            <Text style={styles.legendLabel}>{item.label}</Text>
+          </View>
+        ))}
+      </View> 
+{/* PRIMARY ACTION */}
+  <View style={styles.action}>
+    <CustomButton title="Log Boulder" onPress={openModal} />
+  </View>
+    </View>
+  </GestureDetector>
+
+  
+
+  {/* STATS */}
+  <View style={styles.statsCard}>
+    <Text style={styles.statsText}>{stats}</Text>
+  </View>
+
+  {/* FOOTER */}
+  <View style={styles.bottom}>
+    <CustomButton title="Sign Out" onPress={signOut} mode="text" />
+  </View>
+
+  <LogBoulderModal
+    modalVisible={modalVisible}
+    setModalVisibility={setModalVisible}
+    onLogged={refreshGraph}
+    levels={levelTable}
+  />
+
+</SafeAreaView>
+    
+  )
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+weekLabel: {
+  fontSize: 16,
+  fontWeight: '600',
+  textAlign: 'center',
+  marginBottom: 8,
+  color: '#444',
+},
+container: {
+  flex: 1,
+  padding: 20,
+  justifyContent: "space-between"
+},
+
+userName: {
+  fontSize: 22,
+  fontWeight: "600",
+  textAlign: "center",
+  marginBottom: 10
+},
+
+graphCard: {
+  backgroundColor: "#fff",
+  borderRadius: 16,
+  padding: 10,
+  alignItems: "center",
+  elevation: 3,
+ 
+},
+
+statsCard: {
+  marginTop: 10,
+  padding: 15,
+  borderRadius: 12,
+  backgroundColor: "#f5f5f5"
+},
+
+statsText: {
+  fontSize: 16,
+  textAlign: "center"
+},
+
+action: {
+  marginTop: 15,
+  alignItems: "center"
+},
+
+bottom: {
+  alignItems: "center",
+  marginBottom: 10
+},
+legendContainer: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'center',
+  marginTop: 10,
+},
+
+legendItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginHorizontal: 6,
+  marginVertical: 4,
+
+},
+
+legendColor: {
+  width: 12,
+  height: 12,
+  borderRadius: 3,
+  marginRight: 6,
+},
+
+legendLabel: {
+  fontSize: 12,
+  color: '#444',
+}
 });
+
+
+
