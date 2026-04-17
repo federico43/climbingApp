@@ -51,7 +51,7 @@ export function useBoulderGraph(refreshKey: number,weekOffset: number) {
     }))
     .sort((a, b) => a.date.getTime() - b.date.getTime())
 
-  const { GraphHeight, stats } = getDataStats(normalized)
+  const { GraphHeight, stats } = getDataStats(normalized,levelTable)
 
   const referenceDate = new Date()
   referenceDate.setDate(referenceDate.getDate() + weekOffset * 7)

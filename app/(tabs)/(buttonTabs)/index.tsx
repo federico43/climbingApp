@@ -13,6 +13,7 @@ import {Gesture, GestureDetector} from 'react-native-gesture-handler'
 import { useRouter } from "expo-router"
 import { useFocusEffect } from '@react-navigation/native'
 import { useCallback } from 'react'
+import { getChartDimensions } from '@/utils/graphUtils'; 
 export default function index() {
   useFocusEffect(
   useCallback(() => {
@@ -32,6 +33,8 @@ export default function index() {
   //Main variables needed to properly show the graph. 
   const {levelTable,stackData,stats,height,weekLabel,normalized, legend}= useBoulderGraph(refreshKey, weekOffset)
   
+  //since graph has various properties we collect needed variables.
+  const {shownHeight, maxValue, noOfSections} = getChartDimensions(height)
   //Modal related.
   const [modalVisible, setModalVisible] = useState(false)
   const openModal = () => setModalVisible(true)
@@ -59,7 +62,7 @@ export default function index() {
     if (x < -20) {
       if (weekOffset<0){
         setWeekOffset(prev => prev + 1)
-        console.log("x)")
+
       }
       
     }
@@ -72,7 +75,6 @@ export default function index() {
 
   })
 
-    
   return (
     
     <SafeAreaView style={styles.container}>
@@ -91,11 +93,11 @@ export default function index() {
       <BarChart
         stackData={stackData}
         width={GRAPH_WIDTH}
-        height={height*30}
-        maxValue={height}
+        height={shownHeight}
+        maxValue={maxValue}
         yAxisThickness={0}
         xAxisThickness={0}
-        noOfSections={height}
+        noOfSections={noOfSections}
         scrollToEnd={true}
           // 👈 reduce space before first bar
         spacing={10}          // 👈 reduce space BETWEEN bars
@@ -123,8 +125,18 @@ export default function index() {
 
   {/* STATS */}
   <View style={styles.statsCard}>
-    <Text style={styles.statsText}>{stats}</Text>
-  </View>
+  <Text style={styles.statsSmall}>
+    Last week: {stats.lastWeek} boulders
+  </Text>
+
+  <Text style={styles.statsSmall}>
+    This week: {stats.thisWeek} boulders
+  </Text>
+
+  <Text style={styles.statsMain}>
+    {stats.action}
+  </Text>
+</View>
 
   {/* FOOTER */}
   <View style={styles.bottom}>
@@ -170,14 +182,21 @@ graphCard: {
   padding: 10,
   alignItems: "center",
   elevation: 3,
+  overflow: 'hidden', 
  
 },
 
 statsCard: {
-  marginTop: 10,
-  padding: 15,
-  borderRadius: 12,
-  backgroundColor: "#f5f5f5"
+  marginTop: 12,
+  padding: 18,
+  borderRadius: 16,
+  backgroundColor: "#ffffff",
+  shadowColor: "#000",
+  shadowOpacity: 0.08,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 3, // Android
+  gap:5
 },
 
 statsText: {
@@ -219,6 +238,18 @@ legendColor: {
 legendLabel: {
   fontSize: 12,
   color: '#444',
+},
+statsSmall: {
+  fontSize: 13,
+  color: "#777",
+},
+
+statsMain: {
+  marginTop: 12,
+  fontSize: 20,
+  fontWeight: "700",
+  color: "#111",
+  lineHeight: 26,
 }
 });
 

@@ -9,6 +9,8 @@ import { useBoulderGraph } from "../../hooks/BoulderGraphToolKit"
 import BoulderRow from "../../components/BoulderRow"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+
+
 // Optional: helper to compare dates
 function isSameDay(d1: Date, d2: Date) {
   return (

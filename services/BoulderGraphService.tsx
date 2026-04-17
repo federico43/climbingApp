@@ -6,6 +6,7 @@ export const DATABASE_ID = "68bd9dd7003c15f7147e"
 export const BOULDER_TABLE = "boulders_realizados"
 export const LEVEL_TABLE = "niveles_boulder"
 export const USERS_TABLE = "users"
+export const SESSION_TABLE = "workoutsession"
 
 export async function getBoulderLogs() {
   const userID = await account.get()
@@ -104,3 +105,25 @@ export async function getUsers(ID: string) {
   }
 }
 
+
+export async function saveSession(data: any) {
+  try {
+    const user = await account.get()
+
+    const rowID = ID.unique()
+
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID,
+      tableId: SESSION_TABLE,
+      rowId: rowID,
+      data: {
+        ...data,
+        userId: user.$id, // ✅ correct
+      },
+    })
+
+    return response
+  } catch (error) {
+    console.error("Failed to save session", error)
+  }
+}

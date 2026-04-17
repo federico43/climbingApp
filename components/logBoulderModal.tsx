@@ -21,7 +21,7 @@ type ModalProp = {
     levels: Record<string, Level>
 
 }
-const BoulderLevelOptions = [
+export const BoulderLevelOptions = [
     {
         label: "Blue",
         value: "blue",

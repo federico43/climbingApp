@@ -67,94 +67,150 @@ export function buildWeekChart(
       stacks.push({ value: 1, color })
     }
   }
-  console.log("chartData", chartData)
   return chartData
 }
 
 
+function getDeadlineText(today: Date) {
+  const day = today.getDay()
+  const daysUntilFriday = (5 - day + 7) % 7
+
+  if (daysUntilFriday === 0) return "today"
+  if (daysUntilFriday === 1) return "by tomorrow"
+  if (daysUntilFriday <= 3) return "before Friday"
+
+  return "this week"
+}
+
 export function getDataStats(
-  data: { date: Date; levelID: string }[]
+  data: { date: Date; levelID: string }[],
+  levelMap: Record<string, { label: string; color: string; difficulty: number }>
 ) {
   if (!data.length) {
-    return { GraphHeight: 4, stats: "No stats yet 🙂" }
+  return {
+    GraphHeight: 4,
+    stats: {
+      lastWeek: 0,
+      thisWeek: 0,
+      action: "No stats yet 🙂"
+    }
   }
-
+}
+  //SETUP VARIABLES -------------------
   let maxPerDay = 0
-  let currentWeekTotal = 0
-  let lastWeekTotal = 0
+  let totalCurrentWeek = 0
+  let totalLastWeek = 0
+   // create a dictionary, index the date. 
+  const dayCounts = new Map<number, number>()
+  // counts number of boulder by week. 
+  const currentWeekCounts: Record<string, number> = {}
+  // last weeks boudler 
+  const lastWeekCounts: Record<string, number> = {}
 
+  //SETUP DATE VARIABLES -----------------
   const today = new Date()
-
-  const startCurrentWeek = new Date(today)
-  startCurrentWeek.setDate(today.getDate() - today.getDay())
-
+  //fetches today's date 
+  const todayMidnight = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  )
+  //create a copy 
+  const startCurrentWeek = new Date(todayMidnight)
+  // get's the start of the week (sunday)
+  startCurrentWeek.setDate(todayMidnight.getDate() - todayMidnight.getDay()+1)
+  //setups last week 
   const startLastWeek = new Date(startCurrentWeek)
   startLastWeek.setDate(startCurrentWeek.getDate() - 7)
-
-  const dayCounts = new Map<string, number>()
-
+  
+  // MAIN LOOP ---------------
+  // pass through the data 
   for (const item of data) {
-    const key = item.date.toISOString().split("T")[0]
-    dayCounts.set(key, (dayCounts.get(key) ?? 0) + 1)
-  }
+    // get the date of the data
+    const d = item.date
 
-  for (const [dateKey, total] of dayCounts.entries()) {
-    const date = new Date(dateKey)
+    // search through the database level colors, get all the details of this boulder's level. 
+    const level = levelMap[item.levelID]
+    if (!level) continue // 🔥 skip if missing
+    //get the color 
+    const color = level.color.toLowerCase()
 
-    if (total > maxPerDay) maxPerDay = total
+    //format the recorded date of the boulder. 
+    const dayKey = new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate()
+    ).getTime()
+    //UPDATE MAX DAY -----------
+    // calculate the new total for the day
+    const newTotal = (dayCounts.get(dayKey) ?? 0) + 1
+    // set new calculation on dictionary
+    dayCounts.set(dayKey, newTotal)
+    //update max per day. 
+    if (newTotal > maxPerDay) maxPerDay = newTotal
 
-    if (date >= startCurrentWeek) {
-      currentWeekTotal += total
-    } else if (date >= startLastWeek && date < startCurrentWeek) {
-      lastWeekTotal += total
+    //COUNT BOULDERS BY COLOR ---------
+    //COUNT BOULDERS BY WEEK -------
+    //if date is greater oR equal to sunday of the week 
+    if (d >= startCurrentWeek) {
+      //?new item in dict, adding 1 to color.
+      currentWeekCounts[color] = (currentWeekCounts[color] ?? 0) + 1
+      totalCurrentWeek += 1
+    } else if (d >= startLastWeek && d < startCurrentWeek) {
+      lastWeekCounts[color] = (lastWeekCounts[color] ?? 0) + 1
+      totalLastWeek += 1
     }
   }
-
+  //CALC GRAPH'S HEIGHT.
   const GraphHeight = Math.max(4, Math.ceil(maxPerDay * 1.2))
 
-  let stats = "No comparison available yet 🙂"
-
-  if (lastWeekTotal > 0) {
-    const diff = currentWeekTotal - lastWeekTotal
-
-    // 🔑 CASE 1: small numbers → use absolute
-    if (lastWeekTotal < 10) {
-      if (diff > 0) {
-        stats = `You climbed ${diff} more boulders than last week 💪`
-      } else if (diff < 0) {
-        stats = `You climbed ${Math.abs(diff)} fewer boulders than last week`
-      } else {
-        stats = "Same number of boulders as last week"
-      }
-    }
-
-    // 🔑 CASE 2: medium → combine
-    else if (lastWeekTotal < 30) {
-      const percent = Math.round((diff / lastWeekTotal) * 100)
-
-      if (diff > 0) {
-        stats = `+${diff} boulders (${percent}%) vs last week 💪`
-      } else if (diff < 0) {
-        stats = `${diff} boulders (${percent}%) vs last week`
-      } else {
-        stats = "Same number of boulders as last week"
-      }
-    }
-
-    // 🔑 CASE 3: large → percentage only
-    else {
-      const percent = Math.round((diff / lastWeekTotal) * 100)
-
-      if (percent > 0) {
-        stats = `You climbed ${percent}% more than last week 💪`
-      } else if (percent < 0) {
-        stats = `You climbed ${Math.abs(percent)}% less than last week`
-      } else {
-        stats = "Same number of boulders as last week"
-      }
-    }
+  // SUGGESTION VARIABLES.
+  let stats = {
+    lastWeek: totalLastWeek,
+    thisWeek: totalCurrentWeek,
+    action: "No comparison available yet 🙂"
+  } 
+  const suggestions: string[] = []
+  let isBehind = false
+  const COLOR_NAMES: Record<string, string> = {
+    "#333333": "black",
+    "#a3465a": "red",
+    "#ffd786": "yellow",
+    "#519a66": "green",
+    "#87b6bc": "blue",
   }
+  //FOR EACH COLOR GET # BOULDER MISSING THIS WEEK  --------------  
+  Object.keys(lastWeekCounts).forEach((color) => {
+    //for color get last week count nad current week count. 
+    const last = lastWeekCounts[color] ?? 0
+    
+    const current = currentWeekCounts[color] ?? 0
+    //get the difference 
+    const diff = last - current
+  
+    // if last week was bigger... 
+    if (diff > 0) {
+      isBehind = true
+      const name = COLOR_NAMES[color] ?? "climb"
+      suggestions.push(
+        // <boulder's rememaining>  <color (plural or not)>
+        `${diff} ${name}${diff > 1 ? "s" : ""}`
+      )
+    }
+  })
 
+  if (isBehind) {
+  const deadline = getDeadlineText(today)
+
+  const formatted =
+    suggestions.length > 1
+      ? suggestions.slice(0, -1).join(", ") + " and " + suggestions.at(-1)
+      : suggestions[0]
+
+  stats.action = `Finish ${formatted} ${deadline} 💪`
+  } else {
+    stats.action = "You're on track with last week 💪"
+  }
   return { GraphHeight, stats }
 }
 
@@ -165,6 +221,21 @@ const COLOR_PRIORITY: Record<string, number> = {
   "#FFD786": 2, // yellow
   "#519A66": 3, // green
   "#87B6BC": 4  // blue
+}
+const COLOR_WEIGHTS: Record<string, number> = {}
+
+Object.entries(COLOR_PRIORITY).forEach(([color, priority]) => {
+  COLOR_WEIGHTS[color] = 5 - priority
+})
+function getColorName(color: string) {
+  switch (color) {
+    case "#333333": return "black"
+    case "#a3465a": return "red"
+    case "#FFD786": return "yellow"
+    case "#519A66": return "green"
+    case "#87B6BC": return "blue"
+    default: return "climb"
+  }
 }
 export function sortStackDataByColor(stackData: any[]) {
   return stackData.map(day => ({
@@ -182,5 +253,37 @@ export function getWeekLabel(weekOffset: number): string {
   if (weekOffset === 0) return " This Week"
   if (weekOffset === 1) return "Last Week  "
   return `  ${weekOffset} Weeks Ago `
+}
+
+export function getChartDimensions(height: number) {
+  const MAX_PIXEL_HEIGHT = 360
+  const PIXELS_PER_SECTION = 30
+
+  // 🔥 force maxValue to be even
+  let maxValue = height
+  if (maxValue % 2 !== 0) maxValue += 1
+
+  // we want step = 2
+  const STEP = 2
+
+  let noOfSections = maxValue / STEP
+  let shownHeight = noOfSections * PIXELS_PER_SECTION
+
+  // if too tall → compress
+  if (shownHeight > MAX_PIXEL_HEIGHT) {
+    const maxSections = Math.floor(MAX_PIXEL_HEIGHT / PIXELS_PER_SECTION)
+
+    // make even
+    const evenSections = maxSections % 2 === 0 ? maxSections : maxSections - 1
+
+    noOfSections = evenSections
+    shownHeight = MAX_PIXEL_HEIGHT
+  }
+
+  return {
+    shownHeight,
+    maxValue,
+    noOfSections,
+  }
 }
 
