@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk"
-import { KNOWLEDGE_PACK, PROTOCOL_TOOL, ASSIGN_PACK, ASSIGN_TOOL } from "./knowledgePack.js"
+import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 
 // Model. Haiku is cheap and plenty for turning a sentence into a structured
 // protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
@@ -78,66 +78,45 @@ export default async ({ req, res, log, error }) => {
 
   const anthropic = new Anthropic({ apiKey })
 
-  // ── Build the request for the requested mode ────────────────────────────────
-  // "generate": one prompt → one protocol.
-  // "assign":   one prompt + roster (+ optional base) → one protocol per athlete.
-  const mode = body.mode === "assign" ? "assign" : "generate"
-
-  let system, tool, userContent
-  if (mode === "assign") {
-    const roster = Array.isArray(body.athletes) ? body.athletes : []
-    if (roster.length === 0) {
-      return res.json({ error: "No athletes provided." }, 400)
-    }
-    const base = Array.isArray(body.base) && body.base.length > 0 ? body.base : null
-    const rosterText = roster
-      .map((a) => `- id:${a.id} name:${a.name}`)
-      .join("\n")
-    system = ASSIGN_PACK
-    tool = ASSIGN_TOOL
-    userContent =
-      `ROSTER:\n${rosterText}\n\n` +
-      (base ? `BASE protocol blocks (JSON):\n${JSON.stringify(base)}\n\n` : "") +
-      `COACH INSTRUCTION:\n${prompt}`
-  } else {
-    system = KNOWLEDGE_PACK
-    tool = PROTOCOL_TOOL
-    userContent = prompt
-  }
+  // One unified call: the model returns a single protocol when no athletes are
+  // named, or one protocol per athlete when they are. The roster + optional base
+  // are the only volatile context and live in the user message.
+  const roster = Array.isArray(body.athletes) ? body.athletes : []
+  const base = Array.isArray(body.base) && body.base.length > 0 ? body.base : null
+  const rosterText = roster.length
+    ? roster.map((a) => `- id:${a.id} name:${a.name}`).join("\n")
+    : "(no athletes available)"
+  const userContent =
+    `ROSTER:\n${rosterText}\n\n` +
+    (base ? `BASE protocol blocks (JSON):\n${JSON.stringify(base)}\n\n` : "") +
+    `COACH INSTRUCTION:\n${prompt}`
 
   try {
     const message = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: mode === "assign" ? 8000 : 6000,
-      // System prompt is the cacheable prefix; the volatile parts (prompt,
-      // roster, base) live in the user message after the breakpoint.
+      max_tokens: 8000,
       system: [
-        { type: "text", text: system, cache_control: { type: "ephemeral" } },
+        { type: "text", text: UNIFIED_PACK, cache_control: { type: "ephemeral" } },
       ],
-      tools: [tool],
+      tools: [PLAN_TOOL],
       // Force the model to answer through the tool → guaranteed structured JSON.
-      tool_choice: { type: "tool", name: tool.name },
+      tool_choice: { type: "tool", name: PLAN_TOOL.name },
       messages: [{ role: "user", content: userContent }],
     })
 
     const toolUse = message.content.find((b) => b.type === "tool_use")
-    if (!toolUse || toolUse.name !== tool.name) {
+    if (!toolUse || toolUse.name !== PLAN_TOOL.name) {
       error("Model did not return the expected tool call")
       return res.json({ error: "Could not generate. Try rephrasing." }, 502)
     }
 
-    const result = toolUse.input
-    if (mode === "assign") {
-      if (!result || !Array.isArray(result.athletes) || result.athletes.length === 0) {
-        return res.json({ error: "No athletes could be planned. Name them and try again." }, 502)
-      }
-      log(`Planned ${result.athletes.length} athlete protocol(s)`)
-    } else {
-      if (!result || !Array.isArray(result.blocks) || result.blocks.length === 0) {
-        return res.json({ error: "The model returned an empty protocol. Try adding detail." }, 502)
-      }
-      log(`Generated protocol "${result.name}" with ${result.blocks.length} blocks`)
+    const result = toolUse.input // { unassigned?, athletes?, unresolved? }
+    const hasAthletes = Array.isArray(result?.athletes) && result.athletes.length > 0
+    const hasSingle = result?.unassigned && Array.isArray(result.unassigned.blocks) && result.unassigned.blocks.length > 0
+    if (!hasAthletes && !hasSingle) {
+      return res.json({ error: "Couldn't produce a protocol. Try adding detail." }, 502)
     }
+    log(hasAthletes ? `Planned ${result.athletes.length} athlete protocol(s)` : "Generated one protocol")
     return res.json(result, 200)
   } catch (e) {
     // Typed Anthropic errors expose a numeric .status.

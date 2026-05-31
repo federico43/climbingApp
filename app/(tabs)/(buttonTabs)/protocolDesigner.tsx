@@ -6,7 +6,7 @@ import { groupByDate } from "@/utils/dateGroups"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { awaitNewRoute, cancelAwaitNewRoute } from "@/utils/pendingRouteSelection"
-import { AiBlock, generateProtocol } from "@/services/aiProtocol"
+import { AiBlock, AssignmentSet, generatePlan } from "@/services/aiProtocol"
 import {
   Adaptation,
   ADAPTATIONS,
@@ -129,6 +129,28 @@ function makeDefaultBlock(type: BlockType, name: string = ""): Block {
     case "free_session":
       return { id: generateId(), type, blockName: name, description: "" }
   }
+}
+
+// Turn an AI-proposed block into a real editor Block: start from the type's
+// defaults (gives a local id + sane values), then overlay the AI's fields.
+function aiBlockToBlock(ab: AiBlock): Block {
+  const base = makeDefaultBlock(ab.type, ab.blockName) as any
+  base.description = ab.description
+  if (ab.adaptation) base.adaptation = ab.adaptation
+  if (ab.type === "project_bouldering") {
+    base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
+    base.restTime = ab.restTime ?? base.restTime
+  } else if (ab.type === "constraint_warmup") {
+    base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
+    base.level = ab.level ?? base.level
+  } else if (ab.type === "exploration_session") {
+    base.timeLimit = ab.timeLimit ?? base.timeLimit
+  } else if (ab.type === "sequence") {
+    // routeId/routeName/routeHolds stay empty — the coach attaches the route.
+    base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
+    base.restTime = ab.restTime ?? base.restTime
+  }
+  return base as Block
 }
 
 function stripLocalIds(blocks: Block[]): any[] {
@@ -359,6 +381,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
   const [aiOpen, setAiOpen] = useState(false)
   const [aiPrompt, setAiPrompt] = useState("")
   const [aiLoading, setAiLoading] = useState(false)
+  const [assignmentSet, setAssignmentSet] = useState<AssignmentSet | null>(null)
 
   function handleAddBlock(block: Block) {
     setBlocks((prev) => [...prev, block])
@@ -366,40 +389,28 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
     setShowAddModal(false)
   }
 
-  // Turn an AI-proposed block into a real editor Block: start from the type's
-  // defaults (gives a local id + sane values), then overlay the AI's fields.
-  function aiBlockToBlock(ab: AiBlock): Block {
-    const base = makeDefaultBlock(ab.type, ab.blockName) as any
-    base.description = ab.description
-    if (ab.adaptation) base.adaptation = ab.adaptation
-    if (ab.type === "project_bouldering") {
-      base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
-      base.restTime = ab.restTime ?? base.restTime
-    } else if (ab.type === "constraint_warmup") {
-      base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
-      base.level = ab.level ?? base.level
-    } else if (ab.type === "exploration_session") {
-      base.timeLimit = ab.timeLimit ?? base.timeLimit
-    } else if (ab.type === "sequence") {
-      // routeId/routeName/routeHolds stay at the empty defaults — the coach
-      // attaches the actual spray-wall route in the editor.
-      base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
-      base.restTime = ab.restTime ?? base.restTime
-    }
-    return base as Block
-  }
-
   async function handleGenerate() {
     const prompt = aiPrompt.trim()
     if (!prompt) return
     setAiLoading(true)
     try {
-      const result = await generateProtocol(prompt)
-      const newBlocks = result.blocks.map(aiBlockToBlock)
-      setBlocks((prev) => [...prev, ...newBlocks])
-      if (!name.trim()) setName(result.name)
+      // Roster lets the AI resolve names → assign per-athlete when the prompt
+      // mentions people; otherwise it just returns one protocol.
+      const roster = (await getAthletes()).map((a) => ({
+        id: a.$id,
+        name: a.username ?? a.$id,
+      }))
+      const result = await generatePlan(prompt, blocks, roster)
       setAiOpen(false)
       setAiPrompt("")
+      if (result.kind === "single") {
+        const newBlocks = result.protocol.blocks.map(aiBlockToBlock)
+        setBlocks((prev) => [...prev, ...newBlocks])
+        if (!name.trim()) setName(result.protocol.name)
+      } else {
+        // Per-athlete plans → open the side-by-side assign editor.
+        setAssignmentSet(result.set)
+      }
     } catch (e: any) {
       Alert.alert("Couldn't generate", e?.message ?? "Please try again.")
     } finally {
@@ -570,7 +581,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
             <View style={styles.aiCard}>
               <Text style={styles.aiTitle}>Describe the session</Text>
               <Text style={styles.aiSub}>
-                Plain language — e.g. “45 min: silent-feet warmup, then a hard project with 5 tries and 2 min rest, finish with free exploration.”
+                Plain language. Name athletes to assign per-person — e.g. “power-endurance day for Charlie and John, but warm up on blue for them; Mia gets a strength finisher.” Leave names out for a single protocol.
               </Text>
               <TextInput
                 style={styles.aiInput}
@@ -599,8 +610,153 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
             </View>
           </KeyboardAvoidingView>
         </Modal>
+
+        {/* Per-athlete assign editor (side-by-side columns) */}
+        <Modal visible={assignmentSet !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setAssignmentSet(null)}>
+          {assignmentSet && (
+            <AssignmentSetEditor
+              set={assignmentSet}
+              onClose={() => setAssignmentSet(null)}
+            />
+          )}
+        </Modal>
       </SafeAreaView>
     </KeyboardAvoidingView>
+  )
+}
+
+// ─── Assignment Set Editor — one editable protocol column per athlete ──────────
+
+function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: () => void }) {
+  const { width } = useWindowDimensions()
+  const isWide = width >= 900
+  const colWidth = isWide ? 360 : Math.max(280, width - 32)
+
+  type Col = {
+    athleteId: string
+    athleteName: string
+    name: string
+    blocks: Block[]
+    assigned: boolean
+    busy: boolean
+  }
+
+  const [cols, setCols] = useState<Col[]>(() =>
+    set.plans.map((p) => ({
+      athleteId: p.athleteId,
+      athleteName: p.athleteName,
+      name: p.protocolName,
+      blocks: p.blocks.map(aiBlockToBlock),
+      assigned: false,
+      busy: false,
+    }))
+  )
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  function patchCol(i: number, patch: Partial<Col>) {
+    setCols((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
+  }
+  function updateBlockIn(i: number, updated: Block) {
+    setCols((prev) =>
+      prev.map((c, idx) =>
+        idx === i ? { ...c, blocks: c.blocks.map((b) => (b.id === updated.id ? updated : b)) } : c
+      )
+    )
+  }
+  function deleteBlockIn(i: number, id: string) {
+    setCols((prev) =>
+      prev.map((c, idx) => (idx === i ? { ...c, blocks: c.blocks.filter((b) => b.id !== id) } : c))
+    )
+  }
+
+  async function assignCol(i: number) {
+    const col = cols[i]
+    if (col.assigned || col.busy) return
+    if (!col.name.trim() || col.blocks.length === 0) {
+      Alert.alert("Can't assign", "This athlete needs a name and at least one block.")
+      return
+    }
+    patchCol(i, { busy: true })
+    try {
+      const protocol = await createProtocol({ name: col.name.trim(), blocks: stripLocalIds(col.blocks) })
+      await assignProtocol(col.athleteId, protocol.$id)
+      patchCol(i, { assigned: true, busy: false })
+    } catch (e: any) {
+      patchCol(i, { busy: false })
+      Alert.alert("Couldn't assign", e?.message ?? "Please try again.")
+    }
+  }
+
+  async function assignAll() {
+    for (let i = 0; i < cols.length; i++) {
+      if (!cols[i].assigned) await assignCol(i)
+    }
+  }
+
+  const allAssigned = cols.every((c) => c.assigned)
+
+  return (
+    <SafeAreaView style={styles.safeContainer}>
+      <View style={styles.editorHeader}>
+        <Pressable onPress={onClose}><Text style={styles.cancelText}>{allAssigned ? "Done" : "Cancel"}</Text></Pressable>
+        <Text style={styles.editorTitle}>Assign — {cols.length} athlete{cols.length !== 1 ? "s" : ""}</Text>
+        <Pressable onPress={assignAll}><Text style={styles.saveText}>Assign all</Text></Pressable>
+      </View>
+
+      {set.unresolved.length > 0 && (
+        <View style={styles.unresolvedBanner}>
+          <Text style={styles.unresolvedText}>
+            ⚠ Couldn't match: {set.unresolved.join(", ")}
+          </Text>
+        </View>
+      )}
+
+      <ScrollView
+        horizontal={isWide}
+        contentContainerStyle={isWide ? styles.colRow : { padding: 12, gap: 16 }}
+        showsHorizontalScrollIndicator={isWide}
+      >
+        {cols.map((col, i) => (
+          <View key={col.athleteId} style={[styles.assignCol, { width: colWidth }]}>
+            <View style={styles.assignColHeader}>
+              <Text style={styles.assignColName} numberOfLines={1}>{col.athleteName}</Text>
+              {col.assigned && <Text style={styles.assignedTag}>✓ Assigned</Text>}
+            </View>
+            <TextInput
+              style={styles.assignNameInput}
+              value={col.name}
+              onChangeText={(v) => patchCol(i, { name: v })}
+              placeholder="Protocol name"
+              placeholderTextColor="#aaa"
+              editable={!col.assigned}
+            />
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8, gap: 10 }} keyboardShouldPersistTaps="handled">
+              {col.blocks.map((b) => (
+                <BlockEditorRow
+                  key={b.id}
+                  block={b}
+                  isExpanded={expanded === `${i}:${b.id}`}
+                  isActive={false}
+                  onToggleExpand={() => setExpanded((p) => (p === `${i}:${b.id}` ? null : `${i}:${b.id}`))}
+                  onDrag={() => {}}
+                  onUpdate={(ub) => updateBlockIn(i, ub)}
+                  onDelete={() => deleteBlockIn(i, b.id)}
+                />
+              ))}
+            </ScrollView>
+            <Pressable
+              style={[styles.assignColBtn, (col.assigned || col.busy) && { opacity: 0.5 }]}
+              onPress={() => assignCol(i)}
+              disabled={col.assigned || col.busy}
+            >
+              {col.busy
+                ? <ActivityIndicator color={C.bg} />
+                : <Text style={styles.assignColBtnText}>{col.assigned ? "Assigned" : `Assign to ${col.athleteName}`}</Text>}
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
@@ -1481,6 +1637,32 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, minWidth: 110, alignItems: "center", justifyContent: "center",
   },
   aiGoText: { fontSize: 14, fontWeight: "700", color: C.bg },
+
+  // Assignment-set editor
+  unresolvedBanner: {
+    backgroundColor: C.surfaceHigh, paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  unresolvedText: { fontSize: 13, color: C.yellow, fontWeight: "600" },
+  colRow: { flexDirection: "row", gap: 16, padding: 16 },
+  assignCol: {
+    backgroundColor: C.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: C.border, padding: 12, gap: 10,
+    maxHeight: "100%",
+  },
+  assignColHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  assignColName: { fontSize: 17, fontWeight: "800", color: C.textPrimary, flex: 1 },
+  assignedTag: { fontSize: 12, fontWeight: "700", color: C.green },
+  assignNameInput: {
+    fontSize: 15, fontWeight: "600", color: C.textPrimary,
+    backgroundColor: C.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: C.border,
+  },
+  assignColBtn: {
+    backgroundColor: C.green, borderRadius: 12, paddingVertical: 12,
+    alignItems: "center", justifyContent: "center",
+  },
+  assignColBtnText: { fontSize: 14, fontWeight: "700", color: C.bg },
 
   // Wide-screen split layout
   splitRow: { flex: 1, flexDirection: "row" },

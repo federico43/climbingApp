@@ -60,35 +60,31 @@ Rules:
 - Interpret duration/intensity sensibly: more time → more blocks or higher attempt counts; "easy day" → fewer attempts, easier grades.
 - If asked for something these block types can't represent (e.g. a strength circuit with named exercises), approximate with the closest block and note the substitution in its description.`
 
-// ─── System prompts ─────────────────────────────────────────────────────────────
+// ─── System prompt (single, unified) ────────────────────────────────────────────
 
-export const KNOWLEDGE_PACK = `You are an assistant that turns a climbing coach's plain-language session description into a structured training protocol for a bouldering app.
+export const UNIFIED_PACK = `You are an assistant that turns a climbing coach's plain-language instruction into structured training protocols for a bouldering app. You MUST call the \`propose_plan\` tool exactly once. Do not write prose outside the tool call.
 
-A protocol is an ordered list of "blocks". You MUST call the \`propose_protocol\` tool exactly once with the full protocol. Do not write any prose outside the tool call.
+The user message includes:
+- ROSTER: the available athletes as id + name.
+- BASE (optional): an existing protocol to start from.
 
-${BLOCK_GUIDE}
+Decide which case you're in:
 
-Give the protocol a short, descriptive name.`
+CASE A — the coach NAMES one or more athletes (people matching the ROSTER):
+- Produce one COMPLETE protocol per named athlete in "athletes" (a name + the full ordered list of blocks — never a diff). Apply any per-athlete differences the coach describes ("Mia goes easier", "Charlie and John warm up on blue"). Athletes sharing the same plan still each get their own full copy.
+- Set each athleteId to the matching id from the ROSTER. If a named person is NOT in the roster, do NOT invent an id — add that raw name to "unresolved" and skip them.
+- Leave "unassigned" empty.
 
-export const ASSIGN_PACK = `You are an assistant that turns a climbing coach's plain-language instruction into a complete training protocol FOR EACH named athlete.
+CASE B — the coach does NOT name any athlete:
+- Produce a single protocol in "unassigned" (a name + blocks). Leave "athletes" empty.
 
-The coach's message names some athletes and describes a session, often with per-athlete differences ("everyone does X, but Mia goes easier", "Charlie and John warm up on blue"). The user message includes:
-- ROSTER: the available athletes as id + name. Match the coach's names to these.
-- BASE (optional): an existing protocol to start from. If present, use it as each athlete's starting point and apply only the requested per-athlete changes. If absent, design the session yourself.
-
-You MUST call the \`propose_assignment_set\` tool exactly once.
-
-For EACH athlete the coach names, output a complete protocol (a name + the full ordered list of blocks) — not a diff. Athletes that share the same plan should still each get their own full copy. Do not include athletes the coach didn't mention.
-
-Name matching:
-- Set athleteId to the matching id from the ROSTER (athleteName to that roster name).
-- If a named person is NOT in the roster, do NOT invent an id — instead add that raw name to "unresolved" and skip them.
+If a BASE is provided, use it as the starting point (per athlete in case A, or directly in case B) and apply only the requested changes.
 
 ${BLOCK_GUIDE}
 
-Give each athlete's protocol a short name (you may include the athlete's name).`
+Give every protocol a short, descriptive name.`
 
-// ─── Tool definitions ───────────────────────────────────────────────────────────
+// ─── Tool definition ────────────────────────────────────────────────────────────
 
 const BLOCK_ITEM_SCHEMA = {
   type: "object",
@@ -105,25 +101,22 @@ const BLOCK_ITEM_SCHEMA = {
   required: ["type", "blockName", "description", "adaptation"],
 }
 
-export const PROTOCOL_TOOL = {
-  name: "propose_protocol",
-  description: "Return the structured training protocol assembled from the coach's description.",
+export const PLAN_TOOL = {
+  name: "propose_plan",
+  description:
+    "Return either a single protocol (no athletes named) OR one protocol per named athlete.",
   input_schema: {
     type: "object",
     properties: {
-      name: { type: "string", description: "Short, descriptive protocol name." },
-      blocks: { type: "array", description: "Ordered list of training blocks.", items: BLOCK_ITEM_SCHEMA },
-    },
-    required: ["name", "blocks"],
-  },
-}
-
-export const ASSIGN_TOOL = {
-  name: "propose_assignment_set",
-  description: "Return one complete protocol per named athlete, plus any unmatched names.",
-  input_schema: {
-    type: "object",
-    properties: {
+      unassigned: {
+        type: "object",
+        description: "A single protocol. Use ONLY when the coach named no athletes.",
+        properties: {
+          name: { type: "string", description: "Short, descriptive protocol name." },
+          blocks: { type: "array", description: "Ordered list of training blocks.", items: BLOCK_ITEM_SCHEMA },
+        },
+        required: ["name", "blocks"],
+      },
       athletes: {
         type: "array",
         description: "One entry per athlete the coach named (and matched to the roster).",
@@ -144,6 +137,6 @@ export const ASSIGN_TOOL = {
         items: { type: "string" },
       },
     },
-    required: ["athletes"],
+    required: [],
   },
 }

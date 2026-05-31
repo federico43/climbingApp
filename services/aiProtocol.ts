@@ -87,42 +87,6 @@ function normalize(raw: any): AiProtocol {
   return { name, blocks: normalizeBlocks(raw?.blocks) }
 }
 
-// ─── Public API ─────────────────────────────────────────────────────────────────
-
-/**
- * Ask the AI to draft a protocol from a coach's natural-language description.
- * Returns a normalized protocol ready to load into the editor for review.
- */
-export async function generateProtocol(prompt: string): Promise<AiProtocol> {
-  if (!AI_PROTOCOL_FUNCTION_ID) {
-    throw new Error("AI is not set up yet (missing function ID).")
-  }
-
-  const execution = await functions.createExecution({
-    functionId: AI_PROTOCOL_FUNCTION_ID,
-    body: JSON.stringify({ prompt }),
-    async: false,
-    method: ExecutionMethod.POST,
-  })
-
-  let payload: any = {}
-  try {
-    payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
-  } catch {
-    throw new Error("Unexpected response from the AI service.")
-  }
-
-  if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
-    throw new Error(payload?.error ?? "The AI service could not generate a protocol.")
-  }
-
-  const result = normalize(payload)
-  if (result.blocks.length === 0) {
-    throw new Error("The AI didn't produce any usable blocks. Try adding more detail.")
-  }
-  return result
-}
-
 // ─── Assignment set (one protocol per athlete) ──────────────────────────────────
 
 export interface AthletePlan {
@@ -136,6 +100,12 @@ export interface AssignmentSet {
   plans: AthletePlan[]
   unresolved: string[] // names the AI couldn't match to a roster athlete
 }
+
+// The unified call returns one of two shapes: a single protocol (no athletes
+// named) or an assignment set (athletes named).
+export type GeneratePlanResult =
+  | { kind: "single"; protocol: AiProtocol }
+  | { kind: "assign"; set: AssignmentSet }
 
 // Trim editor blocks to just the fields the model cares about (drops local ids,
 // route holds, etc.) before sending them as the optional base.
@@ -151,16 +121,19 @@ function trimBase(blocks: any[]): any[] {
   })
 }
 
+// ─── Public API ─────────────────────────────────────────────────────────────────
+
 /**
- * One call → a complete protocol per named athlete. `baseBlocks` (the editor's
- * current blocks, or null) is sent as a starting point the AI varies per athlete.
- * `athletes` is the roster used to resolve names → ids and to validate the result.
+ * One call from the "Generate with AI" button. If the prompt names athletes from
+ * `athletes` (the roster), returns an assignment set (a protocol per athlete);
+ * otherwise returns a single protocol. `baseBlocks` (the editor's current blocks,
+ * or null) is sent as an optional starting point the AI varies.
  */
-export async function generateAssignmentSet(
+export async function generatePlan(
   prompt: string,
   baseBlocks: any[] | null,
   athletes: { id: string; name: string }[],
-): Promise<AssignmentSet> {
+): Promise<GeneratePlanResult> {
   if (!AI_PROTOCOL_FUNCTION_ID) {
     throw new Error("AI is not set up yet (missing function ID).")
   }
@@ -168,7 +141,6 @@ export async function generateAssignmentSet(
   const execution = await functions.createExecution({
     functionId: AI_PROTOCOL_FUNCTION_ID,
     body: JSON.stringify({
-      mode: "assign",
       prompt,
       athletes,
       base: baseBlocks && baseBlocks.length ? trimBase(baseBlocks) : undefined,
@@ -185,37 +157,46 @@ export async function generateAssignmentSet(
   }
 
   if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
-    throw new Error(payload?.error ?? "The AI service could not plan the assignment.")
+    throw new Error(payload?.error ?? "The AI service could not respond.")
   }
 
-  const validIds = new Set(athletes.map((a) => a.id))
-  const unresolved: string[] = Array.isArray(payload?.unresolved)
-    ? payload.unresolved.filter((s: any) => typeof s === "string")
-    : []
-
-  const plans: AthletePlan[] = []
-  for (const a of Array.isArray(payload?.athletes) ? payload.athletes : []) {
-    // The athlete must exist in the roster — never trust a model-invented id.
-    if (!a || !validIds.has(a.athleteId)) {
-      if (a?.athleteName) unresolved.push(a.athleteName)
-      continue
+  // Assignment case — one protocol per athlete.
+  const rawAthletes = Array.isArray(payload?.athletes) ? payload.athletes : []
+  if (rawAthletes.length > 0) {
+    const validIds = new Set(athletes.map((a) => a.id))
+    const unresolved: string[] = Array.isArray(payload?.unresolved)
+      ? payload.unresolved.filter((s: any) => typeof s === "string")
+      : []
+    const plans: AthletePlan[] = []
+    for (const a of rawAthletes) {
+      // The athlete must exist in the roster — never trust a model-invented id.
+      if (!a || !validIds.has(a.athleteId)) {
+        if (a?.athleteName) unresolved.push(a.athleteName)
+        continue
+      }
+      const blocks = normalizeBlocks(a.blocks)
+      if (blocks.length === 0) continue
+      plans.push({
+        athleteId: a.athleteId,
+        athleteName:
+          athletes.find((r) => r.id === a.athleteId)?.name ?? a.athleteName ?? a.athleteId,
+        protocolName:
+          typeof a.protocolName === "string" && a.protocolName.trim()
+            ? a.protocolName.trim()
+            : "AI session",
+        blocks,
+      })
     }
-    const blocks = normalizeBlocks(a.blocks)
-    if (blocks.length === 0) continue
-    plans.push({
-      athleteId: a.athleteId,
-      athleteName:
-        athletes.find((r) => r.id === a.athleteId)?.name ?? a.athleteName ?? a.athleteId,
-      protocolName:
-        typeof a.protocolName === "string" && a.protocolName.trim()
-          ? a.protocolName.trim()
-          : "AI session",
-      blocks,
-    })
+    if (plans.length === 0) {
+      throw new Error("The AI couldn't plan any athletes. Name them clearly and try again.")
+    }
+    return { kind: "assign", set: { plans, unresolved } }
   }
 
-  if (plans.length === 0) {
-    throw new Error("The AI couldn't plan any athletes. Name them clearly and try again.")
+  // Single-protocol case.
+  const protocol = normalize(payload?.unassigned ?? {})
+  if (protocol.blocks.length === 0) {
+    throw new Error("The AI didn't produce any usable blocks. Try adding more detail.")
   }
-  return { plans, unresolved }
+  return { kind: "single", protocol }
 }
