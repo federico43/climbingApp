@@ -1,8 +1,8 @@
 import { functions } from "@/components/AppWrite"
 import { ExecutionMethod } from "appwrite"
 
-// Paste the deployed Appwrite Function ID here (see functions/aiProtocol/README.md).
-export const AI_PROTOCOL_FUNCTION_ID = ""
+// Deployed Appwrite Function ID (see functions/aiProtocol/README.md).
+export const AI_PROTOCOL_FUNCTION_ID = "6a1c2e850024e1f59fc3"
 
 // ─── Shapes ─────────────────────────────────────────────────────────────────────
 
