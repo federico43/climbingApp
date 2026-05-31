@@ -52,12 +52,10 @@ function clampInt(v: any, min: number, max: number, fallback: number): number {
 // Defensive normalization: the function already forces structured output, but we
 // never trust the model blindly — drop bad blocks, clamp ranges, strip invalid
 // enums so the editor only ever receives well-formed data.
-function normalize(raw: any): AiProtocol {
-  const name = typeof raw?.name === "string" && raw.name.trim() ? raw.name.trim() : "AI session"
-  const blocksIn = Array.isArray(raw?.blocks) ? raw.blocks : []
-
+function normalizeBlocks(blocksIn: any): AiBlock[] {
+  const list = Array.isArray(blocksIn) ? blocksIn : []
   const blocks: AiBlock[] = []
-  for (const b of blocksIn) {
+  for (const b of list) {
     if (!b || !BLOCK_TYPES.includes(b.type)) continue
     const blockName = typeof b.blockName === "string" ? b.blockName.trim() : ""
     const description = typeof b.description === "string" ? b.description.trim() : ""
@@ -81,8 +79,12 @@ function normalize(raw: any): AiProtocol {
 
     blocks.push(block)
   }
+  return blocks
+}
 
-  return { name, blocks }
+function normalize(raw: any): AiProtocol {
+  const name = typeof raw?.name === "string" && raw.name.trim() ? raw.name.trim() : "AI session"
+  return { name, blocks: normalizeBlocks(raw?.blocks) }
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────────
@@ -119,4 +121,101 @@ export async function generateProtocol(prompt: string): Promise<AiProtocol> {
     throw new Error("The AI didn't produce any usable blocks. Try adding more detail.")
   }
   return result
+}
+
+// ─── Assignment set (one protocol per athlete) ──────────────────────────────────
+
+export interface AthletePlan {
+  athleteId: string
+  athleteName: string
+  protocolName: string
+  blocks: AiBlock[]
+}
+
+export interface AssignmentSet {
+  plans: AthletePlan[]
+  unresolved: string[] // names the AI couldn't match to a roster athlete
+}
+
+// Trim editor blocks to just the fields the model cares about (drops local ids,
+// route holds, etc.) before sending them as the optional base.
+function trimBase(blocks: any[]): any[] {
+  return (blocks ?? []).map((b) => {
+    const out: any = { type: b.type, blockName: b.blockName, description: b.description }
+    if (b.adaptation) out.adaptation = b.adaptation
+    if (b.targetAttempts != null) out.targetAttempts = b.targetAttempts
+    if (b.restTime != null) out.restTime = b.restTime
+    if (b.level) out.level = b.level
+    if (b.timeLimit != null) out.timeLimit = b.timeLimit
+    return out
+  })
+}
+
+/**
+ * One call → a complete protocol per named athlete. `baseBlocks` (the editor's
+ * current blocks, or null) is sent as a starting point the AI varies per athlete.
+ * `athletes` is the roster used to resolve names → ids and to validate the result.
+ */
+export async function generateAssignmentSet(
+  prompt: string,
+  baseBlocks: any[] | null,
+  athletes: { id: string; name: string }[],
+): Promise<AssignmentSet> {
+  if (!AI_PROTOCOL_FUNCTION_ID) {
+    throw new Error("AI is not set up yet (missing function ID).")
+  }
+
+  const execution = await functions.createExecution({
+    functionId: AI_PROTOCOL_FUNCTION_ID,
+    body: JSON.stringify({
+      mode: "assign",
+      prompt,
+      athletes,
+      base: baseBlocks && baseBlocks.length ? trimBase(baseBlocks) : undefined,
+    }),
+    async: false,
+    method: ExecutionMethod.POST,
+  })
+
+  let payload: any = {}
+  try {
+    payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+  } catch {
+    throw new Error("Unexpected response from the AI service.")
+  }
+
+  if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
+    throw new Error(payload?.error ?? "The AI service could not plan the assignment.")
+  }
+
+  const validIds = new Set(athletes.map((a) => a.id))
+  const unresolved: string[] = Array.isArray(payload?.unresolved)
+    ? payload.unresolved.filter((s: any) => typeof s === "string")
+    : []
+
+  const plans: AthletePlan[] = []
+  for (const a of Array.isArray(payload?.athletes) ? payload.athletes : []) {
+    // The athlete must exist in the roster — never trust a model-invented id.
+    if (!a || !validIds.has(a.athleteId)) {
+      if (a?.athleteName) unresolved.push(a.athleteName)
+      continue
+    }
+    const blocks = normalizeBlocks(a.blocks)
+    if (blocks.length === 0) continue
+    plans.push({
+      athleteId: a.athleteId,
+      athleteName:
+        athletes.find((r) => r.id === a.athleteId)?.name ?? a.athleteName ?? a.athleteId,
+      protocolName:
+        typeof a.protocolName === "string" && a.protocolName.trim()
+          ? a.protocolName.trim()
+          : "AI session",
+      blocks,
+    })
+  }
+
+  if (plans.length === 0) {
+    throw new Error("The AI couldn't plan any athletes. Name them clearly and try again.")
+  }
+  return { plans, unresolved }
 }
