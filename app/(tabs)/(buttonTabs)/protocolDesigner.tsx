@@ -670,6 +670,10 @@ function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; li
     }))
   )
   const [expanded, setExpanded] = useState<string | null>(null)
+  // Measured height of the columns area — used to give each column a definite
+  // height so its inner block list can scroll (percentage height is unreliable
+  // inside a horizontal ScrollView).
+  const [areaH, setAreaH] = useState(0)
 
   function patchCol(i: number, patch: Partial<Col>) {
     setCols((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
@@ -732,15 +736,29 @@ function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; li
         </View>
       )}
 
+      <View style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
       <ScrollView
         horizontal={isWide}
+        style={{ flex: 1 }}
         contentContainerStyle={isWide ? styles.colRow : { padding: 12, gap: 16 }}
         showsHorizontalScrollIndicator={isWide}
       >
         {cols.map((col, i) => {
           const label = col.athletes.map((a) => a.name).join(", ")
+          const blockRows = col.blocks.map((b) => (
+            <BlockEditorRow
+              key={b.id}
+              block={b}
+              isExpanded={expanded === `${i}:${b.id}`}
+              isActive={false}
+              onToggleExpand={() => setExpanded((p) => (p === `${i}:${b.id}` ? null : `${i}:${b.id}`))}
+              onDrag={() => {}}
+              onUpdate={(ub) => updateBlockIn(i, ub)}
+              onDelete={() => deleteBlockIn(i, b.id)}
+            />
+          ))
           return (
-          <View key={`col-${i}`} style={[styles.assignCol, { width: colWidth }]}>
+          <View key={`col-${i}`} style={[styles.assignCol, { width: colWidth }, isWide && areaH ? { height: areaH - 32 } : null]}>
             <View style={styles.assignColHeader}>
               <Text style={styles.assignColName} numberOfLines={1}>{label}</Text>
               {col.assigned && <Text style={styles.assignedTag}>✓ Assigned</Text>}
@@ -753,20 +771,15 @@ function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; li
               placeholderTextColor="#aaa"
               editable={!col.assigned}
             />
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8, gap: 10 }} keyboardShouldPersistTaps="handled">
-              {col.blocks.map((b) => (
-                <BlockEditorRow
-                  key={b.id}
-                  block={b}
-                  isExpanded={expanded === `${i}:${b.id}`}
-                  isActive={false}
-                  onToggleExpand={() => setExpanded((p) => (p === `${i}:${b.id}` ? null : `${i}:${b.id}`))}
-                  onDrag={() => {}}
-                  onUpdate={(ub) => updateBlockIn(i, ub)}
-                  onDelete={() => deleteBlockIn(i, b.id)}
-                />
-              ))}
-            </ScrollView>
+            {/* Wide: each column scrolls its own blocks (the page scrolls
+                horizontally). Narrow: blocks flow in the outer vertical scroll. */}
+            {isWide ? (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8, gap: 10 }} keyboardShouldPersistTaps="handled">
+                {blockRows}
+              </ScrollView>
+            ) : (
+              <View style={{ gap: 10 }}>{blockRows}</View>
+            )}
             <Pressable
               style={[styles.assignColBtn, (col.assigned || col.busy) && { opacity: 0.5 }]}
               onPress={() => assignCol(i)}
@@ -780,6 +793,7 @@ function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; li
           )
         })}
       </ScrollView>
+      </View>
     </SafeAreaView>
   )
 }
@@ -1672,7 +1686,6 @@ const styles = StyleSheet.create({
   assignCol: {
     backgroundColor: C.surface, borderRadius: 16,
     borderWidth: 1, borderColor: C.border, padding: 12, gap: 10,
-    maxHeight: "100%",
   },
   assignColHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   assignColName: { fontSize: 17, fontWeight: "800", color: C.textPrimary, flex: 1 },
