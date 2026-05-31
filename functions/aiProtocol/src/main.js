@@ -110,13 +110,13 @@ export default async ({ req, res, log, error }) => {
       return res.json({ error: "Could not generate. Try rephrasing." }, 502)
     }
 
-    const result = toolUse.input // { unassigned?, athletes?, unresolved? }
-    const hasAthletes = Array.isArray(result?.athletes) && result.athletes.length > 0
+    const result = toolUse.input // { unassigned?, groups?, unresolved? }
+    const hasGroups = Array.isArray(result?.groups) && result.groups.length > 0
     const hasSingle = result?.unassigned && Array.isArray(result.unassigned.blocks) && result.unassigned.blocks.length > 0
-    if (!hasAthletes && !hasSingle) {
+    if (!hasGroups && !hasSingle) {
       return res.json({ error: "Couldn't produce a protocol. Try adding detail." }, 502)
     }
-    log(hasAthletes ? `Planned ${result.athletes.length} athlete protocol(s)` : "Generated one protocol")
+    log(hasGroups ? `Planned ${result.groups.length} group(s)` : "Generated one protocol")
     return res.json(result, 200)
   } catch (e) {
     // Typed Anthropic errors expose a numeric .status.

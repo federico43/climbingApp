@@ -71,8 +71,10 @@ The user message includes:
 Decide which case you're in:
 
 CASE A — the coach NAMES one or more athletes (people matching the ROSTER):
-- Produce one COMPLETE protocol per named athlete in "athletes" (a name + the full ordered list of blocks — never a diff). Apply any per-athlete differences the coach describes ("Mia goes easier", "Charlie and John warm up on blue"). Athletes sharing the same plan still each get their own full copy.
-- Set each athleteId to the matching id from the ROSTER. If a named person is NOT in the roster, do NOT invent an id — add that raw name to "unresolved" and skip them.
+- Produce one or more GROUPS in "groups". A group is a set of athletes who receive the SAME protocol, together with that protocol (a name + the full ordered list of blocks — never a diff).
+- Put athletes who share the same plan in ONE group (list all their ids together). Put athletes whose plans differ in SEPARATE groups. ALWAYS use groups when athletes are named — even if everyone gets the identical workout (then it's a single group containing all of them).
+- Apply any per-athlete differences the coach describes ("Mia goes easier" → her own group; "Charlie and John warm up on blue" → if that's their only difference from others, they form a group).
+- Set athleteIds to matching ids from the ROSTER. If a named person is NOT in the roster, do NOT invent an id — add that raw name to "unresolved".
 - Leave "unassigned" empty.
 
 CASE B — the coach does NOT name any athlete:
@@ -117,18 +119,26 @@ export const PLAN_TOOL = {
         },
         required: ["name", "blocks"],
       },
-      athletes: {
+      groups: {
         type: "array",
-        description: "One entry per athlete the coach named (and matched to the roster).",
+        description: "One entry per GROUP of athletes who receive the same protocol.",
         items: {
           type: "object",
           properties: {
-            athleteId: { type: "string", description: "Matching athlete id from the ROSTER." },
-            athleteName: { type: "string", description: "The matched roster name." },
-            protocolName: { type: "string", description: "Short protocol name for this athlete." },
-            blocks: { type: "array", description: "This athlete's ordered blocks.", items: BLOCK_ITEM_SCHEMA },
+            athleteIds: {
+              type: "array",
+              description: "Matching ids from the ROSTER for every athlete in this group.",
+              items: { type: "string" },
+            },
+            athleteNames: {
+              type: "array",
+              description: "The matched roster names for this group.",
+              items: { type: "string" },
+            },
+            protocolName: { type: "string", description: "Short protocol name for this group." },
+            blocks: { type: "array", description: "The group's ordered blocks.", items: BLOCK_ITEM_SCHEMA },
           },
-          required: ["athleteId", "athleteName", "protocolName", "blocks"],
+          required: ["athleteIds", "protocolName", "blocks"],
         },
       },
       unresolved: {

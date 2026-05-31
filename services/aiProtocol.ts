@@ -89,15 +89,15 @@ function normalize(raw: any): AiProtocol {
 
 // ─── Assignment set (one protocol per athlete) ──────────────────────────────────
 
-export interface AthletePlan {
-  athleteId: string
-  athleteName: string
+// A group of athletes who all receive the same protocol.
+export interface PlanGroup {
+  athletes: { id: string; name: string }[]
   protocolName: string
   blocks: AiBlock[]
 }
 
 export interface AssignmentSet {
-  plans: AthletePlan[]
+  groups: PlanGroup[]
   unresolved: string[] // names the AI couldn't match to a roster athlete
 }
 
@@ -160,37 +160,42 @@ export async function generatePlan(
     throw new Error(payload?.error ?? "The AI service could not respond.")
   }
 
-  // Assignment case — one protocol per athlete.
-  const rawAthletes = Array.isArray(payload?.athletes) ? payload.athletes : []
-  if (rawAthletes.length > 0) {
-    const validIds = new Set(athletes.map((a) => a.id))
+  // Assignment case — one protocol per group of athletes.
+  const rawGroups = Array.isArray(payload?.groups) ? payload.groups : []
+  if (rawGroups.length > 0) {
+    const byId = new Map(athletes.map((a) => [a.id, a]))
     const unresolved: string[] = Array.isArray(payload?.unresolved)
       ? payload.unresolved.filter((s: any) => typeof s === "string")
       : []
-    const plans: AthletePlan[] = []
-    for (const a of rawAthletes) {
-      // The athlete must exist in the roster — never trust a model-invented id.
-      if (!a || !validIds.has(a.athleteId)) {
-        if (a?.athleteName) unresolved.push(a.athleteName)
+    const groups: PlanGroup[] = []
+    for (const g of rawGroups) {
+      const ids = Array.isArray(g?.athleteIds) ? g.athleteIds : []
+      // Resolve each id against the real roster — never trust a model-invented id.
+      const resolved = ids
+        .map((id: any) => byId.get(id))
+        .filter((a: any): a is { id: string; name: string } => !!a)
+      if (resolved.length === 0) {
+        // Whole group unmatched — surface its names so the coach knows.
+        ;(Array.isArray(g?.athleteNames) ? g.athleteNames : []).forEach(
+          (n: any) => typeof n === "string" && unresolved.push(n)
+        )
         continue
       }
-      const blocks = normalizeBlocks(a.blocks)
+      const blocks = normalizeBlocks(g.blocks)
       if (blocks.length === 0) continue
-      plans.push({
-        athleteId: a.athleteId,
-        athleteName:
-          athletes.find((r) => r.id === a.athleteId)?.name ?? a.athleteName ?? a.athleteId,
+      groups.push({
+        athletes: resolved,
         protocolName:
-          typeof a.protocolName === "string" && a.protocolName.trim()
-            ? a.protocolName.trim()
+          typeof g.protocolName === "string" && g.protocolName.trim()
+            ? g.protocolName.trim()
             : "AI session",
         blocks,
       })
     }
-    if (plans.length === 0) {
+    if (groups.length === 0) {
       throw new Error("The AI couldn't plan any athletes. Name them clearly and try again.")
     }
-    return { kind: "assign", set: { plans, unresolved } }
+    return { kind: "assign", set: { groups, unresolved } }
   }
 
   // Single-protocol case.

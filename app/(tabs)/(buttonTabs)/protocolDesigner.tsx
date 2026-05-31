@@ -633,8 +633,7 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
   const colWidth = isWide ? 360 : Math.max(280, width - 32)
 
   type Col = {
-    athleteId: string
-    athleteName: string
+    athletes: { id: string; name: string }[]
     name: string
     blocks: Block[]
     assigned: boolean
@@ -642,11 +641,10 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
   }
 
   const [cols, setCols] = useState<Col[]>(() =>
-    set.plans.map((p) => ({
-      athleteId: p.athleteId,
-      athleteName: p.athleteName,
-      name: p.protocolName,
-      blocks: p.blocks.map(aiBlockToBlock),
+    set.groups.map((g) => ({
+      athletes: g.athletes,
+      name: g.protocolName,
+      blocks: g.blocks.map(aiBlockToBlock),
       assigned: false,
       busy: false,
     }))
@@ -673,13 +671,16 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
     const col = cols[i]
     if (col.assigned || col.busy) return
     if (!col.name.trim() || col.blocks.length === 0) {
-      Alert.alert("Can't assign", "This athlete needs a name and at least one block.")
+      Alert.alert("Can't assign", "This protocol needs a name and at least one block.")
       return
     }
     patchCol(i, { busy: true })
     try {
+      // One protocol row, assigned to everyone in the group.
       const protocol = await createProtocol({ name: col.name.trim(), blocks: stripLocalIds(col.blocks) })
-      await assignProtocol(col.athleteId, protocol.$id)
+      for (const a of col.athletes) {
+        await assignProtocol(a.id, protocol.$id)
+      }
       patchCol(i, { assigned: true, busy: false })
     } catch (e: any) {
       patchCol(i, { busy: false })
@@ -716,10 +717,12 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
         contentContainerStyle={isWide ? styles.colRow : { padding: 12, gap: 16 }}
         showsHorizontalScrollIndicator={isWide}
       >
-        {cols.map((col, i) => (
-          <View key={col.athleteId} style={[styles.assignCol, { width: colWidth }]}>
+        {cols.map((col, i) => {
+          const label = col.athletes.map((a) => a.name).join(", ")
+          return (
+          <View key={`col-${i}`} style={[styles.assignCol, { width: colWidth }]}>
             <View style={styles.assignColHeader}>
-              <Text style={styles.assignColName} numberOfLines={1}>{col.athleteName}</Text>
+              <Text style={styles.assignColName} numberOfLines={1}>{label}</Text>
               {col.assigned && <Text style={styles.assignedTag}>✓ Assigned</Text>}
             </View>
             <TextInput
@@ -751,10 +754,11 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
             >
               {col.busy
                 ? <ActivityIndicator color={C.bg} />
-                : <Text style={styles.assignColBtnText}>{col.assigned ? "Assigned" : `Assign to ${col.athleteName}`}</Text>}
+                : <Text style={styles.assignColBtnText}>{col.assigned ? "Assigned" : `Assign to ${label}`}</Text>}
             </Pressable>
           </View>
-        ))}
+          )
+        })}
       </ScrollView>
     </SafeAreaView>
   )
