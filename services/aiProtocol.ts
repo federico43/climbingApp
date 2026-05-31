@@ -75,7 +75,14 @@ function normalizeBlocks(blocksIn: any): AiBlock[] {
     // saved block (any type, incl. strength). Validity of the id is checked there.
     const libraryId = typeof b.libraryId === "string" && b.libraryId.trim() ? b.libraryId.trim() : undefined
     if (libraryId) {
-      blocks.push({ type: (b.type ?? "free_session") as AiBlockType, blockName, description, adaptation, libraryId })
+      // Keep the reference, plus any tunable overrides the model supplied — the
+      // editor keeps the saved block's content and applies these on top.
+      const ref: AiBlock = { type: (b.type ?? "free_session") as AiBlockType, blockName, description, adaptation, libraryId }
+      if (b.targetAttempts != null) ref.targetAttempts = clampInt(b.targetAttempts, 1, 20, 1)
+      if (b.restTime != null) ref.restTime = clampInt(b.restTime, 30, 600, 120)
+      if (typeof b.level === "string" && GRADES.includes(b.level)) ref.level = b.level
+      if (b.timeLimit != null) ref.timeLimit = clampInt(b.timeLimit, 0, 240, 0)
+      blocks.push(ref)
       continue
     }
 

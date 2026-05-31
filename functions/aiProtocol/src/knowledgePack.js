@@ -85,7 +85,7 @@ If a BASE is provided, use it as the starting point (per athlete in case A, or d
 ${BLOCK_GUIDE}
 
 Reusing saved blocks:
-- The user message may include a LIBRARY of the coach's saved blocks (id, type, name, description). If a saved block fits what you need, PREFER reusing it: emit a block whose "libraryId" is that saved block's id and whose "type" matches it. When you reuse a library block you may omit the other fields. You may reuse saved blocks of ANY type — including strength_conditioning blocks, which you cannot otherwise create.
+- The user message may include a LIBRARY of the coach's saved blocks (id, type, name, description). If a saved block fits what you need, PREFER reusing it: emit a block whose "libraryId" is that saved block's id and whose "type" matches it. The saved block's description and content are kept automatically, so you may omit those — but you SHOULD set numeric fields (targetAttempts, restTime, level, timeLimit) when the coach asks for a different amount, to OVERRIDE the saved block's value (e.g. "use my silent-feet warmup but 3 attempts"). You may reuse saved blocks of ANY type — including strength_conditioning blocks, which you cannot otherwise create.
 - Only create a brand-new block (one of the five types above, no libraryId) when nothing in the LIBRARY fits.
 - Never invent a libraryId — only use ids that appear in the LIBRARY.
 

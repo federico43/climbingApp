@@ -136,7 +136,15 @@ function makeDefaultBlock(type: BlockType, name: string = ""): Block {
 // otherwise start from the type's defaults and overlay the AI's fields.
 function aiBlockToBlock(ab: AiBlock, libraryById?: Map<string, BlockRow>): Block {
   if (ab.libraryId && libraryById?.has(ab.libraryId)) {
-    return blockFromLibraryRow(libraryById.get(ab.libraryId)!)
+    // Materialize the real saved block (keeps its description/content), then
+    // overlay only the tunable fields the AI chose to override.
+    const lib = blockFromLibraryRow(libraryById.get(ab.libraryId)!) as any
+    if (ab.targetAttempts != null) lib.targetAttempts = ab.targetAttempts
+    if (ab.restTime != null) lib.restTime = ab.restTime
+    if (ab.level != null) lib.level = ab.level
+    if (ab.timeLimit != null) lib.timeLimit = ab.timeLimit
+    if (ab.adaptation) lib.adaptation = ab.adaptation
+    return lib as Block
   }
   const base = makeDefaultBlock(ab.type, ab.blockName) as any
   base.description = ab.description
