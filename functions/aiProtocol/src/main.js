@@ -22,17 +22,26 @@ async function isCoach(userId, log) {
     log?.("APPWRITE_API_KEY not set — cannot verify coach role")
     return false
   }
-  try {
-    const url = `${ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents/${encodeURIComponent(userId)}`
-    const r = await fetch(url, {
-      headers: { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey },
-    })
-    if (!r.ok) return false
-    const doc = await r.json()
-    return doc?.role === "coach"
-  } catch {
-    return false
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey }
+  const id = encodeURIComponent(userId)
+  // Try both REST shapes: the newer TablesDB rows path and the classic
+  // Databases documents path, so this works regardless of Appwrite version.
+  const urls = [
+    `${ENDPOINT}/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows/${id}`,
+    `${ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents/${id}`,
+  ]
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers })
+      if (!r.ok) continue
+      const row = await r.json()
+      return row?.role === "coach"
+    } catch {
+      // try the next shape
+    }
   }
+  log?.(`Could not read user row for ${userId} on either REST path`)
+  return false
 }
 
 export default async ({ req, res, log, error }) => {
