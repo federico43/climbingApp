@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { KNOWLEDGE_PACK, PROTOCOL_TOOL } from "./knowledgePack.js"
 
-// Model. Per Anthropic guidance this defaults to the most capable model; swap to
-// "claude-sonnet-4-6" to roughly halve cost at slightly lower quality.
-const MODEL = "claude-opus-4-8"
+// Model. Haiku is cheap and plenty for turning a sentence into a structured
+// protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
+const MODEL = "claude-haiku-4-5"
 
 // Appwrite injects these automatically at runtime; the fallbacks match this app.
 const ENDPOINT = process.env.APPWRITE_FUNCTION_API_ENDPOINT || "https://nyc.cloud.appwrite.io/v1"

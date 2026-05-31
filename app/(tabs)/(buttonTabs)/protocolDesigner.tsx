@@ -380,6 +380,11 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
       base.level = ab.level ?? base.level
     } else if (ab.type === "exploration_session") {
       base.timeLimit = ab.timeLimit ?? base.timeLimit
+    } else if (ab.type === "sequence") {
+      // routeId/routeName/routeHolds stay at the empty defaults — the coach
+      // attaches the actual spray-wall route in the editor.
+      base.targetAttempts = ab.targetAttempts ?? base.targetAttempts
+      base.restTime = ab.restTime ?? base.restTime
     }
     return base as Block
   }

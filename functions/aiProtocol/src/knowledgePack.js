@@ -14,6 +14,7 @@ export const BLOCK_TYPES = [
   "constraint_warmup",
   "exploration_session",
   "free_session",
+  "sequence",
 ]
 
 // Must mirror utils/adaptations.ts in the app.
@@ -38,7 +39,7 @@ export const KNOWLEDGE_PACK = `You are an assistant that turns a climbing coach'
 
 A protocol is an ordered list of "blocks". You MUST call the \`propose_protocol\` tool exactly once with the full protocol. Do not write any prose outside the tool call.
 
-Only use these four block types:
+Only use these five block types:
 
 1. project_bouldering — Work a hard boulder ("project") over several attempts with rest between tries.
    Fields: blockName, description, adaptation, targetAttempts (1–20, typical 4–10), restTime (seconds between attempts, 60–300, typical 120–180).
@@ -52,6 +53,10 @@ Only use these four block types:
 4. free_session — Unstructured session; just a description of what to do.
    Fields: blockName, description, adaptation.
 
+5. sequence — Repeated attempts on a specific set of moves on the spray wall (a "route"), with rest between tries. Used for power and power-endurance work.
+   Fields: blockName, description, adaptation, targetAttempts (1–20, typical 4–8), restTime (seconds, 60–300, typical 120–180).
+   IMPORTANT: you cannot choose the actual route — the coach attaches it in the app afterward. So in the description, briefly describe the intended route (e.g. "a powerful ~6-move overhang sequence") so the coach knows what to build/pick. Do NOT output any route id or holds.
+
 Rules:
 - adaptation MUST be one of: ${ADAPTATIONS.join(", ")}. Pick the one that best matches the block's training intent.
 - level (constraint_warmup only) MUST be one of these grades (easiest→hardest): ${GRADES.join(", ")}.
@@ -60,7 +65,7 @@ Rules:
 - Only include the numeric/level fields that belong to the block's type. Omit fields that don't apply.
 - Order blocks the way the session should run: warm-ups first, hardest work in the middle, lighter work last.
 - Interpret session duration and intensity sensibly: more time → more blocks or higher attempt counts; "easy day" → fewer attempts, easier grades.
-- If the request asks for something these four block types cannot represent (e.g. a spray-wall sequence, a strength circuit with specific exercises), approximate it with the closest available block and note the substitution in that block's description.
+- If the request asks for something these block types cannot represent (e.g. a strength circuit with specific exercises), approximate it with the closest available block and note the substitution in that block's description.
 - Give the protocol a short, descriptive name.`
 
 // ─── Tool definition ────────────────────────────────────────────────────────────
@@ -100,12 +105,12 @@ export const PROTOCOL_TOOL = {
             targetAttempts: {
               type: "integer",
               description:
-                "Number of attempts. Only for project_bouldering and constraint_warmup.",
+                "Number of attempts. For project_bouldering, constraint_warmup, and sequence.",
             },
             restTime: {
               type: "integer",
               description:
-                "Rest between attempts in seconds. Only for project_bouldering.",
+                "Rest between attempts in seconds. For project_bouldering and sequence.",
             },
             level: {
               type: "string",

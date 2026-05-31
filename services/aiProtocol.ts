@@ -11,6 +11,7 @@ export type AiBlockType =
   | "constraint_warmup"
   | "exploration_session"
   | "free_session"
+  | "sequence"
 
 export interface AiBlock {
   type: AiBlockType
@@ -34,6 +35,7 @@ const BLOCK_TYPES: AiBlockType[] = [
   "constraint_warmup",
   "exploration_session",
   "free_session",
+  "sequence",
 ]
 const ADAPTATIONS = [
   "technique", "strength", "power", "power_endurance",
@@ -71,6 +73,10 @@ function normalize(raw: any): AiProtocol {
       block.level = GRADES.includes(b.level) ? b.level : ""
     } else if (b.type === "exploration_session") {
       block.timeLimit = clampInt(b.timeLimit, 0, 240, 0)
+    } else if (b.type === "sequence") {
+      // Route is left empty — the coach attaches it in the editor afterward.
+      block.targetAttempts = clampInt(b.targetAttempts, 1, 20, 5)
+      block.restTime = clampInt(b.restTime, 30, 600, 120)
     }
 
     blocks.push(block)
