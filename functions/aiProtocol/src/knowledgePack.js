@@ -84,6 +84,11 @@ If a BASE is provided, use it as the starting point (per athlete in case A, or d
 
 ${BLOCK_GUIDE}
 
+Reusing saved blocks:
+- The user message may include a LIBRARY of the coach's saved blocks (id, type, name, description). If a saved block fits what you need, PREFER reusing it: emit a block whose "libraryId" is that saved block's id and whose "type" matches it. When you reuse a library block you may omit the other fields. You may reuse saved blocks of ANY type — including strength_conditioning blocks, which you cannot otherwise create.
+- Only create a brand-new block (one of the five types above, no libraryId) when nothing in the LIBRARY fits.
+- Never invent a libraryId — only use ids that appear in the LIBRARY.
+
 Give every protocol a short, descriptive name.`
 
 // ─── Tool definition ────────────────────────────────────────────────────────────
@@ -91,7 +96,8 @@ Give every protocol a short, descriptive name.`
 const BLOCK_ITEM_SCHEMA = {
   type: "object",
   properties: {
-    type: { type: "string", enum: BLOCK_TYPES, description: "Block type." },
+    libraryId: { type: "string", description: "If reusing a saved LIBRARY block, its id. When set, the other fields are optional." },
+    type: { type: "string", description: "Block type. Use one of the five generatable types, or — when reusing via libraryId — the saved block's type." },
     blockName: { type: "string", description: "Short block title." },
     description: { type: "string", description: "Coaching instructions for the athlete." },
     adaptation: { type: "string", enum: ADAPTATIONS, description: "Target training adaptation." },

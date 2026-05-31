@@ -22,6 +22,16 @@ export interface AiBlock {
   restTime?: number
   level?: string
   timeLimit?: number
+  // When set, this block reuses a saved library block (resolved in the editor).
+  libraryId?: string
+}
+
+// Compact saved-block descriptor sent to the AI so it can reuse blocks by id.
+export interface LibraryEntry {
+  id: string
+  type: string
+  name: string
+  description?: string
 }
 
 export interface AiProtocol {
@@ -56,11 +66,20 @@ function normalizeBlocks(blocksIn: any): AiBlock[] {
   const list = Array.isArray(blocksIn) ? blocksIn : []
   const blocks: AiBlock[] = []
   for (const b of list) {
-    if (!b || !BLOCK_TYPES.includes(b.type)) continue
+    if (!b) continue
     const blockName = typeof b.blockName === "string" ? b.blockName.trim() : ""
     const description = typeof b.description === "string" ? b.description.trim() : ""
     const adaptation = ADAPTATIONS.includes(b.adaptation) ? b.adaptation : undefined
 
+    // Library reference — keep it minimal; the editor materializes the real
+    // saved block (any type, incl. strength). Validity of the id is checked there.
+    const libraryId = typeof b.libraryId === "string" && b.libraryId.trim() ? b.libraryId.trim() : undefined
+    if (libraryId) {
+      blocks.push({ type: (b.type ?? "free_session") as AiBlockType, blockName, description, adaptation, libraryId })
+      continue
+    }
+
+    if (!BLOCK_TYPES.includes(b.type)) continue
     const block: AiBlock = { type: b.type, blockName, description, adaptation }
 
     if (b.type === "project_bouldering") {
@@ -133,6 +152,7 @@ export async function generatePlan(
   prompt: string,
   baseBlocks: any[] | null,
   athletes: { id: string; name: string }[],
+  library: LibraryEntry[] = [],
 ): Promise<GeneratePlanResult> {
   if (!AI_PROTOCOL_FUNCTION_ID) {
     throw new Error("AI is not set up yet (missing function ID).")
@@ -143,6 +163,7 @@ export async function generatePlan(
     body: JSON.stringify({
       prompt,
       athletes,
+      library,
       base: baseBlocks && baseBlocks.length ? trimBase(baseBlocks) : undefined,
     }),
     async: false,

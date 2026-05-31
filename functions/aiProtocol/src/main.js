@@ -83,11 +83,18 @@ export default async ({ req, res, log, error }) => {
   // are the only volatile context and live in the user message.
   const roster = Array.isArray(body.athletes) ? body.athletes : []
   const base = Array.isArray(body.base) && body.base.length > 0 ? body.base : null
+  const library = Array.isArray(body.library) ? body.library.slice(0, 100) : []
   const rosterText = roster.length
     ? roster.map((a) => `- id:${a.id} name:${a.name}`).join("\n")
     : "(no athletes available)"
+  const libraryText = library.length
+    ? library
+        .map((b) => `- id:${b.id} type:${b.type} name:${b.name}${b.description ? ` — ${b.description}` : ""}`)
+        .join("\n")
+    : "(no saved blocks)"
   const userContent =
     `ROSTER:\n${rosterText}\n\n` +
+    `LIBRARY (saved blocks you may reuse by libraryId):\n${libraryText}\n\n` +
     (base ? `BASE protocol blocks (JSON):\n${JSON.stringify(base)}\n\n` : "") +
     `COACH INSTRUCTION:\n${prompt}`
 

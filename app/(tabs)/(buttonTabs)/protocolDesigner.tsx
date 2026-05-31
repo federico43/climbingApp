@@ -131,9 +131,13 @@ function makeDefaultBlock(type: BlockType, name: string = ""): Block {
   }
 }
 
-// Turn an AI-proposed block into a real editor Block: start from the type's
-// defaults (gives a local id + sane values), then overlay the AI's fields.
-function aiBlockToBlock(ab: AiBlock): Block {
+// Turn an AI-proposed block into a real editor Block. If it references a saved
+// library block (and that id really exists), materialize the real saved block;
+// otherwise start from the type's defaults and overlay the AI's fields.
+function aiBlockToBlock(ab: AiBlock, libraryById?: Map<string, BlockRow>): Block {
+  if (ab.libraryId && libraryById?.has(ab.libraryId)) {
+    return blockFromLibraryRow(libraryById.get(ab.libraryId)!)
+  }
   const base = makeDefaultBlock(ab.type, ab.blockName) as any
   base.description = ab.description
   if (ab.adaptation) base.adaptation = ab.adaptation
@@ -382,6 +386,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
   const [aiPrompt, setAiPrompt] = useState("")
   const [aiLoading, setAiLoading] = useState(false)
   const [assignmentSet, setAssignmentSet] = useState<AssignmentSet | null>(null)
+  const [assignLibrary, setAssignLibrary] = useState<Map<string, BlockRow>>(new Map())
 
   function handleAddBlock(block: Block) {
     setBlocks((prev) => [...prev, block])
@@ -394,21 +399,27 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
     if (!prompt) return
     setAiLoading(true)
     try {
-      // Roster lets the AI resolve names → assign per-athlete when the prompt
-      // mentions people; otherwise it just returns one protocol.
-      const roster = (await getAthletes()).map((a) => ({
-        id: a.$id,
-        name: a.username ?? a.$id,
-      }))
-      const result = await generatePlan(prompt, blocks, roster)
+      // Roster lets the AI assign per-athlete when names are mentioned; the
+      // library lets it reuse saved blocks (by id) instead of always inventing.
+      const [rosterRows, libraryRows] = await Promise.all([getAthletes(), listBlocks()])
+      const roster = rosterRows.map((a) => ({ id: a.$id, name: a.username ?? a.$id }))
+      const library = libraryRows.map((r) => {
+        let description: string | undefined
+        try { description = JSON.parse(r.data)?.description } catch {}
+        return { id: r.$id, type: r.type, name: r.name, description }
+      })
+      const libraryById = new Map(libraryRows.map((r) => [r.$id, r]))
+
+      const result = await generatePlan(prompt, blocks, roster, library)
       setAiOpen(false)
       setAiPrompt("")
       if (result.kind === "single") {
-        const newBlocks = result.protocol.blocks.map(aiBlockToBlock)
+        const newBlocks = result.protocol.blocks.map((ab) => aiBlockToBlock(ab, libraryById))
         setBlocks((prev) => [...prev, ...newBlocks])
         if (!name.trim()) setName(result.protocol.name)
       } else {
         // Per-athlete plans → open the side-by-side assign editor.
+        setAssignLibrary(libraryById)
         setAssignmentSet(result.set)
       }
     } catch (e: any) {
@@ -616,6 +627,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
           {assignmentSet && (
             <AssignmentSetEditor
               set={assignmentSet}
+              library={assignLibrary}
               onClose={() => setAssignmentSet(null)}
             />
           )}
@@ -627,7 +639,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
 
 // ─── Assignment Set Editor — one editable protocol column per athlete ──────────
 
-function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: () => void }) {
+function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; library: Map<string, BlockRow>; onClose: () => void }) {
   const { width } = useWindowDimensions()
   const isWide = width >= 900
   const colWidth = isWide ? 360 : Math.max(280, width - 32)
@@ -644,7 +656,7 @@ function AssignmentSetEditor({ set, onClose }: { set: AssignmentSet; onClose: ()
     set.groups.map((g) => ({
       athletes: g.athletes,
       name: g.protocolName,
-      blocks: g.blocks.map(aiBlockToBlock),
+      blocks: g.blocks.map((b) => aiBlockToBlock(b, library)),
       assigned: false,
       busy: false,
     }))
