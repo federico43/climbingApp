@@ -1,184 +1,262 @@
-import { useState, useEffect } from "react"
-import { useRef } from "react"
 import { saveSession } from "@/services/BoulderGraphService"
-export function useWorkout(getProtocol: any) {
-  //Get's the list of protocols. 
-  const protocol = getProtocol()
-  //what block are we currently on
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type WorkoutStatus = "idle" | "running" | "completed"
+
+export interface Block {
+  type: string
+  timer?: number
+  restTime?: number
+  targetAttempts?: number
+  description?: string
+  // Target training adaptation — drives pie chart slice color, day timeline,
+  // and future adaptation-based analytics. See utils/adaptations.ts for the
+  // taxonomy and per-type defaults when unset.
+  adaptation?: string
+}
+
+export interface Attempt {
+  success: boolean
+  video?: string
+  notes?: string
+  level?: string
+  scData?: Record<string, any>
+  blockIndex: number
+  type: string
+  timestamp: number
+  projectId?: string
+  rpe?: number
+  highPoint?: number
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export function useWorkout(protocolInput: Block[]) {
+  // Snapshot the protocol on first render. Callers can use the `key` pattern
+  // to remount the hook when switching workouts.
+  const protocol = useMemo(() => protocolInput, [])
+
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0)
-  
-  const [attemptsDone, setAttemptsDone] = useState(0)
-  const [attempts, setAttempts] = useState<any[]>([])
-  const [status, setStatus] = useState<"idle" | "running" | "completed">("idle")
-  console.log(attempts)
-  const currentBlock = protocol[currentBlockIndex]
-  const isTimerBlock = currentBlock?.timer != null
+  const [attempts, setAttempts] = useState<Attempt[]>([])
+  const [status, setStatus] = useState<WorkoutStatus>("idle")
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
+  const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
+  const [blockDurations, setBlockDurations] = useState<Record<number, number>>({})
+  const [blockStartTime, setBlockStartTime] = useState<number | null>(null)
+  // Indices the user chose to skip. Skipped blocks are omitted from the
+  // summary and never persisted (see the save effect below).
+  const [skippedBlocks, setSkippedBlocks] = useState<Set<number>>(new Set())
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const restEndTimeRef = useRef<number | null>(null)
+
+  const currentBlock = protocol[currentBlockIndex] ?? null
   const totalBlocks = protocol.length
   const isLastBlock = currentBlockIndex === totalBlocks - 1
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
-  
-  const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
-  const restTimerRef = useRef<number | null>(null)
-    
+
+  // Derive attemptsDone from attempts array — avoids stale state reads
+  const attemptsDone = attempts.filter(
+    (a) => a.blockIndex === currentBlockIndex
+  ).length
+
+  // ── Cleanup on unmount ──────────────────────────────────────────────────────
+
   useEffect(() => {
-  return () => {
-    if (restTimerRef.current !== null) {
-      clearInterval(restTimerRef.current)
+    return () => {
+      if (timerRef.current !== null) clearInterval(timerRef.current)
+      if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
     }
-  }
-}, [])
+  }, [])
 
-useEffect(() => {
-  if (status === "completed") {
-    const session = {
-      protocol: JSON.stringify(protocol),
-      attempts: JSON.stringify(attempts),
-    }
+  // ── Persist completed session ───────────────────────────────────────────────
 
-    saveSession(session)
-  }
-}, [status])
-
-
-  function goToNextBlock() {
-  const nextIndex = currentBlockIndex + 1
-
-  if (nextIndex >= protocol.length) {
-    setStatus("completed")
-  } else {
-    setCurrentBlockIndex(nextIndex)
-    setAttemptsDone(0)
-  }
-}
-    /*
   useEffect(() => {
-  // clear any previous timer
-  if (timerRef.current) {
-    clearInterval(timerRef.current)
-    timerRef.current = null
-  }
+    if (status === "completed") {
+      // Omit skipped blocks entirely: filter the protocol, then remap the
+      // surviving block indices so attempts/durations stay aligned.
+      const keptIdx = protocol
+        .map((_, i) => i)
+        .filter((i) => !skippedBlocks.has(i))
+      const remap = new Map<number, number>()
+      keptIdx.forEach((oldIdx, newIdx) => remap.set(oldIdx, newIdx))
 
-  if (!currentBlock) return
-
-  if (currentBlock.timer) {
-    setTimeRemaining(currentBlock.timer)
-
-    timerRef.current = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev === null) return null
-
-        if (prev <= 1) {
-          // TIME IS UP
-          clearInterval(timerRef.current!)
-          timerRef.current = null
-
-          // move block
-          setCurrentBlockIndex((prevIndex) => prevIndex + 1)
-
-          return 0
-        }
-
-        return prev - 1
+      const protocolOut = keptIdx.map((i) => protocol[i])
+      const attemptsOut = attempts
+        .filter((a) => !skippedBlocks.has(a.blockIndex))
+        .map((a) => ({ ...a, blockIndex: remap.get(a.blockIndex) ?? a.blockIndex }))
+      const durationsOut: Record<number, number> = {}
+      keptIdx.forEach((oldIdx, newIdx) => {
+        durationsOut[newIdx] = blockDurations[oldIdx] ?? 0
       })
-    }, 1000)
-  }
 
-  return () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
+      saveSession({
+        protocol: JSON.stringify(protocolOut),
+        attempts: JSON.stringify(attemptsOut),
+        blockDurations: JSON.stringify(durationsOut),
+      })
     }
-  }
-}, [currentBlockIndex])*/
+    // deps include the data so the persisted closure is never stale
+  }, [status, attempts, protocol, blockDurations, skippedBlocks])
 
-  function startWorkout() {
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
+  // Accumulate (not overwrite) the time spent on the block we're leaving, so
+  // revisiting a block via Back/Continue doesn't discard or double-count time.
+  const recordElapsed = useCallback((index: number) => {
+    if (blockStartTime === null) return
+    const elapsed = Math.floor((Date.now() - blockStartTime) / 1000)
+    setBlockDurations((prev) => ({ ...prev, [index]: (prev[index] ?? 0) + elapsed }))
+  }, [blockStartTime])
+
+  // Landing on a block (via Back or Continue) means the user intends to do it,
+  // so clear any prior "skipped" mark on the destination.
+  const unskip = useCallback((index: number) => {
+    setSkippedBlocks((prev) => {
+      if (!prev.has(index)) return prev
+      const next = new Set(prev)
+      next.delete(index)
+      return next
+    })
+  }, [])
+
+  const goToNextBlock = useCallback(() => {
+    recordElapsed(currentBlockIndex)
+    const nextIndex = currentBlockIndex + 1
+    if (nextIndex >= protocol.length) {
+      setBlockStartTime(null)
+      setStatus("completed")
+    } else {
+      unskip(nextIndex)
+      setBlockStartTime(Date.now())
+      setCurrentBlockIndex(nextIndex)
+    }
+  }, [currentBlockIndex, protocol.length, recordElapsed, unskip])
+
+  const goToPreviousBlock = useCallback(() => {
+    if (currentBlockIndex > 0) {
+      recordElapsed(currentBlockIndex)
+      const prevIndex = currentBlockIndex - 1
+      unskip(prevIndex)
+      setBlockStartTime(Date.now())
+      setCurrentBlockIndex(prevIndex)
+    }
+  }, [currentBlockIndex, recordElapsed, unskip])
+
+  // Skip the current block: mark it skipped (no time recorded) and advance.
+  const skipBlock = useCallback(() => {
+    setSkippedBlocks((prev) => new Set(prev).add(currentBlockIndex))
+    const nextIndex = currentBlockIndex + 1
+    if (nextIndex >= protocol.length) {
+      setBlockStartTime(null)
+      setStatus("completed")
+    } else {
+      setBlockStartTime(Date.now())
+      setCurrentBlockIndex(nextIndex)
+    }
+  }, [currentBlockIndex, protocol.length])
+
+  const startWorkout = useCallback(() => {
     setCurrentBlockIndex(0)
-    setAttemptsDone(0)
     setAttempts([])
+    setBlockDurations({})
+    setBlockStartTime(Date.now())
+    setSkippedBlocks(new Set())
     setStatus("running")
-  }
-  function resetWorkout() {
-  setStatus("idle")
-  setCurrentBlockIndex(0)
-  setAttemptsDone(0)
-  setAttempts([])
-  // reset any timers too if needed
-}
+  }, [])
 
-  function logAttempt({ success, video, notes, level }: any) {
-  if (status !== "running") return
+  const resetWorkout = useCallback(() => {
+    if (timerRef.current !== null) clearInterval(timerRef.current)
+    if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
+    setStatus("idle")
+    setCurrentBlockIndex(0)
+    setAttempts([])
+    setTimeRemaining(null)
+    setRestTimeRemaining(null)
+    setBlockDurations({})
+    setBlockStartTime(null)
+    setSkippedBlocks(new Set())
+  }, [])
 
-  const block = protocol[currentBlockIndex]
-  if (!block) return
+  const undoLastAttempt = useCallback(() => {
+    setAttempts((prev) => {
+      // Pop the most-recent attempt for the current block, if any
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].blockIndex === currentBlockIndex) {
+          return [...prev.slice(0, i), ...prev.slice(i + 1)]
+        }
+      }
+      return prev
+    })
+  }, [currentBlockIndex])
 
-  const newAttempt = {
-    success,
-    video,
-    notes,
-    level,
-    blockIndex: currentBlockIndex,
-    type: block.type,
-    constraint: block.constraint,
-    timestamp: Date.now(),
-  }
+  const logAttempt = useCallback(
+    ({ success, video, notes, level, scData, highPoint, projectId, rpe }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
+      if (status !== "running" || !currentBlock) return
 
-  setAttempts((prev) => [...prev, newAttempt])
+      const newAttempt: Attempt = {
+        success,
+        video,
+        notes,
+        level,
+        scData,
+        highPoint,
+        projectId,
+        rpe,
+        blockIndex: currentBlockIndex,
+        type: currentBlock.type,
+        timestamp: Date.now(),
+      }
 
-  const targetAttempts = block.targetAttempts ?? 1
-  const newCount = attemptsDone + 1
+      setAttempts((prev) => [...prev, newAttempt])
+    },
+    [status, currentBlock, currentBlockIndex]
+  )
 
-  setAttemptsDone(newCount)
-}
-
-  function startRestTimer(duration: number) {
-  // prevent stacking timers
+  const startRestTimer = useCallback((duration: number) => {
   if (restTimerRef.current !== null) {
     clearInterval(restTimerRef.current)
     restTimerRef.current = null
   }
 
-  // set initial time
+  const endTime = Date.now() + duration * 1000
+  restEndTimeRef.current = endTime
   setRestTimeRemaining(duration)
 
-  // start countdown
   restTimerRef.current = setInterval(() => {
-    setRestTimeRemaining((prev) => {
-      if (prev === null) return null
-
-      if (prev <= 1) {
-        // stop timer at 0
-        if (restTimerRef.current !== null) {
-          clearInterval(restTimerRef.current)
-          restTimerRef.current = null
-        }
-        return 0
-      }
-
-      return prev - 1
-    })
-  }, 1000)
-}
-
+    const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
+    if (remaining <= 0) {
+      clearInterval(restTimerRef.current!)
+      restTimerRef.current = null
+      setRestTimeRemaining(0)
+    } else {
+      setRestTimeRemaining(remaining)
+    }
+  }, 200) // poll every 200ms so it catches up quickly when returning
+}, [])
 
   return {
     currentBlock,
     currentBlockIndex,
     totalBlocks,
-    goToNextBlock,
-
-    attemptsDone,
-
     isLastBlock,
+    attemptsDone,
     status,
-
     timeRemaining,
     restTimeRemaining,
     attempts,
-
+    goToNextBlock,
+    goToPreviousBlock,
+    skipBlock,
     logAttempt,
+    undoLastAttempt,
     startWorkout,
     startRestTimer,
-    resetWorkout
+    resetWorkout,
+    blockDurations,
+    blockStartTime,
+    skippedBlocks,
   }
 }
-

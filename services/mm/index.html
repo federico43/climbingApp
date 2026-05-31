@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset password</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .card {
+      max-width: 360px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 22px;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 15px;
+      color: #aaa;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    a.button {
+      display: inline-block;
+      background: #2e7d32;
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .error {
+      color: #ff6b6b;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">Opening testApp…</h1>
+    <p id="message">If the app doesn't open automatically, tap the button below.</p>
+    <a id="openBtn" class="button" href="#">Open testApp</a>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get("userId");
+    const secret = params.get("secret");
+
+    const titleEl   = document.getElementById("title");
+    const messageEl = document.getElementById("message");
+    const btnEl     = document.getElementById("openBtn");
+
+    if (!userId || !secret) {
+      titleEl.textContent = "Invalid reset link";
+      messageEl.textContent = "This recovery link is missing required information. Please request a new one from the app.";
+      messageEl.classList.add("error");
+      btnEl.style.display = "none";
+    } else {
+      const deepLink = `testapp://reset-password?userId=${encodeURIComponent(userId)}&secret=${encodeURIComponent(secret)}`;
+      btnEl.href = deepLink;
+      window.location.replace(deepLink);
+    }
+  </script>
+</body>
+</html>

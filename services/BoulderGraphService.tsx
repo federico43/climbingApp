@@ -1,129 +1,594 @@
-//Does everything related to the dataBase. 
+import { account, tablesDB, storage } from "@/components/AppWrite"
+import { ID, Query } from "appwrite"
 
-import { tablesDB, account } from "@/components/AppWrite"
-import { ID,Query } from "appwrite"
-export const DATABASE_ID = "68bd9dd7003c15f7147e"
+export const DATABASE_ID   = "68bd9dd7003c15f7147e"
+export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
 export const BOULDER_TABLE = "boulders_realizados"
 export const LEVEL_TABLE = "niveles_boulder"
 export const USERS_TABLE = "users"
 export const SESSION_TABLE = "workoutsession"
+export const PROTOCOLS_TABLE = "protocol"
+export const BLOCKS_TABLE = "blocks"
+// Table must exist in Appwrite with columns: name (string), holds (string)
+export const SPRAY_ROUTES_TABLE = "spray_routes"
+// Table must exist in Appwrite with columns: name (string), imageUri (string)
+export const SPRAY_WALLS_TABLE = "spray_walls"
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
+
+const APPWRITE_ENDPOINT  = "https://nyc.cloud.appwrite.io/v1"
+const APPWRITE_PROJECT   = "689e515d000c2e1af428"
+
+/**
+ * Upload a local image URI to Appwrite Storage and return the public view URL.
+ * Uses fetch + FormData directly because the Appwrite web SDK does not handle
+ * React Native's { uri, name, type } file format in its createFile method.
+ * The bucket must have "Read" for "Any" role so the URL works in <Image />.
+ */
+export async function uploadPhoto(localUri: string): Promise<string> {
+  const fileId = ID.unique()
+  const ext    = localUri.split(".").pop()?.split("?")[0]?.toLowerCase() ?? "jpg"
+  const mime   = ext === "png" ? "image/png" : "image/jpeg"
+
+  const body = new FormData()
+  body.append("fileId", fileId)
+  body.append("file", { uri: localUri, name: `${fileId}.${ext}`, type: mime } as any)
+
+  // No JWT — the session cookie is sent automatically by React Native's
+  // HTTP stack and is enough for authentication. Adding JWT on top of it
+  // causes Appwrite to reject the request (403 user_jwt_and_cookie_set).
+  const res = await fetch(
+    `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files`,
+    {
+      method: "POST",
+      headers: {
+        "X-Appwrite-Project": APPWRITE_PROJECT,
+      },
+      body,
+    }
+  )
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.status.toString())
+    throw new Error(`Upload failed: ${msg}`)
+  }
+
+  const data = await res.json()
+  return `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${data.$id}/view?project=${APPWRITE_PROJECT}`
+}
+
+/**
+ * Delete a file from Appwrite Storage by its view URL.
+ * Silently ignores errors (best-effort cleanup).
+ */
+export async function deleteStorageFile(fileUrl: string): Promise<void> {
+  const match = fileUrl.match(/\/files\/([^/?]+)/)
+  if (!match) return
+  const fileId = match[1]
+  const res = await fetch(
+    `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${fileId}`,
+    { method: "DELETE", headers: { "X-Appwrite-Project": APPWRITE_PROJECT } }
+  )
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.status.toString())
+    throw new Error(`Delete failed (${res.status}): ${msg}`)
+  }
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type UserRole = "coach" | "athlete"
+
+export interface AppUser {
+  $id: string
+  $createdAt: string
+  role: UserRole
+  username: string
+  assignedProtocolId: string | null
+  [key: string]: any
+}
+
+export interface ProtocolRow {
+  $id: string
+  $createdAt: string
+  name: string
+  blocks: string
+}
+
+export interface BlockRow {
+  $id: string
+  $createdAt: string
+  type: string
+  name: string
+  data: string // JSON stringified block config
+}
+
+// ─── Boulder ──────────────────────────────────────────────────────────────────
 
 export async function getBoulderLogs() {
   const userID = await account.get()
-
   let allRows: any[] = []
   let offset = 0
   const limit = 100
-
   while (true) {
     const result = await tablesDB.listRows({
       databaseId: DATABASE_ID,
       tableId: BOULDER_TABLE,
-      queries: [
-        Query.equal('userID', userID.$id),
-        Query.limit(limit),
-        Query.offset(offset)
-      ]
+      queries: [Query.equal("userID", userID.$id), Query.limit(limit), Query.offset(offset)],
     })
-
     allRows = [...allRows, ...result.rows]
-
     if (result.rows.length < limit) break
-
     offset += limit
   }
-
-  
-
   return allRows
 }
 
 export async function getBoulderLevels() {
-  const result = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: LEVEL_TABLE,
-  })
-  
+  const result = await tablesDB.listRows({ databaseId: DATABASE_ID, tableId: LEVEL_TABLE })
   return result.rows
-  //returns an array. each item on the arrya is a dictionary (a row)
 }
 
-export async function logRecord(table_id:string, data: any, rowID?: string) {
-  if (!rowID){
-    rowID = ID.unique()
-  }
+export async function logRecord(table_id: string, data: any, rowID?: string) {
+  if (!rowID) rowID = ID.unique()
   try {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID,
-      tableId: table_id,
-      rowId: rowID,
-      data: data
-    });
-
-    return response;
-
-  } catch (error) {
-    console.log(error);
-    throw error; // ← VERY IMPORTANT
-  }
+    return await tablesDB.createRow({ databaseId: DATABASE_ID, tableId: table_id, rowId: rowID, data })
+  } catch (error) { console.log(error); throw error }
 }
 
-export async function useDeleteRow(table_id:string, rowID?: string) {
-  if (!rowID){
-    rowID = ID.unique()
-  }
+export async function useDeleteRow(table_id: string, rowID?: string) {
+  if (!rowID) rowID = ID.unique()
   try {
-    const response = await tablesDB.deleteRow({
-      databaseId: DATABASE_ID,
-      tableId: table_id,
-      rowId: rowID
-    });
-
-    return response;
-
-  } catch (error) {
-    console.log(error);
-    throw error; // ← VERY IMPORTANT
-  }
+    return await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: table_id, rowId: rowID })
+  } catch (error) { console.log(error); throw error }
 }
 
-
-export async function getUsers(ID: string) {
-  try{
+export async function getUsers(id: string) {
+  try {
     const result = await tablesDB.listRows({
       databaseId: DATABASE_ID,
       tableId: USERS_TABLE,
-      queries: [
-          Query.equal('$id', ID)
-      ]
+      queries: [Query.equal("$id", id)],
     })
     return result.rows[0]
-    //returns an array. each item on the arrya is a dictionary (a row)
-  }
-  catch(error){
-    console.log(error)
-  }
+  } catch (error) { console.log(error) }
 }
 
+export interface SessionRow {
+  $id: string
+  $createdAt: string
+  userId: string
+  protocol: string   // JSON stringified blocks array
+  attempts: string   // JSON stringified attempts array
+  // JSON stringified Record<blockIndex, seconds>. Optional in the schema —
+  // older sessions may not have it.
+  blockDurations?: string
+}
 
 export async function saveSession(data: any) {
   try {
     const user = await account.get()
+    const payload = { ...data, userId: user.$id }
+    try {
+      return await tablesDB.createRow({
+        databaseId: DATABASE_ID,
+        tableId: SESSION_TABLE,
+        rowId: ID.unique(),
+        data: payload,
+      })
+    } catch (e: any) {
+      // If the schema doesn't include `blockDurations` yet, retry without it
+      // so the session still saves. The user can add the column in Appwrite
+      // whenever and future sessions will include durations.
+      if (payload.blockDurations !== undefined) {
+        const { blockDurations: _bd, ...rest } = payload
+        return await tablesDB.createRow({
+          databaseId: DATABASE_ID,
+          tableId: SESSION_TABLE,
+          rowId: ID.unique(),
+          data: rest,
+        })
+      }
+      throw e
+    }
+  } catch (error) { console.error("Failed to save session", error) }
+}
 
-    const rowID = ID.unique()
+export async function getSessionsByUserId(userId: string): Promise<SessionRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: SESSION_TABLE,
+    queries: [Query.equal("userId", userId), Query.orderDesc("$createdAt"), Query.limit(200)],
+  })
+  return response.rows as unknown as SessionRow[]
+}
 
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID,
-      tableId: SESSION_TABLE,
-      rowId: rowID,
-      data: {
-        ...data,
-        userId: user.$id, // ✅ correct
-      },
-    })
+export async function getSessions(): Promise<SessionRow[]> {
+  const user = await account.get()
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: SESSION_TABLE,
+    queries: [Query.equal("userId", user.$id), Query.orderDesc("$createdAt"), Query.limit(200)],
+  })
+  return response.rows as unknown as SessionRow[]
+}
 
-    return response
-  } catch (error) {
-    console.error("Failed to save session", error)
+export async function deleteSession(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SESSION_TABLE, rowId: id })
+}
+
+export async function updateSession(id: string, data: { attempts?: string; protocol?: string; blockDurations?: string }): Promise<SessionRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: SESSION_TABLE,
+    rowId: id,
+    data,
+  })
+  return response as unknown as SessionRow
+}
+
+// ─── Users / roles ────────────────────────────────────────────────────────────
+
+export async function setUserRole(userId: string, role: UserRole) {
+  return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { role } })
+}
+
+export async function deleteAthlete(userId: string): Promise<void> {
+  // Removes the athlete's profile row. The Appwrite auth account itself
+  // can only be deleted by an admin SDK / server function — handled
+  // separately if/when needed.
+  await tablesDB.deleteRow({
+    databaseId: DATABASE_ID,
+    tableId: USERS_TABLE,
+    rowId: userId,
+  })
+}
+
+export async function getAthletes(): Promise<AppUser[]> {
+  const result = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: USERS_TABLE,
+    //queries: [Query.equal("role", "athlete")],
+  })
+  return result.rows as unknown as AppUser[]
+}
+
+export async function assignProtocol(userId: string, protocolId: string): Promise<void> {
+  await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: USERS_TABLE,
+    rowId: userId,
+    data: { assignedProtocolId: protocolId },
+  })
+}
+
+export async function getAssignedProtocol(userId: string): Promise<ProtocolRow | null> {
+  const user = await getUsers(userId) as unknown as AppUser
+  if (!user?.assignedProtocolId) return null
+  const protocol = await tablesDB.getRow({
+    databaseId: DATABASE_ID,
+    tableId: PROTOCOLS_TABLE,
+    rowId: user.assignedProtocolId,
+  })
+  return protocol as unknown as ProtocolRow
+}
+
+// ─── Protocols ────────────────────────────────────────────────────────────────
+
+export async function listProtocols(): Promise<ProtocolRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: PROTOCOLS_TABLE,
+    queries: [Query.orderDesc("$createdAt")],
+  })
+  return response.rows as unknown as ProtocolRow[]
+}
+
+export async function createProtocol(input: { name: string; blocks: any[] }): Promise<ProtocolRow> {
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: PROTOCOLS_TABLE,
+    rowId: ID.unique(),
+    data: { name: input.name, blocks: JSON.stringify(input.blocks) },
+  })
+  return response as unknown as ProtocolRow
+}
+
+export async function updateProtocol(id: string, input: { name: string; blocks: any[] }): Promise<ProtocolRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: PROTOCOLS_TABLE,
+    rowId: id,
+    data: { name: input.name, blocks: JSON.stringify(input.blocks) },
+  })
+  return response as unknown as ProtocolRow
+}
+
+export async function deleteProtocol(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: id })
+}
+
+// ─── Block library ────────────────────────────────────────────────────────────
+
+export async function listBlocks(): Promise<BlockRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: BLOCKS_TABLE,
+    queries: [Query.orderDesc("$createdAt")],
+  })
+  return response.rows as unknown as BlockRow[]
+}
+
+export async function listBlocksByType(type: string): Promise<BlockRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: BLOCKS_TABLE,
+    queries: [Query.equal("type", type), Query.orderDesc("$createdAt")],
+  })
+  return response.rows as unknown as BlockRow[]
+}
+
+export async function saveBlockToLibrary(input: {
+  name: string
+  type: string
+  data: any
+}): Promise<BlockRow> {
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: BLOCKS_TABLE,
+    rowId: ID.unique(),
+    data: { name: input.name, type: input.type, data: JSON.stringify(input.data) },
+  })
+  return response as unknown as BlockRow
+}
+
+export async function updateBlock(id: string, input: { name: string; type: string; data: any }): Promise<BlockRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: BLOCKS_TABLE,
+    rowId: id,
+    data: { name: input.name, type: input.type, data: JSON.stringify(input.data) },
+  })
+  return response as unknown as BlockRow
+}
+
+/**
+ * Create the template, or overwrite an existing template that has the
+ * same name AND type. Returns the resulting row.
+ */
+export async function upsertBlockTemplate(input: {
+  name: string
+  type: string
+  data: any
+}): Promise<{ row: BlockRow; replaced: boolean }> {
+  const existing = await listBlocks()
+  const match = existing.find((b) => b.name === input.name && b.type === input.type)
+  if (match) {
+    const row = await updateBlock(match.$id, input)
+    return { row, replaced: true }
   }
+  const row = await saveBlockToLibrary(input)
+  return { row, replaced: false }
+}
+
+export async function deleteBlock(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: BLOCKS_TABLE, rowId: id })
+}
+
+// ─── Exercise library ─────────────────────────────────────────────────────────
+
+export const EXERCISES_TABLE = "exercises"
+
+export interface ExerciseRow {
+  $id: string
+  $createdAt: string
+  name: string
+  type: "reps" | "both_sides" | "7/3s"
+  defaultReps?: string
+  defaultEdge?: string
+  defaultSeries?: number
+}
+
+export async function listExercises(): Promise<ExerciseRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: EXERCISES_TABLE,
+    queries: [Query.orderAsc("name"), Query.limit(200)],
+  })
+  return response.rows as unknown as ExerciseRow[]
+}
+
+export async function createExercise(input: {
+  name: string
+  type: "reps" | "both_sides" | "7/3s"
+  defaultReps?: string
+  defaultEdge?: string
+  defaultSeries?: number
+}): Promise<ExerciseRow> {
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: EXERCISES_TABLE,
+    rowId: ID.unique(),
+    data: input,
+  })
+  return response as unknown as ExerciseRow
+}
+
+export async function deleteExercise(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id })
+}
+// ─── Spray routes ─────────────────────────────────────────────────────────────
+
+// ─── Spray walls ──────────────────────────────────────────────────────────────
+
+export interface SprayWallRow {
+  $id: string
+  $createdAt: string
+  name: string
+  imageUri: string   // local file:// path to the wall photo
+}
+
+export async function getSprayWall(id: string): Promise<SprayWallRow | null> {
+  try {
+    const response = await tablesDB.getRow({
+      databaseId: DATABASE_ID,
+      tableId: SPRAY_WALLS_TABLE,
+      rowId: id,
+    })
+    return response as unknown as SprayWallRow
+  } catch {
+    return null
+  }
+}
+
+export async function getSprayWalls(): Promise<SprayWallRow[]> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_WALLS_TABLE,
+    queries: [Query.orderAsc("$createdAt"), Query.limit(50)],
+  })
+  return response.rows as unknown as SprayWallRow[]
+}
+
+export async function createSprayWall(name: string, imageUri: string): Promise<SprayWallRow> {
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_WALLS_TABLE,
+    rowId: ID.unique(),
+    data: { name, imageUri },
+  })
+  return response as unknown as SprayWallRow
+}
+
+export async function deleteSprayWall(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: id })
+}
+
+export interface SprayRouteRow {
+  $id: string
+  $createdAt: string
+  name: string
+  holds: string      // JSON stringified PlacedHold[]
+  wallId?: string    // optional — routes without wallId show under "All"
+}
+
+export async function getSprayRoute(id: string): Promise<SprayRouteRow> {
+  const response = await tablesDB.getRow({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_ROUTES_TABLE,
+    rowId: id,
+  })
+  return response as unknown as SprayRouteRow
+}
+
+export async function getSprayRoutes(wallId?: string): Promise<SprayRouteRow[]> {
+  const queries = [Query.orderDesc("$createdAt"), Query.limit(100)]
+  if (wallId) queries.push(Query.equal("wallId", wallId))
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_ROUTES_TABLE,
+    queries,
+  })
+  return response.rows as unknown as SprayRouteRow[]
+}
+
+export async function saveSprayRoute(name: string, holds: any[], wallId?: string): Promise<SprayRouteRow> {
+  const data: any = { name, holds: JSON.stringify(holds) }
+  if (wallId) data.wallId = wallId
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_ROUTES_TABLE,
+    rowId: ID.unique(),
+    data,
+  })
+  return response as unknown as SprayRouteRow
+}
+
+export async function updateSprayRoute(id: string, name: string, holds: any[]): Promise<SprayRouteRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: SPRAY_ROUTES_TABLE,
+    rowId: id,
+    data: { name, holds: JSON.stringify(holds) },
+  })
+  return response as unknown as SprayRouteRow
+}
+
+export async function deleteSprayRoute(id: string): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id })
+}
+
+// ─── Projects ─────────────────────────────────────────────────────────────────
+
+export const PROJECTS_TABLE = "projects"
+
+export type ProjectStatus = "active" | "sent" | "failed"
+export type ProjectLocation = "slab" | "vertical_wall_1" | "vertical_wall_2" | "overhang"
+
+export interface ProjectRow {
+  $id: string
+  $createdAt: string
+  userId: string
+  name: string
+  grade: string
+  imageUri?: string
+  dueDate: string        // "YYYY-MM-DD"
+  location: ProjectLocation
+  status: ProjectStatus
+}
+
+export async function listProjects(): Promise<ProjectRow[]> {
+  const user = await account.get()
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID,
+    tableId: PROJECTS_TABLE,
+    queries: [Query.equal("userId", user.$id), Query.orderDesc("$createdAt"), Query.limit(100)],
+  })
+  return response.rows as unknown as ProjectRow[]
+}
+
+export async function createProject(input: {
+  name: string
+  grade: string
+  imageUri?: string
+  dueDate: string
+  location: ProjectLocation
+}): Promise<ProjectRow> {
+  const user = await account.get()
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: PROJECTS_TABLE,
+    rowId: ID.unique(),
+    data: { ...input, userId: user.$id, status: "active" },
+  })
+  return response as unknown as ProjectRow
+}
+
+export async function updateProject(id: string, data: Partial<Pick<ProjectRow, "imageUri" | "name" | "grade" | "dueDate" | "location" | "status">>): Promise<void> {
+  await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: PROJECTS_TABLE, rowId: id, data })
+}
+
+export async function markProjectSent(id: string): Promise<void> {
+  await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: PROJECTS_TABLE,
+    rowId: id,
+    data: { status: "sent" },
+  })
+}
+
+export async function markProjectFailed(id: string): Promise<void> {
+  await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: PROJECTS_TABLE,
+    rowId: id,
+    data: { status: "failed" },
+  })
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await tablesDB.deleteRow({
+    databaseId: DATABASE_ID,
+    tableId: PROJECTS_TABLE,
+    rowId: id,
+  })
 }

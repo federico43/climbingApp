@@ -1,0 +1,470 @@
+import { C } from "@/utils/theme"
+import { SprayWallViewer } from "@/components/SprayWallViewer"
+import {
+  createSprayWall,
+  deleteSprayRoute,
+  deleteSprayWall,
+  deleteStorageFile,
+  getSprayRoutes,
+  getSprayWalls,
+  saveSprayRoute,
+  SprayRouteRow,
+  SprayWallRow,
+  uploadPhoto,
+} from "@/services/BoulderGraphService"
+import { groupByDate } from "@/utils/dateGroups"
+import { Ionicons } from "@expo/vector-icons"
+import * as ImagePicker from "expo-image-picker"
+import { useFocusEffect } from "@react-navigation/native"
+import { useRouter } from "expo-router"
+import { useCallback, useMemo, useState } from "react"
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
+
+const FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
+
+export default function SprayWallScreen() {
+  const router = useRouter()
+  const [walls, setWalls] = useState<SprayWallRow[]>([])
+  const [selectedWallId, setSelectedWallId] = useState<string | null>(null) // null = All
+  const [routes, setRoutes] = useState<SprayRouteRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [addingWall, setAddingWall] = useState(false)
+  // Wall name prompt state
+  const [nameModalVisible, setNameModalVisible] = useState(false)
+  const [pendingImageUri, setPendingImageUri] = useState<string | null>(null)
+  const [wallNameInput, setWallNameInput] = useState("")
+
+  // Walls change rarely and only from this screen — refetch when the screen
+  // regains focus, NOT on every wall-filter tap.
+  const loadWalls = useCallback(async () => {
+    try {
+      setWalls(await getSprayWalls())
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  // Routes refetch on focus and whenever the filter changes. We never flip
+  // `loading` back on here, so switching filters swaps the grid in place
+  // instead of flashing a full-screen spinner.
+  const loadRoutes = useCallback(async () => {
+    try {
+      setRoutes(await getSprayRoutes(selectedWallId ?? undefined))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedWallId])
+
+  useFocusEffect(useCallback(() => { loadWalls() }, [loadWalls]))
+  useFocusEffect(useCallback(() => { loadRoutes() }, [loadRoutes]))
+
+  // ─── Wall actions ──────────────────────────────────────────────────────────
+
+  async function handleAddWall() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to add a wall photo.")
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.85,
+    })
+    if (result.canceled || !result.assets[0]) return
+    setPendingImageUri(result.assets[0].uri)
+    setWallNameInput("")
+    setNameModalVisible(true)
+  }
+
+  async function confirmWallName() {
+    if (!wallNameInput.trim() || !pendingImageUri) return
+    setNameModalVisible(false)
+    setAddingWall(true)
+    try {
+      const cloudUri = await uploadPhoto(pendingImageUri)
+      const wall = await createSprayWall(wallNameInput.trim(), cloudUri)
+      setWalls((prev) => [...prev, wall])
+      setSelectedWallId(wall.$id)
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not save wall.")
+    } finally {
+      setAddingWall(false)
+      setPendingImageUri(null)
+    }
+  }
+
+  function handleLongPressWall(wall: SprayWallRow) {
+    Alert.alert(
+      `Delete "${wall.name}"?`,
+      "This will not delete the routes on this wall. They will still appear under All.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete wall",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteSprayWall(wall.$id)
+              // remove cloud file (best-effort)
+              deleteStorageFile(wall.imageUri).catch(() => {})
+              setWalls((prev) => prev.filter((w) => w.$id !== wall.$id))
+              if (selectedWallId === wall.$id) setSelectedWallId(null)
+            } catch {
+              Alert.alert("Error", "Could not delete the wall.")
+            }
+          },
+        },
+      ]
+    )
+  }
+
+  // ─── Route actions ─────────────────────────────────────────────────────────
+
+  function handleDeleteRoute(route: SprayRouteRow) {
+    Alert.alert("Delete route", `Delete "${route.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSprayRoute(route.$id)
+            setRoutes((prev) => prev.filter((r) => r.$id !== route.$id))
+          } catch {
+            Alert.alert("Error", "Could not delete the route.")
+          }
+        },
+      },
+    ])
+  }
+
+  async function handleCopyRoute(route: SprayRouteRow) {
+    try {
+      const holds = JSON.parse(route.holds || "[]")
+      const newRoute = await saveSprayRoute(`${route.name} (copy)`, holds, route.wallId)
+      setRoutes((prev) => [newRoute, ...prev])
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not copy route.")
+    }
+  }
+
+  // ─── Derived ───────────────────────────────────────────────────────────────
+
+  const grouped = useMemo(() => groupByDate(routes), [routes])
+  const { width } = useWindowDimensions()
+  const columns = width >= 1200 ? 4 : width >= 800 ? 3 : 2
+  const GRID_PADDING = 16
+  const GRID_GAP = 10
+  const cardWidth = (width - GRID_PADDING * 2 - GRID_GAP * (columns - 1)) / columns
+
+  // Index walls by id (O(1) lookups) and parse each route's holds once per load
+  // instead of JSON.parse-ing inside the render loop.
+  const wallsById = useMemo(() => new Map(walls.map((w) => [w.$id, w])), [walls])
+  const holdsByRoute = useMemo(() => {
+    const m = new Map<string, any[]>()
+    for (const r of routes) {
+      try { m.set(r.$id, JSON.parse(r.holds)) } catch { m.set(r.$id, []) }
+    }
+    return m
+  }, [routes])
+
+  function routeImageSource(route: SprayRouteRow) {
+    const uri = wallsById.get(route.wallId ?? "")?.imageUri
+    return uri ? { uri } : FALLBACK_IMAGE
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <View style={styles.header}>
+        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} hitSlop={12}>
+          <Text style={styles.back}>←</Text>
+        </Pressable>
+        <Text style={styles.title}>Spray Wall</Text>
+        <View style={{ width: 32 }} />
+      </View>
+
+      {/* Wall chip strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.wallStrip}
+        style={styles.wallStripContainer}
+      >
+        <Pressable
+          style={[styles.wallChip, selectedWallId === null && styles.wallChipActive]}
+          onPress={() => setSelectedWallId(null)}
+        >
+          <Text style={[styles.wallChipText, selectedWallId === null && styles.wallChipTextActive]}>
+            All
+          </Text>
+        </Pressable>
+
+        {walls.map((wall) => (
+          <Pressable
+            key={wall.$id}
+            style={[styles.wallChip, selectedWallId === wall.$id && styles.wallChipActive]}
+            onPress={() => setSelectedWallId(wall.$id)}
+            onLongPress={() => handleLongPressWall(wall)}
+            delayLongPress={500}
+          >
+            <Text
+              style={[styles.wallChipText, selectedWallId === wall.$id && styles.wallChipTextActive]}
+              numberOfLines={1}
+            >
+              {wall.name}
+            </Text>
+          </Pressable>
+        ))}
+
+        <Pressable
+          style={[styles.wallChip, styles.wallChipAdd]}
+          onPress={handleAddWall}
+          disabled={addingWall}
+        >
+          {addingWall
+            ? <ActivityIndicator size="small" color={C.green} />
+            : <Ionicons name="add" size={18} color={C.green} />
+          }
+        </Pressable>
+      </ScrollView>
+
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 60 }} color={C.green} />
+      ) : (
+        <ScrollView contentContainerStyle={styles.list}>
+          {routes.length === 0 && (
+            <Text style={styles.empty}>
+              {selectedWallId
+                ? "No routes on this wall yet. Tap + to create one."
+                : "No routes yet. Tap + to create one."}
+            </Text>
+          )}
+          {grouped.map(({ group, items }) => (
+            <View key={group} style={{ marginBottom: 18 }}>
+              <Text style={styles.groupHeader}>{group}</Text>
+              <View style={styles.gridRow}>
+                {items.map((route) => {
+                  const holds = holdsByRoute.get(route.$id) ?? []
+                  return (
+                    <View key={route.$id} style={[styles.card, { width: cardWidth }]}>
+                      <Pressable
+                        style={styles.thumb}
+                        onPress={() =>
+                          router.push({
+                            pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
+                            params: {
+                              routeId: route.$id,
+                              routeName: route.name,
+                              routeHolds: route.holds,
+                              wallId: route.wallId ?? "",
+                              wallImageUri: wallsById.get(route.wallId ?? "")?.imageUri ?? "",
+                            },
+                          })
+                        }
+                      >
+                        <SprayWallViewer
+                          imageSource={routeImageSource(route)}
+                          holds={holds}
+                          style={{ flex: 1 }}
+                          interactive={false}
+                        />
+                      </Pressable>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardName} numberOfLines={1}>{route.name}</Text>
+                        <Text style={styles.cardSub}>
+                          {holds.length} hold{holds.length !== 1 ? "s" : ""}
+                        </Text>
+                      </View>
+                      <View style={styles.cardActions}>
+                        <Pressable onPress={() => handleCopyRoute(route)} hitSlop={6} style={styles.iconBtn}>
+                          <Ionicons name="copy-outline" size={16} color={C.textSecondary} />
+                        </Pressable>
+                        <Pressable onPress={() => handleDeleteRoute(route)} hitSlop={6} style={styles.iconBtn}>
+                          <Ionicons name="trash-outline" size={16} color={C.textMuted} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      <Pressable
+        style={styles.fab}
+        onPress={() =>
+          router.push({
+            pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
+            params: {
+              _new: Date.now().toString(),
+              wallId: selectedWallId ?? "",
+              wallImageUri: wallsById.get(selectedWallId ?? "")?.imageUri ?? "",
+            },
+          })
+        }
+      >
+        <Text style={styles.fabText}>+</Text>
+      </Pressable>
+
+      {/* Wall name prompt modal */}
+      <Modal
+        visible={nameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNameModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setNameModalVisible(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
+              <Text style={styles.modalTitle}>Name this wall</Text>
+              <Text style={styles.modalSub}>e.g. Overhang, Cave, Slab</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={wallNameInput}
+                onChangeText={setWallNameInput}
+                placeholder="Wall name"
+                placeholderTextColor={C.textMuted}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={confirmWallName}
+              />
+              <View style={styles.modalActions}>
+                <Pressable onPress={() => setNameModalVisible(false)} style={styles.modalBtn}>
+                  <Text style={styles.modalBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={confirmWallName}
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  disabled={!wallNameInput.trim()}
+                >
+                  <Text style={[styles.modalBtnText, styles.modalBtnTextPrimary]}>Add Wall</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
+  )
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.bg },
+
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 14,
+    backgroundColor: C.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  back:  { fontSize: 22, color: C.textSecondary },
+  title: { fontSize: 17, fontWeight: "700", color: C.textPrimary },
+
+  wallStripContainer: {
+    flexGrow: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.border,
+  },
+  wallStrip: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+  },
+  wallChip: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  wallChipActive: {
+    backgroundColor: C.green, borderColor: C.green,
+  },
+  wallChipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
+  wallChipTextActive: { color: C.bg },
+  wallChipAdd: {
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderColor: C.green, backgroundColor: "transparent",
+    minWidth: 36, alignItems: "center",
+  },
+
+  list: { padding: 16, paddingBottom: 140 },
+  empty: { textAlign: "center", color: C.textMuted, marginTop: 60, fontSize: 15 },
+
+  groupHeader: {
+    fontSize: 12, fontWeight: "700", color: C.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.6,
+    paddingHorizontal: 4, marginBottom: 10,
+  },
+
+  gridRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  card: {
+    backgroundColor: C.surface, borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.border,
+    overflow: "hidden",
+  },
+  thumb: { aspectRatio: 1, backgroundColor: C.surfaceHigh },
+  cardInfo: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4 },
+  cardName: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+  cardSub:  { fontSize: 11, color: C.textSecondary, marginTop: 2 },
+  cardActions: {
+    flexDirection: "row", justifyContent: "flex-end",
+    paddingHorizontal: 4, paddingBottom: 4,
+  },
+  iconBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: "center", justifyContent: "center",
+  },
+
+  fab: {
+    position: "absolute", bottom: 36, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.green,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
+  },
+  fabText: { fontSize: 28, color: C.bg, lineHeight: 32 },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center", alignItems: "center", padding: 24,
+  },
+  modalCard: {
+    backgroundColor: C.surface, borderRadius: 18,
+    padding: 24, width: "100%", maxWidth: 360,
+  },
+  modalTitle: { fontSize: 17, fontWeight: "700", color: C.textPrimary, marginBottom: 4 },
+  modalSub: { fontSize: 13, color: C.textSecondary, marginBottom: 16 },
+  modalInput: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 15, color: C.textPrimary, backgroundColor: C.bg,
+    marginBottom: 20,
+  },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  modalBtn: {
+    paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: C.surfaceHigh,
+  },
+  modalBtnPrimary: { backgroundColor: C.green },
+  modalBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  modalBtnTextPrimary: { color: C.bg },
+})

@@ -1,0 +1,13 @@
+{
+  "name": "ai-protocol",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/main.js",
+  "description": "Appwrite Function: turns a coach's natural-language session description into a structured training protocol via the Anthropic Messages API.",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0"
+  }
+}

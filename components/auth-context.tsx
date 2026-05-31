@@ -6,14 +6,16 @@ import { useRouter } from 'expo-router'
 //how do you use use context 
 //create the information structure. has to be a type object. Obviously.
 type auth_information = {
-    User: Models.User<Models.Preferences> | null; 
+    User: Models.User<Models.Preferences> | null;
     error: null | string
     isLoadingUser: boolean
-    signUp: (email: string, password: string, username:string )  => Promise<void|boolean> 
-    signIn: (email: string, password: string )  => Promise<void|boolean> 
-    signOut: () => Promise<void> 
+    signUp: (email: string, password: string, username:string )  => Promise<void|boolean>
+    signIn: (email: string, password: string )  => Promise<void|boolean>
+    signOut: () => Promise<void>
+    sendRecovery: (email: string) => Promise<boolean>
     userName: string | null
-    //defines the name of the object, in this case is signIn. It also defines what type of object it returns. 
+    role: "coach" | "athlete" | null
+    assignedProtocolId: string | null
 }
 
 //create the context constructor 
@@ -25,22 +27,28 @@ export default function Auth_context({children}:PropsWithChildren) {
     const [isLoadingUser, setisLoadingUser] = useState<boolean>(true)
     const [userName, setusername] = useState('')
     const router = useRouter()
+    const [role, setRole] = useState<"coach" | "athlete" | null>(null)
+    const [assignedProtocolId, setAssignedProtocolId] = useState<string | null>(null)
     useEffect(() => {
         getUser();
     }, [])
 
     const getUser = async () => {
-        try{
-             const session = await account.get()
-             setUser(session)
-             const username = await getUserName(session.$id)
-             setusername(username)
-        }catch(error){
-            console.log(error)
-            setUser(null)
-        }finally{
-            setisLoadingUser(false)
+    try {
+        const session = await account.get()
+        setUser(session)
+        const userInfo = await getUsers(session.$id)
+        if (userInfo) {
+        setusername(userInfo.username)
+        setRole(userInfo.role ?? null)
+        setAssignedProtocolId(userInfo.assignedProtocolId ?? null)
         }
+    } catch (error) {
+        console.log(error)
+        setUser(null)
+    } finally {
+        setisLoadingUser(false)
+    }
     }
     
     const getUserName = async (id:string) => {
@@ -95,6 +103,18 @@ export default function Auth_context({children}:PropsWithChildren) {
             return false
         }
     }
+    const sendRecovery = async (email: string): Promise<boolean> => {
+        setError(null)
+        try {
+            await account.createRecovery(email, 'https://poetic-daifuku-bc250a.netlify.app/')
+            return true
+        } catch (error) {
+            if (error instanceof Error) setError(error.message)
+            else setError("Could not send recovery email.")
+            return false
+        }
+    }
+
     const signOut = async () =>{
         
         try {
@@ -107,7 +127,8 @@ export default function Auth_context({children}:PropsWithChildren) {
     } 
  
   return (
-    <Context_constructor.Provider value={{ signOut: signOut,signUp: signUpFunction, signIn: signInFunction, error: error, User: user, isLoadingUser, userName}} >
+    <Context_constructor.Provider value={{ signOut, signUp: signUpFunction, signIn: signInFunction, sendRecovery, error, User: user, isLoadingUser, userName, role,
+  assignedProtocolId }} >
         {children}
     </Context_constructor.Provider>
   )
