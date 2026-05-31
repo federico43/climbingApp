@@ -637,6 +637,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
               set={assignmentSet}
               library={assignLibrary}
               onClose={() => setAssignmentSet(null)}
+              onFinish={() => { setAssignmentSet(null); onDone() }}
             />
           )}
         </Modal>
@@ -647,7 +648,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
 
 // ─── Assignment Set Editor — one editable protocol column per athlete ──────────
 
-function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; library: Map<string, BlockRow>; onClose: () => void }) {
+function AssignmentSetEditor({ set, library, onClose, onFinish }: { set: AssignmentSet; library: Map<string, BlockRow>; onClose: () => void; onFinish: () => void }) {
   const { width } = useWindowDimensions()
   const isWide = width >= 900
   const colWidth = isWide ? 360 : Math.max(280, width - 32)
@@ -723,8 +724,8 @@ function AssignmentSetEditor({ set, library, onClose }: { set: AssignmentSet; li
   return (
     <SafeAreaView style={styles.safeContainer}>
       <View style={styles.editorHeader}>
-        <Pressable onPress={onClose}><Text style={styles.cancelText}>{allAssigned ? "Done" : "Cancel"}</Text></Pressable>
-        <Text style={styles.editorTitle}>Assign — {cols.length} athlete{cols.length !== 1 ? "s" : ""}</Text>
+        <Pressable onPress={allAssigned ? onFinish : onClose}><Text style={styles.cancelText}>{allAssigned ? "Done" : "Cancel"}</Text></Pressable>
+        <Text style={styles.editorTitle}>Assign — {cols.length} group{cols.length !== 1 ? "s" : ""}</Text>
         <Pressable onPress={assignAll}><Text style={styles.saveText}>Assign all</Text></Pressable>
       </View>
 
