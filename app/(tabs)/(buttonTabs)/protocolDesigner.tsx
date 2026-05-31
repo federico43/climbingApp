@@ -7,6 +7,7 @@ import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { awaitNewRoute, cancelAwaitNewRoute } from "@/utils/pendingRouteSelection"
 import { AiBlock, AssignmentSet, generatePlan } from "@/services/aiProtocol"
+import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
   Adaptation,
   ADAPTATIONS,
@@ -224,6 +225,7 @@ type ScreenView = "list" | "editor"
 export default function ProtocolDesignerScreen() {
   const router = useRouter()
   const { role } = ConsumeAuth()
+  const workoutCtx = useWorkoutContext()
   const [view, setView] = useState<ScreenView>("list")
   const [protocols, setProtocols] = useState<ProtocolRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -267,6 +269,18 @@ export default function ProtocolDesignerScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => { await deleteProtocol(id); fetchProtocols() } },
     ])
+  }
+
+  // Run the protocol yourself (as an athlete would) to sanity-check it. Opens
+  // the workout overlay; nothing is logged against any athlete.
+  function handleTestProtocol(p: ProtocolRow) {
+    let blocks: any[] = []
+    try { blocks = p.blocks ? JSON.parse(p.blocks) : [] } catch {}
+    if (blocks.length === 0) {
+      Alert.alert("Empty protocol", "This protocol has no blocks to test.")
+      return
+    }
+    workoutCtx.openWorkout(blocks, p.name)
   }
 
   async function handleDuplicateProtocol(p: ProtocolRow) {
@@ -324,6 +338,10 @@ export default function ProtocolDesignerScreen() {
                       <Text style={styles.protocolMeta}>{blocks.length} block{blocks.length !== 1 ? "s" : ""}</Text>
                     </Pressable>
                     <View style={styles.protocolActions}>
+                      <Pressable style={styles.testButton} onPress={() => handleTestProtocol(p)}>
+                        <Ionicons name="play" size={13} color={C.green} />
+                        <Text style={styles.testButtonText}>Test</Text>
+                      </Pressable>
                       <Pressable style={styles.assignButton} onPress={() => handleOpenAssign(p)}>
                         <Text style={styles.assignButtonText}>Assign</Text>
                       </Pressable>
@@ -1584,6 +1602,12 @@ const styles = StyleSheet.create({
   protocolActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   assignButton: { backgroundColor: C.green, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   assignButtonText: { color: C.bg, fontSize: 13, fontWeight: "600" },
+  testButton: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12,
+    borderWidth: 1, borderColor: C.green,
+  },
+  testButtonText: { color: C.green, fontSize: 13, fontWeight: "600" },
   deleteButton: { padding: 8 },
   deleteButtonText: { fontSize: 14, color: C.textMuted },
   duplicateButton: { padding: 8 },
