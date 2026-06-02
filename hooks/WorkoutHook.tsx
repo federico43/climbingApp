@@ -1,4 +1,5 @@
 import { saveSession } from "@/services/BoulderGraphService"
+import { serializeSession } from "@/utils/workoutSession"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,28 +76,8 @@ export function useWorkout(protocolInput: Block[]) {
 
   useEffect(() => {
     if (status === "completed") {
-      // Omit skipped blocks entirely: filter the protocol, then remap the
-      // surviving block indices so attempts/durations stay aligned.
-      const keptIdx = protocol
-        .map((_, i) => i)
-        .filter((i) => !skippedBlocks.has(i))
-      const remap = new Map<number, number>()
-      keptIdx.forEach((oldIdx, newIdx) => remap.set(oldIdx, newIdx))
-
-      const protocolOut = keptIdx.map((i) => protocol[i])
-      const attemptsOut = attempts
-        .filter((a) => !skippedBlocks.has(a.blockIndex))
-        .map((a) => ({ ...a, blockIndex: remap.get(a.blockIndex) ?? a.blockIndex }))
-      const durationsOut: Record<number, number> = {}
-      keptIdx.forEach((oldIdx, newIdx) => {
-        durationsOut[newIdx] = blockDurations[oldIdx] ?? 0
-      })
-
-      saveSession({
-        protocol: JSON.stringify(protocolOut),
-        attempts: JSON.stringify(attemptsOut),
-        blockDurations: JSON.stringify(durationsOut),
-      })
+      // Skipped blocks are dropped and indices remapped (see serializeSession).
+      saveSession(serializeSession(protocol, attempts, blockDurations, skippedBlocks))
     }
     // deps include the data so the persisted closure is never stale
   }, [status, attempts, protocol, blockDurations, skippedBlocks])

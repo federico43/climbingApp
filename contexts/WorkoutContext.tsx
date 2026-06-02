@@ -1,4 +1,11 @@
 import { useWorkout } from "@/hooks/WorkoutHook"
+import { saveSession } from "@/services/BoulderGraphService"
+import { serializeSession } from "@/utils/workoutSession"
+import {
+  clearPersistedWorkout,
+  loadPersistedWorkout,
+  savePersistedWorkout,
+} from "@/utils/workoutPersistence"
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake"
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
 
@@ -51,6 +58,60 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     }
   }, [workoutActive])
 
+  // ── Crash/close recovery ────────────────────────────────────────────────────
+
+  // On launch, recover an interrupted workout: if a snapshot survived (the app
+  // was closed by the user or killed by the OS mid-session), save the logged
+  // work as a session so it isn't lost, then clear the snapshot.
+  useEffect(() => {
+    (async () => {
+      const saved = await loadPersistedWorkout()
+      if (!saved) return
+      try {
+        if (Array.isArray(saved.attempts) && saved.attempts.length > 0) {
+          await saveSession(
+            serializeSession(
+              saved.protocol ?? [],
+              saved.attempts,
+              saved.blockDurations ?? {},
+              new Set(saved.skippedBlocks ?? []),
+            ),
+          )
+        }
+      } finally {
+        await clearPersistedWorkout()
+      }
+    })()
+  }, [])
+
+  // Continuously snapshot the live workout while it runs, so it survives a
+  // close/kill at any point.
+  useEffect(() => {
+    if (workout.status !== "running") return
+    savePersistedWorkout({
+      protocol,
+      protocolName,
+      attempts: workout.attempts,
+      blockDurations: workout.blockDurations,
+      skippedBlocks: Array.from(workout.skippedBlocks),
+      currentBlockIndex: workout.currentBlockIndex,
+      savedAt: Date.now(),
+    })
+  }, [
+    workout.status,
+    workout.attempts,
+    workout.blockDurations,
+    workout.skippedBlocks,
+    workout.currentBlockIndex,
+    protocol,
+    protocolName,
+  ])
+
+  // A completed workout already saved itself (in the hook) — drop the snapshot.
+  useEffect(() => {
+    if (workout.status === "completed") clearPersistedWorkout()
+  }, [workout.status])
+
   const openWorkout = useCallback((p: any[], name: string) => {
     setProtocol(p)
     setProtocolName(name)
@@ -63,6 +124,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   }, [workoutActive])
 
   const endWorkout = useCallback(() => {
+    // Cancel = discard: drop the snapshot so it isn't recovered on next launch.
+    clearPersistedWorkout()
     workout.resetWorkout()
     setWorkoutActive(false)
     setWorkoutMinimized(false)
