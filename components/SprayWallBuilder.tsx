@@ -221,10 +221,23 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
 
   // Switch which variation we're editing. Stash the current holds into the
   // active slot, load the target slot, and reset undo history to that slot.
+  // An empty Easier/Harder slot is seeded with a copy of the Original (fresh
+  // hold ids), so the coach just nudges the circles instead of redrawing.
   function switchVariation(key: VariationKey) {
     if (key === activeVariation) return
-    const nextHolds = (variations[key] ?? []) as PlacedHold[]
     setVariations((prev) => ({ ...prev, [activeVariation]: holds }))
+
+    const existing = (variations[key] ?? []) as PlacedHold[]
+    let nextHolds: PlacedHold[]
+    if (existing.length > 0) {
+      nextHolds = existing
+    } else if (key !== "original") {
+      const originalHolds = activeVariation === "original" ? holds : (variations.original ?? [])
+      nextHolds = originalHolds.map((h) => ({ ...h, id: Math.random().toString(36).slice(2) }))
+    } else {
+      nextHolds = variations.original ?? []
+    }
+
     setActiveVariation(key)
     setHolds(nextHolds)
     holdsHistory.current = [nextHolds]
