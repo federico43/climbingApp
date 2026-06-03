@@ -11,10 +11,19 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
+import {
+  parseVariations,
+  variationHolds,
+  availableVariations,
+  stepVariation,
+  VARIATION_LABEL,
+  type RouteVariations,
+  type VariationKey,
+} from "@/utils/sequenceVariations"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
-type SequencePhase = "intro" | "active" | "recording" | "rest1" | "rest2" | "review"
+type SequencePhase = "intro" | "active" | "recording" | "rest1" | "rest2" | "calibrate" | "review"
 type Outcome = "sent" | "fell"
 
 interface Props {
@@ -55,20 +64,24 @@ export function SequenceBlock({
   // Never display more than the target (clamps a stray over-log at N/N).
   const displayDone            = Math.min(attemptsDone, targetAttempts)
 
-  // Latest holds + route name. The block was authored with a snapshot of
-  // routeHolds at protocol-design time, but the underlying spray-wall route
-  // may have been edited since — we re-fetch by routeId on mount so the
-  // workout always shows the current state of the route.
-  const initialHolds: PlacedHold[] = (() => {
-    try { return JSON.parse(block.routeHolds ?? "[]") } catch { return [] }
-  })()
-  const [holds, setHolds] = useState<PlacedHold[]>(initialHolds)
+  // Route variations + which one we're on. The block was authored with a
+  // snapshot of routeHolds (the original) at design time, but the route may
+  // have been edited since — we re-fetch by routeId on mount for the current
+  // variations. We start on the Original; the first-attempt calibration and the
+  // manual switcher move between the available variations.
+  const [variations, setVariations] = useState<RouteVariations>(() => {
+    try { return { original: JSON.parse(block.routeHolds ?? "[]") } } catch { return { original: [] } }
+  })
+  const [activeVariation, setActiveVariation] = useState<VariationKey>("original")
+  const holds: PlacedHold[] = variationHolds(variations, activeVariation)
+  const availableVars = availableVariations(variations)
+
   const [routeName, setRouteName] = useState<string>(block.routeName ?? "")
   const [refreshing, setRefreshing] = useState(false)
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
 
   async function applyRouteRow(row: Awaited<ReturnType<typeof getSprayRoute>>) {
-    try { setHolds(JSON.parse(row.holds ?? "[]")) } catch {}
+    setVariations(parseVariations(row))
     if (row.name) setRouteName(row.name)
     if (row.wallId) {
       const wall = await getSprayWall(row.wallId)
@@ -116,13 +129,26 @@ export function SequenceBlock({
 
   function handleSaveAttempt() {
     const success = outcome === "sent"
+    const isFirst = attemptsDone === 0
     logAttempt({
       success,
       video: pendingVideoUri ?? undefined,
       rpe: rpe ? Number(rpe) : undefined,
       highPoint: outcome === "fell" ? highPoint : undefined,
+      routeId: block.routeId,
+      variation: activeVariation,
     })
     setPendingVideoUri(null)
+    // After the very first attempt, calibrate difficulty (if there's more than
+    // one variation to move between); otherwise straight to the rest timer.
+    setPhase(isFirst && availableVars.length > 1 ? "calibrate" : "rest2")
+  }
+
+  // Calibration after the first attempt: too hard → easier, too easy → harder,
+  // felt right → keep. The chosen variation sticks for the rest of the block.
+  function calibrate(feel: "hard" | "right" | "easy") {
+    if (feel === "hard") setActiveVariation((v) => stepVariation(variations, v, -1))
+    else if (feel === "easy") setActiveVariation((v) => stepVariation(variations, v, +1))
     setPhase("rest2")
   }
 
@@ -216,6 +242,21 @@ export function SequenceBlock({
             </Pressable>
           )}
         </View>
+        {availableVars.length > 1 && (
+          <View style={styles.varSwitchRow}>
+            {availableVars.map((k) => (
+              <Pressable
+                key={k}
+                style={[styles.varSwitchChip, activeVariation === k && styles.varSwitchChipActive]}
+                onPress={() => setActiveVariation(k)}
+              >
+                <Text style={[styles.varSwitchText, activeVariation === k && styles.varSwitchTextActive]}>
+                  {VARIATION_LABEL[k]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         <View style={styles.activeControls}>
           <Pressable style={styles.recordBtn} onPress={() => setPhase("recording")}>
             <Text style={styles.recordBtnText}>Record attempt</Text>
@@ -240,6 +281,44 @@ export function SequenceBlock({
         }}
         onClose={() => setPhase("active")}
       />
+    )
+  }
+
+  // ── 3b. Calibrate — after the first attempt, pick the right variation ─────────
+
+  if (phase === "calibrate") {
+    const canEasier = stepVariation(variations, activeVariation, -1) !== activeVariation
+    const canHarder = stepVariation(variations, activeVariation, +1) !== activeVariation
+    return (
+      <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
+        <View style={styles.calibrateWrap}>
+          <Text style={styles.calibrateTitle}>How did that feel?</Text>
+          <Text style={styles.calibrateSub}>We'll set your variation for the rest of the block.</Text>
+
+          <Pressable
+            style={[styles.calibrateBtn, !canEasier && styles.calibrateBtnDisabled]}
+            onPress={() => calibrate("hard")}
+            disabled={!canEasier}
+          >
+            <Text style={styles.calibrateBtnText}>Too hard</Text>
+            <Text style={styles.calibrateBtnSub}>{canEasier ? "→ easier variation" : "already easiest"}</Text>
+          </Pressable>
+
+          <Pressable style={styles.calibrateBtn} onPress={() => calibrate("right")}>
+            <Text style={styles.calibrateBtnText}>Felt right</Text>
+            <Text style={styles.calibrateBtnSub}>→ keep this one</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.calibrateBtn, !canHarder && styles.calibrateBtnDisabled]}
+            onPress={() => calibrate("easy")}
+            disabled={!canHarder}
+          >
+            <Text style={styles.calibrateBtnText}>Too easy</Text>
+            <Text style={styles.calibrateBtnSub}>{canHarder ? "→ harder variation" : "already hardest"}</Text>
+          </Pressable>
+        </View>
+      </View>
     )
   }
 
@@ -514,6 +593,31 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: "center",
   },
   noRecordBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+
+  // Variation switcher (active phase)
+  varSwitchRow: {
+    flexDirection: "row", gap: 8, justifyContent: "center",
+    backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 8,
+  },
+  varSwitchChip: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  varSwitchChipActive: { backgroundColor: C.green, borderColor: C.green },
+  varSwitchText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  varSwitchTextActive: { color: C.bg },
+
+  // Calibration screen
+  calibrateWrap: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
+  calibrateTitle: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
+  calibrateSub: { fontSize: 14, color: C.textSecondary, textAlign: "center", marginBottom: 12 },
+  calibrateBtn: {
+    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
+    borderWidth: 1, borderColor: C.border, alignItems: "center", gap: 2,
+  },
+  calibrateBtnDisabled: { opacity: 0.4 },
+  calibrateBtnText: { fontSize: 17, fontWeight: "800", color: C.textPrimary },
+  calibrateBtnSub: { fontSize: 13, color: C.textSecondary },
 
   // ── Rest 1
   pillTimer: {

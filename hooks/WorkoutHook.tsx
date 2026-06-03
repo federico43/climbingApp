@@ -30,6 +30,8 @@ export interface Attempt {
   projectId?: string
   rpe?: number
   highPoint?: number
+  routeId?: string    // sequence: which spray-wall route
+  variation?: string  // sequence: which variation (easy/original/hard)
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -207,7 +209,7 @@ export function useWorkout(protocolInput: Block[]) {
   }, [currentBlockIndex])
 
   const logAttempt = useCallback(
-    ({ success, video, notes, level, scData, highPoint, projectId, rpe }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
+    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
       if (status !== "running" || !currentBlock) return
 
       const newAttempt: Attempt = {
@@ -219,6 +221,8 @@ export function useWorkout(protocolInput: Block[]) {
         highPoint,
         projectId,
         rpe,
+        routeId,
+        variation,
         blockIndex: currentBlockIndex,
         type: currentBlock.type,
         timestamp: Date.now(),
