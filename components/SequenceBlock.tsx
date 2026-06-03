@@ -108,7 +108,14 @@ export function SequenceBlock({
   }, [block.routeId])
 
   const moveCount = holds.filter((h) => h.type === "move").length
-  const maxMove   = Math.max(1, moveCount)
+  // Top move number, counting "match" holds as two (they show two move numbers
+  // on the wall) so a fall on the very last move can be logged.
+  const maxMove   = Math.max(
+    1,
+    holds.filter((h) => h.type === "move").reduce((s, h) => s + (h.match ? 2 : 1), 0),
+  )
+  // RPE is only worth asking on the first and final attempts of the sequence.
+  const askRpe    = attemptsDone === 0 || attemptsDone + 1 >= targetAttempts
 
   useEffect(() => {
     if ((phase === "rest1" || phase === "rest2") && restTimeRemaining === 0) {
@@ -387,9 +394,9 @@ export function SequenceBlock({
             <View />
             <Pressable
               style={[styles.rest1NextBtn, !outcome && styles.rest1NextBtnDisabled]}
-              onPress={() => outcome && setRest1Step("rpe")}
+              onPress={() => { if (!outcome) return; askRpe ? setRest1Step("rpe") : handleSaveAttempt() }}
             >
-              <Text style={[styles.rest1NextBtnText, !outcome && styles.rest1NextBtnTextDisabled]}>Next</Text>
+              <Text style={[styles.rest1NextBtnText, !outcome && styles.rest1NextBtnTextDisabled]}>{askRpe ? "Next" : "Save"}</Text>
             </Pressable>
           </View>
         </View>
