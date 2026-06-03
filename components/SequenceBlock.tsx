@@ -7,7 +7,7 @@ import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
@@ -15,6 +15,7 @@ import {
   parseVariations,
   variationHolds,
   availableVariations,
+  stepVariation,
   VARIATION_LABEL,
   type RouteVariations,
   type VariationKey,
@@ -75,9 +76,38 @@ export function SequenceBlock({
   const holds: PlacedHold[] = variationHolds(variations, activeVariation)
   const availableVars = availableVariations(variations)
 
+  // The athlete only sees / can change variations AFTER the first attempt's
+  // initial selection (calibration). On resume (attempts already logged), the
+  // selection was already made.
+  const [calibrated, setCalibrated] = useState<boolean>(() => attemptsDone > 0)
+  const [varMenuOpen, setVarMenuOpen] = useState(false)
+
   const [routeName, setRouteName] = useState<string>(block.routeName ?? "")
   const [refreshing, setRefreshing] = useState(false)
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
+
+  // Resume: restore the variation the athlete was on from the last attempt.
+  useEffect(() => {
+    if (attemptsDone === 0) return
+    const v = [...attempts].reverse().find((a) => a.variation)?.variation as VariationKey | undefined
+    if (v) setActiveVariation(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Change the variation later — requires confirmation since it affects the
+  // rest of the sets.
+  function requestChangeVariation(key: VariationKey) {
+    setVarMenuOpen(false)
+    if (key === activeVariation) return
+    Alert.alert(
+      "Change variation?",
+      "Are you sure you want to change your selected variation? This will affect all remaining sets.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Change", style: "destructive", onPress: () => setActiveVariation(key) },
+      ],
+    )
+  }
 
   async function applyRouteRow(row: Awaited<ReturnType<typeof getSprayRoute>>) {
     setVariations(parseVariations(row))
@@ -148,7 +178,17 @@ export function SequenceBlock({
     // After the very first attempt, calibrate difficulty — but only when there
     // are multiple variations AND more attempts to apply it to.
     const showCalibrate = isFirst && availableVars.length > 1 && targetAttempts > 1
+    if (!showCalibrate) setCalibrated(true)
     setPhase(showCalibrate ? "calibrate" : "rest2")
+  }
+
+  // Initial selection after the first attempt, made blind (no preview of the
+  // other variations): too hard → easier, too easy → harder, felt right → keep.
+  function calibrate(feel: "hard" | "right" | "easy") {
+    if (feel === "hard") setActiveVariation((v) => stepVariation(variations, v, -1))
+    else if (feel === "easy") setActiveVariation((v) => stepVariation(variations, v, +1))
+    setCalibrated(true)
+    setPhase("rest2")
   }
 
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
@@ -241,19 +281,29 @@ export function SequenceBlock({
             </Pressable>
           )}
         </View>
-        {availableVars.length > 1 && (
-          <View style={styles.varSwitchRow}>
-            {availableVars.map((k) => (
-              <Pressable
-                key={k}
-                style={[styles.varSwitchChip, activeVariation === k && styles.varSwitchChipActive]}
-                onPress={() => setActiveVariation(k)}
-              >
-                <Text style={[styles.varSwitchText, activeVariation === k && styles.varSwitchTextActive]}>
-                  {VARIATION_LABEL[k]}
-                </Text>
-              </Pressable>
-            ))}
+        {/* Variation dropdown — only after the initial selection is made. */}
+        {calibrated && availableVars.length > 1 && (
+          <View style={styles.varDropdownWrap}>
+            <Pressable style={styles.varPill} onPress={() => setVarMenuOpen((o) => !o)}>
+              <Text style={styles.varPillText}>Variation: {VARIATION_LABEL[activeVariation]}</Text>
+              <Text style={styles.varPillCaret}>{varMenuOpen ? "▴" : "▾"}</Text>
+            </Pressable>
+            {varMenuOpen && (
+              <View style={styles.varMenu}>
+                {availableVars.map((k) => (
+                  <Pressable
+                    key={k}
+                    style={[styles.varMenuItem, activeVariation === k && styles.varMenuItemActive]}
+                    onPress={() => requestChangeVariation(k)}
+                  >
+                    <Text style={[styles.varMenuItemText, activeVariation === k && styles.varMenuItemTextActive]}>
+                      {VARIATION_LABEL[k]}
+                    </Text>
+                    {activeVariation === k && <Text style={styles.varMenuCheck}>✓</Text>}
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
         )}
         <View style={styles.activeControls}>
@@ -283,34 +333,38 @@ export function SequenceBlock({
     )
   }
 
-  // ── 3b. Calibrate — after the first attempt, preview and pick the variation ───
+  // ── 3b. Calibrate — initial selection after the first attempt (made blind) ────
 
   if (phase === "calibrate") {
+    const canEasier = stepVariation(variations, activeVariation, -1) !== activeVariation
+    const canHarder = stepVariation(variations, activeVariation, +1) !== activeVariation
     return (
       <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
-        <View style={styles.calibrateHeader}>
-          <Text style={styles.calibrateTitle}>Pick your variation</Text>
-          <Text style={styles.calibrateSub}>Preview each one — you can change it anytime.</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} interactive={false} />
-        </View>
-        <View style={styles.varSwitchRow}>
-          {availableVars.map((k) => (
-            <Pressable
-              key={k}
-              style={[styles.varSwitchChip, activeVariation === k && styles.varSwitchChipActive]}
-              onPress={() => setActiveVariation(k)}
-            >
-              <Text style={[styles.varSwitchText, activeVariation === k && styles.varSwitchTextActive]}>
-                {VARIATION_LABEL[k]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.calibrateFooter}>
-          <Pressable style={styles.calibrateContinue} onPress={() => setPhase("rest2")}>
-            <Text style={styles.calibrateContinueText}>Continue with {VARIATION_LABEL[activeVariation]}</Text>
+        <View style={styles.calibrateWrap}>
+          <Text style={styles.calibrateTitle}>How did that feel?</Text>
+          <Text style={styles.calibrateSub}>This sets your variation for the rest of the sets.</Text>
+
+          <Pressable
+            style={[styles.calibrateBtn, !canEasier && styles.calibrateBtnDisabled]}
+            onPress={() => calibrate("hard")}
+            disabled={!canEasier}
+          >
+            <Text style={styles.calibrateBtnText}>Too hard</Text>
+            <Text style={styles.calibrateBtnSub}>{canEasier ? "→ easier variation" : "already easiest"}</Text>
+          </Pressable>
+
+          <Pressable style={styles.calibrateBtn} onPress={() => calibrate("right")}>
+            <Text style={styles.calibrateBtnText}>Felt right</Text>
+            <Text style={styles.calibrateBtnSub}>→ keep this one</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.calibrateBtn, !canHarder && styles.calibrateBtnDisabled]}
+            onPress={() => calibrate("easy")}
+            disabled={!canHarder}
+          >
+            <Text style={styles.calibrateBtnText}>Too easy</Text>
+            <Text style={styles.calibrateBtnSub}>{canHarder ? "→ harder variation" : "already hardest"}</Text>
           </Pressable>
         </View>
       </View>
@@ -592,30 +646,42 @@ const styles = StyleSheet.create({
   },
   noRecordBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
-  // Variation switcher (active phase)
-  varSwitchRow: {
-    flexDirection: "row", gap: 8, justifyContent: "center",
-    backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 8,
+  // Variation dropdown (active phase, after the initial selection)
+  varDropdownWrap: {
+    backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 8, alignItems: "center",
   },
-  varSwitchChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
+  varPill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
     backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
   },
-  varSwitchChipActive: { backgroundColor: C.green, borderColor: C.green },
-  varSwitchText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
-  varSwitchTextActive: { color: C.bg },
+  varPillText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  varPillCaret: { fontSize: 12, color: C.textSecondary },
+  varMenu: {
+    marginTop: 6, backgroundColor: C.surface, borderRadius: 14,
+    borderWidth: 1, borderColor: C.border, overflow: "hidden", minWidth: 200,
+  },
+  varMenuItem: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  varMenuItemActive: { backgroundColor: C.surfaceHigh },
+  varMenuItemText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  varMenuItemTextActive: { color: C.textPrimary, fontWeight: "700" },
+  varMenuCheck: { fontSize: 14, color: C.green, fontWeight: "800" },
 
-  // Calibration screen
-  calibrateHeader: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4, gap: 4 },
-  calibrateTitle: { fontSize: 22, fontWeight: "800", color: C.textPrimary },
-  calibrateSub: { fontSize: 13, color: C.textSecondary },
-  calibrateFooter: {
-    backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 36,
+  // Calibration screen (blind selection)
+  calibrateWrap: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
+  calibrateTitle: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
+  calibrateSub: { fontSize: 14, color: C.textSecondary, textAlign: "center", marginBottom: 12 },
+  calibrateBtn: {
+    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
+    borderWidth: 1, borderColor: C.border, alignItems: "center", gap: 2,
   },
-  calibrateContinue: {
-    backgroundColor: C.green, borderRadius: 24, paddingVertical: 14, alignItems: "center",
-  },
-  calibrateContinueText: { color: C.bg, fontSize: 16, fontWeight: "800" },
+  calibrateBtnDisabled: { opacity: 0.4 },
+  calibrateBtnText: { fontSize: 17, fontWeight: "800", color: C.textPrimary },
+  calibrateBtnSub: { fontSize: 13, color: C.textSecondary },
 
   // ── Rest 1
   pillTimer: {

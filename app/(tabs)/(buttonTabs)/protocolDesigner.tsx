@@ -1725,7 +1725,7 @@ const styles = StyleSheet.create({
   aiInput: {
     borderWidth: 1, borderColor: C.border, borderRadius: 12,
     padding: 12, fontSize: 15, color: C.textPrimary, backgroundColor: C.bg,
-    minHeight: 110, textAlignVertical: "top",
+    minHeight: 110, maxHeight: 180, textAlignVertical: "top",
   },
   aiActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 },
   aiCancel: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 12, backgroundColor: C.surfaceHigh },
