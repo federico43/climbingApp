@@ -13,6 +13,7 @@ import {
   uploadPhoto,
 } from "@/services/BoulderGraphService"
 import { groupByDate } from "@/utils/dateGroups"
+import { ROUTE_TYPE_LABEL } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
 import * as ImagePicker from "expo-image-picker"
 import { useFocusEffect } from "@react-navigation/native"
@@ -275,6 +276,9 @@ export default function SprayWallScreen() {
                               routeId: route.$id,
                               routeName: route.name,
                               routeHolds: route.holds,
+                              routeVariations: route.variations ?? "",
+                              routeLevel: route.level != null ? String(route.level) : "",
+                              routeType: route.type ?? "",
                               wallId: route.wallId ?? "",
                               wallImageUri: wallsById.get(route.wallId ?? "")?.imageUri ?? "",
                             },
@@ -291,7 +295,11 @@ export default function SprayWallScreen() {
                       <View style={styles.cardInfo}>
                         <Text style={styles.cardName} numberOfLines={1}>{route.name}</Text>
                         <Text style={styles.cardSub}>
-                          {holds.length} hold{holds.length !== 1 ? "s" : ""}
+                          {[
+                            route.level != null ? `Lvl ${route.level}` : null,
+                            route.type ? (ROUTE_TYPE_LABEL[route.type] ?? route.type) : null,
+                            `${holds.length} hold${holds.length !== 1 ? "s" : ""}`,
+                          ].filter(Boolean).join(" · ")}
                         </Text>
                       </View>
                       <View style={styles.cardActions}>

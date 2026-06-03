@@ -1,6 +1,15 @@
 import { C } from "@/utils/theme"
 import { getDisplayRadius, pixelsToFractionRadius } from "@/utils/holdRadius"
 import { useImageSize } from "@/utils/useImageSize"
+import {
+  VARIATION_KEYS,
+  VARIATION_LABEL,
+  ROUTE_TYPES,
+  ROUTE_TYPE_LABEL,
+  clampLevel,
+  type VariationKey,
+  type RouteVariations,
+} from "@/utils/sequenceVariations"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
   useAnimatedStyle,
@@ -115,21 +124,31 @@ interface Props {
   imageSource: any
   initialHolds?: PlacedHold[]
   initialName?: string
+  initialVariations?: RouteVariations
+  initialLevel?: number
+  initialType?: string
   saving?: boolean
   onBack?: () => void
-  onSave?: (name: string, holds: PlacedHold[]) => void
+  onSave?: (name: string, data: { variations: RouteVariations; level: number; type: string }) => void
 }
 
-export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", saving = false, onBack, onSave }: Props) {
+export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, onBack, onSave }: Props) {
   const insets = useSafeAreaInsets()
+  // The three variations of this route; `holds` always mirrors the active one.
+  const initialVars: RouteVariations = initialVariations ?? { original: initialHolds }
+  const [variations, setVariations] = useState<RouteVariations>(initialVars)
+  const [activeVariation, setActiveVariation] = useState<VariationKey>("original")
+  const [routeLevel, setRouteLevel] = useState<number>(clampLevel(initialLevel ?? 4))
+  const [routeType, setRouteType] = useState<string>(initialType ?? "base")
+
   const [containerW, setContainerW] = useState(0)
   const [containerH, setContainerH] = useState(0)
-  const [holds, setHolds] = useState<PlacedHold[]>(initialHolds)
+  const [holds, setHolds] = useState<PlacedHold[]>(initialVars.original ?? [])
   const [activeType, setActiveType] = useState<HoldType>("move")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [routeName, setRouteName] = useState(initialName)
   const [ghostHold, setGhostHold] = useState<{ x: number; y: number; radius: number } | null>(null)
-  const moveCount    = useRef(initialHolds.filter(h => h.type === "move").length)
+  const moveCount    = useRef((initialVars.original ?? []).filter(h => h.type === "move").length)
   const isDragging   = useRef(false)
   const isDrawing    = useRef(false)
   const dragStart    = useRef({ x: 0, y: 0 })
@@ -166,7 +185,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   const pinchStartTy    = useSharedValue(0)
 
   // ── Undo / Redo ────────────────────────────────────────────────────────────
-  const holdsHistory = useRef<PlacedHold[][]>([initialHolds])
+  const holdsHistory = useRef<PlacedHold[][]>([initialVars.original ?? []])
   const historyIdx   = useRef(0)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -198,6 +217,29 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
     setSelectedId(null)
     setCanUndo(true)
     setCanRedo(historyIdx.current < holdsHistory.current.length - 1)
+  }
+
+  // Switch which variation we're editing. Stash the current holds into the
+  // active slot, load the target slot, and reset undo history to that slot.
+  function switchVariation(key: VariationKey) {
+    if (key === activeVariation) return
+    const nextHolds = (variations[key] ?? []) as PlacedHold[]
+    setVariations((prev) => ({ ...prev, [activeVariation]: holds }))
+    setActiveVariation(key)
+    setHolds(nextHolds)
+    holdsHistory.current = [nextHolds]
+    historyIdx.current = 0
+    setCanUndo(false)
+    setCanRedo(false)
+    moveCount.current = nextHolds.filter((h) => h.type === "move").length
+    setSelectedId(null)
+  }
+
+  function handleSave() {
+    if (saving) return
+    const finalVariations: RouteVariations = { ...variations, [activeVariation]: holds }
+    if (!finalVariations.original) finalVariations.original = []
+    onSave?.(routeName, { variations: finalVariations, level: routeLevel, type: routeType })
   }
 
   // Convert container-space point to image-space (undoing current transform)
@@ -551,12 +593,59 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
 
         {/* Right: save */}
         <View style={[styles.topBarRight]}>
-          <Pressable onPress={() => !saving && onSave?.(routeName, holds)}
+          <Pressable onPress={handleSave}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Text style={[styles.saveText, saving && { opacity: 0.4 }]}>
               {saving ? "Saving…" : "Save"}
             </Text>
           </Pressable>
+        </View>
+      </View>
+
+      {/* Meta bar — variations / level / type */}
+      <View style={styles.metaBar}>
+        <View style={styles.varTabs}>
+          {VARIATION_KEYS.map((k) => {
+            const isActive = activeVariation === k
+            const hasHolds = isActive ? holds.length > 0 : (variations[k]?.length ?? 0) > 0
+            return (
+              <Pressable
+                key={k}
+                style={[styles.varTab, isActive && styles.varTabActive]}
+                onPress={() => switchVariation(k)}
+              >
+                <Text style={[styles.varTabText, isActive && styles.varTabTextActive]}>
+                  {VARIATION_LABEL[k]}
+                </Text>
+                {k !== "original" && hasHolds && <View style={styles.varDot} />}
+              </Pressable>
+            )
+          })}
+        </View>
+        <View style={styles.metaRow}>
+          <View style={styles.levelCtrl}>
+            <Text style={styles.metaLabel}>Lvl</Text>
+            <Pressable style={styles.stepBtn} onPress={() => setRouteLevel((l) => clampLevel(l - 1))}>
+              <Text style={styles.stepTxt}>−</Text>
+            </Pressable>
+            <Text style={styles.levelVal}>{routeLevel}</Text>
+            <Pressable style={styles.stepBtn} onPress={() => setRouteLevel((l) => clampLevel(l + 1))}>
+              <Text style={styles.stepTxt}>+</Text>
+            </Pressable>
+          </View>
+          <View style={styles.typeCtrl}>
+            {ROUTE_TYPES.map((t) => (
+              <Pressable
+                key={t}
+                style={[styles.typePill, routeType === t && styles.typePillActive]}
+                onPress={() => setRouteType(t)}
+              >
+                <Text style={[styles.typePillTxt, routeType === t && styles.typePillTxtActive]}>
+                  {ROUTE_TYPE_LABEL[t]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
 
@@ -768,6 +857,37 @@ const styles = StyleSheet.create({
     fontSize: 15, fontWeight: "600", color: "#fff", paddingVertical: 4,
   },
   saveText: { fontSize: 15, fontWeight: "700", color: C.green },
+
+  // Meta bar
+  metaBar: {
+    backgroundColor: "#0a0a0a", paddingHorizontal: 12, paddingBottom: 10, gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#2a2a2a",
+  },
+  varTabs: { flexDirection: "row", gap: 8 },
+  varTab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 9, borderRadius: 12, backgroundColor: "#1c1c1c",
+  },
+  varTabActive: { backgroundColor: C.green },
+  varTabText: { fontSize: 13, fontWeight: "700", color: "#888" },
+  varTabTextActive: { color: C.bg },
+  varDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  levelCtrl: { flexDirection: "row", alignItems: "center", gap: 8 },
+  metaLabel: { fontSize: 12, fontWeight: "700", color: "#666", textTransform: "uppercase" },
+  stepBtn: {
+    width: 30, height: 30, borderRadius: 8, backgroundColor: "#1c1c1c",
+    alignItems: "center", justifyContent: "center",
+  },
+  stepTxt: { fontSize: 18, fontWeight: "700", color: "#fff" },
+  levelVal: { fontSize: 16, fontWeight: "800", color: "#fff", minWidth: 20, textAlign: "center" },
+  typeCtrl: { flexDirection: "row", gap: 6 },
+  typePill: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: "#1c1c1c",
+  },
+  typePillActive: { backgroundColor: C.greenDeep, borderWidth: 1, borderColor: C.green },
+  typePillTxt: { fontSize: 12, fontWeight: "600", color: "#888" },
+  typePillTxtActive: { color: C.green },
 
   imageContainer: { flex: 1, overflow: "hidden" },
   darkOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.58)" },

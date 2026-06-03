@@ -1,6 +1,7 @@
-import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
+import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { saveSprayRoute, updateSprayRoute } from "@/services/BoulderGraphService"
 import { resolveNewRoute } from "@/utils/pendingRouteSelection"
+import { parseVariations, RouteVariations } from "@/utils/sequenceVariations"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useState } from "react"
 import { Alert, StyleSheet } from "react-native"
@@ -14,6 +15,9 @@ export default function SprayWallBuilderScreen() {
     routeId?: string
     routeName?: string
     routeHolds?: string
+    routeVariations?: string
+    routeLevel?: string
+    routeType?: string
     _new?: string
     from?: string
     wallId?: string
@@ -26,9 +30,12 @@ export default function SprayWallBuilderScreen() {
   const wallId = params.wallId || undefined
   const imageSource = params.wallImageUri ? { uri: params.wallImageUri } : FALLBACK_IMAGE
 
-  const initialHolds: PlacedHold[] = (() => {
-    try { return JSON.parse(params.routeHolds ?? "[]") } catch { return [] }
-  })()
+  const initialVariations: RouteVariations = parseVariations({
+    holds: params.routeHolds,
+    variations: params.routeVariations,
+  })
+  const initialLevel = params.routeLevel ? Number(params.routeLevel) : undefined
+  const initialType = params.routeType || undefined
 
   // This lives in a Tabs navigator, where router.back() jumps to the first tab
   // (Home) rather than the previous screen — so we navigate to the originating
@@ -49,17 +56,23 @@ export default function SprayWallBuilderScreen() {
     returnToOrigin()
   }
 
-  async function handleSave(name: string, holds: PlacedHold[]) {
+  async function handleSave(
+    name: string,
+    data: { variations: RouteVariations; level: number; type: string },
+  ) {
     if (!name.trim()) {
       Alert.alert("Name required", "Give the route a name before saving.")
       return
     }
+    // The legacy `holds` field mirrors the original variation.
+    const holds = data.variations.original ?? []
+    const extras = { level: data.level, type: data.type, variations: data.variations }
     setSaving(true)
     try {
       if (isEditing) {
-        await updateSprayRoute(params.routeId!, name.trim(), holds)
+        await updateSprayRoute(params.routeId!, name.trim(), holds, extras)
       } else {
-        const created = await saveSprayRoute(name.trim(), holds, wallId)
+        const created = await saveSprayRoute(name.trim(), holds, wallId, extras)
         // Hand the new route back to the picker so it auto-selects it.
         if (fromPicker) resolveNewRoute(created)
       }
@@ -77,7 +90,9 @@ export default function SprayWallBuilderScreen() {
       <SprayWallBuilder
         key={params.routeId ?? params._new ?? "new"}
         imageSource={imageSource}
-        initialHolds={initialHolds}
+        initialVariations={initialVariations}
+        initialLevel={initialLevel}
+        initialType={initialType}
         initialName={params.routeName ?? ""}
         onBack={navigateBack}
         onSave={handleSave}
