@@ -1390,7 +1390,7 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
   // Build a new route on the spray-wall screen, then come back. The builder
   // publishes its result through the route bus: a saved route auto-selects
   // itself; backing out reopens the picker so an existing route can be chosen.
-  function handleCreateNew() {
+  function handleCreateNew(wall?: { id: string; imageUri?: string }) {
     setShowRoutePicker(false)
     awaitNewRoute((route) => {
       if (route) selectRoute(route)
@@ -1398,7 +1398,11 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
     })
     router.push({
       pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
-      params: { _new: Date.now().toString(), from: "protocolPicker" },
+      params: {
+        _new: Date.now().toString(),
+        from: "protocolPicker",
+        ...(wall ? { wallId: wall.id, wallImageUri: wall.imageUri ?? "" } : {}),
+      },
     })
   }
 
@@ -1442,11 +1446,20 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
 function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   onSelect: (route: SprayRouteRow) => void
   onClose: () => void
-  onCreateNew: () => void
+  onCreateNew: (wall?: { id: string; imageUri?: string }) => void
 }) {
   const [routes, setRoutes] = useState<SprayRouteRow[]>([])
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [wallPickerVisible, setWallPickerVisible] = useState(false)
+
+  // A new route must live on a wall: use the only wall, prompt to choose when
+  // there are several, or proceed wall-less if none exist yet.
+  function startCreateNew() {
+    if (walls.length === 0) { onCreateNew(); return }
+    if (walls.length === 1) { onCreateNew({ id: walls[0].$id, imageUri: walls[0].imageUri }); return }
+    setWallPickerVisible(true)
+  }
 
   useEffect(() => {
     Promise.all([getSprayRoutes(), getSprayWalls()])
@@ -1480,7 +1493,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
         <View style={styles.iconBackBtn} />
       </View>
 
-      <Pressable style={styles.createNewRow} onPress={onCreateNew}>
+      <Pressable style={styles.createNewRow} onPress={startCreateNew}>
         <View style={styles.createNewIconWrap}>
           <Ionicons name="add" size={20} color={C.green} />
         </View>
@@ -1524,6 +1537,28 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
           })}
         </ScrollView>
       )}
+
+      {/* Wall chooser — a new route must live on a wall */}
+      <Modal visible={wallPickerVisible} transparent animationType="fade" onRequestClose={() => setWallPickerVisible(false)}>
+        <Pressable style={styles.aiOverlay} onPress={() => setWallPickerVisible(false)}>
+          <Pressable style={styles.aiCard} onPress={() => {}}>
+            <Text style={styles.aiTitle}>Add route to which wall?</Text>
+            <Text style={styles.aiSub}>A route lives on a wall — pick one.</Text>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {walls.map((wall) => (
+                <Pressable
+                  key={wall.$id}
+                  style={styles.wallPickRow}
+                  onPress={() => { setWallPickerVisible(false); onCreateNew({ id: wall.$id, imageUri: wall.imageUri }) }}
+                >
+                  <Text style={styles.wallPickName} numberOfLines={1}>{wall.name}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1700,6 +1735,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, minWidth: 110, alignItems: "center", justifyContent: "center",
   },
   aiGoText: { fontSize: 14, fontWeight: "700", color: C.bg },
+  wallPickRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 14, paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  wallPickName: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flex: 1 },
 
   // Assignment-set editor
   unresolvedBanner: {
