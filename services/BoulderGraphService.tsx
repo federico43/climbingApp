@@ -467,8 +467,34 @@ export interface SprayRouteRow {
   $id: string
   $createdAt: string
   name: string
-  holds: string      // JSON stringified PlacedHold[]
+  holds: string      // JSON stringified PlacedHold[] — mirrors the original variation
   wallId?: string    // optional — routes without wallId show under "All"
+  level?: number     // absolute difficulty 1–8
+  type?: string      // route type: "base" | "max_bouldering" | …
+  variations?: string // JSON { easy?, original, hard? } of PlacedHold[]
+}
+
+export interface SprayRouteExtras {
+  level?: number
+  type?: string
+  variations?: { easy?: any[]; original: any[]; hard?: any[] }
+}
+
+function buildRouteData(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras) {
+  const data: any = { name, holds: JSON.stringify(holds) }
+  if (wallId) data.wallId = wallId
+  if (extras?.level != null) data.level = extras.level
+  if (extras?.type) data.type = extras.type
+  if (extras?.variations) data.variations = JSON.stringify(extras.variations)
+  return data
+}
+
+// The route table may not have the level/type/variations columns yet — retry
+// with just the core fields so the route still saves while the schema catches up.
+function coreRouteData(data: any) {
+  const core: any = { name: data.name, holds: data.holds }
+  if (data.wallId) core.wallId = data.wallId
+  return core
 }
 
 export async function getSprayRoute(id: string): Promise<SprayRouteRow> {
@@ -491,26 +517,34 @@ export async function getSprayRoutes(wallId?: string): Promise<SprayRouteRow[]> 
   return response.rows as unknown as SprayRouteRow[]
 }
 
-export async function saveSprayRoute(name: string, holds: any[], wallId?: string): Promise<SprayRouteRow> {
-  const data: any = { name, holds: JSON.stringify(holds) }
-  if (wallId) data.wallId = wallId
-  const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID,
-    tableId: SPRAY_ROUTES_TABLE,
-    rowId: ID.unique(),
-    data,
-  })
-  return response as unknown as SprayRouteRow
+export async function saveSprayRoute(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras): Promise<SprayRouteRow> {
+  const data = buildRouteData(name, holds, wallId, extras)
+  try {
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data,
+    })
+    return response as unknown as SprayRouteRow
+  } catch (e) {
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data: coreRouteData(data),
+    })
+    return response as unknown as SprayRouteRow
+  }
 }
 
-export async function updateSprayRoute(id: string, name: string, holds: any[]): Promise<SprayRouteRow> {
-  const response = await tablesDB.updateRow({
-    databaseId: DATABASE_ID,
-    tableId: SPRAY_ROUTES_TABLE,
-    rowId: id,
-    data: { name, holds: JSON.stringify(holds) },
-  })
-  return response as unknown as SprayRouteRow
+export async function updateSprayRoute(id: string, name: string, holds: any[], extras?: SprayRouteExtras): Promise<SprayRouteRow> {
+  const data = buildRouteData(name, holds, undefined, extras)
+  try {
+    const response = await tablesDB.updateRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data,
+    })
+    return response as unknown as SprayRouteRow
+  } catch (e) {
+    const response = await tablesDB.updateRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data: coreRouteData(data),
+    })
+    return response as unknown as SprayRouteRow
+  }
 }
 
 export async function deleteSprayRoute(id: string): Promise<void> {
