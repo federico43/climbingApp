@@ -1,6 +1,6 @@
 import { saveSession } from "@/services/BoulderGraphService"
 import { serializeSession } from "@/utils/workoutSession"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,9 +35,10 @@ export interface Attempt {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useWorkout(protocolInput: Block[]) {
-  // Snapshot the protocol on first render. Callers can use the `key` pattern
-  // to remount the hook when switching workouts.
-  const protocol = useMemo(() => protocolInput, [])
+  // Use the protocol reactively: the provider holds it as state and sets it via
+  // openWorkout/resume, so derived values (currentBlock, totalBlocks) always
+  // reflect the active protocol — and a restored protocol reaches the hook.
+  const protocol = protocolInput
 
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0)
   const [attempts, setAttempts] = useState<Attempt[]>([])
@@ -140,11 +141,35 @@ export function useWorkout(protocolInput: Block[]) {
   }, [currentBlockIndex, protocol.length])
 
   const startWorkout = useCallback(() => {
+    // Don't reset a workout that's already running — this guards against the
+    // host's auto-start firing over a freshly restored (resumed) session.
+    if (status === "running") return
     setCurrentBlockIndex(0)
     setAttempts([])
     setBlockDurations({})
     setBlockStartTime(Date.now())
     setSkippedBlocks(new Set())
+    setStatus("running")
+  }, [status])
+
+  // Re-enter a workout that was interrupted (app closed/killed), restoring the
+  // logged progress. The current block's elapsed clock restarts from now so the
+  // time spent while the app was gone isn't counted.
+  const restoreWorkout = useCallback((saved: {
+    currentBlockIndex: number
+    attempts: Attempt[]
+    blockDurations: Record<number, number>
+    skippedBlocks: number[]
+  }) => {
+    if (timerRef.current !== null) clearInterval(timerRef.current)
+    if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
+    setCurrentBlockIndex(saved.currentBlockIndex ?? 0)
+    setAttempts(saved.attempts ?? [])
+    setBlockDurations(saved.blockDurations ?? {})
+    setSkippedBlocks(new Set(saved.skippedBlocks ?? []))
+    setBlockStartTime(Date.now())
+    setTimeRemaining(null)
+    setRestTimeRemaining(null)
     setStatus("running")
   }, [])
 
@@ -234,6 +259,7 @@ export function useWorkout(protocolInput: Block[]) {
     logAttempt,
     undoLastAttempt,
     startWorkout,
+    restoreWorkout,
     startRestTimer,
     resetWorkout,
     blockDurations,

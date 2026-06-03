@@ -60,28 +60,51 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
   // ── Crash/close recovery ────────────────────────────────────────────────────
 
-  // On launch, recover an interrupted workout: if a snapshot survived (the app
-  // was closed by the user or killed by the OS mid-session), save the logged
-  // work as a session so it isn't lost, then clear the snapshot.
+  // On launch, recover an interrupted workout (app closed by the user or killed
+  // by the OS mid-session):
+  //   • recent → RESUME it (restored, minimized — the mini-bar reappears),
+  //   • too old → save the logged work as a session so it isn't lost,
+  //   • empty  → just drop it.
   useEffect(() => {
     (async () => {
       const saved = await loadPersistedWorkout()
       if (!saved) return
-      try {
-        if (Array.isArray(saved.attempts) && saved.attempts.length > 0) {
-          await saveSession(
-            serializeSession(
-              saved.protocol ?? [],
-              saved.attempts,
-              saved.blockDurations ?? {},
-              new Set(saved.skippedBlocks ?? []),
-            ),
-          )
-        }
-      } finally {
+      const hasWork = Array.isArray(saved.attempts) && saved.attempts.length > 0
+      const ageMs = Date.now() - (saved.savedAt ?? 0)
+      const STALE_MS = 12 * 60 * 60 * 1000 // 12h: don't resume an ancient session
+
+      if (!hasWork) {
         await clearPersistedWorkout()
+        return
       }
+      if (ageMs > STALE_MS) {
+        await saveSession(
+          serializeSession(
+            saved.protocol ?? [],
+            saved.attempts,
+            saved.blockDurations ?? {},
+            new Set(saved.skippedBlocks ?? []),
+          ),
+        )
+        await clearPersistedWorkout()
+        return
+      }
+
+      // Resume: restore the live state and reopen minimized so it's unobtrusive.
+      setProtocol(saved.protocol ?? [])
+      setProtocolName(saved.protocolName ?? "")
+      workout.restoreWorkout({
+        currentBlockIndex: saved.currentBlockIndex ?? 0,
+        attempts: saved.attempts,
+        blockDurations: saved.blockDurations ?? {},
+        skippedBlocks: saved.skippedBlocks ?? [],
+      })
+      setWorkoutActive(true)
+      setModalVisible(true)
+      setWorkoutMinimized(true)
     })()
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Continuously snapshot the live workout while it runs, so it survives a
