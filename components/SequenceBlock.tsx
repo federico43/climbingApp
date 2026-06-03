@@ -15,7 +15,6 @@ import {
   parseVariations,
   variationHolds,
   availableVariations,
-  stepVariation,
   VARIATION_LABEL,
   type RouteVariations,
   type VariationKey,
@@ -108,14 +107,14 @@ export function SequenceBlock({
   }, [block.routeId])
 
   const moveCount = holds.filter((h) => h.type === "move").length
-  // Top move number, counting "match" holds as two (they show two move numbers
-  // on the wall) so a fall on the very last move can be logged.
-  const maxMove   = Math.max(
-    1,
-    holds.filter((h) => h.type === "move").reduce((s, h) => s + (h.match ? 2 : 1), 0),
-  )
-  // RPE is only worth asking on the first and final attempts of the sequence.
-  const askRpe    = attemptsDone === 0 || attemptsDone + 1 >= targetAttempts
+  // Move slots, counting "match" holds as two (they show two move numbers).
+  const moveSlots = holds.filter((h) => h.type === "move").reduce((s, h) => s + (h.match ? 2 : 1), 0)
+  // The reach to the top/finish hold isn't a "move" but you can still fall on
+  // it, so add one extra step when the route has a finish hold.
+  const hasFinish = holds.some((h) => h.type === "finish")
+  const maxMove   = Math.max(1, moveSlots + (hasFinish ? 1 : 0))
+  // RPE is only asked on the second and final attempts of the sequence.
+  const askRpe    = attemptsDone === 1 || attemptsDone + 1 >= targetAttempts
 
   useEffect(() => {
     if ((phase === "rest1" || phase === "rest2") && restTimeRemaining === 0) {
@@ -146,17 +145,10 @@ export function SequenceBlock({
       variation: activeVariation,
     })
     setPendingVideoUri(null)
-    // After the very first attempt, calibrate difficulty (if there's more than
-    // one variation to move between); otherwise straight to the rest timer.
-    setPhase(isFirst && availableVars.length > 1 ? "calibrate" : "rest2")
-  }
-
-  // Calibration after the first attempt: too hard → easier, too easy → harder,
-  // felt right → keep. The chosen variation sticks for the rest of the block.
-  function calibrate(feel: "hard" | "right" | "easy") {
-    if (feel === "hard") setActiveVariation((v) => stepVariation(variations, v, -1))
-    else if (feel === "easy") setActiveVariation((v) => stepVariation(variations, v, +1))
-    setPhase("rest2")
+    // After the very first attempt, calibrate difficulty — but only when there
+    // are multiple variations AND more attempts to apply it to.
+    const showCalibrate = isFirst && availableVars.length > 1 && targetAttempts > 1
+    setPhase(showCalibrate ? "calibrate" : "rest2")
   }
 
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
@@ -291,38 +283,34 @@ export function SequenceBlock({
     )
   }
 
-  // ── 3b. Calibrate — after the first attempt, pick the right variation ─────────
+  // ── 3b. Calibrate — after the first attempt, preview and pick the variation ───
 
   if (phase === "calibrate") {
-    const canEasier = stepVariation(variations, activeVariation, -1) !== activeVariation
-    const canHarder = stepVariation(variations, activeVariation, +1) !== activeVariation
     return (
       <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
-        <View style={styles.calibrateWrap}>
-          <Text style={styles.calibrateTitle}>How did that feel?</Text>
-          <Text style={styles.calibrateSub}>We'll set your variation for the rest of the block.</Text>
-
-          <Pressable
-            style={[styles.calibrateBtn, !canEasier && styles.calibrateBtnDisabled]}
-            onPress={() => calibrate("hard")}
-            disabled={!canEasier}
-          >
-            <Text style={styles.calibrateBtnText}>Too hard</Text>
-            <Text style={styles.calibrateBtnSub}>{canEasier ? "→ easier variation" : "already easiest"}</Text>
-          </Pressable>
-
-          <Pressable style={styles.calibrateBtn} onPress={() => calibrate("right")}>
-            <Text style={styles.calibrateBtnText}>Felt right</Text>
-            <Text style={styles.calibrateBtnSub}>→ keep this one</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.calibrateBtn, !canHarder && styles.calibrateBtnDisabled]}
-            onPress={() => calibrate("easy")}
-            disabled={!canHarder}
-          >
-            <Text style={styles.calibrateBtnText}>Too easy</Text>
-            <Text style={styles.calibrateBtnSub}>{canHarder ? "→ harder variation" : "already hardest"}</Text>
+        <View style={styles.calibrateHeader}>
+          <Text style={styles.calibrateTitle}>Pick your variation</Text>
+          <Text style={styles.calibrateSub}>Preview each one — you can change it anytime.</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} interactive={false} />
+        </View>
+        <View style={styles.varSwitchRow}>
+          {availableVars.map((k) => (
+            <Pressable
+              key={k}
+              style={[styles.varSwitchChip, activeVariation === k && styles.varSwitchChipActive]}
+              onPress={() => setActiveVariation(k)}
+            >
+              <Text style={[styles.varSwitchText, activeVariation === k && styles.varSwitchTextActive]}>
+                {VARIATION_LABEL[k]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.calibrateFooter}>
+          <Pressable style={styles.calibrateContinue} onPress={() => setPhase("rest2")}>
+            <Text style={styles.calibrateContinueText}>Continue with {VARIATION_LABEL[activeVariation]}</Text>
           </Pressable>
         </View>
       </View>
@@ -376,7 +364,9 @@ export function SequenceBlock({
                     <Text style={styles.stepperBtnText}>−</Text>
                   </Pressable>
                   <View style={styles.stepperValue}>
-                    <Text style={styles.stepperValueText}>Move {highPoint}</Text>
+                    <Text style={styles.stepperValueText}>
+                      {hasFinish && highPoint === maxMove ? "Top" : `Move ${highPoint}`}
+                    </Text>
                     <Text style={styles.stepperValueSub}>of {maxMove}</Text>
                   </View>
                   <Pressable
@@ -428,6 +418,7 @@ export function SequenceBlock({
               </Pressable>
             ))}
           </View>
+          <Text style={styles.rpeNote}>Rate this set only — not the whole sequence.</Text>
 
         </ScrollView>
         <View style={styles.rest1Footer}>
@@ -615,16 +606,16 @@ const styles = StyleSheet.create({
   varSwitchTextActive: { color: C.bg },
 
   // Calibration screen
-  calibrateWrap: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
-  calibrateTitle: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
-  calibrateSub: { fontSize: 14, color: C.textSecondary, textAlign: "center", marginBottom: 12 },
-  calibrateBtn: {
-    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
-    borderWidth: 1, borderColor: C.border, alignItems: "center", gap: 2,
+  calibrateHeader: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4, gap: 4 },
+  calibrateTitle: { fontSize: 22, fontWeight: "800", color: C.textPrimary },
+  calibrateSub: { fontSize: 13, color: C.textSecondary },
+  calibrateFooter: {
+    backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 36,
   },
-  calibrateBtnDisabled: { opacity: 0.4 },
-  calibrateBtnText: { fontSize: 17, fontWeight: "800", color: C.textPrimary },
-  calibrateBtnSub: { fontSize: 13, color: C.textSecondary },
+  calibrateContinue: {
+    backgroundColor: C.green, borderRadius: 24, paddingVertical: 14, alignItems: "center",
+  },
+  calibrateContinueText: { color: C.bg, fontSize: 16, fontWeight: "800" },
 
   // ── Rest 1
   pillTimer: {
@@ -672,6 +663,7 @@ const styles = StyleSheet.create({
   rpeChipSelected: { backgroundColor: C.green, borderColor: C.green },
   rpeChipText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
   rpeChipTextSelected: { color: C.bg },
+  rpeNote: { fontSize: 12, color: C.textMuted, fontStyle: "italic" },
 
   // ── Rest 2
   rest2Container: {
