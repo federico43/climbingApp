@@ -546,6 +546,19 @@ export async function listProjects(): Promise<ProjectRow[]> {
   return response.rows as unknown as ProjectRow[]
 }
 
+export async function getProjectById(id: string): Promise<ProjectRow | null> {
+  try {
+    const row = await tablesDB.getRow({
+      databaseId: DATABASE_ID,
+      tableId: PROJECTS_TABLE,
+      rowId: id,
+    })
+    return row as unknown as ProjectRow
+  } catch {
+    return null
+  }
+}
+
 export async function createProject(input: {
   name: string
   grade: string

@@ -7,7 +7,7 @@ import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt, Block } from "@/hooks/WorkoutHook"
-import { markProjectSent, ProjectRow } from "@/services/BoulderGraphService"
+import { getProjectById, markProjectSent, ProjectRow } from "@/services/BoulderGraphService"
 import WheelPicker from "@quidone/react-native-wheel-picker"
 import React, { useEffect, useRef, useState } from "react"
 import {
@@ -398,10 +398,30 @@ function ProjectBlock({
   const isComplete =
     attemptsDone >= targetAttempts ||
     attempts.some((a) => a.success)
+  // If we reopen with attempts already logged (e.g. resuming an interrupted
+  // workout), the project was already chosen — skip past intro/projectSelect to
+  // the active phase (or review if done), and restore the project below.
   const [phase, setPhase] = useState<ProjectPhase>(() =>
-    isComplete ? "review" : "intro"
+    isComplete ? "review" : attemptsDone > 0 ? "ready" : "intro"
   )
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null)
+
+  // Restore the worked-on project from the attempts' projectId when resuming.
+  useEffect(() => {
+    if (selectedProject || attemptsDone === 0) return
+    const pid = [...attempts].reverse().find((a) => a.projectId)?.projectId
+    if (!pid) return
+    let cancelled = false
+    getProjectById(pid)
+      .then((p) => {
+        if (cancelled) return
+        if (p) setSelectedProject(p)
+        else setPhase("projectSelect") // project gone — let them re-pick
+      })
+      .catch(() => { if (!cancelled) setPhase("projectSelect") })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [pickerOpen, setPickerOpen] = useState(false)
   const notesRef = useRef("")
   const [notes, setNotes] = useState("")
