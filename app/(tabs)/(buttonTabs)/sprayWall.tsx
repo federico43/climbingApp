@@ -48,6 +48,8 @@ export default function SprayWallScreen() {
   const [nameModalVisible, setNameModalVisible] = useState(false)
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null)
   const [wallNameInput, setWallNameInput] = useState("")
+  // Wall chooser for new routes when on the "All" filter with multiple walls.
+  const [wallPickerVisible, setWallPickerVisible] = useState(false)
 
   // Walls change rarely and only from this screen — refetch when the screen
   // regains focus, NOT on every wall-filter tap.
@@ -154,6 +156,29 @@ export default function SprayWallScreen() {
         },
       },
     ])
+  }
+
+  // New route: a route must live on a wall, so require one. Use the selected
+  // wall; on "All", auto-use the only wall, otherwise prompt to pick.
+  function openBuilderForWall(wallId: string) {
+    router.push({
+      pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
+      params: {
+        _new: Date.now().toString(),
+        wallId,
+        wallImageUri: wallsById.get(wallId)?.imageUri ?? "",
+      },
+    })
+  }
+
+  function handleNewRoute() {
+    if (selectedWallId) { openBuilderForWall(selectedWallId); return }
+    if (walls.length === 0) {
+      Alert.alert("Add a wall first", "Create a wall (the + in the strip above), then add routes to it.")
+      return
+    }
+    if (walls.length === 1) { openBuilderForWall(walls[0].$id); return }
+    setWallPickerVisible(true)
   }
 
   async function handleCopyRoute(route: SprayRouteRow) {
@@ -319,19 +344,7 @@ export default function SprayWallScreen() {
         </ScrollView>
       )}
 
-      <Pressable
-        style={styles.fab}
-        onPress={() =>
-          router.push({
-            pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
-            params: {
-              _new: Date.now().toString(),
-              wallId: selectedWallId ?? "",
-              wallImageUri: wallsById.get(selectedWallId ?? "")?.imageUri ?? "",
-            },
-          })
-        }
-      >
+      <Pressable style={styles.fab} onPress={handleNewRoute}>
         <Text style={styles.fabText}>+</Text>
       </Pressable>
 
@@ -371,6 +384,38 @@ export default function SprayWallScreen() {
               </View>
             </Pressable>
           </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      {/* Wall chooser — when creating a route from "All" with multiple walls */}
+      <Modal
+        visible={wallPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWallPickerVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setWallPickerVisible(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Add route to which wall?</Text>
+            <Text style={styles.modalSub}>A route lives on a wall — pick one.</Text>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {walls.map((wall) => (
+                <Pressable
+                  key={wall.$id}
+                  style={styles.wallPickRow}
+                  onPress={() => { setWallPickerVisible(false); openBuilderForWall(wall.$id) }}
+                >
+                  <Text style={styles.wallPickName} numberOfLines={1}>{wall.name}</Text>
+                  <Text style={styles.wallPickChevron}>›</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setWallPickerVisible(false)} style={styles.modalBtn}>
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </SafeAreaView>
@@ -467,7 +512,15 @@ const styles = StyleSheet.create({
     fontSize: 15, color: C.textPrimary, backgroundColor: C.bg,
     marginBottom: 20,
   },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  wallPickRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 14, paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  wallPickName: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flex: 1 },
+  wallPickChevron: { fontSize: 20, color: C.textMuted, marginLeft: 8 },
+
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 8 },
   modalBtn: {
     paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10,
     backgroundColor: C.surfaceHigh,
