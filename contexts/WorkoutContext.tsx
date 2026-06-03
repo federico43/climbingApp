@@ -98,6 +98,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
         attempts: saved.attempts,
         blockDurations: saved.blockDurations ?? {},
         skippedBlocks: saved.skippedBlocks ?? [],
+        workoutStartTime: saved.workoutStartTime ?? null,
       })
       setWorkoutActive(true)
       setModalVisible(true)
@@ -118,6 +119,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       blockDurations: workout.blockDurations,
       skippedBlocks: Array.from(workout.skippedBlocks),
       currentBlockIndex: workout.currentBlockIndex,
+      workoutStartTime: workout.workoutStartTime,
       savedAt: Date.now(),
     })
   }, [

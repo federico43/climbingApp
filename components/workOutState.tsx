@@ -74,6 +74,7 @@ export function WorkOutState({
     attempts,
     blockDurations,
     blockStartTime,
+    workoutStartTime,
     skippedBlocks,
   } = workout
 
@@ -103,17 +104,17 @@ export function WorkOutState({
 
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
-  const workoutStartRef = useRef<number | null>(null)
   const [workoutElapsed, setWorkoutElapsed] = useState(0)
 
+  // Total time spans the real workout — workoutStartTime lives in the hook, so
+  // it's the original start even after a resume (not the resume moment).
   useEffect(() => {
-    if (status === "completed" && workoutStartRef.current !== null) {
-      setWorkoutElapsed(Math.floor((Date.now() - workoutStartRef.current) / 1000))
+    if (status === "completed" && workoutStartTime !== null) {
+      setWorkoutElapsed(Math.floor((Date.now() - workoutStartTime) / 1000))
     }
-  }, [status])
+  }, [status, workoutStartTime])
 
   function handleStartWorkout() {
-    workoutStartRef.current = Date.now()
     onWorkoutStart()
     startWorkout()
   }
@@ -121,7 +122,6 @@ export function WorkOutState({
   useEffect(() => {
     if (autoStart && !didAutoStart.current && currentBlock) {
       didAutoStart.current = true
-      workoutStartRef.current = Date.now()
       onWorkoutStart()
       startWorkout()
     }

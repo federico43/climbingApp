@@ -47,6 +47,9 @@ export function useWorkout(protocolInput: Block[]) {
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const [blockDurations, setBlockDurations] = useState<Record<number, number>>({})
   const [blockStartTime, setBlockStartTime] = useState<number | null>(null)
+  // When the whole workout started — drives the summary's total time. Persisted
+  // and restored so a resumed workout reports its real total duration.
+  const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null)
   // Indices the user chose to skip. Skipped blocks are omitted from the
   // summary and never persisted (see the save effect below).
   const [skippedBlocks, setSkippedBlocks] = useState<Set<number>>(new Set())
@@ -148,6 +151,7 @@ export function useWorkout(protocolInput: Block[]) {
     setAttempts([])
     setBlockDurations({})
     setBlockStartTime(Date.now())
+    setWorkoutStartTime(Date.now())
     setSkippedBlocks(new Set())
     setStatus("running")
   }, [status])
@@ -160,6 +164,7 @@ export function useWorkout(protocolInput: Block[]) {
     attempts: Attempt[]
     blockDurations: Record<number, number>
     skippedBlocks: number[]
+    workoutStartTime?: number | null
   }) => {
     if (timerRef.current !== null) clearInterval(timerRef.current)
     if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
@@ -168,6 +173,8 @@ export function useWorkout(protocolInput: Block[]) {
     setBlockDurations(saved.blockDurations ?? {})
     setSkippedBlocks(new Set(saved.skippedBlocks ?? []))
     setBlockStartTime(Date.now())
+    // Keep the ORIGINAL start so total time spans the real duration.
+    setWorkoutStartTime(saved.workoutStartTime ?? Date.now())
     setTimeRemaining(null)
     setRestTimeRemaining(null)
     setStatus("running")
@@ -183,6 +190,7 @@ export function useWorkout(protocolInput: Block[]) {
     setRestTimeRemaining(null)
     setBlockDurations({})
     setBlockStartTime(null)
+    setWorkoutStartTime(null)
     setSkippedBlocks(new Set())
   }, [])
 
@@ -264,6 +272,7 @@ export function useWorkout(protocolInput: Block[]) {
     resetWorkout,
     blockDurations,
     blockStartTime,
+    workoutStartTime,
     skippedBlocks,
   }
 }
