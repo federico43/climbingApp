@@ -418,10 +418,14 @@ export function SequenceBlock({
                     <Text style={styles.stepperBtnText}>−</Text>
                   </Pressable>
                   <View style={styles.stepperValue}>
-                    <Text style={styles.stepperValueText}>
-                      {hasFinish && highPoint === maxMove ? "Top" : `Move ${highPoint}`}
-                    </Text>
-                    <Text style={styles.stepperValueSub}>of {maxMove}</Text>
+                    {hasFinish && highPoint === maxMove ? (
+                      <Text style={styles.stepperValueText}>Top</Text>
+                    ) : (
+                      <>
+                        <Text style={styles.stepperValueText}>Move {highPoint}</Text>
+                        <Text style={styles.stepperValueSub}>of {maxMove}</Text>
+                      </>
+                    )}
                   </View>
                   <Pressable
                     style={styles.stepperBtn}
@@ -472,7 +476,7 @@ export function SequenceBlock({
               </Pressable>
             ))}
           </View>
-          <Text style={styles.rpeNote}>Rate this set only — not the whole sequence.</Text>
+          <Text style={styles.rpeNote}>Rate this set only — not the whole block.</Text>
 
         </ScrollView>
         <View style={styles.rest1Footer}>
@@ -553,7 +557,9 @@ export function SequenceBlock({
                   </Text>
                   {!a.success && a.highPoint != null && (
                     <Text style={styles.reviewFellAt}>
-                      at move {a.highPoint}{maxMove > 1 ? ` / ${maxMove}` : ""}
+                      {hasFinish && a.highPoint === maxMove
+                        ? "at the top"
+                        : `at move ${a.highPoint}${maxMove > 1 ? ` / ${maxMove}` : ""}`}
                     </Text>
                   )}
                 </View>
