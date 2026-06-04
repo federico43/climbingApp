@@ -451,9 +451,12 @@ function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
   )
 }
 
-// ─── Hold timer (count-up) for timed exercises ────────────────────────────────
+// ─── Timed amount control ─────────────────────────────────────────────────────
+// One control for timed exercises: the value and the hold timer are the same
+// number, so they share a single box — −/+ to adjust, Start/Stop to time the
+// hold (which fills the value). Replaces the separate timer + stepper.
 
-function HoldTimer({ onStop }: { onStop: (seconds: number) => void }) {
+function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(0)
@@ -473,12 +476,27 @@ function HoldTimer({ onStop }: { onStop: (seconds: number) => void }) {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
     const secs = Math.round((Date.now() - startRef.current) / 1000)
     setRunning(false)
-    onStop(secs)
+    onChange(secs)
   }
 
+  const display = running ? elapsed : value
   return (
-    <View style={styles.holdTimerWrap}>
-      <Text style={styles.holdTimerTime}>{elapsed}s</Text>
+    <View style={styles.timedControl}>
+      <View style={styles.stepperRow}>
+        <Pressable
+          style={styles.stepperBtn} hitSlop={6} disabled={running}
+          onPress={() => onChange(Math.max(0, value - 1))}
+        >
+          <Text style={[styles.stepperBtnText, running && { opacity: 0.3 }]}>−</Text>
+        </Pressable>
+        <Text style={styles.stepperValue}>{display}<Text style={styles.stepperSuffix}>s</Text></Text>
+        <Pressable
+          style={styles.stepperBtn} hitSlop={6} disabled={running}
+          onPress={() => onChange(value + 1)}
+        >
+          <Text style={[styles.stepperBtnText, running && { opacity: 0.3 }]}>+</Text>
+        </Pressable>
+      </View>
       <Pressable
         style={[styles.holdTimerBtn, running && styles.holdTimerBtnStop]}
         onPress={running ? stop : start}
@@ -488,6 +506,28 @@ function HoldTimer({ onStop }: { onStop: (seconds: number) => void }) {
         </Text>
       </Pressable>
     </View>
+  )
+}
+
+// Weight + RPE, hidden behind a tap by default (timed holds rarely log them).
+function ExerciseDetail({ open, onOpen, weight, setWeight, weightUnit, weightStep, rpe, setRpe, rpeLabel }: {
+  open: boolean; onOpen: () => void
+  weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
+  rpe: string; setRpe: (v: string) => void; rpeLabel?: string
+}) {
+  if (!open) {
+    return (
+      <Pressable style={styles.addDetailBtn} onPress={onOpen}>
+        <Text style={styles.addDetailText}>+ Add weight / RPE</Text>
+      </Pressable>
+    )
+  }
+  return (
+    <>
+      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
+      <Stepper value={weight} onChange={setWeight} step={weightStep} />
+      <RPEChips value={rpe} onChange={setRpe} label={rpeLabel} />
+    </>
   )
 }
 
@@ -502,9 +542,11 @@ interface RepsExerciseUIProps {
 
 function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
+  const startWeight = parseFloat(initialWeight ?? "") || 0
   const [amount, setAmount] = useState<number>(targetNumber(exercise.reps))
-  const [weight, setWeight] = useState<number>(parseFloat(initialWeight ?? "") || 0)
+  const [weight, setWeight] = useState<number>(startWeight)
   const [rpe, setRpe] = useState("")
+  const [showDetail, setShowDetail] = useState(startWeight > 0)
   const weightStep = weightUnit === "lb" ? 5 : 2.5
 
   function handleSave() {
@@ -527,15 +569,16 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExe
         <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
       </View>
 
-      {isTimed && <HoldTimer onStop={setAmount} />}
-
       <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-      <Stepper value={amount} onChange={setAmount} suffix={isTimed ? "s" : undefined} />
+      {isTimed
+        ? <TimedAmountControl value={amount} onChange={setAmount} />
+        : <Stepper value={amount} onChange={setAmount} />}
 
-      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
-      <Stepper value={weight} onChange={setWeight} step={weightStep} />
-
-      <RPEChips value={rpe} onChange={setRpe} />
+      <ExerciseDetail
+        open={showDetail} onOpen={() => setShowDetail(true)}
+        weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
+        rpe={rpe} setRpe={setRpe}
+      />
 
       <CustomButton title="Done" onPress={handleSave} />
     </View>
@@ -566,6 +609,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
   const [repsRight, setRepsRight] = useState(target)
   const [weightRight, setWeightRight] = useState(startWeight)
   const [rpeRight, setRpeRight] = useState("")
+  const [showDetail, setShowDetail] = useState(startWeight > 0)
 
   function handleLeftDone() {
     // Carry the left side's entries over as the right side's starting point.
@@ -611,24 +655,23 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
         </View>
       </View>
 
-      {isTimed && <HoldTimer key={side} onStop={setAmount} />}
-
       <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-      <Stepper value={amount} onChange={setAmount} suffix={isTimed ? "s" : undefined} />
+      {isTimed
+        ? <TimedAmountControl key={side} value={amount} onChange={setAmount} />
+        : <Stepper value={amount} onChange={setAmount} />}
 
-      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
-      <Stepper value={weight} onChange={setWeight} step={weightStep} />
+      <ExerciseDetail
+        open={showDetail} onOpen={() => setShowDetail(true)}
+        weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
+        rpe={side === "left" ? rpeLeft : rpeRight}
+        setRpe={side === "left" ? setRpeLeft : setRpeRight}
+        rpeLabel={side === "left" ? "RPE — Left" : "RPE — Right"}
+      />
 
       {side === "left" ? (
-        <>
-          <RPEChips value={rpeLeft} onChange={setRpeLeft} label="RPE — Left" />
-          <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
-        </>
+        <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
       ) : (
-        <>
-          <RPEChips value={rpeRight} onChange={setRpeRight} label="RPE — Right" />
-          <CustomButton title="Done" onPress={handleRightDone} />
-        </>
+        <CustomButton title="Done" onPress={handleRightDone} />
       )}
     </View>
   )
@@ -892,18 +935,21 @@ const styles = StyleSheet.create({
   stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
-  // Hold timer
-  holdTimerWrap: {
-    width: "100%", alignItems: "center", gap: 10,
-    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
-  },
-  holdTimerTime: { fontSize: 44, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  // Timed amount control (stepper + hold button in one box)
+  timedControl: { width: "100%", gap: 10, alignItems: "center" },
   holdTimerBtn: {
-    paddingHorizontal: 36, paddingVertical: 12, borderRadius: 24,
+    paddingHorizontal: 36, paddingVertical: 10, borderRadius: 24,
     borderWidth: 1.5, borderColor: C.green,
   },
   holdTimerBtnStop: { backgroundColor: C.red, borderColor: C.red },
-  holdTimerBtnText: { fontSize: 16, fontWeight: "800", color: C.green },
+  holdTimerBtnText: { fontSize: 15, fontWeight: "800", color: C.green },
+
+  // Collapsed weight/RPE toggle
+  addDetailBtn: {
+    width: "100%", paddingVertical: 12, borderRadius: 12, alignItems: "center",
+    borderWidth: 1, borderColor: C.border, borderStyle: "dashed",
+  },
+  addDetailText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
   rpeLabel: { fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   rpeRow: { flexDirection: "row", gap: 8, width: "100%", marginBottom: 8 },
