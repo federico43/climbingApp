@@ -25,7 +25,7 @@ import {
   TextInput,
   View,
 } from "react-native"
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Boulder grades. `color` is the swatch shown in pickers/pills; `on` is the
 // foreground color to use when a grade is the selected (filled) state.
@@ -152,7 +152,9 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <SafeAreaProvider>
+      {/* initialMetrics avoids the async safe-area measurement that briefly
+          shifts the layout on iOS (which made the inputs untappable at first). */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ProjectPickerContent
           mode={mode}
           setMode={setMode}
