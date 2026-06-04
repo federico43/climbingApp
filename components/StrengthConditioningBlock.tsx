@@ -641,14 +641,17 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
   return (
     <View style={styles.exerciseCard}>
       <View style={styles.targetRepsBox}>
-        <Text style={styles.exerciseName}>{exercise.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <View style={styles.sideChip}>
+            <Text style={styles.sideChipText}>{side === "left" ? "LEFT" : "RIGHT"}</Text>
+          </View>
+        </View>
         <View style={styles.targetRow}>
           <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
           <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
         </View>
       </View>
-
-      <Text style={styles.sideLabel}>{side === "left" ? "Left side" : "Right side"}</Text>
 
       <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
       {isTimed
@@ -907,7 +910,9 @@ const styles = StyleSheet.create({
   targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.yellow },
   targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
 
-  sideLabel: { fontSize: 16, fontWeight: "800", color: C.green, textAlign: "center", marginBottom: 4 },
+  nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
+  sideChip: { backgroundColor: C.green, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  sideChipText: { fontSize: 11, fontWeight: "800", color: C.bg, letterSpacing: 0.5 },
 
   circularProgress: { alignSelf: "center" },
   sevenThreesExplainer: { fontSize: 14, color: C.textMuted, marginBottom: 8, textAlign: "center" },
