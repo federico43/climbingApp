@@ -648,14 +648,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
         </View>
       </View>
 
-      <View style={styles.sideTabs}>
-        <View style={[styles.sideTab, side === "left" && styles.sideTabActive]}>
-          <Text style={[styles.sideTabText, side === "left" && styles.sideTabTextActive]}>Left</Text>
-        </View>
-        <View style={[styles.sideTab, side === "right" && styles.sideTabActive]}>
-          <Text style={[styles.sideTabText, side === "right" && styles.sideTabTextActive]}>Right</Text>
-        </View>
-      </View>
+      <Text style={styles.sideLabel}>{side === "left" ? "Left side" : "Right side"}</Text>
 
       <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
       {isTimed
@@ -914,11 +907,7 @@ const styles = StyleSheet.create({
   targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.yellow },
   targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
 
-  sideTabs: { flexDirection: "row", width: "100%", gap: 8, marginBottom: 4 },
-  sideTab: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: "center" },
-  sideTabActive: { backgroundColor: C.green, borderColor: C.green },
-  sideTabText: { fontSize: 14, fontWeight: "600", color: C.textMuted },
-  sideTabTextActive: { color: C.bg },
+  sideLabel: { fontSize: 16, fontWeight: "800", color: C.green, textAlign: "center", marginBottom: 4 },
 
   circularProgress: { alignSelf: "center" },
   sevenThreesExplainer: { fontSize: 14, color: C.textMuted, marginBottom: 8, textAlign: "center" },
