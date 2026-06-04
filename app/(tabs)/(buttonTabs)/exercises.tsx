@@ -1,7 +1,8 @@
 import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
+import { ExerciseForm } from "@/components/ExerciseForm"
+import { amountLabel } from "@/utils/exerciseUnit"
 import {
-  createExercise,
   deleteExercise,
   ExerciseRow,
   listExercises,
@@ -123,7 +124,7 @@ export default function ExercisesScreen() {
                     <View style={styles.rowInfo}>
                       <Text style={styles.rowName}>{ex.name}</Text>
                       <Text style={styles.rowMeta}>
-                        {ex.defaultReps ? `${ex.defaultReps} reps` : ""}
+                        {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
                         {ex.defaultEdge ? `${ex.defaultEdge} edge` : ""}
                         {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
                       </Text>
@@ -147,8 +148,8 @@ export default function ExercisesScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowCreate(false)}
       >
-        <CreateExerciseModal
-          onClose={() => setShowCreate(false)}
+        <ExerciseForm
+          onCancel={() => setShowCreate(false)}
           onCreated={(ex) => {
             setExercises((prev) =>
               [...prev, ex].sort((a, b) => a.name.localeCompare(b.name))
@@ -161,125 +162,6 @@ export default function ExercisesScreen() {
   )
 }
 
-// ─── Create Modal ─────────────────────────────────────────────────────────────
-
-function CreateExerciseModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void
-  onCreated: (ex: ExerciseRow) => void
-}) {
-  const [name, setName] = useState("")
-  const [type, setType] = useState<ExerciseType>("reps")
-  const [defaultReps, setDefaultReps] = useState("")
-  const [defaultEdge, setDefaultEdge] = useState("")
-  const [defaultSeries, setDefaultSeries] = useState("6")
-  const [saving, setSaving] = useState(false)
-
-  async function handleSave() {
-    if (!name.trim()) {
-      Alert.alert("Name required", "Please enter an exercise name.")
-      return
-    }
-    setSaving(true)
-    try {
-      const payload: Parameters<typeof createExercise>[0] = { name: name.trim(), type }
-      if (type === "reps" || type === "both_sides") {
-        if (defaultReps.trim()) payload.defaultReps = defaultReps.trim()
-      }
-      if (type === "7/3s") {
-        if (defaultEdge.trim()) payload.defaultEdge = defaultEdge.trim()
-        const s = parseInt(defaultSeries)
-        if (!isNaN(s) && s > 0) payload.defaultSeries = s
-      }
-      const created = await createExercise(payload)
-      onCreated(created)
-    } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Could not create exercise.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={onClose}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
-        <Text style={styles.modalTitle}>New Exercise</Text>
-        <Pressable onPress={handleSave} disabled={saving}>
-          <Text style={[styles.saveText, saving && { opacity: 0.4 }]}>
-            {saving ? "Saving…" : "Save"}
-          </Text>
-        </Pressable>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.form}>
-        <Text style={styles.fieldLabel}>Name</Text>
-        <TextInput
-          style={styles.fieldInput}
-          placeholder="e.g. Pull-ups"
-          placeholderTextColor="#aaa"
-          value={name}
-          onChangeText={setName}
-          autoFocus
-        />
-
-        <Text style={styles.fieldLabel}>Type</Text>
-        <View style={styles.typeRow}>
-          {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((t) => (
-            <Pressable
-              key={t}
-              style={[styles.typeChip, type === t && styles.typeChipActive]}
-              onPress={() => setType(t)}
-            >
-              <Text style={[styles.typeChipText, type === t && styles.typeChipTextActive]}>
-                {TYPE_LABELS[t]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {(type === "reps" || type === "both_sides") && (
-          <>
-            <Text style={styles.fieldLabel}>Default reps (optional)</Text>
-            <TextInput
-              style={styles.fieldInput}
-              placeholder="e.g. 4-6"
-              placeholderTextColor="#aaa"
-              value={defaultReps}
-              onChangeText={setDefaultReps}
-            />
-          </>
-        )}
-
-        {type === "7/3s" && (
-          <>
-            <Text style={styles.fieldLabel}>Default edge size (optional)</Text>
-            <TextInput
-              style={styles.fieldInput}
-              placeholder="e.g. 20mm"
-              placeholderTextColor="#aaa"
-              value={defaultEdge}
-              onChangeText={setDefaultEdge}
-            />
-            <Text style={styles.fieldLabel}>Default series</Text>
-            <TextInput
-              style={styles.fieldInput}
-              placeholder="6"
-              placeholderTextColor="#aaa"
-              value={defaultSeries}
-              onChangeText={setDefaultSeries}
-              keyboardType="numeric"
-            />
-          </>
-        )}
-      </ScrollView>
-    </SafeAreaView>
-  )
-}
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 

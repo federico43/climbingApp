@@ -3,7 +3,8 @@ import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
 import { Ionicons } from "@expo/vector-icons"
 import { groupByDate } from "@/utils/dateGroups"
-import { amountLabel, ExerciseUnit } from "@/utils/exerciseUnit"
+import { amountLabel } from "@/utils/exerciseUnit"
+import { ExerciseForm } from "@/components/ExerciseForm"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { awaitNewRoute, cancelAwaitNewRoute } from "@/utils/pendingRouteSelection"
@@ -22,7 +23,6 @@ import {
   AppUser,
   assignProtocol,
   BlockRow,
-  createExercise,
   createProtocol,
   deleteBlock,
   deleteProtocol,
@@ -1637,8 +1637,10 @@ function ExercisePickerModal({
 
   if (mode === "create") {
     return (
-      <ExerciseCreateForm
-        exerciseType={exerciseType}
+      <ExerciseForm
+        fixedType={exerciseType}
+        title={`New ${EXERCISE_TYPE_LABEL[exerciseType]} exercise`}
+        saveLabel="Create & select"
         onCancel={() => setMode("list")}
         onCreated={(ex) => onSelect(ex)}
       />
@@ -1689,101 +1691,6 @@ function ExercisePickerModal({
   )
 }
 
-// Inline "create exercise" form — the type is fixed to the row being edited, so
-// a saved exercise is created in the library and immediately selected.
-function ExerciseCreateForm({
-  exerciseType,
-  onCancel,
-  onCreated,
-}: {
-  exerciseType: "reps" | "both_sides" | "7/3s"
-  onCancel: () => void
-  onCreated: (ex: ExerciseRow) => void
-}) {
-  const [name, setName] = useState("")
-  const [unit, setUnit] = useState<ExerciseUnit>("reps")
-  const [defaultReps, setDefaultReps] = useState("")
-  const [defaultEdge, setDefaultEdge] = useState("")
-  const [defaultSeries, setDefaultSeries] = useState("6")
-  const [saving, setSaving] = useState(false)
-  const measurable = exerciseType === "reps" || exerciseType === "both_sides"
-
-  async function handleSave() {
-    if (!name.trim()) {
-      Alert.alert("Name required", "Please enter an exercise name.")
-      return
-    }
-    setSaving(true)
-    try {
-      const payload: Parameters<typeof createExercise>[0] = { name: name.trim(), type: exerciseType }
-      if (measurable) {
-        payload.unit = unit
-        if (defaultReps.trim()) payload.defaultReps = defaultReps.trim()
-      } else {
-        if (defaultEdge.trim()) payload.defaultEdge = defaultEdge.trim()
-        const s = parseInt(defaultSeries)
-        if (!isNaN(s) && s > 0) payload.defaultSeries = s
-      }
-      const created = await createExercise(payload)
-      onCreated(created)
-    } catch (e) {
-      console.error(e)
-      Alert.alert("Couldn't create exercise", "Please try again.")
-      setSaving(false)
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.safeContainer}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={onCancel} style={styles.iconBackBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-        </Pressable>
-        <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>New {EXERCISE_TYPE_LABEL[exerciseType]} exercise</Text>
-        <View style={styles.iconBackBtn} />
-      </View>
-      <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
-        <FieldLabel label="Name" />
-        <FieldInput value={name} onChange={setName} placeholder="e.g. Pull-ups" />
-        {measurable && (
-          <>
-            <FieldLabel label="Measure" />
-            <View style={styles.exerciseTypeRow}>
-              {(["reps", "seconds"] as ExerciseUnit[]).map((u) => (
-                <Pressable
-                  key={u}
-                  style={[styles.addExerciseButton, unit === u && { backgroundColor: C.green, borderColor: C.green }]}
-                  onPress={() => setUnit(u)}
-                >
-                  <Text style={[styles.addExerciseText, unit === u && { color: C.bg }]}>
-                    {u === "reps" ? "Reps" : "Seconds"}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <FieldLabel label={unit === "seconds" ? "Default seconds" : "Default reps"} />
-            <FieldInput value={defaultReps} onChange={setDefaultReps} placeholder={unit === "seconds" ? "20-30" : "4-6"} />
-          </>
-        )}
-        {exerciseType === "7/3s" && (
-          <>
-            <FieldLabel label="Default edge size" />
-            <FieldInput value={defaultEdge} onChange={setDefaultEdge} placeholder="20mm" />
-            <FieldLabel label="Default series" />
-            <FieldInput value={defaultSeries} onChange={setDefaultSeries} numeric placeholder="6" />
-          </>
-        )}
-        <Pressable
-          style={[styles.assignButton, { marginTop: 24, paddingVertical: 14, alignItems: "center", opacity: saving ? 0.6 : 1 }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          <Text style={[styles.assignButtonText, { fontSize: 15 }]}>{saving ? "Saving…" : "Create & select"}</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
-  )
-}
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
