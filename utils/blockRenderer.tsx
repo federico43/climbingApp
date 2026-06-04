@@ -308,6 +308,7 @@ function ConstraintWarmupBlock({
             {displayDone} / {targetAttempts}
           </Animated.Text>
         </View>
+        <View style={cwStyles.readySpacer} />
         {/* Controls pinned to the bottom */}
         <View style={cwStyles.footer}>
           <View style={cwStyles.controls}>
@@ -385,7 +386,8 @@ function ConstraintWarmupBlock({
 // Constraint-warmup ready-phase controls — same look as the sequence active
 // buttons (side-by-side rounded), with the register action emphasized in green.
 const cwStyles = StyleSheet.create({
-  readyCenter: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  readyCenter: { alignItems: "center", paddingHorizontal: 20, paddingTop: 24, paddingBottom: 8 },
+  readySpacer: { flex: 1 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32 },
   controls: { flexDirection: "row", gap: 10, width: "100%" },
   recordBtn: {

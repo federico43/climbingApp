@@ -346,13 +346,13 @@ export function SequenceBlock({
             style={[styles.recordBtn, resting && styles.controlDisabled]}
             onPress={() => onControlPress(() => setPhase("recording"))}
           >
-            <Text style={styles.recordBtnText}>Record attempt</Text>
+            <Text style={styles.recordBtnText}>Record</Text>
           </Pressable>
           <Pressable
-            style={[styles.noRecordBtn, resting && styles.controlDisabled]}
+            style={[styles.registerBtn, resting && styles.controlDisabled]}
             onPress={() => onControlPress(enterRest)}
           >
-            <Text style={styles.noRecordBtnText}>Log without video</Text>
+            <Text style={styles.registerBtnText}>Register attempt</Text>
           </Pressable>
         </View>
       </View>
@@ -645,11 +645,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: "center",
   },
   recordBtnText: { color: C.textPrimary, fontSize: 15, fontWeight: "700" },
-  noRecordBtn: {
-    flex: 1, borderRadius: 22, borderWidth: 1, borderColor: C.border,
-    paddingVertical: 12, alignItems: "center",
+  registerBtn: {
+    flex: 1, backgroundColor: C.green, borderRadius: 22,
+    paddingVertical: 12, alignItems: "center", justifyContent: "center",
   },
-  noRecordBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  registerBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
   controlDisabled: { opacity: 0.4 },
 
   // Rest / Climb pill timer (shown at the top of the active phase)
