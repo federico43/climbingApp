@@ -21,6 +21,7 @@ import {
   AppUser,
   assignProtocol,
   BlockRow,
+  createExercise,
   createProtocol,
   deleteBlock,
   deleteProtocol,
@@ -1605,6 +1606,10 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
 
 // ─── Exercise Picker Modal ────────────────────────────────────────────────────
 
+const EXERCISE_TYPE_LABEL: Record<"reps" | "both_sides" | "7/3s", string> = {
+  reps: "Reps", both_sides: "Both sides", "7/3s": "7/3s",
+}
+
 function ExercisePickerModal({
   exerciseType,
   onSelect,
@@ -1616,6 +1621,7 @@ function ExercisePickerModal({
 }) {
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<"list" | "create">("list")
 
   useEffect(() => {
     listExercises()
@@ -1623,6 +1629,16 @@ function ExercisePickerModal({
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  if (mode === "create") {
+    return (
+      <ExerciseCreateForm
+        exerciseType={exerciseType}
+        onCancel={() => setMode("list")}
+        onCreated={(ex) => onSelect(ex)}
+      />
+    )
+  }
 
   return (
     <SafeAreaView style={styles.safeContainer}>
@@ -1633,10 +1649,21 @@ function ExercisePickerModal({
         <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>Select exercise</Text>
         <View style={styles.iconBackBtn} />
       </View>
+
+      <Pressable style={styles.createNewRow} onPress={() => setMode("create")}>
+        <View style={styles.createNewIconWrap}>
+          <Ionicons name="add" size={20} color={C.green} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.createNewLabel}>Create new exercise</Text>
+          <Text style={styles.createNewSub}>Add a {EXERCISE_TYPE_LABEL[exerciseType]} exercise to your library</Text>
+        </View>
+      </Pressable>
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
       ) : exercises.length === 0 ? (
-        <Text style={styles.emptyState}>No exercises of this type yet. Add them in the Exercises library.</Text>
+        <Text style={styles.emptyState}>No {EXERCISE_TYPE_LABEL[exerciseType]} exercises yet. Create one above.</Text>
       ) : (
         <ScrollView contentContainerStyle={styles.listContent}>
           {exercises.map((ex) => (
@@ -1653,6 +1680,85 @@ function ExercisePickerModal({
           ))}
         </ScrollView>
       )}
+    </SafeAreaView>
+  )
+}
+
+// Inline "create exercise" form — the type is fixed to the row being edited, so
+// a saved exercise is created in the library and immediately selected.
+function ExerciseCreateForm({
+  exerciseType,
+  onCancel,
+  onCreated,
+}: {
+  exerciseType: "reps" | "both_sides" | "7/3s"
+  onCancel: () => void
+  onCreated: (ex: ExerciseRow) => void
+}) {
+  const [name, setName] = useState("")
+  const [defaultReps, setDefaultReps] = useState("")
+  const [defaultEdge, setDefaultEdge] = useState("")
+  const [defaultSeries, setDefaultSeries] = useState("6")
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!name.trim()) {
+      Alert.alert("Name required", "Please enter an exercise name.")
+      return
+    }
+    setSaving(true)
+    try {
+      const payload: Parameters<typeof createExercise>[0] = { name: name.trim(), type: exerciseType }
+      if (exerciseType === "reps" || exerciseType === "both_sides") {
+        if (defaultReps.trim()) payload.defaultReps = defaultReps.trim()
+      } else {
+        if (defaultEdge.trim()) payload.defaultEdge = defaultEdge.trim()
+        const s = parseInt(defaultSeries)
+        if (!isNaN(s) && s > 0) payload.defaultSeries = s
+      }
+      const created = await createExercise(payload)
+      onCreated(created)
+    } catch (e) {
+      console.error(e)
+      Alert.alert("Couldn't create exercise", "Please try again.")
+      setSaving(false)
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.safeContainer}>
+      <View style={styles.modalHeader}>
+        <Pressable onPress={onCancel} style={styles.iconBackBtn} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
+        </Pressable>
+        <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>New {EXERCISE_TYPE_LABEL[exerciseType]} exercise</Text>
+        <View style={styles.iconBackBtn} />
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+        <FieldLabel label="Name" />
+        <FieldInput value={name} onChange={setName} placeholder="e.g. Pull-ups" />
+        {(exerciseType === "reps" || exerciseType === "both_sides") && (
+          <>
+            <FieldLabel label="Default reps" />
+            <FieldInput value={defaultReps} onChange={setDefaultReps} placeholder="4-6" />
+          </>
+        )}
+        {exerciseType === "7/3s" && (
+          <>
+            <FieldLabel label="Default edge size" />
+            <FieldInput value={defaultEdge} onChange={setDefaultEdge} placeholder="20mm" />
+            <FieldLabel label="Default series" />
+            <FieldInput value={defaultSeries} onChange={setDefaultSeries} numeric placeholder="6" />
+          </>
+        )}
+        <Pressable
+          style={[styles.assignButton, { marginTop: 24, paddingVertical: 14, alignItems: "center", opacity: saving ? 0.6 : 1 }]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={[styles.assignButtonText, { fontSize: 15 }]}>{saving ? "Saving…" : "Create & select"}</Text>
+        </Pressable>
+      </ScrollView>
     </SafeAreaView>
   )
 }
