@@ -3,7 +3,7 @@ import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
 import { FourByFourBlock } from "@/components/FourByFourBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
-import { ProjectPickerModal } from "@/components/ProjectPickerModal"
+import { BoulderLevelOptions, ProjectPickerModal } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
 import VideoRecorder from "@/components/VideoRecorder"
@@ -251,22 +251,34 @@ function ConstraintWarmupBlock({
           contentContainerStyle={shared_styles.introContent}
           keyboardShouldPersistTaps="handled"
         >
-          {!!block.level && (
-            <View style={{ alignItems: "center", marginTop: 4, marginBottom: 8 }}>
-              <Text style={{
-                fontSize: 11, fontWeight: "700", color: C.textSecondary,
-                textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4,
+          {!!(block as any).level && (() => {
+            const level = String((block as any).level)
+            const opt = BoulderLevelOptions.find((o) => o.value === level.toLowerCase())
+            return (
+              <View style={{
+                flexDirection: "row", alignItems: "center", justifyContent: "center",
+                flexWrap: "wrap", gap: 8, marginTop: 4, marginBottom: 8,
               }}>
-                Boulder difficulty
-              </Text>
-              <Text style={{
-                fontSize: 36, fontWeight: "800",
-                color: C.green, textTransform: "capitalize",
-              }}>
-                {block.level}
-              </Text>
-            </View>
-          )}
+                <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
+                  {targetAttempts}
+                </Text>
+                <View style={{
+                  backgroundColor: opt?.color ?? C.green,
+                  borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4,
+                }}>
+                  <Text style={{
+                    fontSize: 18, fontWeight: "800",
+                    color: opt?.on ?? C.bg, textTransform: "capitalize",
+                  }}>
+                    {opt?.label ?? level}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
+                  boulders
+                </Text>
+              </View>
+            )
+          })()}
           {!!block.description && (
             <Text style={shared_styles.description}>{block.description}</Text>
           )}
