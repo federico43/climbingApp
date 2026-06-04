@@ -157,6 +157,25 @@ export function BlockRenderer({
 
 // ─── Constraint Warmup ────────────────────────────────────────────────────────
 
+// A grade-colored pill (orange pill orange, blue blue, etc.) used wherever the
+// boulder difficulty is shown.
+function DifficultyPill({ level, fontSize = 18 }: { level: string; fontSize?: number }) {
+  const opt = BoulderLevelOptions.find((o) => o.value === String(level).toLowerCase())
+  return (
+    <View style={{
+      backgroundColor: opt?.color ?? C.green,
+      borderRadius: 999, paddingHorizontal: 14, paddingVertical: 5,
+    }}>
+      <Text style={{
+        fontSize, fontWeight: "800",
+        color: opt?.on ?? C.bg, textTransform: "capitalize",
+      }}>
+        {opt?.label ?? level}
+      </Text>
+    </View>
+  )
+}
+
 type Phase = "intro" | "ready" | "review"
 
 interface ConstraintWarmupBlockProps {
@@ -251,34 +270,20 @@ function ConstraintWarmupBlock({
           contentContainerStyle={shared_styles.introContent}
           keyboardShouldPersistTaps="handled"
         >
-          {!!(block as any).level && (() => {
-            const level = String((block as any).level)
-            const opt = BoulderLevelOptions.find((o) => o.value === level.toLowerCase())
-            return (
-              <View style={{
-                flexDirection: "row", alignItems: "center", justifyContent: "center",
-                flexWrap: "wrap", gap: 8, marginTop: 4, marginBottom: 8,
-              }}>
-                <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
-                  {targetAttempts}
-                </Text>
-                <View style={{
-                  backgroundColor: opt?.color ?? C.green,
-                  borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4,
-                }}>
-                  <Text style={{
-                    fontSize: 18, fontWeight: "800",
-                    color: opt?.on ?? C.bg, textTransform: "capitalize",
-                  }}>
-                    {opt?.label ?? level}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
-                  boulders
-                </Text>
-              </View>
-            )
-          })()}
+          {!!(block as any).level && (
+            <View style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "center",
+              flexWrap: "wrap", gap: 8, marginTop: 4, marginBottom: 8,
+            }}>
+              <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
+                {targetAttempts}
+              </Text>
+              <DifficultyPill level={String((block as any).level)} />
+              <Text style={{ fontSize: 22, fontWeight: "800", color: C.textPrimary }}>
+                boulders
+              </Text>
+            </View>
+          )}
           {!!block.description && (
             <Text style={shared_styles.description}>{block.description}</Text>
           )}
@@ -293,18 +298,21 @@ function ConstraintWarmupBlock({
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} onBack={() => setPhase("intro")} />
         <View style={shared_styles.container}>
-          <Text style={warmup_styles.level}>{block.level}</Text>
+          {!!(block as any).level && (
+            <View style={{ marginBottom: 8 }}>
+              <DifficultyPill level={String((block as any).level)} fontSize={22} />
+            </View>
+          )}
           <Animated.Text style={[warmup_styles.progress, { transform: [{ scale: counterScale }] }]}>
             {displayDone} / {targetAttempts}
           </Animated.Text>
-          <View style={warmup_styles.buttonWrapper}>
-            <Pressable style={rest_styles.yesButton} onPress={() => setShowCamera(true)}>
-              <Text style={rest_styles.yesButtonText}>Record attempt</Text>
+          <View style={cwStyles.controls}>
+            <Pressable style={cwStyles.recordBtn} onPress={() => setShowCamera(true)}>
+              <Text style={cwStyles.recordBtnText}>Record</Text>
             </Pressable>
-            <View style={{ height: 10 }} />
-            <Animated.View style={{ transform: [{ scale: logBtnScale }], width: "100%" }}>
+            <Animated.View style={{ transform: [{ scale: logBtnScale }], flex: 1 }}>
               <Pressable
-                style={rest_styles.noButton}
+                style={cwStyles.registerBtn}
                 onPress={() => {
                   flashLogButton()
                   logAttempt({ success: true })
@@ -315,13 +323,13 @@ function ConstraintWarmupBlock({
                   }
                 }}
               >
-                <Text style={rest_styles.noButtonText}>Log without video</Text>
+                <Text style={cwStyles.registerBtnText}>Register attempt</Text>
                 <Animated.Text
                   pointerEvents="none"
                   style={{
                     position: "absolute",
-                    right: 20,
-                    color: C.green,
+                    right: 14,
+                    color: C.bg,
                     fontSize: 16,
                     fontWeight: "800",
                     opacity: plusOneOpacity,
@@ -369,6 +377,22 @@ function ConstraintWarmupBlock({
 
   return null
 }
+
+// Constraint-warmup ready-phase controls — same look as the sequence active
+// buttons (side-by-side rounded), with the register action emphasized in green.
+const cwStyles = StyleSheet.create({
+  controls: { flexDirection: "row", gap: 10, width: "100%", marginTop: 24 },
+  recordBtn: {
+    flex: 1, backgroundColor: C.surfaceHigh, borderRadius: 22,
+    paddingVertical: 14, alignItems: "center", justifyContent: "center",
+  },
+  recordBtnText: { color: C.textPrimary, fontSize: 15, fontWeight: "700" },
+  registerBtn: {
+    flex: 1, backgroundColor: C.green, borderRadius: 22,
+    paddingVertical: 14, alignItems: "center", justifyContent: "center",
+  },
+  registerBtnText: { color: C.bg, fontSize: 15, fontWeight: "800" },
+})
 
 const projectStyles = StyleSheet.create({
   selectedCard: {

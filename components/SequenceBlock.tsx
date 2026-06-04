@@ -8,7 +8,6 @@ import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useState } from "react"
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
 import {
@@ -23,7 +22,7 @@ import {
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
-type SequencePhase = "intro" | "active" | "recording" | "rest1" | "rest2" | "calibrate" | "review"
+type SequencePhase = "intro" | "active" | "recording" | "rest1" | "calibrate" | "review"
 type Outcome = "sent" | "fell"
 
 interface Props {
@@ -55,7 +54,6 @@ export function SequenceBlock({
   const [phase, setPhase]               = useState<SequencePhase>(() =>
     attemptsDone >= targetAttempts ? "review" : "intro"
   )
-  const [postRestPhase, setPostRestPhase] = useState<"active" | "review">("active")
   const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null)
   const [outcome, setOutcome]           = useState<Outcome | null>(null)
   const [highPoint, setHighPoint]       = useState<number>(1)
@@ -156,15 +154,10 @@ export function SequenceBlock({
   // RPE is only asked on the second and final attempts of the sequence.
   const askRpe    = attemptsDone === 1 || attemptsDone + 1 >= targetAttempts
 
-  useEffect(() => {
-    if ((phase === "rest1" || phase === "rest2") && restTimeRemaining === 0) {
-      setPhase(postRestPhase)
-    }
-  }, [phase, restTimeRemaining, postRestPhase])
-
+  // The rest countdown now lives inside the active phase (a pill timer), so the
+  // logging step (rest1) just starts the timer; when it expires the active
+  // screen flips from "Rest" back to "Climb" on its own.
   function enterRest() {
-    const next = attemptsDone + 1
-    setPostRestPhase(next >= targetAttempts ? "review" : "active")
     setOutcome(null)
     setHighPoint(1)
     setRpe("")
@@ -190,9 +183,10 @@ export function SequenceBlock({
     // are multiple variations AND more attempts to apply it to.
     const showCalibrate = isFirst && availableVars.length > 1 && targetAttempts > 1
     if (!showCalibrate) setCalibrated(true)
-    // On the last set there's no next attempt, so skip the rest timer and go
-    // straight to review.
-    setPhase(showCalibrate ? "calibrate" : isLast ? "review" : "rest2")
+    // On the last set there's no next attempt, so skip the rest and go straight
+    // to review. Otherwise return to the active screen, which shows the running
+    // rest timer as a pill until it expires.
+    setPhase(showCalibrate ? "calibrate" : isLast ? "review" : "active")
   }
 
   // Initial selection after the first attempt, made blind (no preview of the
@@ -201,7 +195,7 @@ export function SequenceBlock({
     if (feel === "hard") setActiveVariation((v) => stepVariation(variations, v, -1))
     else if (feel === "easy") setActiveVariation((v) => stepVariation(variations, v, +1))
     setCalibrated(true)
-    setPhase("rest2")
+    setPhase("active")
   }
 
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
@@ -275,6 +269,25 @@ export function SequenceBlock({
   // ── 2. Active ─────────────────────────────────────────────────────────────────
 
   if (phase === "active") {
+    const resting = (restTimeRemaining ?? 0) > 0
+    const restDisplay = resting
+      ? `${Math.floor(restTimeRemaining! / 60)}:${String(restTimeRemaining! % 60).padStart(2, "0")}`
+      : null
+    // While resting the controls look disabled, but tapping offers to skip.
+    const onControlPress = (action: () => void) => {
+      if (resting) {
+        Alert.alert(
+          "Skip rest?",
+          "You're still resting. Skip the rest and continue?",
+          [
+            { text: "Keep resting", style: "cancel" },
+            { text: "Skip rest", style: "destructive", onPress: () => startRestTimer(0) },
+          ],
+        )
+        return
+      }
+      action()
+    }
     return (
       <View style={shared_styles.screen}>
         <TopBar
@@ -319,11 +332,26 @@ export function SequenceBlock({
             )}
           </View>
         )}
+        {/* Rest / Climb pill timer */}
+        <View style={styles.restPillWrap}>
+          <View style={[styles.restPill, resting ? styles.restPillResting : styles.restPillClimb]}>
+            <View style={[styles.restPillDot, { backgroundColor: resting ? C.yellow : C.green }]} />
+            <Text style={styles.restPillText}>
+              {resting ? `Rest · ${restDisplay}` : "Climb"}
+            </Text>
+          </View>
+        </View>
         <View style={styles.activeControls}>
-          <Pressable style={styles.recordBtn} onPress={() => setPhase("recording")}>
+          <Pressable
+            style={[styles.recordBtn, resting && styles.controlDisabled]}
+            onPress={() => onControlPress(() => setPhase("recording"))}
+          >
             <Text style={styles.recordBtnText}>Record attempt</Text>
           </Pressable>
-          <Pressable style={styles.noRecordBtn} onPress={enterRest}>
+          <Pressable
+            style={[styles.noRecordBtn, resting && styles.controlDisabled]}
+            onPress={() => onControlPress(enterRest)}
+          >
             <Text style={styles.noRecordBtnText}>Log without video</Text>
           </Pressable>
         </View>
@@ -504,49 +532,7 @@ export function SequenceBlock({
     )
   }
 
-  // ── 5. Rest phase 2 — timer ───────────────────────────────────────────────────
-
-  if (phase === "rest2") {
-    const fillPercent = restTimeRemaining != null && restTime
-      ? (restTimeRemaining / restTime) * 100
-      : 0
-    const urgent = (restTimeRemaining ?? 99) <= 15
-
-    return (
-      <View style={styles.rest2Container}>
-        <View style={styles.rest2Header}>
-          <Text style={styles.rest2Label}>{blockTitle}</Text>
-          <Text style={styles.rest2Sub}>Rest</Text>
-        </View>
-        <View style={styles.rest2Circle}>
-          <AnimatedCircularProgress
-            size={300} width={10} fill={fillPercent}
-            tintColor={urgent ? C.red : C.green}
-            backgroundColor={C.surface}
-            rotation={0}
-          >
-            {() => {
-              const t = restTimeRemaining ?? 0
-              const display = t > 0
-                ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
-                : "go!"
-              return <Text style={styles.timerText}>{display}</Text>
-            }}
-          </AnimatedCircularProgress>
-        </View>
-        <View style={styles.rest2Footer}>
-          <Pressable style={styles.skipBtn} onPress={() => setPhase("rest1")}>
-            <Text style={styles.skipBtnText}>Back</Text>
-          </Pressable>
-          <Pressable style={styles.skipBtn} onPress={() => setPhase(postRestPhase)}>
-            <Text style={styles.skipBtnText}>Skip rest</Text>
-          </Pressable>
-        </View>
-      </View>
-    )
-  }
-
-  // ── 6. Review ─────────────────────────────────────────────────────────────────
+  // ── 5. Review ─────────────────────────────────────────────────────────────────
 
   if (phase === "review") {
     return (
@@ -664,6 +650,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: "center",
   },
   noRecordBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  controlDisabled: { opacity: 0.4 },
+
+  // Rest / Climb pill timer (shown in the active phase)
+  restPillWrap: { backgroundColor: C.bg, alignItems: "center", paddingTop: 8 },
+  restPill: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999, borderWidth: 1,
+  },
+  restPillResting: { backgroundColor: C.surface, borderColor: C.border },
+  restPillClimb: { backgroundColor: "rgba(63,185,80,0.12)", borderColor: C.green },
+  restPillDot: { width: 8, height: 8, borderRadius: 4 },
+  restPillText: { fontSize: 15, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
 
   // Variation dropdown (active phase, after the initial selection)
   varDropdownWrap: {
@@ -749,25 +747,6 @@ const styles = StyleSheet.create({
   rpeChipText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
   rpeChipTextSelected: { color: C.bg },
   rpeNote: { fontSize: 12, color: C.textMuted, fontStyle: "italic" },
-
-  // ── Rest 2
-  rest2Container: {
-    flex: 1, backgroundColor: C.bg,
-    paddingTop: 16, paddingBottom: 48, paddingHorizontal: 24,
-  },
-  rest2Header: { alignItems: "center", gap: 4 },
-  rest2Label: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
-  rest2Sub: { fontSize: 14, color: C.textMuted },
-  rest2Circle: { flex: 1, alignItems: "center", justifyContent: "center" },
-  timerText: { fontSize: 72, fontWeight: "700", color: C.textPrimary, textAlign: "center" },
-  rest2Footer: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%",
-  },
-  skipBtn: {
-    borderRadius: 20, borderWidth: 1, borderColor: C.border,
-    paddingHorizontal: 28, paddingVertical: 10,
-  },
-  skipBtnText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
   // ── Review
   reviewContent: { padding: 20, gap: 10 },
