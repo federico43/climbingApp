@@ -273,6 +273,11 @@ export function SequenceBlock({
     const restDisplay = resting
       ? `${Math.floor(restTimeRemaining! / 60)}:${String(restTimeRemaining! % 60).padStart(2, "0")}`
       : null
+    // Fill grows left→right as the rest elapses, reaching the right edge (100%)
+    // when the rest is complete. Not resting (= done) shows a full bar.
+    const restProg = resting && restTime > 0
+      ? Math.min(1, Math.max(0, (restTime - restTimeRemaining!) / restTime))
+      : 1
     // While resting the controls look disabled, but tapping offers to skip.
     const onControlPress = (action: () => void) => {
       if (resting) {
@@ -295,13 +300,18 @@ export function SequenceBlock({
           onBack={() => setPhase("intro")}
           hideBorder
         />
-        {/* Rest / Climb pill timer — wide, directly under the block name */}
+        {/* Rest / Climb progress bar — fills to the right as rest completes */}
         <View style={styles.restPillWrap}>
-          <View style={[styles.restPill, resting ? styles.restPillResting : styles.restPillClimb]}>
-            <View style={[styles.restPillDot, { backgroundColor: resting ? C.yellow : C.green }]} />
-            <Text style={styles.restPillText}>
-              {resting ? `Rest · ${restDisplay}` : "Climb"}
-            </Text>
+          <View style={[styles.restBar, resting ? styles.restBarResting : styles.restBarClimb]}>
+            <View style={[styles.restBarFill, {
+              width: `${restProg * 100}%`,
+              backgroundColor: resting ? "rgba(63,185,80,0.45)" : C.green,
+            }]} />
+            <View style={styles.restBarContent}>
+              <Text style={[styles.restBarText, { color: resting ? C.textPrimary : C.bg }]}>
+                {resting ? `Rest · ${restDisplay}` : "Climb"}
+              </Text>
+            </View>
           </View>
         </View>
         <View style={{ flex: 1 }}>
@@ -652,17 +662,17 @@ const styles = StyleSheet.create({
   registerBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
   controlDisabled: { opacity: 0.4 },
 
-  // Rest / Climb pill timer (shown at the top of the active phase)
+  // Rest / Climb progress bar (top of the active phase)
   restPillWrap: { backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
-  restPill: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    alignSelf: "stretch",
-    paddingHorizontal: 18, paddingVertical: 12, borderRadius: 16, borderWidth: 1,
+  restBar: {
+    alignSelf: "stretch", height: 44, borderRadius: 14, overflow: "hidden",
+    backgroundColor: C.surface, borderWidth: 1, justifyContent: "center",
   },
-  restPillResting: { backgroundColor: C.surface, borderColor: C.border },
-  restPillClimb: { backgroundColor: "rgba(63,185,80,0.12)", borderColor: C.green },
-  restPillDot: { width: 8, height: 8, borderRadius: 4 },
-  restPillText: { fontSize: 15, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  restBarResting: { borderColor: C.border },
+  restBarClimb: { borderColor: C.green },
+  restBarFill: { position: "absolute", left: 0, top: 0, bottom: 0 },
+  restBarContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  restBarText: { fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"] },
 
   // Variation dropdown (active phase, after the initial selection)
   varDropdownWrap: {
