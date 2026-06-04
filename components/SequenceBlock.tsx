@@ -84,8 +84,16 @@ export function SequenceBlock({
 
   const [routeName, setRouteName] = useState<string>(block.routeName ?? "")
   const [refreshing, setRefreshing] = useState(false)
-  const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
-  const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(null)
+  // Seed from the wall snapshot stored on the block (captured at design time) so
+  // the real wall renders on first paint — no flash of the bundled placeholder
+  // while the route → wall fetch resolves. Falls back to the placeholder only
+  // for older blocks authored before the snapshot existed.
+  const [wallImageSource, setWallImageSource] = useState<any>(
+    block.wallImageUri ? { uri: block.wallImageUri } : WALL_IMAGE
+  )
+  const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(
+    block.wallWidth && block.wallHeight ? { w: block.wallWidth, h: block.wallHeight } : null
+  )
 
   // Resume: restore the variation the athlete was on from the last attempt.
   useEffect(() => {

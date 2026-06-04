@@ -102,6 +102,11 @@ interface SequenceBlock extends BaseBlock {
   routeId: string
   routeName: string
   routeHolds: string  // JSON stringified PlacedHold[]
+  // Wall photo snapshot so the workout viewer can render it instantly (no
+  // placeholder flash while the route → wall fetch resolves).
+  wallImageUri?: string
+  wallWidth?: number
+  wallHeight?: number
 }
 
 interface FreeSessionBlock extends BaseBlock {
@@ -1411,8 +1416,12 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
   const router = useRouter()
   const [showRoutePicker, setShowRoutePicker] = useState(false)
 
-  function selectRoute(route: SprayRouteRow) {
-    update({ routeId: route.$id, routeName: route.name, routeHolds: route.holds })
+  function selectRoute(route: SprayRouteRow, wall?: SprayWallRow) {
+    update({
+      routeId: route.$id, routeName: route.name, routeHolds: route.holds,
+      ...(wall?.imageUri ? { wallImageUri: wall.imageUri } : {}),
+      ...(wall?.width && wall?.height ? { wallWidth: wall.width, wallHeight: wall.height } : {}),
+    })
     setShowRoutePicker(false)
   }
 
@@ -1473,7 +1482,7 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
 // ─── Route Picker Modal ───────────────────────────────────────────────────────
 
 function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
-  onSelect: (route: SprayRouteRow) => void
+  onSelect: (route: SprayRouteRow, wall?: SprayWallRow) => void
   onClose: () => void
   onCreateNew: (wall?: { id: string; imageUri?: string }) => void
 }) {
@@ -1544,7 +1553,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
               <Pressable
                 key={route.$id}
                 style={styles.routePickerCard}
-                onPress={() => onSelect(route)}
+                onPress={() => onSelect(route, wallsById.get(route.wallId ?? ""))}
               >
                 <View style={styles.routePickerThumb}>
                   <SprayWallViewer
