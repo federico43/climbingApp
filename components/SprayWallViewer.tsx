@@ -4,7 +4,7 @@ import { getDisplayRadius } from "@/utils/holdRadius"
 import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
 import { Image } from "expo-image"
-import React, { useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { StyleSheet, Text, View, ViewStyle } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
@@ -67,15 +67,23 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
     return imageSource
   }, [imageSource, previewWidth])
   const { nw, nh } = useImageSize(source)
+  // expo-image reports the real dimensions on load (from its cache, so fast).
+  // Prefer those over useImageSize's Image.getSize, which re-downloads the full
+  // image — that's what made the wall briefly render at the wrong aspect ratio.
+  const [loadedSize, setLoadedSize] = useState<{ w: number; h: number } | null>(null)
+  const nwEff = loadedSize?.w ?? nw
+  const nhEff = loadedSize?.h ?? nh
+  const sourceKey = typeof source === "object" && source ? source.uri : source
+  useEffect(() => { setLoadedSize(null) }, [sourceKey])
 
   const { imgW, imgH, imgLeft, imgTop } = useMemo(() => {
     if (!containerW || !containerH) return { imgW: 0, imgH: 0, imgLeft: 0, imgTop: 0 }
-    const ia = nw / nh, ca = containerW / containerH
+    const ia = nwEff / nhEff, ca = containerW / containerH
     let imgW: number, imgH: number
     if (ia > ca) { imgW = containerW; imgH = containerW / ia }
     else { imgH = containerH; imgW = containerH * ia }
     return { imgW, imgH, imgLeft: (containerW - imgW) / 2, imgTop: (containerH - imgH) / 2 }
-  }, [containerW, containerH, nw, nh])
+  }, [containerW, containerH, nwEff, nhEff])
 
   const scale      = useSharedValue(1)
   const savedScale = useSharedValue(1)
@@ -178,6 +186,10 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                 contentFit="fill"
                 cachePolicy="memory-disk"
                 transition={150}
+                onLoad={(e) => {
+                  const s: any = e?.source
+                  if (s?.width && s?.height) setLoadedSize({ w: s.width, h: s.height })
+                }}
               />
               <View
                 pointerEvents="none"
