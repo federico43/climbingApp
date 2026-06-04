@@ -564,26 +564,29 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExe
 
   return (
     <View style={styles.exerciseCard}>
-      <View style={styles.targetRepsBox}>
-        <Text style={styles.exerciseName}>{exercise.name}</Text>
-        <View style={styles.targetRow}>
-          <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-          <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
+      <View style={styles.cardTop}>
+        <View style={styles.targetRepsBox}>
+          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <View style={styles.targetRow}>
+            <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
+            <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
+          </View>
         </View>
+
+        <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
+        {isTimed
+          ? <TimedAmountControl value={amount} onChange={setAmount} />
+          : <Stepper value={amount} onChange={setAmount} />}
       </View>
 
-      <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-      {isTimed
-        ? <TimedAmountControl value={amount} onChange={setAmount} />
-        : <Stepper value={amount} onChange={setAmount} />}
-
-      <ExerciseDetail
-        open={showDetail} onToggle={() => setShowDetail((v) => !v)}
-        weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
-        rpe={rpe} setRpe={setRpe}
-      />
-
-      <CustomButton title="Done" onPress={handleSave} />
+      <View style={styles.cardBottom}>
+        <ExerciseDetail
+          open={showDetail} onToggle={() => setShowDetail((v) => !v)}
+          weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
+          rpe={rpe} setRpe={setRpe}
+        />
+        <CustomButton title="Done" onPress={handleSave} />
+      </View>
     </View>
   )
 }
@@ -642,37 +645,41 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
 
   return (
     <View style={styles.exerciseCard}>
-      <View style={styles.targetRepsBox}>
-        <View style={styles.nameRow}>
-          <Text style={styles.exerciseName}>{exercise.name}</Text>
-          <View style={styles.sideChip}>
-            <Text style={styles.sideChipText}>{side === "left" ? "LEFT" : "RIGHT"}</Text>
+      <View style={styles.cardTop}>
+        <View style={styles.targetRepsBox}>
+          <View style={styles.nameRow}>
+            <Text style={styles.exerciseName}>{exercise.name}</Text>
+            <View style={styles.sideChip}>
+              <Text style={styles.sideChipText}>{side === "left" ? "LEFT" : "RIGHT"}</Text>
+            </View>
+          </View>
+          <View style={styles.targetRow}>
+            <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
+            <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
           </View>
         </View>
-        <View style={styles.targetRow}>
-          <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-          <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
-        </View>
+
+        <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
+        {isTimed
+          ? <TimedAmountControl key={side} value={amount} onChange={setAmount} />
+          : <Stepper value={amount} onChange={setAmount} />}
       </View>
 
-      <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-      {isTimed
-        ? <TimedAmountControl key={side} value={amount} onChange={setAmount} />
-        : <Stepper value={amount} onChange={setAmount} />}
+      <View style={styles.cardBottom}>
+        <ExerciseDetail
+          open={showDetail} onToggle={() => setShowDetail((v) => !v)}
+          weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
+          rpe={side === "left" ? rpeLeft : rpeRight}
+          setRpe={side === "left" ? setRpeLeft : setRpeRight}
+          rpeLabel={side === "left" ? "RPE — Left" : "RPE — Right"}
+        />
 
-      <ExerciseDetail
-        open={showDetail} onToggle={() => setShowDetail((v) => !v)}
-        weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
-        rpe={side === "left" ? rpeLeft : rpeRight}
-        setRpe={side === "left" ? setRpeLeft : setRpeRight}
-        rpeLabel={side === "left" ? "RPE — Left" : "RPE — Right"}
-      />
-
-      {side === "left" ? (
-        <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
-      ) : (
-        <CustomButton title="Done" onPress={handleRightDone} />
-      )}
+        {side === "left" ? (
+          <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
+        ) : (
+          <CustomButton title="Done" onPress={handleRightDone} />
+        )}
+      </View>
     </View>
   )
 }
@@ -895,7 +902,9 @@ const styles = StyleSheet.create({
   unitChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   unitChipTextSelected: { color: C.bg },
 
-  exerciseCard: { width: "100%", gap: 12 },
+  exerciseCard: { flex: 1, width: "100%", justifyContent: "space-between" },
+  cardTop: { gap: 12 },
+  cardBottom: { gap: 12 },
   exerciseName: { fontSize: 20, fontWeight: "700", textAlign: "center", color: C.textPrimary },
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
 
@@ -909,7 +918,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   targetRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 8 },
-  targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.yellow },
+  targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
 
   nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
