@@ -51,6 +51,7 @@ const BLOCK_LABELS: Record<string, string> = {
   exploration_session: "Boulder Logger",
   sequence: "Sequence",
   free_session: "Free session",
+  four_by_four: "4×4",
 }
 
 const BLOCK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -60,6 +61,7 @@ const BLOCK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   exploration_session: "search",
   sequence: "footsteps",
   free_session: "time",
+  four_by_four: "grid",
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────

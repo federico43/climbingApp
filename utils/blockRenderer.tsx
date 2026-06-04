@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
+import { FourByFourBlock } from "@/components/FourByFourBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { ProjectPickerModal } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
@@ -130,6 +131,20 @@ export function BlockRenderer({
       return (
         <FreeSessionBlock
           block={block as any}
+          goToNextBlock={goToNextBlock}
+          goToPreviousBlock={onPrevBlock}
+        />
+      )
+
+    case "four_by_four":
+      return (
+        <FourByFourBlock
+          key={currentBlockIndex}
+          block={block as any}
+          logAttempt={logAttempt}
+          restTimeRemaining={restTimeRemaining}
+          startRestTimer={startRestTimer}
+          attempts={blockAttempts}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
         />

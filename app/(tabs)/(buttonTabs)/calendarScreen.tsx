@@ -271,6 +271,8 @@ function blockLabel(block: any): string {
     case "project_bouldering": return "Project bouldering"
     case "constraint_warmup": return "Constraint warmup"
     case "strength_conditioning": return "Strength & conditioning"
+    case "sequence": return "Sequence"
+    case "four_by_four": return "4×4"
     default: return block.type ?? "Block"
   }
 }
