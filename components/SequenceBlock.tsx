@@ -6,8 +6,9 @@ import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
 import {
@@ -92,6 +93,35 @@ export function SequenceBlock({
   const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(
     block.wallWidth && block.wallHeight ? { w: block.wallWidth, h: block.wallHeight } : null
   )
+
+  // Rest progress bar (0 → 1) driven smoothly: the timer only ticks once a
+  // second, so we animate the fill toward each new target over ~1s of linear
+  // motion instead of jumping. On a fresh rest we snap to the start, then glide.
+  const restProgress = useSharedValue(1)
+  const wasRestingRef = useRef(false)
+  useEffect(() => {
+    const remaining = restTimeRemaining ?? 0
+    const resting = remaining > 0
+    if (!resting) {
+      // Done / climb → fill to the right edge.
+      restProgress.value = withTiming(1, { duration: 250, easing: Easing.linear })
+      wasRestingRef.current = false
+      return
+    }
+    const target = restTime > 0
+      ? Math.min(1, Math.max(0, (restTime - remaining) / restTime))
+      : 0
+    if (!wasRestingRef.current) {
+      restProgress.value = target            // new rest: snap to the start
+      wasRestingRef.current = true
+    } else {
+      restProgress.value = withTiming(target, { duration: 1000, easing: Easing.linear })
+    }
+  }, [restTimeRemaining, restTime])
+
+  const restBarFillStyle = useAnimatedStyle(() => ({
+    width: `${restProgress.value * 100}%`,
+  }))
 
   // Resume: restore the variation the athlete was on from the last attempt.
   useEffect(() => {
@@ -273,11 +303,6 @@ export function SequenceBlock({
     const restDisplay = resting
       ? `${Math.floor(restTimeRemaining! / 60)}:${String(restTimeRemaining! % 60).padStart(2, "0")}`
       : null
-    // Fill grows left→right as the rest elapses, reaching the right edge (100%)
-    // when the rest is complete. Not resting (= done) shows a full bar.
-    const restProg = resting && restTime > 0
-      ? Math.min(1, Math.max(0, (restTime - restTimeRemaining!) / restTime))
-      : 1
     // While resting the controls look disabled, but tapping offers to skip.
     const onControlPress = (action: () => void) => {
       if (resting) {
@@ -303,9 +328,8 @@ export function SequenceBlock({
         {/* Rest / Climb progress bar — fills to the right as rest completes */}
         <View style={styles.restPillWrap}>
           <View style={[styles.restBar, resting ? styles.restBarResting : styles.restBarClimb]}>
-            <View style={[styles.restBarFill, {
-              width: `${restProg * 100}%`,
-              backgroundColor: resting ? "rgba(63,185,80,0.45)" : C.green,
+            <Animated.View style={[styles.restBarFill, restBarFillStyle, {
+              backgroundColor: resting ? "rgba(98,201,154,0.5)" : C.green,
             }]} />
             <View style={styles.restBarContent}>
               <Text style={[styles.restBarText, { color: resting ? C.textPrimary : C.bg }]}>
