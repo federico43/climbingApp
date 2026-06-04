@@ -562,11 +562,12 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExe
 
   return (
     <View style={styles.exerciseCard}>
-      <Text style={styles.exerciseName}>{exercise.name}</Text>
-
       <View style={styles.targetRepsBox}>
-        <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-        <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
+        <Text style={styles.exerciseName}>{exercise.name}</Text>
+        <View style={styles.targetRow}>
+          <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
+          <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
+        </View>
       </View>
 
       <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
@@ -639,11 +640,12 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
 
   return (
     <View style={styles.exerciseCard}>
-      <Text style={styles.exerciseName}>{exercise.name}</Text>
-
       <View style={styles.targetRepsBox}>
-        <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-        <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
+        <Text style={styles.exerciseName}>{exercise.name}</Text>
+        <View style={styles.targetRow}>
+          <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
+          <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
+        </View>
       </View>
 
       <View style={styles.sideTabs}>
@@ -896,21 +898,20 @@ const styles = StyleSheet.create({
   unitChipTextSelected: { color: C.bg },
 
   exerciseCard: { width: "100%", gap: 12 },
-  exerciseName: { fontSize: 26, fontWeight: "700", textAlign: "center", color: C.textPrimary },
+  exerciseName: { fontSize: 20, fontWeight: "700", textAlign: "center", color: C.textPrimary },
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
 
   targetRepsBox: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "center",
-    gap: 8,
+    alignItems: "center",
+    gap: 4,
     backgroundColor: C.surface,
     borderRadius: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     marginBottom: 4,
   },
-  targetRepsNumber: { fontSize: 26, fontWeight: "800", color: C.yellow },
+  targetRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 8 },
+  targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.yellow },
   targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
 
   sideTabs: { flexDirection: "row", width: "100%", gap: 8, marginBottom: 4 },
