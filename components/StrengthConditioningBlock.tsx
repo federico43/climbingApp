@@ -509,25 +509,27 @@ function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: 
   )
 }
 
-// Weight + RPE, hidden behind a tap by default (timed holds rarely log them).
-function ExerciseDetail({ open, onOpen, weight, setWeight, weightUnit, weightStep, rpe, setRpe, rpeLabel }: {
-  open: boolean; onOpen: () => void
+// Weight + RPE, collapsed behind a toggle by default (timed holds rarely log
+// them). The caret flips ▸/▾ to open/close.
+function ExerciseDetail({ open, onToggle, weight, setWeight, weightUnit, weightStep, rpe, setRpe, rpeLabel }: {
+  open: boolean; onToggle: () => void
   weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
   rpe: string; setRpe: (v: string) => void; rpeLabel?: string
 }) {
-  if (!open) {
-    return (
-      <Pressable style={styles.addDetailBtn} onPress={onOpen}>
-        <Text style={styles.addDetailText}>+ Add weight / RPE</Text>
-      </Pressable>
-    )
-  }
   return (
-    <>
-      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
-      <Stepper value={weight} onChange={setWeight} step={weightStep} />
-      <RPEChips value={rpe} onChange={setRpe} label={rpeLabel} />
-    </>
+    <View style={{ width: "100%", gap: 12 }}>
+      <Pressable style={styles.detailToggle} onPress={onToggle}>
+        <Text style={styles.detailCaret}>{open ? "▾" : "▸"}</Text>
+        <Text style={styles.detailToggleText}>Weight & RPE</Text>
+      </Pressable>
+      {open && (
+        <>
+          <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
+          <Stepper value={weight} onChange={setWeight} step={weightStep} />
+          <RPEChips value={rpe} onChange={setRpe} label={rpeLabel} />
+        </>
+      )}
+    </View>
   )
 }
 
@@ -576,7 +578,7 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExe
         : <Stepper value={amount} onChange={setAmount} />}
 
       <ExerciseDetail
-        open={showDetail} onOpen={() => setShowDetail(true)}
+        open={showDetail} onToggle={() => setShowDetail((v) => !v)}
         weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
         rpe={rpe} setRpe={setRpe}
       />
@@ -659,7 +661,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
         : <Stepper value={amount} onChange={setAmount} />}
 
       <ExerciseDetail
-        open={showDetail} onOpen={() => setShowDetail(true)}
+        open={showDetail} onToggle={() => setShowDetail((v) => !v)}
         weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
         rpe={side === "left" ? rpeLeft : rpeRight}
         setRpe={side === "left" ? setRpeLeft : setRpeRight}
@@ -943,12 +945,13 @@ const styles = StyleSheet.create({
   holdTimerBtnStop: { backgroundColor: C.red, borderColor: C.red },
   holdTimerBtnText: { fontSize: 15, fontWeight: "800", color: C.green },
 
-  // Collapsed weight/RPE toggle
-  addDetailBtn: {
-    width: "100%", paddingVertical: 12, borderRadius: 12, alignItems: "center",
-    borderWidth: 1, borderColor: C.border, borderStyle: "dashed",
+  // Collapsible weight/RPE toggle
+  detailToggle: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 6,
   },
-  addDetailText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  detailCaret: { fontSize: 12, color: C.textSecondary, width: 12, textAlign: "center" },
+  detailToggleText: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
 
   rpeLabel: { fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   rpeRow: { flexDirection: "row", gap: 8, width: "100%", marginBottom: 8 },
