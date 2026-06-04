@@ -482,7 +482,7 @@ function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: 
   const display = running ? elapsed : value
   return (
     <View style={styles.timedControl}>
-      <View style={styles.stepperRow}>
+      <View style={[styles.stepperRow, { flex: 1 }]}>
         <Pressable
           style={styles.stepperBtn} hitSlop={6} disabled={running}
           onPress={() => onChange(Math.max(0, value - 1))}
@@ -502,7 +502,7 @@ function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: 
         onPress={running ? stop : start}
       >
         <Text style={[styles.holdTimerBtnText, running && { color: "#fff" }]}>
-          {running ? "Stop" : "Start hold"}
+          {running ? "Stop" : "Start\nhold"}
         </Text>
       </Pressable>
     </View>
@@ -945,14 +945,15 @@ const styles = StyleSheet.create({
   stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
-  // Timed amount control (stepper + hold button in one box)
-  timedControl: { width: "100%", gap: 10, alignItems: "center" },
+  // Timed amount control — stepper box with the hold button on its right
+  timedControl: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 10 },
   holdTimerBtn: {
-    paddingHorizontal: 36, paddingVertical: 10, borderRadius: 24,
+    paddingHorizontal: 18, borderRadius: 14,
     borderWidth: 1.5, borderColor: C.green,
+    alignItems: "center", justifyContent: "center",
   },
   holdTimerBtnStop: { backgroundColor: C.red, borderColor: C.red },
-  holdTimerBtnText: { fontSize: 15, fontWeight: "800", color: C.green },
+  holdTimerBtnText: { fontSize: 14, fontWeight: "800", color: C.green, textAlign: "center" },
 
   // Collapsible weight/RPE toggle
   detailToggle: {
