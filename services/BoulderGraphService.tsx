@@ -416,16 +416,19 @@ export async function createExercise(input: {
     return response as unknown as ExerciseRow
   } catch (e) {
     // The `unit` column may not exist yet — retry without it so the app keeps
-    // working until the column is added in Appwrite.
+    // working until the column is added in Appwrite. We still merge the unit
+    // back into the returned object so the caller (and the block it's added to,
+    // which stores exercises as JSON) remembers it even though the library row
+    // didn't persist it.
     if (input.unit === undefined) throw e
-    const { unit: _unit, ...rest } = input
+    const { unit, ...rest } = input
     const response = await tablesDB.createRow({
       databaseId: DATABASE_ID,
       tableId: EXERCISES_TABLE,
       rowId: ID.unique(),
       data: rest,
     })
-    return response as unknown as ExerciseRow
+    return { ...(response as unknown as ExerciseRow), unit }
   }
 }
 
