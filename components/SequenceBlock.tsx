@@ -321,22 +321,27 @@ export function SequenceBlock({
     return (
       <View style={shared_styles.screen}>
         <TopBar
-          title={`${blockTitle} · ${displayDone}/${targetAttempts}`}
+          title={`${displayDone}/${targetAttempts} attempts recorded`}
           onBack={() => setPhase("intro")}
           hideBorder
         />
-        {/* Rest / Climb progress bar — fills to the right as rest completes */}
+        {/* While resting: a progress bar that fills to the right. When done: a
+            simple "Go climb" prompt instead of a bar. */}
         <View style={styles.restPillWrap}>
-          <View style={[styles.restBar, resting ? styles.restBarResting : styles.restBarClimb]}>
-            <Animated.View style={[styles.restBarFill, restBarFillStyle, {
-              backgroundColor: resting ? "rgba(98,201,154,0.5)" : C.green,
-            }]} />
-            <View style={styles.restBarContent}>
-              <Text style={[styles.restBarText, { color: resting ? C.textPrimary : C.bg }]}>
-                {resting ? `Rest · ${restDisplay}` : "Climb"}
-              </Text>
+          {resting ? (
+            <View style={[styles.restBar, styles.restBarResting]}>
+              <Animated.View style={[styles.restBarFill, restBarFillStyle, {
+                backgroundColor: "rgba(98,201,154,0.5)",
+              }]} />
+              <View style={styles.restBarContent}>
+                <Text style={[styles.restBarText, { color: C.textPrimary }]}>
+                  Rest · {restDisplay}
+                </Text>
+              </View>
             </View>
-          </View>
+          ) : (
+            <Text style={styles.goClimbText}>Go climb</Text>
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} freeGesture naturalSize={wallSize} />
@@ -693,10 +698,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface, borderWidth: 1, justifyContent: "center",
   },
   restBarResting: { borderColor: C.border },
-  restBarClimb: { borderColor: C.green },
   restBarFill: { position: "absolute", left: 0, top: 0, bottom: 0 },
   restBarContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   restBarText: { fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  goClimbText: {
+    textAlign: "center", fontSize: 16, fontWeight: "800", color: C.green,
+    paddingVertical: 12,
+  },
 
   // Variation dropdown (active phase, after the initial selection)
   varDropdownWrap: {
@@ -737,10 +745,10 @@ const styles = StyleSheet.create({
 
   // ── Rest 1
   pillTimer: {
-    backgroundColor: "transparent", borderRadius: 30, borderWidth: 1.5, borderColor: C.green,
-    paddingHorizontal: 28, paddingVertical: 10, minWidth: 120, alignItems: "center",
+    backgroundColor: "transparent", borderRadius: 20, borderWidth: 1.5, borderColor: C.green,
+    paddingHorizontal: 16, paddingVertical: 6, minWidth: 84, alignItems: "center",
   },
-  pillTimerText: { fontSize: 20, fontWeight: "700", color: C.green },
+  pillTimerText: { fontSize: 15, fontWeight: "700", color: C.green },
   rest1Header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8,
