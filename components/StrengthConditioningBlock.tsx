@@ -89,9 +89,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
   const [logs, setLogs] = useState<ExerciseLog[]>([])
   const [weightUnit, setWeightUnit] = useState<WeightUnit>("kg")
-  // Last weight used per exercise, so later rounds prefill it (set once, adjust
-  // only when it changes).
+  // Last weight / RPE used per exercise, so later rounds prefill them (set once,
+  // adjust only when they change).
   const [lastWeights, setLastWeights] = useState<Record<number, string>>({})
+  const [lastRpe, setLastRpe] = useState<Record<number, string>>({})
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
@@ -126,9 +127,11 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     const fullLog: ExerciseLog = { ...log, exerciseIndex: idx, round: currentRound }
     setLogs((prev) => [...prev, fullLog])
 
-    // Remember the weight for this exercise so the next round prefills it.
+    // Remember the weight / RPE for this exercise so the next round prefills them.
     const usedWeight = log.weight ?? log.weightRight ?? log.weightLeft
     if (usedWeight) setLastWeights((prev) => ({ ...prev, [idx]: usedWeight }))
+    const usedRpe = log.rpe ?? log.rpeRight ?? log.rpeLeft
+    if (usedRpe) setLastRpe((prev) => ({ ...prev, [idx]: usedRpe }))
 
     logAttempt({
       success: true,
@@ -237,39 +240,39 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         : 0
     const restUrgent = (restTimeRemaining ?? 99) <= 15
 
+    const skipRest = () => {
+      if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
+      setCurrentRound((r) => r + 1)
+      setCurrentExerciseIndex(0)
+      setPhase("circuit")
+    }
     return (
-      <View style={styles.centeredContainer}>
-        <Text style={styles.restLabel}>Rest</Text>
-        <Text style={styles.roundBadge}>
-          Round {currentRound + 1} complete · Next: {currentRound + 2} of {block.rounds}
-        </Text>
-
-        <AnimatedCircularProgress
-          style={styles.circularProgress}
-          size={220}
-          width={10}
-          fill={fillPercent}
-          tintColor={restUrgent ? C.red : C.green}
-          backgroundColor={C.surface}
-        >
-          {() => (
-            <Text style={styles.timerText}>
-              {restTimeRemaining != null && restTimeRemaining > 0
-                ? `${restTimeRemaining}s`
-                : "go!"}
-            </Text>
-          )}
-        </AnimatedCircularProgress>
-
-        <CustomButton
-          title="Skip rest"
-          onPress={() => {
-            if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
-            setCurrentRound((r) => r + 1)
-            setCurrentExerciseIndex(0)
-            setPhase("circuit")
-          }}
-        />
+      <View style={styles.restContainer}>
+        <View style={styles.restHeader}>
+          <Text style={styles.restRoundLabel}>Next: round {currentRound + 2} of {block.rounds}</Text>
+          <Text style={styles.restSub}>Rest</Text>
+        </View>
+        <View style={styles.restCircle}>
+          <AnimatedCircularProgress
+            size={300} width={10} fill={fillPercent}
+            tintColor={restUrgent ? C.red : C.green}
+            backgroundColor={C.surface}
+            rotation={0}
+          >
+            {() => {
+              const t = restTimeRemaining ?? 0
+              const display = t > 0
+                ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+                : "go!"
+              return <Text style={styles.restTimerText}>{display}</Text>
+            }}
+          </AnimatedCircularProgress>
+        </View>
+        <View style={styles.restFooter}>
+          <Pressable style={styles.skipBtn} onPress={skipRest}>
+            <Text style={styles.skipBtnText}>Skip rest</Text>
+          </Pressable>
+        </View>
       </View>
     )
   }
@@ -314,6 +317,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
               exercise={exercise}
               weightUnit={weightUnit}
               initialWeight={lastWeights[currentExerciseIndex] ?? ""}
+              initialRpe={lastRpe[currentExerciseIndex] ?? ""}
               onDone={(log) => handleExerciseDone(log)}
             />
           ) : exercise.type === "both_sides" ? (
@@ -322,6 +326,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
               exercise={exercise}
               weightUnit={weightUnit}
               initialWeight={lastWeights[currentExerciseIndex] ?? ""}
+              initialRpe={lastRpe[currentExerciseIndex] ?? ""}
               onDone={(log) => handleExerciseDone(log)}
             />
           ) : (
@@ -539,17 +544,18 @@ interface RepsExerciseUIProps {
   exercise: RepExercise
   weightUnit: WeightUnit
   initialWeight?: string
+  initialRpe?: string
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
-function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExerciseUIProps) {
+function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: RepsExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
   const startWeight = parseFloat(initialWeight ?? "") || 0
   // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
   const [amount, setAmount] = useState<number>(isTimed ? 0 : targetNumber(exercise.reps))
   const [weight, setWeight] = useState<number>(startWeight)
-  const [rpe, setRpe] = useState("")
-  const [showDetail, setShowDetail] = useState(startWeight > 0)
+  const [rpe, setRpe] = useState(initialRpe ?? "")
+  const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
   const weightStep = weightUnit === "lb" ? 5 : 2.5
 
   function handleSave() {
@@ -598,12 +604,13 @@ interface BothSidesExerciseUIProps {
   exercise: BothSidesExercise
   weightUnit: WeightUnit
   initialWeight?: string
+  initialRpe?: string
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
 type Side = "left" | "right"
 
-function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: BothSidesExerciseUIProps) {
+function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: BothSidesExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
   // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
   const initialAmount = isTimed ? 0 : targetNumber(exercise.reps)
@@ -613,11 +620,11 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: Bo
   const [side, setSide] = useState<Side>("left")
   const [repsLeft, setRepsLeft] = useState(initialAmount)
   const [weightLeft, setWeightLeft] = useState(startWeight)
-  const [rpeLeft, setRpeLeft] = useState("")
+  const [rpeLeft, setRpeLeft] = useState(initialRpe ?? "")
   const [repsRight, setRepsRight] = useState(initialAmount)
   const [weightRight, setWeightRight] = useState(startWeight)
-  const [rpeRight, setRpeRight] = useState("")
-  const [showDetail, setShowDetail] = useState(startWeight > 0)
+  const [rpeRight, setRpeRight] = useState(initialRpe ?? "")
+  const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
 
   function handleLeftDone() {
     // Carry the left side's entries over as the right side's starting point.
@@ -885,7 +892,6 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
 
 const styles = StyleSheet.create({
   introContent: { flexGrow: 1, padding: 20, gap: 16 },
-  centeredContainer: { flex: 1, width: "100%", padding: 20, alignItems: "center", backgroundColor: C.bg },
   circuitContainer: { paddingHorizontal: 30, paddingVertical: 20, flexGrow: 1 },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 12, color: C.textPrimary },
   description: { fontSize: 16, color: C.textSecondary, lineHeight: 24 },
@@ -947,6 +953,20 @@ const styles = StyleSheet.create({
   stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
+  // Rest-between-rounds timer (mirrors the project-bouldering rest screen)
+  restContainer: { flex: 1, backgroundColor: C.bg, paddingTop: 16, paddingBottom: 48, paddingHorizontal: 24 },
+  restHeader: { alignItems: "center", gap: 4 },
+  restRoundLabel: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
+  restSub: { fontSize: 14, color: C.textMuted },
+  restCircle: { flex: 1, alignItems: "center", justifyContent: "center" },
+  restTimerText: { fontSize: 72, fontWeight: "700", color: C.textPrimary, textAlign: "center" },
+  restFooter: { alignItems: "center", width: "100%" },
+  skipBtn: {
+    borderRadius: 20, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 28, paddingVertical: 10,
+  },
+  skipBtnText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
+
   // Timed amount control — stepper box with the hold button on its right
   timedControl: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 10 },
   holdTimerBtn: {
@@ -971,9 +991,6 @@ const styles = StyleSheet.create({
   rpeChipSelected: { backgroundColor: C.green, borderColor: C.green },
   rpeChipText: { fontSize: 15, fontWeight: "500", color: C.textSecondary },
   rpeChipTextSelected: { color: C.bg },
-
-  restLabel: { fontSize: 24, fontWeight: "700", marginBottom: 6, color: C.textPrimary },
-  roundBadge: { fontSize: 14, color: C.textSecondary, marginBottom: 24 },
 
   reviewContainer: { padding: 20, gap: 16 },
   reviewRound: { backgroundColor: C.surface, borderRadius: 14, padding: 16, gap: 10 },
