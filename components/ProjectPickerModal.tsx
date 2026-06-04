@@ -8,7 +8,6 @@ import {
   uploadPhoto,
 } from "@/services/BoulderGraphService"
 import * as ImagePicker from "expo-image-picker"
-import WheelPicker from "@quidone/react-native-wheel-picker"
 import { useEffect, useState } from "react"
 import {
   ActionSheetIOS,
@@ -25,8 +24,7 @@ import {
   TextInput,
   View,
 } from "react-native"
-import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context"
-import { GestureHandlerRootView } from "react-native-gesture-handler"
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Boulder grades. `color` is the swatch shown in pickers/pills; `on` is the
 // foreground color to use when a grade is the selected (filled) state.
@@ -153,12 +151,7 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      {/* The grade wheel uses react-native-gesture-handler, which requires a
-          GestureHandlerRootView inside a Modal — without it, iOS touch handling
-          breaks and inputs are untappable until it settles. initialMetrics also
-          avoids an async safe-area re-measure that shifts the layout on iOS. */}
-      <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <SafeAreaProvider>
         <ProjectPickerContent
           mode={mode}
           setMode={setMode}
@@ -186,7 +179,6 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
           handleCreate={handleCreate}
         />
       </SafeAreaProvider>
-      </GestureHandlerRootView>
     </Modal>
   )
 }
@@ -300,15 +292,21 @@ function ProjectPickerContent(props: any) {
             />
 
             <Text style={s.label}>Grade</Text>
-            <WheelPicker
-              data={BoulderLevelOptions}
-              value={grade}
-              onValueChanged={({ item: { value } }: any) => setGrade(value)}
-              itemHeight={30}
-              itemTextStyle={{ color: C.textPrimary }}
-              // @ts-ignore
-              selectedItemTextStyle={{ color: C.textPrimary, fontWeight: "700" }}
-            />
+            <View style={s.gradeRow}>
+              {BoulderLevelOptions.map((g) => {
+                const sel = grade === g.value
+                return (
+                  <Pressable
+                    key={g.value}
+                    style={[s.gradeChip, sel && { backgroundColor: g.color, borderColor: g.color }]}
+                    onPress={() => setGrade(g.value)}
+                  >
+                    <View style={[s.gradeDot, { backgroundColor: g.color }, sel && { backgroundColor: g.on }]} />
+                    <Text style={[s.gradeText, sel && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
 
             <Text style={s.label}>Weeks to complete</Text>
             <TextInput
@@ -450,6 +448,19 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   imageOverlayText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+
+  // Grade pills
+  gradeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
+  gradeChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  gradeDot: {
+    width: 10, height: 10, borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.45)",
+  },
+  gradeText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
 
   // Location
   locationRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
