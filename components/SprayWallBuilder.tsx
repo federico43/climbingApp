@@ -726,6 +726,8 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                           hold.type === "foot"   ? FOOT_COLOR :
                           "rgba(0,0,0,0.75)"
                         const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                        // Scale the badge with the circle so small holds get small numbers.
+                        const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                         return (
                           <View pointerEvents="none"
                             style={{
@@ -738,8 +740,13 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                               justifyContent: "center",
                             }}
                           >
-                            <View style={[styles.badge, { backgroundColor: badgeBg }]}>
-                              <Text style={[styles.badgeText, { color: badgeFg }]}>{badgeLabel}</Text>
+                            <View style={[styles.badge, {
+                              backgroundColor: badgeBg,
+                              paddingHorizontal: badgeFont * 0.55,
+                              paddingVertical: badgeFont * 0.22,
+                              borderRadius: badgeFont,
+                            }]}>
+                              <Text style={[styles.badgeText, { color: badgeFg, fontSize: badgeFont }]}>{badgeLabel}</Text>
                             </View>
                           </View>
                         )

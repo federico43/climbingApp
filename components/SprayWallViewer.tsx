@@ -216,6 +216,8 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                   hold.type === "foot"   ? "#4FA3E0" :
                   "rgba(0,0,0,0.75)"
                 const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                // Scale the badge with the circle so small holds get small numbers.
+                const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                 return (
                   <React.Fragment key={hold.id}>
                     <View pointerEvents="none"
@@ -246,8 +248,13 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                         justifyContent: "center",
                       }}
                     >
-                      <View style={[styles.viewerBadge, { backgroundColor: badgeBg }]}>
-                        <Text style={[styles.badgeText, { color: badgeFg }]}>{badgeLabel}</Text>
+                      <View style={[styles.viewerBadge, {
+                        backgroundColor: badgeBg,
+                        paddingHorizontal: badgeFont * 0.55,
+                        paddingVertical: badgeFont * 0.22,
+                        borderRadius: badgeFont,
+                      }]}>
+                        <Text style={[styles.badgeText, { color: badgeFg, fontSize: badgeFont }]}>{badgeLabel}</Text>
                       </View>
                     </View>
                   </React.Fragment>
