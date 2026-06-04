@@ -60,8 +60,6 @@ export function SequenceBlock({
   const [highPoint, setHighPoint]       = useState<number>(1)
   const [rpe, setRpe]                   = useState<string>("")
   const [rest1Step, setRest1Step]       = useState<"outcome" | "rpe">("outcome")
-  // Never display more than the target (clamps a stray over-log at N/N).
-  const displayDone            = Math.min(attemptsDone, targetAttempts)
 
   // Route variations + which one we're on. The block was authored with a
   // snapshot of routeHolds (the original) at design time, but the route may
@@ -324,11 +322,28 @@ export function SequenceBlock({
     }
     return (
       <View style={shared_styles.screen}>
-        <TopBar
-          title={`${displayDone}/${targetAttempts} attempts recorded`}
-          onBack={() => setPhase("intro")}
-          hideBorder
-        />
+        <TopBar onBack={() => setPhase("intro")} hideBorder />
+        {/* Attempt dots: green = sent, red = fell, ringed = current, hollow = pending */}
+        <View style={styles.dotsRow}>
+          {Array.from({ length: targetAttempts }).map((_, i) => {
+            const done = i < attemptsDone
+            const isCurrent = i === attemptsDone
+            const sent = done && attempts[i]?.success
+            const fell = done && !attempts[i]?.success
+            return (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  sent && styles.dotSent,
+                  fell && styles.dotFell,
+                  isCurrent && styles.dotCurrent,
+                  !done && !isCurrent && styles.dotPending,
+                ]}
+              />
+            )
+          })}
+        </View>
         {/* While resting: a progress bar that fills to the right. When done: a
             simple "Go climb" prompt instead of a bar. */}
         <View style={styles.restPillWrap}>
@@ -694,6 +709,20 @@ const styles = StyleSheet.create({
   },
   registerBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
   controlDisabled: { opacity: 0.4 },
+
+  // Attempt dots (top of the active phase)
+  dotsRow: {
+    flexDirection: "row", justifyContent: "center", alignItems: "center",
+    gap: 10, backgroundColor: C.bg, paddingTop: 10, paddingBottom: 2,
+  },
+  dot: {
+    width: 12, height: 12, borderRadius: 6,
+    borderWidth: 1.5, borderColor: "transparent", backgroundColor: "transparent",
+  },
+  dotSent: { backgroundColor: C.green, borderColor: C.green },
+  dotFell: { backgroundColor: C.red, borderColor: C.red },
+  dotCurrent: { width: 15, height: 15, borderRadius: 7.5, borderColor: C.green },
+  dotPending: { borderColor: C.border },
 
   // Rest / Climb progress bar (top of the active phase)
   restPillWrap: { backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
