@@ -497,6 +497,17 @@ function coreRouteData(data: any) {
   return core
 }
 
+// Turn an Appwrite file URL (…/files/{id}/view) into a resized, WebP-compressed
+// preview at the given width. Hugely smaller than the full image. Non-Appwrite
+// sources (local files, bundled requires) are returned unchanged.
+export function wallPreviewUrl(uri: string | undefined, width: number): string | undefined {
+  if (!uri || typeof uri !== "string") return uri
+  const m = uri.match(/\/files\/([^/?]+)\//)
+  if (!m) return uri
+  const fileId = m[1]
+  return `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${fileId}/preview?project=${APPWRITE_PROJECT}&width=${Math.round(width)}&quality=70&output=webp`
+}
+
 export async function getSprayRoute(id: string): Promise<SprayRouteRow> {
   const response = await tablesDB.getRow({
     databaseId: DATABASE_ID,

@@ -1523,6 +1523,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                     holds={holds}
                     style={{ flex: 1 }}
                     interactive={false}
+                    previewWidth={500}
                   />
                 </View>
                 <View style={styles.routePickerBody}>

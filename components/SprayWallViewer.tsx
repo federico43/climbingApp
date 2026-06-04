@@ -1,9 +1,11 @@
 import { PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
 import { C } from "@/utils/theme"
 import { getDisplayRadius } from "@/utils/holdRadius"
+import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
+import { Image } from "expo-image"
 import React, { useMemo, useState } from "react"
-import { Image, StyleSheet, Text, View, ViewStyle } from "react-native"
+import { StyleSheet, Text, View, ViewStyle } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
   useAnimatedStyle,
@@ -48,12 +50,23 @@ interface Props {
   // Thumbnails/previews pass interactive={false} to skip pinch/pan/double-tap
   // gestures and the animated transform — far cheaper when many are on screen.
   interactive?: boolean
+  // Width (px) of the resized server preview to load. Thumbnails pass a small
+  // value; full-screen viewers a larger one. Cuts download + decode hugely.
+  previewWidth?: number
 }
 
-export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true }: Props) {
+export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true, previewWidth = 1200 }: Props) {
   const [containerW, setContainerW] = useState(0)
   const [containerH, setContainerH] = useState(0)
-  const { nw, nh } = useImageSize(imageSource)
+  // Resize remote wall photos to a server-side preview (small, WebP). Bundled
+  // requires / local files pass through unchanged.
+  const source = useMemo(() => {
+    if (imageSource && typeof imageSource === "object" && typeof imageSource.uri === "string") {
+      return { uri: wallPreviewUrl(imageSource.uri, previewWidth) }
+    }
+    return imageSource
+  }, [imageSource, previewWidth])
+  const { nw, nh } = useImageSize(source)
 
   const { imgW, imgH, imgLeft, imgTop } = useMemo(() => {
     if (!containerW || !containerH) return { imgW: 0, imgH: 0, imgLeft: 0, imgTop: 0 }
@@ -160,9 +173,11 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
         {imgW > 0 && (
             <>
               <Image
-                source={imageSource}
+                source={source}
                 style={{ position: "absolute", left: imgLeft, top: imgTop, width: imgW, height: imgH }}
-                resizeMode="stretch"
+                contentFit="fill"
+                cachePolicy="memory-disk"
+                transition={150}
               />
               <View
                 pointerEvents="none"
@@ -191,14 +206,15 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                     >
                       <View style={[styles.revealCircle, { width: r * 2, height: r * 2, borderRadius: r }]}>
                         <Image
-                          source={imageSource}
+                          source={source}
                           style={{
                             position: "absolute",
                             left: imgLeft - cx + r,
                             top:  imgTop  - cy + r,
                             width: imgW, height: imgH,
                           }}
-                          resizeMode="stretch"
+                          contentFit="fill"
+                          cachePolicy="memory-disk"
                         />
                       </View>
                     </View>

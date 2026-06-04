@@ -234,7 +234,7 @@ export function SequenceBlock({
             <View style={styles.previewWrapper}>
               {!!routeName && <Text style={styles.routeLabel}>{routeName}</Text>}
               <View>
-                <SprayWallViewer imageSource={wallImageSource} holds={holds} style={styles.previewWall} interactive={false} />
+                <SprayWallViewer imageSource={wallImageSource} holds={holds} style={styles.previewWall} interactive={false} previewWidth={500} />
                 {!!block.routeId && (
                   <Pressable style={styles.reloadBtn} onPress={refreshRoute} hitSlop={8}>
                     <Ionicons

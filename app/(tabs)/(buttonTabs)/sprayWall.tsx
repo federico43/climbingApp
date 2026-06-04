@@ -315,6 +315,7 @@ export default function SprayWallScreen() {
                           holds={holds}
                           style={{ flex: 1 }}
                           interactive={false}
+                          previewWidth={500}
                         />
                       </Pressable>
                       <View style={styles.cardInfo}>
