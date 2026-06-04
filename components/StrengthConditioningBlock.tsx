@@ -900,14 +900,18 @@ const styles = StyleSheet.create({
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
 
   targetRepsBox: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
+    gap: 8,
     backgroundColor: C.surface,
-    borderRadius: 20,
-    paddingVertical: 16,
-    alignItems: "center",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     marginBottom: 4,
   },
-  targetRepsNumber: { fontSize: 52, fontWeight: "800", color: C.yellow, lineHeight: 56 },
-  targetRepsUnit: { fontSize: 13, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
+  targetRepsNumber: { fontSize: 26, fontWeight: "800", color: C.yellow },
+  targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
 
   sideTabs: { flexDirection: "row", width: "100%", gap: 8, marginBottom: 4 },
   sideTab: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: "center" },
