@@ -1,4 +1,5 @@
 import { ConsumeAuth } from "@/components/auth-context"
+import { prefetchWallImages } from "@/utils/prefetchWallImages"
 import { WorkOutState } from "@/components/workOutState"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import { BottomTabBar } from "@react-navigation/bottom-tabs"
@@ -19,6 +20,12 @@ import { C } from "@/utils/theme"
 
 export default function TabsLayout() {
   const { role, isLoadingUser } = ConsumeAuth()
+
+  // Warm the spray-wall photos into the image cache once the user is loaded,
+  // so they render instantly later (grid, route picker, sequence blocks).
+  useEffect(() => {
+    if (!isLoadingUser) prefetchWallImages()
+  }, [isLoadingUser])
 
   if (isLoadingUser) return null
 
