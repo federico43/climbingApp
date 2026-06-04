@@ -519,6 +519,7 @@ function SequenceRouteContent({
 }) {
   const insets = useSafeAreaInsets()
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
+  const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(null)
 
   useEffect(() => {
     if (!route.routeId) return
@@ -527,7 +528,9 @@ function SequenceRouteContent({
       .then(async (row) => {
         if (cancelled || !row.wallId) return
         const wall = await getSprayWall(row.wallId)
-        if (!cancelled && wall?.imageUri) setWallImageSource({ uri: wall.imageUri })
+        if (cancelled) return
+        if (wall?.imageUri) setWallImageSource({ uri: wall.imageUri })
+        if (wall?.width && wall?.height) setWallSize({ w: wall.width, h: wall.height })
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -550,6 +553,7 @@ function SequenceRouteContent({
             holds={holds}
             style={{ flex: 1 }}
             freeGesture
+            naturalSize={wallSize}
           />
         </View>
 

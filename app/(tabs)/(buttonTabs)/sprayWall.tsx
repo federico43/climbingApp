@@ -47,6 +47,7 @@ export default function SprayWallScreen() {
   // Wall name prompt state
   const [nameModalVisible, setNameModalVisible] = useState(false)
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null)
+  const [pendingImageSize, setPendingImageSize] = useState<{ w: number; h: number } | null>(null)
   const [wallNameInput, setWallNameInput] = useState("")
   // Wall chooser for new routes when on the "All" filter with multiple walls.
   const [wallPickerVisible, setWallPickerVisible] = useState(false)
@@ -91,7 +92,9 @@ export default function SprayWallScreen() {
       quality: 0.85,
     })
     if (result.canceled || !result.assets[0]) return
-    setPendingImageUri(result.assets[0].uri)
+    const asset = result.assets[0]
+    setPendingImageUri(asset.uri)
+    setPendingImageSize(asset.width && asset.height ? { w: asset.width, h: asset.height } : null)
     setWallNameInput("")
     setNameModalVisible(true)
   }
@@ -102,7 +105,7 @@ export default function SprayWallScreen() {
     setAddingWall(true)
     try {
       const cloudUri = await uploadPhoto(pendingImageUri)
-      const wall = await createSprayWall(wallNameInput.trim(), cloudUri)
+      const wall = await createSprayWall(wallNameInput.trim(), cloudUri, pendingImageSize?.w, pendingImageSize?.h)
       setWalls((prev) => [...prev, wall])
       setSelectedWallId(wall.$id)
     } catch (e: any) {
@@ -110,6 +113,7 @@ export default function SprayWallScreen() {
     } finally {
       setAddingWall(false)
       setPendingImageUri(null)
+      setPendingImageSize(null)
     }
   }
 
@@ -216,6 +220,11 @@ export default function SprayWallScreen() {
     return uri ? { uri } : FALLBACK_IMAGE
   }
 
+  function wallNaturalSize(route: SprayRouteRow) {
+    const wall = wallsById.get(route.wallId ?? "")
+    return wall?.width && wall?.height ? { w: wall.width, h: wall.height } : null
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -316,6 +325,7 @@ export default function SprayWallScreen() {
                           style={{ flex: 1 }}
                           interactive={false}
                           previewWidth={500}
+                          naturalSize={wallNaturalSize(route)}
                         />
                       </Pressable>
                       <View style={styles.cardInfo}>

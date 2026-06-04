@@ -1553,6 +1553,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                     style={{ flex: 1 }}
                     interactive={false}
                     previewWidth={500}
+                    naturalSize={(() => { const w = wallsById.get(route.wallId ?? ""); return w?.width && w?.height ? { w: w.width, h: w.height } : null })()}
                   />
                 </View>
                 <View style={styles.routePickerBody}>

@@ -85,6 +85,7 @@ export function SequenceBlock({
   const [routeName, setRouteName] = useState<string>(block.routeName ?? "")
   const [refreshing, setRefreshing] = useState(false)
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
+  const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(null)
 
   // Resume: restore the variation the athlete was on from the last attempt.
   useEffect(() => {
@@ -115,6 +116,7 @@ export function SequenceBlock({
     if (row.wallId) {
       const wall = await getSprayWall(row.wallId)
       if (wall?.imageUri) setWallImageSource({ uri: wall.imageUri })
+      if (wall?.width && wall?.height) setWallSize({ w: wall.width, h: wall.height })
     }
   }
 
@@ -234,7 +236,7 @@ export function SequenceBlock({
             <View style={styles.previewWrapper}>
               {!!routeName && <Text style={styles.routeLabel}>{routeName}</Text>}
               <View>
-                <SprayWallViewer imageSource={wallImageSource} holds={holds} style={styles.previewWall} interactive={false} previewWidth={500} />
+                <SprayWallViewer imageSource={wallImageSource} holds={holds} style={styles.previewWall} interactive={false} previewWidth={500} naturalSize={wallSize} />
                 {!!block.routeId && (
                   <Pressable style={styles.reloadBtn} onPress={refreshRoute} hitSlop={8}>
                     <Ionicons
@@ -270,7 +272,7 @@ export function SequenceBlock({
           hideBorder
         />
         <View style={{ flex: 1 }}>
-          <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} freeGesture />
+          <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} freeGesture naturalSize={wallSize} />
           {!!block.routeId && (
             <Pressable style={styles.reloadBtn} onPress={refreshRoute} hitSlop={8}>
               <Ionicons

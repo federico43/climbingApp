@@ -425,6 +425,8 @@ export interface SprayWallRow {
   $createdAt: string
   name: string
   imageUri: string   // local file:// path to the wall photo
+  width?: number     // natural photo dimensions, so the viewer knows the aspect
+  height?: number    // ratio from the first frame (no measuring needed)
 }
 
 export async function getSprayWall(id: string): Promise<SprayWallRow | null> {
@@ -449,14 +451,22 @@ export async function getSprayWalls(): Promise<SprayWallRow[]> {
   return response.rows as unknown as SprayWallRow[]
 }
 
-export async function createSprayWall(name: string, imageUri: string): Promise<SprayWallRow> {
-  const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID,
-    tableId: SPRAY_WALLS_TABLE,
-    rowId: ID.unique(),
-    data: { name, imageUri },
-  })
-  return response as unknown as SprayWallRow
+export async function createSprayWall(name: string, imageUri: string, width?: number, height?: number): Promise<SprayWallRow> {
+  const data: any = { name, imageUri }
+  if (width) data.width = width
+  if (height) data.height = height
+  try {
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: ID.unique(), data,
+    })
+    return response as unknown as SprayWallRow
+  } catch (e) {
+    // Table may not have width/height columns yet — retry with the core fields.
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: ID.unique(), data: { name, imageUri },
+    })
+    return response as unknown as SprayWallRow
+  }
 }
 
 export async function deleteSprayWall(id: string): Promise<void> {

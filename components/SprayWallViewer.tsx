@@ -53,9 +53,12 @@ interface Props {
   // Width (px) of the resized server preview to load. Thumbnails pass a small
   // value; full-screen viewers a larger one. Cuts download + decode hugely.
   previewWidth?: number
+  // The wall photo's natural dimensions (stored on the wall). When provided, the
+  // correct aspect ratio is known from the first frame — no measuring at all.
+  naturalSize?: { w: number; h: number } | null
 }
 
-export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true, previewWidth = 1200 }: Props) {
+export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true, previewWidth = 1200, naturalSize }: Props) {
   const [containerW, setContainerW] = useState(0)
   const [containerH, setContainerH] = useState(0)
   // Resize remote wall photos to a server-side preview (small, WebP). Bundled
@@ -71,8 +74,10 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   // Prefer those over useImageSize's Image.getSize, which re-downloads the full
   // image — that's what made the wall briefly render at the wrong aspect ratio.
   const [loadedSize, setLoadedSize] = useState<{ w: number; h: number } | null>(null)
-  const nwEff = loadedSize?.w ?? nw
-  const nhEff = loadedSize?.h ?? nh
+  // Aspect-ratio source, best → fallback: onLoad dims, the wall's stored size,
+  // then useImageSize (slow getSize).
+  const nwEff = loadedSize?.w ?? (naturalSize?.w || nw)
+  const nhEff = loadedSize?.h ?? (naturalSize?.h || nh)
   const sourceKey = typeof source === "object" && source ? source.uri : source
   useEffect(() => { setLoadedSize(null) }, [sourceKey])
 
