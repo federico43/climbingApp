@@ -101,7 +101,9 @@ export function SequenceBlock({
   const wasRestingRef = useRef(false)
   useEffect(() => {
     const remaining = restTimeRemaining ?? 0
-    const resting = remaining > 0
+    // The first attempt never rests — a leftover global timer from a previous
+    // block must not count as resting here.
+    const resting = attemptsDone > 0 && remaining > 0
     if (!resting) {
       // Done / climb → fill to the right edge.
       restProgress.value = withTiming(1, { duration: 250, easing: Easing.linear })
@@ -117,7 +119,7 @@ export function SequenceBlock({
     } else {
       restProgress.value = withTiming(target, { duration: 1000, easing: Easing.linear })
     }
-  }, [restTimeRemaining, restTime])
+  }, [restTimeRemaining, restTime, attemptsDone])
 
   const restBarFillStyle = useAnimatedStyle(() => ({
     width: `${restProgress.value * 100}%`,
@@ -299,11 +301,13 @@ export function SequenceBlock({
   // ── 2. Active ─────────────────────────────────────────────────────────────────
 
   if (phase === "active") {
-    const resting = (restTimeRemaining ?? 0) > 0
+    // The first attempt never rests (ignores any leftover timer from a prior block).
+    const resting = attemptsDone > 0 && (restTimeRemaining ?? 0) > 0
     const restDisplay = resting
       ? `${Math.floor(restTimeRemaining! / 60)}:${String(restTimeRemaining! % 60).padStart(2, "0")}`
       : null
-    // While resting the controls look disabled, but tapping offers to skip.
+    // While resting the controls look disabled, but tapping offers to skip the
+    // rest and go straight on to the action they tapped (record / register).
     const onControlPress = (action: () => void) => {
       if (resting) {
         Alert.alert(
@@ -311,7 +315,7 @@ export function SequenceBlock({
           "You're still resting. Skip the rest and continue?",
           [
             { text: "Keep resting", style: "cancel" },
-            { text: "Skip rest", style: "destructive", onPress: () => startRestTimer(0) },
+            { text: "Skip rest", style: "destructive", onPress: () => { startRestTimer(0); action() } },
           ],
         )
         return
