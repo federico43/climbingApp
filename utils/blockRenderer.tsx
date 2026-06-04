@@ -297,7 +297,8 @@ function ConstraintWarmupBlock({
     return (
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} onBack={() => setPhase("intro")} />
-        <View style={shared_styles.container}>
+        {/* Centered status: difficulty pill + progress counter */}
+        <View style={cwStyles.readyCenter}>
           {!!(block as any).level && (
             <View style={{ marginBottom: 8 }}>
               <DifficultyPill level={String((block as any).level)} fontSize={22} />
@@ -306,6 +307,9 @@ function ConstraintWarmupBlock({
           <Animated.Text style={[warmup_styles.progress, { transform: [{ scale: counterScale }] }]}>
             {displayDone} / {targetAttempts}
           </Animated.Text>
+        </View>
+        {/* Controls pinned to the bottom */}
+        <View style={cwStyles.footer}>
           <View style={cwStyles.controls}>
             <Pressable style={cwStyles.recordBtn} onPress={() => setShowCamera(true)}>
               <Text style={cwStyles.recordBtnText}>Record</Text>
@@ -381,7 +385,9 @@ function ConstraintWarmupBlock({
 // Constraint-warmup ready-phase controls — same look as the sequence active
 // buttons (side-by-side rounded), with the register action emphasized in green.
 const cwStyles = StyleSheet.create({
-  controls: { flexDirection: "row", gap: 10, width: "100%", marginTop: 24 },
+  readyCenter: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32 },
+  controls: { flexDirection: "row", gap: 10, width: "100%" },
   recordBtn: {
     flex: 1, backgroundColor: C.surfaceHigh, borderRadius: 22,
     paddingVertical: 14, alignItems: "center", justifyContent: "center",

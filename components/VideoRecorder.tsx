@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { ResizeMode, Video } from 'expo-av';
 import { useEffect, useRef, useState } from 'react';
@@ -192,7 +193,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         <>
           {onClose && (
             <TouchableOpacity onPress={onClose} style={[styles.topBtn, { left: 20 }]}>
-              <Text style={{ fontSize: 20, color: "white" }}>←</Text>
+              <Ionicons name="chevron-back" size={24} color="white" />
             </TouchableOpacity>
           )}
           <TouchableOpacity

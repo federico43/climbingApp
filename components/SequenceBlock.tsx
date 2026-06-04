@@ -144,7 +144,6 @@ export function SequenceBlock({
     return () => { cancelled = true }
   }, [block.routeId])
 
-  const moveCount = holds.filter((h) => h.type === "move").length
   // Move slots, counting "match" holds as two (they show two move numbers).
   const moveSlots = holds.filter((h) => h.type === "move").reduce((s, h) => s + (h.match ? 2 : 1), 0)
   // The reach to the top/finish hold isn't a "move" but you can still fall on
@@ -216,10 +215,11 @@ export function SequenceBlock({
 
           {/* Stats card */}
           <View style={styles.statsCard}>
-            {moveCount > 0 && (
+            {moveSlots > 0 && (
               <>
                 <View style={styles.statItem}>
-                  <Text style={styles.statNum}>{moveCount}</Text>
+                  {/* Count matches as two moves — same rule as the fall tracker. */}
+                  <Text style={styles.statNum}>{moveSlots}</Text>
                   <Text style={styles.statLabel}>moves</Text>
                 </View>
                 <View style={styles.statDivider} />
@@ -295,6 +295,15 @@ export function SequenceBlock({
           onBack={() => setPhase("intro")}
           hideBorder
         />
+        {/* Rest / Climb pill timer — wide, directly under the block name */}
+        <View style={styles.restPillWrap}>
+          <View style={[styles.restPill, resting ? styles.restPillResting : styles.restPillClimb]}>
+            <View style={[styles.restPillDot, { backgroundColor: resting ? C.yellow : C.green }]} />
+            <Text style={styles.restPillText}>
+              {resting ? `Rest · ${restDisplay}` : "Climb"}
+            </Text>
+          </View>
+        </View>
         <View style={{ flex: 1 }}>
           <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} freeGesture naturalSize={wallSize} />
           {!!block.routeId && (
@@ -332,15 +341,6 @@ export function SequenceBlock({
             )}
           </View>
         )}
-        {/* Rest / Climb pill timer */}
-        <View style={styles.restPillWrap}>
-          <View style={[styles.restPill, resting ? styles.restPillResting : styles.restPillClimb]}>
-            <View style={[styles.restPillDot, { backgroundColor: resting ? C.yellow : C.green }]} />
-            <Text style={styles.restPillText}>
-              {resting ? `Rest · ${restDisplay}` : "Climb"}
-            </Text>
-          </View>
-        </View>
         <View style={styles.activeControls}>
           <Pressable
             style={[styles.recordBtn, resting && styles.controlDisabled]}
@@ -391,12 +391,12 @@ export function SequenceBlock({
             disabled={!canEasier}
           >
             <Text style={styles.calibrateBtnText}>Too hard</Text>
-            <Text style={styles.calibrateBtnSub}>{canEasier ? "→ easier variation" : "already easiest"}</Text>
+            <Text style={styles.calibrateBtnSub}>{canEasier ? "easier variation" : "already easiest"}</Text>
           </Pressable>
 
           <Pressable style={styles.calibrateBtn} onPress={() => calibrate("right")}>
             <Text style={styles.calibrateBtnText}>Felt right</Text>
-            <Text style={styles.calibrateBtnSub}>→ keep this one</Text>
+            <Text style={styles.calibrateBtnSub}>keep this one</Text>
           </Pressable>
 
           <Pressable
@@ -405,7 +405,7 @@ export function SequenceBlock({
             disabled={!canHarder}
           >
             <Text style={styles.calibrateBtnText}>Too easy</Text>
-            <Text style={styles.calibrateBtnSub}>{canHarder ? "→ harder variation" : "already hardest"}</Text>
+            <Text style={styles.calibrateBtnSub}>{canHarder ? "harder variation" : "already hardest"}</Text>
           </Pressable>
         </View>
       </View>
@@ -619,10 +619,10 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36,
   },
   startBtn: {
-    backgroundColor: C.surfaceHigh, borderRadius: 24,
+    backgroundColor: C.green, borderRadius: 24,
     paddingVertical: 14, alignItems: "center",
   },
-  startBtnText: { color: C.textPrimary, fontSize: 16, fontWeight: "700" },
+  startBtnText: { color: C.bg, fontSize: 16, fontWeight: "700" },
   rest1Footer: {
     backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36,
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
@@ -652,11 +652,12 @@ const styles = StyleSheet.create({
   noRecordBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   controlDisabled: { opacity: 0.4 },
 
-  // Rest / Climb pill timer (shown in the active phase)
-  restPillWrap: { backgroundColor: C.bg, alignItems: "center", paddingTop: 8 },
+  // Rest / Climb pill timer (shown at the top of the active phase)
+  restPillWrap: { backgroundColor: C.bg, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   restPill: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    alignSelf: "stretch",
+    paddingHorizontal: 18, paddingVertical: 12, borderRadius: 16, borderWidth: 1,
   },
   restPillResting: { backgroundColor: C.surface, borderColor: C.border },
   restPillClimb: { backgroundColor: "rgba(63,185,80,0.12)", borderColor: C.green },
@@ -702,10 +703,10 @@ const styles = StyleSheet.create({
 
   // ── Rest 1
   pillTimer: {
-    backgroundColor: C.surface, borderRadius: 30,
+    backgroundColor: "transparent", borderRadius: 30, borderWidth: 1.5, borderColor: C.green,
     paddingHorizontal: 28, paddingVertical: 10, minWidth: 120, alignItems: "center",
   },
-  pillTimerText: { fontSize: 20, fontWeight: "700", color: C.textPrimary },
+  pillTimerText: { fontSize: 20, fontWeight: "700", color: C.green },
   rest1Header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8,
