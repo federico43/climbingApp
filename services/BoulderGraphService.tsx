@@ -497,11 +497,13 @@ function coreRouteData(data: any) {
   return core
 }
 
-// Turn an Appwrite file URL (…/files/{id}/view) into a resized, WebP-compressed
-// preview at the given width. Hugely smaller than the full image. Non-Appwrite
-// sources (local files, bundled requires) are returned unchanged.
+// Resize a wall photo to a small server-side preview. Appwrite's /preview
+// transformations are a paid feature and return blank on the current plan, so
+// this is disabled (returns the original URL). expo-image caching still applies.
+// To actually shrink images, resize them on upload (expo-image-manipulator).
+const IMAGE_TRANSFORMS_ENABLED = false
 export function wallPreviewUrl(uri: string | undefined, width: number): string | undefined {
-  if (!uri || typeof uri !== "string") return uri
+  if (!IMAGE_TRANSFORMS_ENABLED || !uri || typeof uri !== "string") return uri
   const m = uri.match(/\/files\/([^/?]+)\//)
   if (!m) return uri
   const fileId = m[1]
