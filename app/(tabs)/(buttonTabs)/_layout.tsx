@@ -19,13 +19,13 @@ import Animated, {
 import { C } from "@/utils/theme"
 
 export default function TabsLayout() {
-  const { role, isLoadingUser } = ConsumeAuth()
+  const { role, isLoadingUser, User } = ConsumeAuth()
 
-  // Warm the spray-wall photos into the image cache once the user is loaded,
-  // so they render instantly later (grid, route picker, sequence blocks).
+  // Warm the spray-wall photos into the image cache once a user is actually
+  // signed in (guests can't read them), so they render instantly later.
   useEffect(() => {
-    if (!isLoadingUser) prefetchWallImages()
-  }, [isLoadingUser])
+    if (User) prefetchWallImages()
+  }, [User])
 
   if (isLoadingUser) return null
 
