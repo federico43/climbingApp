@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from "react"
 import { LinearGradient } from "expo-linear-gradient"
 import ImageCapture from "@/components/ImageCapture"
 import * as ImagePicker from "expo-image-picker"
+import { Image as CachedImage } from "expo-image"
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -329,7 +330,7 @@ export default function HomeScreen() {
                           </View>
                         ) : p.imageUri ? (
                           <View style={styles.projectCardHero}>
-                            <Image source={{ uri: p.imageUri }} style={styles.projectCardHeroImage} />
+                            <CachedImage source={{ uri: p.imageUri }} style={styles.projectCardHeroImage} contentFit="cover" cachePolicy="memory-disk" transition={150} />
                             {/* Change / Remove buttons over the image */}
                             <View style={styles.projectCardImageActions}>
                               <Pressable

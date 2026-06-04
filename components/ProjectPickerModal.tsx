@@ -8,6 +8,7 @@ import {
   uploadPhoto,
 } from "@/services/BoulderGraphService"
 import * as ImagePicker from "expo-image-picker"
+import { Image as CachedImage } from "expo-image"
 import { useEffect, useState } from "react"
 import {
   ActionSheetIOS,
@@ -235,7 +236,7 @@ function ProjectPickerContent(props: any) {
                     onPress={() => { onSelect(p); onClose() }}
                   >
                     {p.imageUri ? (
-                      <Image source={{ uri: p.imageUri }} style={s.projectThumb} />
+                      <CachedImage source={{ uri: p.imageUri }} style={s.projectThumb} contentFit="cover" cachePolicy="memory-disk" transition={150} />
                     ) : (
                       <View style={[s.projectThumb, s.projectThumbPlaceholder]} />
                     )}

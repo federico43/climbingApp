@@ -14,6 +14,7 @@ import {
   updateProject,
 } from "@/services/BoulderGraphService"
 import { useRouter } from "expo-router"
+import { Image as CachedImage } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
@@ -261,7 +262,7 @@ function BouldersTab({
       {projects.map((p) => (
         <Pressable key={p.$id} style={styles.card} onPress={() => onTap(p)}>
           {p.imageUri ? (
-            <Image source={{ uri: p.imageUri }} style={styles.cardImage} />
+            <CachedImage source={{ uri: p.imageUri }} style={styles.cardImage} contentFit="cover" cachePolicy="memory-disk" transition={150} />
           ) : (
             <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
               <Text style={styles.cardImagePlaceholderText}>{p.grade}</Text>
