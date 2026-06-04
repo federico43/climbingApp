@@ -176,6 +176,7 @@ export function SequenceBlock({
   function handleSaveAttempt() {
     const success = outcome === "sent"
     const isFirst = attemptsDone === 0
+    const isLast  = attemptsDone + 1 >= targetAttempts
     logAttempt({
       success,
       video: pendingVideoUri ?? undefined,
@@ -189,7 +190,9 @@ export function SequenceBlock({
     // are multiple variations AND more attempts to apply it to.
     const showCalibrate = isFirst && availableVars.length > 1 && targetAttempts > 1
     if (!showCalibrate) setCalibrated(true)
-    setPhase(showCalibrate ? "calibrate" : "rest2")
+    // On the last set there's no next attempt, so skip the rest timer and go
+    // straight to review.
+    setPhase(showCalibrate ? "calibrate" : isLast ? "review" : "rest2")
   }
 
   // Initial selection after the first attempt, made blind (no preview of the
