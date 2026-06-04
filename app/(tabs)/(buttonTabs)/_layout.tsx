@@ -8,6 +8,7 @@ import { Tabs } from "expo-router"
 import { useEffect } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -97,9 +98,12 @@ export default function TabsLayout() {
 
 function CustomTabBar({ tabBarProps }: { tabBarProps: any }) {
   const ctx = useWorkoutContext()
+  const insets = useSafeAreaInsets()
   const showMiniBar = ctx.workoutActive && ctx.workoutMinimized
+  // Reserve the bottom safe-area inset so the tab labels clear the Android
+  // system navigation bar (3-button / gesture) and the iPhone home indicator.
   return (
-    <View style={{ backgroundColor: C.bg }}>
+    <View style={{ backgroundColor: C.bg, paddingBottom: insets.bottom }}>
       {showMiniBar && (
         <MinimizedWorkoutBar
           protocolName={ctx.protocolName}
