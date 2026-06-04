@@ -11,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -90,6 +89,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
   const [logs, setLogs] = useState<ExerciseLog[]>([])
   const [weightUnit, setWeightUnit] = useState<WeightUnit>("kg")
+  // Last weight used per exercise, so later rounds prefill it (set once, adjust
+  // only when it changes).
+  const [lastWeights, setLastWeights] = useState<Record<number, string>>({})
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
@@ -120,8 +122,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   }
 
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
-    const fullLog: ExerciseLog = { ...log, round: currentRound }
+    const idx = currentExerciseIndex
+    const fullLog: ExerciseLog = { ...log, exerciseIndex: idx, round: currentRound }
     setLogs((prev) => [...prev, fullLog])
+
+    // Remember the weight for this exercise so the next round prefills it.
+    const usedWeight = log.weight ?? log.weightRight ?? log.weightLeft
+    if (usedWeight) setLastWeights((prev) => ({ ...prev, [idx]: usedWeight }))
 
     logAttempt({
       success: true,
@@ -303,14 +310,18 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         >
           {exercise.type === "reps" ? (
             <RepsExerciseUI
+              key={`${currentRound}-${currentExerciseIndex}`}
               exercise={exercise}
               weightUnit={weightUnit}
+              initialWeight={lastWeights[currentExerciseIndex] ?? ""}
               onDone={(log) => handleExerciseDone(log)}
             />
           ) : exercise.type === "both_sides" ? (
             <BothSidesExerciseUI
+              key={`${currentRound}-${currentExerciseIndex}`}
               exercise={exercise}
               weightUnit={weightUnit}
+              initialWeight={lastWeights[currentExerciseIndex] ?? ""}
               onDone={(log) => handleExerciseDone(log)}
             />
           ) : (
@@ -412,31 +423,99 @@ function RPEChips({ value, onChange, label }: { value: string; onChange: (v: str
   )
 }
 
+// The prescribed amount may be a single value or a range ("10", "4-6"). Use the
+// largest number as the default "completed" value for the stepper.
+function targetNumber(s: string): number {
+  const nums = (s.match(/\d+/g) ?? []).map(Number)
+  return nums.length ? Math.max(...nums) : 0
+}
+
+// ─── − value + stepper ────────────────────────────────────────────────────────
+
+function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
+  value: number; onChange: (v: number) => void; step?: number; min?: number; suffix?: string
+}) {
+  const set = (v: number) => onChange(Math.max(min, parseFloat(v.toFixed(2))))
+  return (
+    <View style={styles.stepperRow}>
+      <Pressable style={styles.stepperBtn} onPress={() => set(value - step)} hitSlop={6}>
+        <Text style={styles.stepperBtnText}>−</Text>
+      </Pressable>
+      <Text style={styles.stepperValue}>
+        {value}{suffix ? <Text style={styles.stepperSuffix}>{suffix}</Text> : null}
+      </Text>
+      <Pressable style={styles.stepperBtn} onPress={() => set(value + step)} hitSlop={6}>
+        <Text style={styles.stepperBtnText}>+</Text>
+      </Pressable>
+    </View>
+  )
+}
+
+// ─── Hold timer (count-up) for timed exercises ────────────────────────────────
+
+function HoldTimer({ onStop }: { onStop: (seconds: number) => void }) {
+  const [running, setRunning] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current) }, [])
+
+  function start() {
+    setElapsed(0)
+    startRef.current = Date.now()
+    setRunning(true)
+    intervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 200)
+  }
+  function stop() {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+    const secs = Math.round((Date.now() - startRef.current) / 1000)
+    setRunning(false)
+    onStop(secs)
+  }
+
+  return (
+    <View style={styles.holdTimerWrap}>
+      <Text style={styles.holdTimerTime}>{elapsed}s</Text>
+      <Pressable
+        style={[styles.holdTimerBtn, running && styles.holdTimerBtnStop]}
+        onPress={running ? stop : start}
+      >
+        <Text style={[styles.holdTimerBtnText, running && { color: "#fff" }]}>
+          {running ? "Stop" : "Start hold"}
+        </Text>
+      </Pressable>
+    </View>
+  )
+}
+
 // ─── Reps Exercise UI ─────────────────────────────────────────────────────────
 
 interface RepsExerciseUIProps {
   exercise: RepExercise
   weightUnit: WeightUnit
+  initialWeight?: string
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
-function RepsExerciseUI({ exercise, weightUnit, onDone }: RepsExerciseUIProps) {
-  const [reps, setReps] = useState("")
-  const [weight, setWeight] = useState("")
+function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExerciseUIProps) {
+  const isTimed = exercise.unit === "seconds"
+  const [amount, setAmount] = useState<number>(targetNumber(exercise.reps))
+  const [weight, setWeight] = useState<number>(parseFloat(initialWeight ?? "") || 0)
   const [rpe, setRpe] = useState("")
+  const weightStep = weightUnit === "lb" ? 5 : 2.5
 
   function handleSave() {
     onDone({
       exerciseIndex: 0,
       exerciseName: exercise.name,
-      repsCompleted: reps || exercise.reps,
-      weight: weight || undefined,
+      repsCompleted: String(amount),
+      weight: weight > 0 ? String(weight) : undefined,
       weightUnit,
       rpe: rpe || undefined,
     })
-    setReps("")
-    setWeight("")
-    setRpe("")
   }
 
   return (
@@ -448,22 +527,13 @@ function RepsExerciseUI({ exercise, weightUnit, onDone }: RepsExerciseUIProps) {
         <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
       </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
-        value={reps}
-        onChangeText={setReps}
-        keyboardType="numeric"
-        placeholderTextColor="#aaa"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder={`Weight (${weightUnit}) — optional`}
-        value={weight}
-        onChangeText={setWeight}
-        keyboardType="decimal-pad"
-        placeholderTextColor="#aaa"
-      />
+      {isTimed && <HoldTimer onStop={setAmount} />}
+
+      <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
+      <Stepper value={amount} onChange={setAmount} suffix={isTimed ? "s" : undefined} />
+
+      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
+      <Stepper value={weight} onChange={setWeight} step={weightStep} />
 
       <RPEChips value={rpe} onChange={setRpe} />
 
@@ -477,21 +547,30 @@ function RepsExerciseUI({ exercise, weightUnit, onDone }: RepsExerciseUIProps) {
 interface BothSidesExerciseUIProps {
   exercise: BothSidesExercise
   weightUnit: WeightUnit
+  initialWeight?: string
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
 type Side = "left" | "right"
 
-function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExerciseUIProps) {
+function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: BothSidesExerciseUIProps) {
+  const isTimed = exercise.unit === "seconds"
+  const target = targetNumber(exercise.reps)
+  const startWeight = parseFloat(initialWeight ?? "") || 0
+  const weightStep = weightUnit === "lb" ? 5 : 2.5
+
   const [side, setSide] = useState<Side>("left")
-  const [repsLeft, setRepsLeft] = useState("")
-  const [weightLeft, setWeightLeft] = useState("")
+  const [repsLeft, setRepsLeft] = useState(target)
+  const [weightLeft, setWeightLeft] = useState(startWeight)
   const [rpeLeft, setRpeLeft] = useState("")
-  const [repsRight, setRepsRight] = useState("")
-  const [weightRight, setWeightRight] = useState("")
+  const [repsRight, setRepsRight] = useState(target)
+  const [weightRight, setWeightRight] = useState(startWeight)
   const [rpeRight, setRpeRight] = useState("")
 
   function handleLeftDone() {
+    // Carry the left side's entries over as the right side's starting point.
+    setRepsRight(repsLeft)
+    setWeightRight(weightLeft)
     setSide("right")
   }
 
@@ -499,15 +578,20 @@ function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExercise
     onDone({
       exerciseIndex: 0,
       exerciseName: exercise.name,
-      repsLeft: repsLeft || exercise.reps,
-      repsRight: repsRight || exercise.reps,
-      weightLeft: weightLeft || undefined,
-      weightRight: weightRight || undefined,
+      repsLeft: String(repsLeft),
+      repsRight: String(repsRight),
+      weightLeft: weightLeft > 0 ? String(weightLeft) : undefined,
+      weightRight: weightRight > 0 ? String(weightRight) : undefined,
       weightUnit,
       rpeLeft: rpeLeft || undefined,
       rpeRight: rpeRight || undefined,
     })
   }
+
+  const amount = side === "left" ? repsLeft : repsRight
+  const setAmount = side === "left" ? setRepsLeft : setRepsRight
+  const weight = side === "left" ? weightLeft : weightRight
+  const setWeight = side === "left" ? setWeightLeft : setWeightRight
 
   return (
     <View style={styles.exerciseCard}>
@@ -520,56 +604,28 @@ function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExercise
 
       <View style={styles.sideTabs}>
         <View style={[styles.sideTab, side === "left" && styles.sideTabActive]}>
-          <Text style={[styles.sideTabText, side === "left" && styles.sideTabTextActive]}>
-            Left
-          </Text>
+          <Text style={[styles.sideTabText, side === "left" && styles.sideTabTextActive]}>Left</Text>
         </View>
         <View style={[styles.sideTab, side === "right" && styles.sideTabActive]}>
-          <Text style={[styles.sideTabText, side === "right" && styles.sideTabTextActive]}>
-            Right
-          </Text>
+          <Text style={[styles.sideTabText, side === "right" && styles.sideTabTextActive]}>Right</Text>
         </View>
       </View>
 
+      {isTimed && <HoldTimer key={side} onStop={setAmount} />}
+
+      <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
+      <Stepper value={amount} onChange={setAmount} suffix={isTimed ? "s" : undefined} />
+
+      <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
+      <Stepper value={weight} onChange={setWeight} step={weightStep} />
+
       {side === "left" ? (
         <>
-          <TextInput
-            style={styles.input}
-            placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
-            value={repsLeft}
-            onChangeText={setRepsLeft}
-            keyboardType="numeric"
-            placeholderTextColor="#aaa"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder={`Weight (${weightUnit}) — optional`}
-            value={weightLeft}
-            onChangeText={setWeightLeft}
-            keyboardType="decimal-pad"
-            placeholderTextColor="#aaa"
-          />
           <RPEChips value={rpeLeft} onChange={setRpeLeft} label="RPE — Left" />
           <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
         </>
       ) : (
         <>
-          <TextInput
-            style={styles.input}
-            placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
-            value={repsRight}
-            onChangeText={setRepsRight}
-            keyboardType="numeric"
-            placeholderTextColor="#aaa"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder={`Weight (${weightUnit}) — optional`}
-            value={weightRight}
-            onChangeText={setWeightRight}
-            keyboardType="decimal-pad"
-            placeholderTextColor="#aaa"
-          />
           <RPEChips value={rpeRight} onChange={setRpeRight} label="RPE — Right" />
           <CustomButton title="Done" onPress={handleRightDone} />
         </>
@@ -823,6 +879,31 @@ const styles = StyleSheet.create({
   timerText: { fontSize: 42, fontWeight: "700", textAlign: "center", color: C.textPrimary },
 
   input: { width: "100%", borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.textPrimary, backgroundColor: C.surfaceHigh },
+
+  miniLabel: { fontSize: 12, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: -4 },
+
+  // − value + stepper
+  stepperRow: {
+    flexDirection: "row", alignItems: "center", width: "100%",
+    backgroundColor: C.surfaceHigh, borderRadius: 12, overflow: "hidden",
+  },
+  stepperBtn: { width: 60, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
+  stepperBtnText: { fontSize: 28, fontWeight: "400", color: C.green },
+  stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
+
+  // Hold timer
+  holdTimerWrap: {
+    width: "100%", alignItems: "center", gap: 10,
+    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
+  },
+  holdTimerTime: { fontSize: 44, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  holdTimerBtn: {
+    paddingHorizontal: 36, paddingVertical: 12, borderRadius: 24,
+    borderWidth: 1.5, borderColor: C.green,
+  },
+  holdTimerBtnStop: { backgroundColor: C.red, borderColor: C.red },
+  holdTimerBtnText: { fontSize: 16, fontWeight: "800", color: C.green },
 
   rpeLabel: { fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   rpeRow: { flexDirection: "row", gap: 8, width: "100%", marginBottom: 8 },
