@@ -26,6 +26,7 @@ import {
   View,
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context"
+import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 // Boulder grades. `color` is the swatch shown in pickers/pills; `on` is the
 // foreground color to use when a grade is the selected (filled) state.
@@ -152,8 +153,11 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      {/* initialMetrics avoids the async safe-area measurement that briefly
-          shifts the layout on iOS (which made the inputs untappable at first). */}
+      {/* The grade wheel uses react-native-gesture-handler, which requires a
+          GestureHandlerRootView inside a Modal — without it, iOS touch handling
+          breaks and inputs are untappable until it settles. initialMetrics also
+          avoids an async safe-area re-measure that shifts the layout on iOS. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ProjectPickerContent
           mode={mode}
@@ -182,6 +186,7 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
           handleCreate={handleCreate}
         />
       </SafeAreaProvider>
+      </GestureHandlerRootView>
     </Modal>
   )
 }
