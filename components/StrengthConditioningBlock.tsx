@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { amountLabel, unitNoun, ExerciseUnit } from "@/utils/exerciseUnit"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import {
@@ -21,12 +22,14 @@ export interface RepExercise {
   type: "reps"
   name: string
   reps: string
+  unit?: ExerciseUnit
 }
 
 export interface BothSidesExercise {
   type: "both_sides"
   name: string
   reps: string
+  unit?: ExerciseUnit
 }
 
 export interface SevenThreesExercise {
@@ -186,9 +189,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                 <Text style={styles.overviewExercise}>
                   {ex.name}
                   {ex.type === "reps"
-                    ? `  ${ex.reps} reps`
+                    ? `  ${amountLabel(ex.reps, ex.unit)}`
                     : ex.type === "both_sides"
-                    ? `  ${ex.reps} reps · both sides`
+                    ? `  ${amountLabel(ex.reps, ex.unit)} · both sides`
                     : `  ${ex.series} series · ${ex.edge}`}
                 </Text>
               </View>
@@ -333,13 +336,15 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             <Text style={styles.reviewRoundTitle}>Round {roundIndex + 1}</Text>
             {logs
               .filter((l) => l.round === roundIndex)
-              .map((l, i) => (
+              .map((l, i) => {
+                const exUnit = (block.exercises[l.exerciseIndex] as any)?.unit as ExerciseUnit | undefined
+                return (
                 <View key={i} style={styles.reviewRow}>
                   <Text style={styles.reviewExerciseName}>{l.exerciseName}</Text>
 
                   {l.repsCompleted != null && (
                     <Text style={styles.reviewDetail}>
-                      {l.repsCompleted} reps
+                      {amountLabel(l.repsCompleted, exUnit)}
                       {l.weight ? ` · ${l.weight}${l.weightUnit ?? "kg"}` : ""}
                       {l.rpe ? ` · RPE ${l.rpe}` : ""}
                     </Text>
@@ -348,12 +353,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                   {l.repsLeft != null && (
                     <>
                       <Text style={styles.reviewDetail}>
-                        L: {l.repsLeft} reps
+                        L: {amountLabel(l.repsLeft, exUnit)}
                         {l.weightLeft ? ` · ${l.weightLeft}${l.weightUnit ?? "kg"}` : ""}
                         {l.rpeLeft ? ` · RPE ${l.rpeLeft}` : ""}
                       </Text>
                       <Text style={styles.reviewDetail}>
-                        R: {l.repsRight} reps
+                        R: {amountLabel(l.repsRight, exUnit)}
                         {l.weightRight ? ` · ${l.weightRight}${l.weightUnit ?? "kg"}` : ""}
                         {l.rpeRight ? ` · RPE ${l.rpeRight}` : ""}
                       </Text>
@@ -371,7 +376,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                     <Text style={styles.reviewNotes}>"{l.notes}"</Text>
                   ) : null}
                 </View>
-              ))}
+                )
+              })}
           </View>
         ))}
 
@@ -439,12 +445,12 @@ function RepsExerciseUI({ exercise, weightUnit, onDone }: RepsExerciseUIProps) {
 
       <View style={styles.targetRepsBox}>
         <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-        <Text style={styles.targetRepsUnit}>reps</Text>
+        <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
       </View>
 
       <TextInput
         style={styles.input}
-        placeholder="Reps completed"
+        placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
         value={reps}
         onChangeText={setReps}
         keyboardType="numeric"
@@ -509,7 +515,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExercise
 
       <View style={styles.targetRepsBox}>
         <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-        <Text style={styles.targetRepsUnit}>reps each side</Text>
+        <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
       </View>
 
       <View style={styles.sideTabs}>
@@ -529,7 +535,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExercise
         <>
           <TextInput
             style={styles.input}
-            placeholder="Reps completed"
+            placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
             value={repsLeft}
             onChangeText={setRepsLeft}
             keyboardType="numeric"
@@ -550,7 +556,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, onDone }: BothSidesExercise
         <>
           <TextInput
             style={styles.input}
-            placeholder="Reps completed"
+            placeholder={exercise.unit === "seconds" ? "Seconds completed" : "Reps completed"}
             value={repsRight}
             onChangeText={setRepsRight}
             keyboardType="numeric"

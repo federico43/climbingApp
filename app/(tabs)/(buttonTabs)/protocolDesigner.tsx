@@ -3,6 +3,7 @@ import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
 import { Ionicons } from "@expo/vector-icons"
 import { groupByDate } from "@/utils/dateGroups"
+import { amountLabel, ExerciseUnit } from "@/utils/exerciseUnit"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { awaitNewRoute, cancelAwaitNewRoute } from "@/utils/pendingRouteSelection"
@@ -81,7 +82,7 @@ interface ConstraintWarmupBlock extends BaseBlock {
 }
 
 interface Exercise {
-  id: string; type: "reps" | "both_sides" | "7/3s"; name: string; exerciseId?: string; reps?: string; edge?: string; series?: number
+  id: string; type: "reps" | "both_sides" | "7/3s"; name: string; exerciseId?: string; unit?: "reps" | "seconds"; reps?: string; edge?: string; series?: number
 }
 
 interface StrengthConditioningBlock extends BaseBlock {
@@ -1381,7 +1382,10 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
       </Pressable>
 
       {(exercise.type === "reps" || exercise.type === "both_sides") && (
-        <><FieldLabel label="Reps" /><FieldInput value={exercise.reps ?? ""} onChange={(v) => update({ reps: v })} placeholder="4-6" /></>
+        <>
+          <FieldLabel label={exercise.unit === "seconds" ? "Seconds" : "Reps"} />
+          <FieldInput value={exercise.reps ?? ""} onChange={(v) => update({ reps: v })} placeholder={exercise.unit === "seconds" ? "20-30" : "4-6"} />
+        </>
       )}
       {exercise.type === "7/3s" && (
         <>
@@ -1397,6 +1401,7 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
             update({
               name: ex.name,
               exerciseId: ex.$id,
+              unit: ex.unit ?? "reps",
               ...(ex.defaultReps ? { reps: ex.defaultReps } : {}),
               ...(ex.defaultEdge ? { edge: ex.defaultEdge } : {}),
               ...(ex.defaultSeries ? { series: ex.defaultSeries } : {}),
@@ -1671,7 +1676,7 @@ function ExercisePickerModal({
               <Text style={styles.exercisePickerRowName}>{ex.name}</Text>
               {(ex.defaultReps || ex.defaultEdge) && (
                 <Text style={styles.exercisePickerRowMeta}>
-                  {ex.defaultReps ? `${ex.defaultReps} reps` : ""}
+                  {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
                   {ex.defaultEdge ? `${ex.defaultEdge}` : ""}
                   {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
                 </Text>
@@ -1696,10 +1701,12 @@ function ExerciseCreateForm({
   onCreated: (ex: ExerciseRow) => void
 }) {
   const [name, setName] = useState("")
+  const [unit, setUnit] = useState<ExerciseUnit>("reps")
   const [defaultReps, setDefaultReps] = useState("")
   const [defaultEdge, setDefaultEdge] = useState("")
   const [defaultSeries, setDefaultSeries] = useState("6")
   const [saving, setSaving] = useState(false)
+  const measurable = exerciseType === "reps" || exerciseType === "both_sides"
 
   async function handleSave() {
     if (!name.trim()) {
@@ -1709,7 +1716,8 @@ function ExerciseCreateForm({
     setSaving(true)
     try {
       const payload: Parameters<typeof createExercise>[0] = { name: name.trim(), type: exerciseType }
-      if (exerciseType === "reps" || exerciseType === "both_sides") {
+      if (measurable) {
+        payload.unit = unit
         if (defaultReps.trim()) payload.defaultReps = defaultReps.trim()
       } else {
         if (defaultEdge.trim()) payload.defaultEdge = defaultEdge.trim()
@@ -1737,10 +1745,24 @@ function ExerciseCreateForm({
       <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
         <FieldLabel label="Name" />
         <FieldInput value={name} onChange={setName} placeholder="e.g. Pull-ups" />
-        {(exerciseType === "reps" || exerciseType === "both_sides") && (
+        {measurable && (
           <>
-            <FieldLabel label="Default reps" />
-            <FieldInput value={defaultReps} onChange={setDefaultReps} placeholder="4-6" />
+            <FieldLabel label="Measure" />
+            <View style={styles.exerciseTypeRow}>
+              {(["reps", "seconds"] as ExerciseUnit[]).map((u) => (
+                <Pressable
+                  key={u}
+                  style={[styles.addExerciseButton, unit === u && { backgroundColor: C.green, borderColor: C.green }]}
+                  onPress={() => setUnit(u)}
+                >
+                  <Text style={[styles.addExerciseText, unit === u && { color: C.bg }]}>
+                    {u === "reps" ? "Reps" : "Seconds"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <FieldLabel label={unit === "seconds" ? "Default seconds" : "Default reps"} />
+            <FieldInput value={defaultReps} onChange={setDefaultReps} placeholder={unit === "seconds" ? "20-30" : "4-6"} />
           </>
         )}
         {exerciseType === "7/3s" && (

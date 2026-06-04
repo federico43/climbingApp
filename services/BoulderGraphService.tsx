@@ -383,6 +383,7 @@ export interface ExerciseRow {
   $createdAt: string
   name: string
   type: "reps" | "both_sides" | "7/3s"
+  unit?: "reps" | "seconds"  // how the amount is measured; defaults to reps
   defaultReps?: string
   defaultEdge?: string
   defaultSeries?: number
@@ -400,17 +401,32 @@ export async function listExercises(): Promise<ExerciseRow[]> {
 export async function createExercise(input: {
   name: string
   type: "reps" | "both_sides" | "7/3s"
+  unit?: "reps" | "seconds"
   defaultReps?: string
   defaultEdge?: string
   defaultSeries?: number
 }): Promise<ExerciseRow> {
-  const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID,
-    tableId: EXERCISES_TABLE,
-    rowId: ID.unique(),
-    data: input,
-  })
-  return response as unknown as ExerciseRow
+  try {
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID,
+      tableId: EXERCISES_TABLE,
+      rowId: ID.unique(),
+      data: input,
+    })
+    return response as unknown as ExerciseRow
+  } catch (e) {
+    // The `unit` column may not exist yet — retry without it so the app keeps
+    // working until the column is added in Appwrite.
+    if (input.unit === undefined) throw e
+    const { unit: _unit, ...rest } = input
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID,
+      tableId: EXERCISES_TABLE,
+      rowId: ID.unique(),
+      data: rest,
+    })
+    return response as unknown as ExerciseRow
+  }
 }
 
 export async function deleteExercise(id: string): Promise<void> {
