@@ -502,7 +502,7 @@ function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: 
         onPress={running ? stop : start}
       >
         <Text style={[styles.holdTimerBtnText, running && { color: "#fff" }]}>
-          {running ? "Stop" : "Start\nhold"}
+          {running ? "Stop" : "Start\ntimer"}
         </Text>
       </Pressable>
     </View>
@@ -545,7 +545,8 @@ interface RepsExerciseUIProps {
 function RepsExerciseUI({ exercise, weightUnit, initialWeight, onDone }: RepsExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
   const startWeight = parseFloat(initialWeight ?? "") || 0
-  const [amount, setAmount] = useState<number>(targetNumber(exercise.reps))
+  // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
+  const [amount, setAmount] = useState<number>(isTimed ? 0 : targetNumber(exercise.reps))
   const [weight, setWeight] = useState<number>(startWeight)
   const [rpe, setRpe] = useState("")
   const [showDetail, setShowDetail] = useState(startWeight > 0)
@@ -604,15 +605,16 @@ type Side = "left" | "right"
 
 function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, onDone }: BothSidesExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
-  const target = targetNumber(exercise.reps)
+  // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
+  const initialAmount = isTimed ? 0 : targetNumber(exercise.reps)
   const startWeight = parseFloat(initialWeight ?? "") || 0
   const weightStep = weightUnit === "lb" ? 5 : 2.5
 
   const [side, setSide] = useState<Side>("left")
-  const [repsLeft, setRepsLeft] = useState(target)
+  const [repsLeft, setRepsLeft] = useState(initialAmount)
   const [weightLeft, setWeightLeft] = useState(startWeight)
   const [rpeLeft, setRpeLeft] = useState("")
-  const [repsRight, setRepsRight] = useState(target)
+  const [repsRight, setRepsRight] = useState(initialAmount)
   const [weightRight, setWeightRight] = useState(startWeight)
   const [rpeRight, setRpeRight] = useState("")
   const [showDetail, setShowDetail] = useState(startWeight > 0)
