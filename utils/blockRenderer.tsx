@@ -8,10 +8,12 @@ import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt, Block } from "@/hooks/WorkoutHook"
-import { getLastProjectSession, getProjectById, markProjectSent, ProjectRow, ProjectSessionSummary } from "@/services/BoulderGraphService"
+import { getLastProjectSession, getProjectById, listProjects, markProjectSent, ProjectRow, ProjectSessionSummary } from "@/services/BoulderGraphService"
 import { summarizeProjectNotes } from "@/services/aiProtocol"
+import { Image as CachedImage } from "expo-image"
+import { Ionicons } from "@expo/vector-icons"
 import WheelPicker from "@quidone/react-native-wheel-picker"
-import React, { useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Animated,
@@ -405,27 +407,27 @@ const cwStyles = StyleSheet.create({
 })
 
 const projectStyles = StyleSheet.create({
-  selectedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 16,
-    width: "100%",
+  // Inline project list (selection screen)
+  selectScroll: { padding: 20, paddingBottom: 12, gap: 10 },
+  selectHeading: { fontSize: 22, fontWeight: "800", color: C.textPrimary, marginBottom: 6 },
+  projRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.surface, borderRadius: 14, padding: 12,
+    borderWidth: 1.5, borderColor: "transparent",
   },
-  selectedName: { fontSize: 16, fontWeight: "700", color: C.textPrimary, marginBottom: 4 },
-  selectedGrade: { fontSize: 14, color: C.green, fontWeight: "600" },
-  changeBtn: { fontSize: 14, color: C.green, fontWeight: "600" },
-  pickRow: { flexDirection: "row", gap: 10, width: "100%" },
-  pickBtn: {
-    flex: 1,
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 18,
-    alignItems: "center",
+  projRowSel: { borderColor: C.green },
+  projThumb: { width: 48, height: 48, borderRadius: 10, backgroundColor: C.surfaceHigh },
+  projThumbEmpty: { borderWidth: 1, borderColor: C.border },
+  projName: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  projMeta: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
+  projCheck: { fontSize: 18, fontWeight: "800", color: C.green },
+  createRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 14, borderRadius: 14, marginTop: 4,
+    borderWidth: 1, borderColor: C.border, borderStyle: "dashed",
   },
-  pickBtnPrimary: { backgroundColor: C.green },
-  pickBtnText: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
+  createText: { fontSize: 15, fontWeight: "700", color: C.green },
+  selectFooter: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
 })
 
 // ─── Last Session Recap ───────────────────────────────────────────────────────
@@ -610,6 +612,17 @@ function ProjectBlock({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState<"menu" | "choose" | "create">("menu")
   const openPicker = (m: "menu" | "choose" | "create") => { setPickerMode(m); setPickerOpen(true) }
+  // Inline project list for the selection screen.
+  const [projects, setProjects] = useState<ProjectRow[]>([])
+  const [loadingProjects, setLoadingProjects] = useState(true)
+  const loadProjects = useCallback(() => {
+    setLoadingProjects(true)
+    listProjects()
+      .then((data) => setProjects(data.filter((p) => p.status === "active")))
+      .catch(() => {})
+      .finally(() => setLoadingProjects(false))
+  }, [])
+  useEffect(() => { loadProjects() }, [loadProjects])
   const notesRef = useRef("")
   const [notes, setNotes] = useState("")
   const [showNotes, setShowNotes] = useState(false)
@@ -707,50 +720,64 @@ function ProjectBlock({
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} onBack={() => setPhase("intro")} />
         <ScrollView
-
-          contentContainerStyle={shared_styles.introContent}
+          contentContainerStyle={projectStyles.selectScroll}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {selectedProject ? (
-            <View style={projectStyles.selectedCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={projectStyles.selectedName}>{selectedProject.name}</Text>
-                <Text style={projectStyles.selectedGrade}>{selectedProject.grade}</Text>
-              </View>
-              <Pressable onPress={() => openPicker("choose")} hitSlop={8}>
-                <Text style={projectStyles.changeBtn}>Change</Text>
-              </Pressable>
-            </View>
-          ) : (
+          <Text style={projectStyles.selectHeading}>Choose your project</Text>
+
+          {loadingProjects ? (
+            <ActivityIndicator color={C.green} style={{ marginTop: 30 }} />
+          ) : projects.length === 0 ? (
             <Text style={[shared_styles.description, { textAlign: "center" }]}>
-              Choose the project you're working on.
+              No active projects yet — create one below.
             </Text>
+          ) : (
+            projects.map((p) => {
+              const daysLeft = Math.ceil((new Date(p.dueDate).getTime() - Date.now()) / 86400000)
+              const selected = selectedProject?.$id === p.$id
+              return (
+                <Pressable
+                  key={p.$id}
+                  style={[projectStyles.projRow, selected && projectStyles.projRowSel]}
+                  onPress={() => setSelectedProject(p)}
+                >
+                  {p.imageUri ? (
+                    <CachedImage source={{ uri: p.imageUri }} style={projectStyles.projThumb} contentFit="cover" cachePolicy="memory-disk" transition={150} />
+                  ) : (
+                    <View style={[projectStyles.projThumb, projectStyles.projThumbEmpty]} />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={projectStyles.projName}>{p.name}</Text>
+                    <Text style={projectStyles.projMeta}>
+                      {p.grade} · {daysLeft > 0 ? `${daysLeft}d left` : "Due today"}
+                    </Text>
+                  </View>
+                  {selected && <Text style={projectStyles.projCheck}>✓</Text>}
+                </Pressable>
+              )
+            })
           )}
 
-          <View style={{ gap: 10, width: "100%" }}>
-            {!selectedProject && (
-              <View style={projectStyles.pickRow}>
-                <Pressable style={projectStyles.pickBtn} onPress={() => openPicker("choose")}>
-                  <Text style={projectStyles.pickBtnText}>Choose project</Text>
-                </Pressable>
-                <Pressable style={[projectStyles.pickBtn, projectStyles.pickBtnPrimary]} onPress={() => openPicker("create")}>
-                  <Text style={[projectStyles.pickBtnText, { color: C.bg }]}>New project</Text>
-                </Pressable>
-              </View>
-            )}
-            <CustomButton
-              title="Start"
-              onPress={() => setPhase("lastSession")}
-              disabled={!selectedProject}
-            />
-          </View>
+          <Pressable style={projectStyles.createRow} onPress={() => openPicker("create")}>
+            <Ionicons name="add" size={20} color={C.green} />
+            <Text style={projectStyles.createText}>Create new project</Text>
+          </Pressable>
         </ScrollView>
+
+        <View style={projectStyles.selectFooter}>
+          <CustomButton
+            title="Start"
+            onPress={() => setPhase("lastSession")}
+            disabled={!selectedProject}
+          />
+        </View>
 
         <ProjectPickerModal
           visible={pickerOpen}
           initialMode={pickerMode}
           onClose={() => setPickerOpen(false)}
-          onSelect={(p) => { setSelectedProject(p); setPickerOpen(false) }}
+          onSelect={(p) => { setSelectedProject(p); setPickerOpen(false); loadProjects() }}
         />
       </View>
     )
