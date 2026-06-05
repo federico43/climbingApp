@@ -416,12 +416,15 @@ const projectStyles = StyleSheet.create({
   selectedName: { fontSize: 16, fontWeight: "700", color: C.textPrimary, marginBottom: 4 },
   selectedGrade: { fontSize: 14, color: C.green, fontWeight: "600" },
   changeBtn: { fontSize: 14, color: C.green, fontWeight: "600" },
+  pickRow: { flexDirection: "row", gap: 10, width: "100%" },
   pickBtn: {
+    flex: 1,
     backgroundColor: C.surface,
     borderRadius: 16,
     padding: 18,
     alignItems: "center",
   },
+  pickBtnPrimary: { backgroundColor: C.green },
   pickBtnText: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
 })
 
@@ -605,6 +608,8 @@ function ProjectBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerMode, setPickerMode] = useState<"menu" | "choose" | "create">("menu")
+  const openPicker = (m: "menu" | "choose" | "create") => { setPickerMode(m); setPickerOpen(true) }
   const notesRef = useRef("")
   const [notes, setNotes] = useState("")
   const [showNotes, setShowNotes] = useState(false)
@@ -712,7 +717,7 @@ function ProjectBlock({
                 <Text style={projectStyles.selectedName}>{selectedProject.name}</Text>
                 <Text style={projectStyles.selectedGrade}>{selectedProject.grade}</Text>
               </View>
-              <Pressable onPress={() => setPickerOpen(true)} hitSlop={8}>
+              <Pressable onPress={() => openPicker("choose")} hitSlop={8}>
                 <Text style={projectStyles.changeBtn}>Change</Text>
               </Pressable>
             </View>
@@ -724,9 +729,14 @@ function ProjectBlock({
 
           <View style={{ gap: 10, width: "100%" }}>
             {!selectedProject && (
-              <Pressable style={projectStyles.pickBtn} onPress={() => setPickerOpen(true)}>
-                <Text style={projectStyles.pickBtnText}>Choose / create project</Text>
-              </Pressable>
+              <View style={projectStyles.pickRow}>
+                <Pressable style={projectStyles.pickBtn} onPress={() => openPicker("choose")}>
+                  <Text style={projectStyles.pickBtnText}>Choose project</Text>
+                </Pressable>
+                <Pressable style={[projectStyles.pickBtn, projectStyles.pickBtnPrimary]} onPress={() => openPicker("create")}>
+                  <Text style={[projectStyles.pickBtnText, { color: C.bg }]}>New project</Text>
+                </Pressable>
+              </View>
             )}
             <CustomButton
               title="Start"
@@ -738,6 +748,7 @@ function ProjectBlock({
 
         <ProjectPickerModal
           visible={pickerOpen}
+          initialMode={pickerMode}
           onClose={() => setPickerOpen(false)}
           onSelect={(p) => { setSelectedProject(p); setPickerOpen(false) }}
         />
