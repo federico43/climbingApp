@@ -212,6 +212,36 @@ export async function getSessions(): Promise<SessionRow[]> {
   return response.rows as unknown as SessionRow[]
 }
 
+export interface ProjectSessionSummary {
+  date: string        // session $createdAt
+  attempts: number    // project-bouldering attempts on this project that session
+  sends: number       // how many of them were successful
+  sent: boolean       // sent at least once
+  lastNote?: string   // most recent note from that session, if any
+}
+
+// Summary of the most recent session that included project-bouldering attempts
+// on the given project. Returns null if the project has never been worked.
+export async function getLastProjectSession(projectId: string): Promise<ProjectSessionSummary | null> {
+  const sessions = await getSessions() // already ordered newest first
+  for (const s of sessions) {
+    let arr: any[] = []
+    try { arr = JSON.parse(s.attempts || "[]") } catch { /* skip malformed */ }
+    const proj = arr.filter((a) => a?.projectId === projectId)
+    if (proj.length === 0) continue
+    const sends = proj.filter((a) => a?.success).length
+    const lastNote = [...proj].reverse().find((a) => a?.notes && String(a.notes).trim())?.notes
+    return {
+      date: s.$createdAt,
+      attempts: proj.length,
+      sends,
+      sent: sends > 0,
+      lastNote: lastNote ? String(lastNote).trim() : undefined,
+    }
+  }
+  return null
+}
+
 export async function deleteSession(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SESSION_TABLE, rowId: id })
 }
