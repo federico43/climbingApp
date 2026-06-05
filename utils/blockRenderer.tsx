@@ -9,6 +9,7 @@ import { StrengthConditioningBlock } from "@/components/StrengthConditioningBloc
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt, Block } from "@/hooks/WorkoutHook"
 import { getLastProjectSession, getProjectById, markProjectSent, ProjectRow, ProjectSessionSummary } from "@/services/BoulderGraphService"
+import { summarizeProjectNotes } from "@/services/aiProtocol"
 import WheelPicker from "@quidone/react-native-wheel-picker"
 import React, { useEffect, useRef, useState } from "react"
 import {
@@ -436,6 +437,15 @@ function relativeDay(iso: string): string {
   return then.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
+function formatDuration(sec: number): string {
+  if (sec <= 0) return "—"
+  const m = Math.round(sec / 60)
+  if (m < 1) return `${sec}s`
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60), rem = m % 60
+  return rem ? `${h}h ${rem}m` : `${h}h`
+}
+
 function LastSessionRecap({ project, onBack, onStart }: {
   project: ProjectRow
   onBack: () => void
@@ -443,52 +453,71 @@ function LastSessionRecap({ project, onBack, onStart }: {
 }) {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<ProjectSessionSummary | null>(null)
+  const [aiSummary, setAiSummary] = useState("")
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     getLastProjectSession(project.$id)
-      .then((s) => { if (!cancelled) setSummary(s) })
-      .catch(() => { /* ignore — treat as no history */ })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .then((s) => {
+        if (cancelled) return
+        // No history → skip straight to the session, don't show an empty recap.
+        if (!s) { onStart(); return }
+        setSummary(s)
+        setLoading(false)
+        if (s.notes.length) {
+          setAiLoading(true)
+          summarizeProjectNotes(s.notes, project.name)
+            .then((text) => { if (!cancelled) setAiSummary(text) })
+            .finally(() => { if (!cancelled) setAiLoading(false) })
+        }
+      })
+      .catch(() => { if (!cancelled) onStart() }) // on error, just proceed
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.$id])
+
+  if (loading || !summary) {
+    return (
+      <View style={shared_styles.screen}>
+        <TopBar title={project.name} onBack={onBack} />
+        <View style={recapStyles.centerFill}>
+          <ActivityIndicator color={C.green} />
+        </View>
+      </View>
+    )
+  }
 
   return (
     <View style={shared_styles.screen}>
       <TopBar title={project.name} onBack={onBack} />
-      <View style={recapStyles.container}>
+      <ScrollView contentContainerStyle={recapStyles.container}>
         <Text style={recapStyles.heading}>Last session</Text>
-        {loading ? (
-          <ActivityIndicator color={C.green} style={{ marginTop: 40 }} />
-        ) : summary ? (
-          <>
-            <Text style={recapStyles.when}>{relativeDay(summary.date)}</Text>
-            <View style={recapStyles.statsRow}>
-              <View style={recapStyles.stat}>
-                <Text style={recapStyles.statNum}>{summary.attempts}</Text>
-                <Text style={recapStyles.statLabel}>attempt{summary.attempts !== 1 ? "s" : ""}</Text>
-              </View>
-              <View style={recapStyles.divider} />
-              <View style={recapStyles.stat}>
-                <Text style={[recapStyles.statNum, summary.sent && { color: C.green }]}>
-                  {summary.sent ? "Sent" : "—"}
-                </Text>
-                <Text style={recapStyles.statLabel}>
-                  {summary.sent ? `${summary.sends} send${summary.sends !== 1 ? "s" : ""}` : "no send"}
-                </Text>
-              </View>
-            </View>
-            {!!summary.lastNote && (
-              <View style={recapStyles.noteCard}>
-                <Text style={recapStyles.noteLabel}>Last note</Text>
-                <Text style={recapStyles.noteText}>&ldquo;{summary.lastNote}&rdquo;</Text>
-              </View>
-            )}
-          </>
-        ) : (
-          <Text style={recapStyles.firstTime}>First time working this project — go get it 💪</Text>
-        )}
-      </View>
+        <Text style={recapStyles.when}>{relativeDay(summary.date)}</Text>
+
+        <View style={recapStyles.statsRow}>
+          <View style={recapStyles.stat}>
+            <Text style={recapStyles.statNum}>{formatDuration(summary.durationSec)}</Text>
+            <Text style={recapStyles.statLabel}>duration</Text>
+          </View>
+          <View style={recapStyles.divider} />
+          <View style={recapStyles.stat}>
+            <Text style={recapStyles.statNum}>{summary.totalSessions}</Text>
+            <Text style={recapStyles.statLabel}>total session{summary.totalSessions !== 1 ? "s" : ""}</Text>
+          </View>
+        </View>
+
+        <View style={recapStyles.aiCard}>
+          <Text style={recapStyles.aiLabel}>✨ Coach recap</Text>
+          {aiLoading ? (
+            <ActivityIndicator color={C.green} style={{ alignSelf: "flex-start", marginTop: 8 }} />
+          ) : aiSummary ? (
+            <Text style={recapStyles.aiText}>{aiSummary}</Text>
+          ) : (
+            <Text style={recapStyles.aiMuted}>No notes to summarize yet.</Text>
+          )}
+        </View>
+      </ScrollView>
       <View style={recapStyles.footer}>
         <CustomButton title="Start session" onPress={onStart} />
       </View>
@@ -497,7 +526,8 @@ function LastSessionRecap({ project, onBack, onStart }: {
 }
 
 const recapStyles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 24, paddingTop: 12, alignItems: "center" },
+  centerFill: { flex: 1, alignItems: "center", justifyContent: "center" },
+  container: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, alignItems: "center" },
   heading: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 8 },
   when: { fontSize: 28, fontWeight: "800", color: C.textPrimary, marginTop: 6, marginBottom: 20 },
   statsRow: {
@@ -506,13 +536,13 @@ const recapStyles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   stat: { flex: 1, alignItems: "center", gap: 4 },
-  statNum: { fontSize: 30, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  statNum: { fontSize: 26, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   statLabel: { fontSize: 12, color: C.textSecondary },
   divider: { width: 1, alignSelf: "stretch", backgroundColor: C.border, marginVertical: 4 },
-  noteCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, marginTop: 16, gap: 6 },
-  noteLabel: { fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
-  noteText: { fontSize: 14, color: C.textSecondary, fontStyle: "italic", lineHeight: 20 },
-  firstTime: { fontSize: 16, color: C.textSecondary, textAlign: "center", marginTop: 40, lineHeight: 24 },
+  aiCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, marginTop: 16, gap: 8 },
+  aiLabel: { fontSize: 12, fontWeight: "700", color: C.green, textTransform: "uppercase", letterSpacing: 0.5 },
+  aiText: { fontSize: 14, color: C.textPrimary, lineHeight: 21 },
+  aiMuted: { fontSize: 14, color: C.textMuted, fontStyle: "italic" },
   footer: { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 8 },
 })
 

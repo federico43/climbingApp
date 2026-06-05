@@ -52,6 +52,59 @@ export default async ({ req, res, log, error }) => {
   } catch {
     return res.json({ error: "Invalid JSON body." }, 400)
   }
+  // ── Auth: must be signed in ─────────────────────────────────────────────────
+  const userId = req.headers["x-appwrite-user-id"]
+  if (!userId) {
+    return res.json({ error: "Not authenticated." }, 401)
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    error("ANTHROPIC_API_KEY not set")
+    return res.json({ error: "Server is not configured." }, 500)
+  }
+
+  // ── Action: summarize a project's session notes (any signed-in athlete) ──────
+  if (body.action === "summarizeNotes") {
+    const notes = Array.isArray(body.notes)
+      ? body.notes.filter((n) => typeof n === "string" && n.trim()).slice(0, 50)
+      : []
+    if (notes.length === 0) return res.json({ summary: "" }, 200)
+    const projectName = typeof body.projectName === "string" ? body.projectName : "this project"
+    const anthropic = new Anthropic({ apiKey })
+    try {
+      const message = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 220,
+        system: [{
+          type: "text",
+          text:
+            "You are a bouldering coach. Given an athlete's session notes for ONE project, " +
+            "write a 1–2 sentence recap: the key beta that worked, the recurring sticking point, " +
+            "and what to focus on next session. Be concrete and encouraging. No preamble, no lists.",
+          cache_control: { type: "ephemeral" },
+        }],
+        messages: [{
+          role: "user",
+          content: `Project: ${projectName}\n\nNotes from past sessions (oldest first):\n` +
+            notes.map((n) => `- ${n}`).join("\n"),
+        }],
+      })
+      const text = message.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join(" ")
+        .trim()
+      return res.json({ summary: text }, 200)
+    } catch (e) {
+      const status = e?.status
+      if (status === 429) return res.json({ error: "Busy right now." }, 429)
+      error(`Notes summary failed: ${e?.message ?? e}`)
+      return res.json({ error: "Could not summarize notes." }, 502)
+    }
+  }
+
+  // ── Protocol generation: coaches only, needs a prompt ────────────────────────
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
   if (!prompt) {
     return res.json({ error: "Missing 'prompt'." }, 400)
@@ -59,21 +112,8 @@ export default async ({ req, res, log, error }) => {
   if (prompt.length > 4000) {
     return res.json({ error: "Prompt too long." }, 400)
   }
-
-  // ── Auth: coaches only ──────────────────────────────────────────────────────
-  const userId = req.headers["x-appwrite-user-id"]
-  if (!userId) {
-    return res.json({ error: "Not authenticated." }, 401)
-  }
   if (!(await isCoach(userId, log))) {
     return res.json({ error: "Coach access required." }, 403)
-  }
-
-  // ── Generate ────────────────────────────────────────────────────────────────
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    error("ANTHROPIC_API_KEY not set")
-    return res.json({ error: "Server is not configured." }, 500)
   }
 
   const anthropic = new Anthropic({ apiKey })

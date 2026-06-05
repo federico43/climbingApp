@@ -213,33 +213,57 @@ export async function getSessions(): Promise<SessionRow[]> {
 }
 
 export interface ProjectSessionSummary {
-  date: string        // session $createdAt
-  attempts: number    // project-bouldering attempts on this project that session
-  sends: number       // how many of them were successful
-  sent: boolean       // sent at least once
-  lastNote?: string   // most recent note from that session, if any
+  date: string         // most recent session $createdAt for this project
+  durationSec: number  // how long that session spent on this project (0 if unknown)
+  totalSessions: number// how many past sessions worked this project
+  attempts: number     // attempts on this project in that last session
+  sends: number        // how many of them were successful
+  sent: boolean        // sent at least once that session
+  notes: string[]      // all notes across sessions (oldest first) for the AI recap
 }
 
-// Summary of the most recent session that included project-bouldering attempts
-// on the given project. Returns null if the project has never been worked.
+// Recap of the project's history: the most recent session (when, how long,
+// attempts/sends), how many sessions total, and every note ever left on it.
+// Returns null if the project has never been worked.
 export async function getLastProjectSession(projectId: string): Promise<ProjectSessionSummary | null> {
   const sessions = await getSessions() // already ordered newest first
+  let totalSessions = 0
+  let last: ProjectSessionSummary | null = null
+  const notesNewestFirst: string[] = []
+
   for (const s of sessions) {
     let arr: any[] = []
-    try { arr = JSON.parse(s.attempts || "[]") } catch { /* skip malformed */ }
+    try { arr = JSON.parse(s.attempts || "[]") } catch { continue }
     const proj = arr.filter((a) => a?.projectId === projectId)
     if (proj.length === 0) continue
-    const sends = proj.filter((a) => a?.success).length
-    const lastNote = [...proj].reverse().find((a) => a?.notes && String(a.notes).trim())?.notes
-    return {
-      date: s.$createdAt,
-      attempts: proj.length,
-      sends,
-      sent: sends > 0,
-      lastNote: lastNote ? String(lastNote).trim() : undefined,
+    totalSessions++
+    for (const a of proj) {
+      if (a?.notes && String(a.notes).trim()) notesNewestFirst.push(String(a.notes).trim())
+    }
+
+    if (!last) {
+      // First match while iterating newest→oldest = the most recent session.
+      const sends = proj.filter((a) => a?.success).length
+      let durationSec = 0
+      try {
+        const bd = s.blockDurations ? JSON.parse(s.blockDurations) : null
+        if (bd) {
+          const idxs = new Set(proj.map((a) => a?.blockIndex).filter((i) => i != null))
+          for (const i of idxs) durationSec += Number(bd[String(i)]) || 0
+        }
+      } catch { /* ignore */ }
+      if (!durationSec) {
+        const ts = proj.map((a) => a?.timestamp).filter((t) => typeof t === "number")
+        if (ts.length >= 2) durationSec = Math.max(0, Math.round((Math.max(...ts) - Math.min(...ts)) / 1000))
+      }
+      last = { date: s.$createdAt, durationSec, totalSessions: 0, attempts: proj.length, sends, sent: sends > 0, notes: [] }
     }
   }
-  return null
+
+  if (!last) return null
+  last.totalSessions = totalSessions
+  last.notes = notesNewestFirst.reverse() // oldest first for the AI
+  return last
 }
 
 export async function deleteSession(id: string): Promise<void> {

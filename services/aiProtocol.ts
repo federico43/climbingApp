@@ -233,3 +233,23 @@ export async function generatePlan(
   }
   return { kind: "single", protocol }
 }
+
+// Ask the AI to summarize an athlete's notes for one project into a short recap.
+// Best-effort: returns "" on any failure so the UI can simply hide the summary.
+export async function summarizeProjectNotes(notes: string[], projectName: string): Promise<string> {
+  const clean = notes.filter((n) => typeof n === "string" && n.trim())
+  if (!AI_PROTOCOL_FUNCTION_ID || clean.length === 0) return ""
+  try {
+    const execution = await functions.createExecution({
+      functionId: AI_PROTOCOL_FUNCTION_ID,
+      body: JSON.stringify({ action: "summarizeNotes", notes: clean.slice(0, 50), projectName }),
+      async: false,
+      method: ExecutionMethod.POST,
+    })
+    if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) return ""
+    const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+    return typeof payload?.summary === "string" ? payload.summary.trim() : ""
+  } catch {
+    return ""
+  }
+}
