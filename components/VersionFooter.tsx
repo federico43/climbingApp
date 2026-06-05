@@ -27,15 +27,15 @@ export function VersionFooter() {
   }
 
   return (
-    <Pressable onPress={onPress} disabled={!ready}>
-      <Text style={[styles.text, ready && styles.textReady]}>
-        Version {version} · {status}
-      </Text>
+    <Pressable onPress={onPress} disabled={!ready} style={{ flexShrink: 1 }}>
+      <Text style={[styles.version, ready && styles.textReady]}>v{version}</Text>
+      <Text style={[styles.status, ready && styles.textReady]} numberOfLines={1}>{status}</Text>
     </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
-  text: { textAlign: "center", fontSize: 12, color: C.textMuted, marginTop: 4 },
+  version: { textAlign: "right", fontSize: 12, fontWeight: "700", color: C.textSecondary },
+  status: { textAlign: "right", fontSize: 10, color: C.textMuted, marginTop: 1 },
   textReady: { color: C.green, fontWeight: "700" },
 })

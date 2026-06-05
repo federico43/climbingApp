@@ -250,6 +250,7 @@ export default function HomeScreen() {
         <ScreenEntry>
         <View style={styles.header}>
           <Text style={styles.greeting}>Hi, {userName}</Text>
+          <VersionFooter />
         </View>
 
         {loading ? (
@@ -470,8 +471,6 @@ export default function HomeScreen() {
                 </View>
               </View>
             )}
-
-            <VersionFooter />
 
             <View style={{ height: 32 }} />
           </ScrollView>
