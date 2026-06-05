@@ -20,6 +20,9 @@ import { C } from "@/utils/theme"
 
 export default function TabsLayout() {
   const { role, isLoadingUser } = ConsumeAuth()
+  // Inset folded into the bar's own height/padding so icons sit just above the
+  // home indicator / nav bar — no dead space below them.
+  const insets = useSafeAreaInsets()
 
   if (isLoadingUser) return null
 
@@ -30,7 +33,14 @@ export default function TabsLayout() {
         screenOptions={{
           headerShown: false,
           sceneStyle: { backgroundColor: C.bg },
-          tabBarStyle: { backgroundColor: C.bg, borderTopColor: C.border, borderTopWidth: 1, paddingBottom: 8, height: 72 },
+          tabBarStyle: {
+            backgroundColor: C.bg,
+            borderTopColor: C.border,
+            borderTopWidth: 1,
+            height: 60 + insets.bottom,
+            paddingBottom: insets.bottom,
+            paddingTop: 8,
+          },
           tabBarActiveTintColor: C.green,
           tabBarInactiveTintColor: "#4F5C56",
         }}
@@ -98,12 +108,11 @@ export default function TabsLayout() {
 
 function CustomTabBar({ tabBarProps }: { tabBarProps: any }) {
   const ctx = useWorkoutContext()
-  const insets = useSafeAreaInsets()
   const showMiniBar = ctx.workoutActive && ctx.workoutMinimized
-  // Reserve the bottom safe-area inset so the tab labels clear the Android
-  // system navigation bar (3-button / gesture) and the iPhone home indicator.
+  // The safe-area inset is folded into the tab bar's own height/padding
+  // (see tabBarStyle), so no extra padding is needed here.
   return (
-    <View style={{ backgroundColor: C.bg, paddingBottom: insets.bottom }}>
+    <View style={{ backgroundColor: C.bg }}>
       {showMiniBar && (
         <MinimizedWorkoutBar
           protocolName={ctx.protocolName}
