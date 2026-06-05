@@ -22,7 +22,7 @@ import { LinearGradient } from "expo-linear-gradient"
 import ImageCapture from "@/components/ImageCapture"
 import * as ImagePicker from "expo-image-picker"
 import { Image as CachedImage } from "expo-image"
-import Constants from "expo-constants"
+import { VersionFooter } from "@/components/VersionFooter"
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -471,9 +471,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            <Text style={styles.versionText}>
-              Version {Constants.expoConfig?.version ?? "—"}
-            </Text>
+            <VersionFooter />
 
             <View style={{ height: 32 }} />
           </ScrollView>
@@ -539,12 +537,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     gap: 20,
-  },
-  versionText: {
-    textAlign: "center",
-    fontSize: 12,
-    color: C.textMuted,
-    marginTop: 4,
   },
   section: {
     backgroundColor: C.surface,
