@@ -1,7 +1,7 @@
 import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
-import { ScreenEntry } from "@/components/ScreenEntry"
+import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
@@ -243,13 +243,31 @@ export default function HomeScreen() {
     }
   }
 
+  // First-entry intro: the greeting pops in big and settles, then the cards
+  // stagger in below it. Mount-based, so it plays once per app launch (the tab
+  // stays mounted on switches) and not on every focus.
+  const greetScale = useSharedValue(1.45)
+  const greetOpacity = useSharedValue(0)
+  useEffect(() => {
+    greetOpacity.value = withTiming(1, { duration: 260 })
+    greetScale.value = withSpring(1, { damping: 12, stiffness: 140 })
+  }, [])
+  const greetingStyle = useAnimatedStyle(() => ({
+    opacity: greetOpacity.value,
+    transform: [{ scale: greetScale.value }],
+  }))
+  // Cards begin after the greeting has popped, each ~110ms behind the last.
+  const cardEntering = (i: number) => FadeInDown.duration(420).delay(360 + i * 110)
+
   return (
     <>
       <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.safe} edges={["top"]}>
-        <ScreenEntry>
+        <View style={{ flex: 1 }}>
         <View style={styles.header}>
-          <Text style={styles.greeting}>Hi, {userName}</Text>
+          <Animated.View style={[greetingStyle, { transformOrigin: "left" }]}>
+            <Text style={styles.greeting}>Hi, {userName}</Text>
+          </Animated.View>
           <VersionFooter />
         </View>
 
@@ -273,7 +291,7 @@ export default function HomeScreen() {
             }
           >
             {/* ── ASSIGNED WORKOUT ──────────────────────────────────────────── */}
-            <View style={styles.section}>
+            <Animated.View style={styles.section} entering={cardEntering(0)}>
               <Text style={styles.sectionTitle}>Today's workout</Text>
               {protocol.length > 0 ? (
                 <ScalePressable
@@ -293,10 +311,10 @@ export default function HomeScreen() {
                   <Text style={styles.workoutCardEmptyText}>No protocol assigned yet</Text>
                 </View>
               )}
-            </View>
+            </Animated.View>
 
             {/* ── PROJECTS ─────────────────────────────────────────────────── */}
-            <View style={styles.section}>
+            <Animated.View style={styles.section} entering={cardEntering(1)}>
               <Pressable
                 onPress={() => router.push("/past-projects")}
                 hitSlop={8}
@@ -396,10 +414,10 @@ export default function HomeScreen() {
                     )
                   })
               }
-            </View>
+            </Animated.View>
 
             {/* ── MONTHLY CALENDAR ─────────────────────────────────────────── */}
-            <View style={styles.section}>
+            <Animated.View style={styles.section} entering={cardEntering(2)}>
               <Text style={styles.sectionTitle}>Training consistency</Text>
               <Calendar
                 markedDates={trainedDays}
@@ -441,11 +459,11 @@ export default function HomeScreen() {
                   <Text style={styles.statLabel}>days trained{"\n"}last week</Text>
                 </View>
               </View>
-            </View>
+            </Animated.View>
 
             {/* ── S/C PROGRESS ──────────────────────────────────────────────── */}
             {scExercises.length > 0 && (
-              <View style={styles.section}>
+              <Animated.View style={styles.section} entering={cardEntering(3)}>
                 <Text style={styles.sectionTitle}>Strength & conditioning</Text>
                 <Text style={styles.sectionSub}>Tap an exercise to see your progress</Text>
                 <View style={styles.exerciseList}>
@@ -469,13 +487,13 @@ export default function HomeScreen() {
                     </Pressable>
                   ))}
                 </View>
-              </View>
+              </Animated.View>
             )}
 
             <View style={{ height: 32 }} />
           </ScrollView>
         )}
-        </ScreenEntry>
+        </View>
       </SafeAreaView>
       </LinearGradient>
 
