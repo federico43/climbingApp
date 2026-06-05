@@ -1,7 +1,8 @@
 import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
-import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
+import { HeroIntro } from "@/components/HeroIntro"
+import Animated, { FadeInDown } from "react-native-reanimated"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
@@ -105,6 +106,9 @@ function extractSCExercises(sessions: SessionRow[]): string[] {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
+
+// Plays the hero intro only on the first Home mount of an app launch.
+let heroPlayed = false
 
 export default function HomeScreen() {
   const { User, userName } = ConsumeAuth()
@@ -243,21 +247,12 @@ export default function HomeScreen() {
     }
   }
 
-  // First-entry intro: the greeting pops in big and settles, then the cards
-  // stagger in below it. Mount-based, so it plays once per app launch (the tab
-  // stays mounted on switches) and not on every focus.
-  const greetScale = useSharedValue(1.45)
-  const greetOpacity = useSharedValue(0)
-  useEffect(() => {
-    greetOpacity.value = withTiming(1, { duration: 260 })
-    greetScale.value = withSpring(1, { damping: 12, stiffness: 140 })
-  }, [])
-  const greetingStyle = useAnimatedStyle(() => ({
-    opacity: greetOpacity.value,
-    transform: [{ scale: greetScale.value }],
-  }))
-  // Cards begin after the greeting has popped, each ~110ms behind the last.
-  const cardEntering = (i: number) => FadeInDown.duration(420).delay(360 + i * 110)
+  // First-launch hero intro. Plays once per app launch (module flag survives tab
+  // switches but resets on relaunch). When it finishes, the cards mount and
+  // stagger in. The cards mount only after the intro so their entrance is
+  // actually visible (it's hidden behind the hero otherwise).
+  const [introDone, setIntroDone] = useState(heroPlayed)
+  const cardEntering = (i: number) => FadeInDown.duration(420).delay(i * 110)
 
   return (
     <>
@@ -265,14 +260,12 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={{ flex: 1 }}>
         <View style={styles.header}>
-          <Animated.View style={[greetingStyle, { transformOrigin: "left" }]}>
-            <Text style={styles.greeting}>Hi, {userName}</Text>
-          </Animated.View>
+          <Text style={styles.greeting}>Hi, {userName}</Text>
           <VersionFooter />
         </View>
 
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 60 }} />
+        {!introDone || loading ? (
+          loading && introDone ? <ActivityIndicator style={{ marginTop: 60 }} /> : null
         ) : (
           <ScrollView
             contentContainerStyle={styles.scroll}
@@ -496,6 +489,13 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
       </LinearGradient>
+
+      {!introDone && (
+        <HeroIntro
+          name={userName ?? ""}
+          onDone={() => { heroPlayed = true; setIntroDone(true) }}
+        />
+      )}
 
       {/* ── SESSION DETAIL MODAL ────────────────────────────────────────────── */}
       <SessionDetailModal
