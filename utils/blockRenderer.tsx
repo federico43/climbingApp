@@ -332,7 +332,7 @@ function ConstraintWarmupBlock({
                   }
                 }}
               >
-                <Text style={cwStyles.registerBtnText}>Register attempt</Text>
+                <Text style={cwStyles.registerBtnText}>Register Climb</Text>
                 <Animated.Text
                   pointerEvents="none"
                   style={{
