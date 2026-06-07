@@ -93,13 +93,13 @@ export function weeklyAdaptationVolume(sessions: SessionRow[], maxWeeks = 10): A
     return { monday, mins }
   })
 
-  // Fixed adaptation order so stacks line up across weeks.
+  // Fixed adaptation order so stacks line up across weeks. Keep the full set on
+  // every week (zeros included) — gifted-charts crashes on an empty stacks
+  // array (a week with no sessions), and consistent stacks render correctly.
   const order = ADAPTATIONS.filter((a) => present.has(a))
   const weeksOut = perWeek.map(({ monday, mins }) => ({
     label: weekLabel(monday),
-    stacks: order
-      .map((a) => ({ value: Math.round(mins[a] ?? 0), color: ADAPTATION_COLOR[a] }))
-      .filter((s) => s.value > 0),
+    stacks: order.map((a) => ({ value: Math.round(mins[a] ?? 0), color: ADAPTATION_COLOR[a] })),
   }))
 
   return { weeks: weeksOut, present: order }
