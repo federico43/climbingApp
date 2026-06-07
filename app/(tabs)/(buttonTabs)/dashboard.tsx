@@ -18,7 +18,13 @@ import {
   View,
 } from "react-native"
 import { Calendar } from "react-native-calendars"
+import { BarChart } from "react-native-gifted-charts"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { weeklyFrequency, weeklyAdaptationVolume, trainingStats } from "@/utils/athleteAnalytics"
+import { ADAPTATION_COLOR, ADAPTATION_LABEL } from "@/utils/adaptations"
+
+// Shared axis-label style for the gifted-charts (plain object, not StyleSheet).
+const chartAxis = { color: C.textMuted, fontSize: 10 }
 
 // ─── Helpers (mirrored from home screen) ─────────────────────────────────────
 
@@ -172,6 +178,11 @@ export default function DashboardScreen() {
   const daysLastWeek = countUniqueDaysInRange(sessions, lastWeekStart, lastWeekEnd)
   const scExercises = extractSCExercises(sessions)
 
+  // ── Analytics over the cycle ──────────────────────────────────────────────
+  const freqData = weeklyFrequency(sessions)
+  const adaptVol = weeklyAdaptationVolume(sessions)
+  const stats = trainingStats(sessions)
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
 
@@ -267,6 +278,65 @@ export default function DashboardScreen() {
               </View>
             </View>
           </View>
+
+          {/* Frequency over time */}
+          {freqData.length > 1 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Frequency</Text>
+              <Text style={styles.sectionSub}>
+                {stats.total} sessions · {stats.avgPerWeek}/week avg
+              </Text>
+              <View style={styles.chartWrap}>
+                <BarChart
+                  data={freqData.map((b) => ({ value: b.value, label: b.label }))}
+                  frontColor={C.green}
+                  barWidth={16}
+                  spacing={14}
+                  initialSpacing={10}
+                  roundedTop
+                  noOfSections={Math.max(2, Math.max(...freqData.map((b) => b.value)))}
+                  maxValue={Math.max(2, Math.max(...freqData.map((b) => b.value)))}
+                  yAxisThickness={0}
+                  xAxisThickness={0}
+                  yAxisTextStyle={chartAxis}
+                  xAxisLabelTextStyle={chartAxis}
+                  rulesColor={C.border}
+                  height={140}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Adaptation volume over time (eyeball the periodization) */}
+          {adaptVol.present.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Training focus</Text>
+              <Text style={styles.sectionSub}>Minutes per week by adaptation</Text>
+              <View style={styles.chartWrap}>
+                <BarChart
+                  stackData={adaptVol.weeks.map((w) => ({ label: w.label, stacks: w.stacks }))}
+                  barWidth={20}
+                  spacing={16}
+                  initialSpacing={10}
+                  yAxisThickness={0}
+                  xAxisThickness={0}
+                  yAxisTextStyle={chartAxis}
+                  xAxisLabelTextStyle={chartAxis}
+                  rulesColor={C.border}
+                  height={160}
+                  noOfSections={4}
+                />
+              </View>
+              <View style={styles.legendRow}>
+                {adaptVol.present.map((a) => (
+                  <View key={a} style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: ADAPTATION_COLOR[a] }]} />
+                    <Text style={styles.legendText}>{ADAPTATION_LABEL[a]}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* S/C exercises */}
           {scExercises.length > 0 && (
@@ -445,6 +515,13 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     marginTop: -8,
   },
+
+  // Charts
+  chartWrap: { marginTop: 8, marginLeft: -6, overflow: "hidden" },
+  legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 12, color: C.textSecondary },
 
   // Calendar
   calendar: {
