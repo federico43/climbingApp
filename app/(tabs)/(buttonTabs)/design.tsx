@@ -1,67 +1,29 @@
 import { C } from "@/utils/theme"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
+import { AthleteAnalytics } from "@/components/AthleteAnalytics"
+import { TrainingTimeline } from "@/components/TrainingTimeline"
 import { AppUser, getAthletes } from "@/services/BoulderGraphService"
+import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useState } from "react"
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native"
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-// ─── Tool cards ───────────────────────────────────────────────────────────────
-
-type ToolCard = { key: string; label: string; description: string; icon: string; route: string }
-
-const PROGRAM_CARDS: ToolCard[] = [
-  {
-    key: "protocols",
-    label: "Protocols",
-    description: "Build & assign programs",
-    icon: "📋",
-    route: "/(tabs)/(buttonTabs)/protocolDesigner",
-  },
-  {
-    key: "assignments",
-    label: "Assignments",
-    description: "Review athlete workouts",
-    icon: "🗂",
-    route: "/(tabs)/(buttonTabs)/review-assignments",
-  },
+// Top-bar coach tools (the former big cards). Assignments is gone — its review
+// part is now the inline Training timeline.
+type Tool = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string }
+const TOOLS: Tool[] = [
+  { key: "protocols", label: "Protocols", icon: "clipboard-outline", route: "/(tabs)/(buttonTabs)/protocolDesigner" },
+  { key: "exercises", label: "Exercises", icon: "barbell-outline", route: "/(tabs)/(buttonTabs)/exercises" },
+  { key: "spraywall", label: "Spray Wall", icon: "grid-outline", route: "/(tabs)/(buttonTabs)/sprayWall" },
 ]
-
-const CONTENT_CARDS: ToolCard[] = [
-  {
-    key: "exercises",
-    label: "Exercises",
-    description: "Manage exercise library",
-    icon: "💪",
-    route: "/(tabs)/(buttonTabs)/exercises",
-  },
-  {
-    key: "spraywall",
-    label: "Spray Wall",
-    description: "Create boulder routes",
-    icon: "🧗",
-    route: "/(tabs)/(buttonTabs)/sprayWall",
-  },
-]
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function DesignScreen() {
   const router = useRouter()
-  const { width } = useWindowDimensions()
-  const cardWidth = (width - H_PAD * 2 - CARD_GAP) / 2
-
   const [athletes, setAthletes] = useState<AppUser[]>([])
   const [loadingAthletes, setLoadingAthletes] = useState(true)
+  const [selected, setSelected] = useState<AppUser | null>(null)
 
   useFocusEffect(
     useCallback(() => {
@@ -74,70 +36,41 @@ export default function DesignScreen() {
     }, [])
   )
 
-  function openDashboard(athleteId?: string) {
-    router.push({
-      pathname: "/(tabs)/(buttonTabs)/dashboard",
-      params: athleteId ? { athleteId } : {},
-    })
-  }
-
-  function renderCard(card: ToolCard) {
-    return (
-      <ScalePressable
-        key={card.key}
-        style={[styles.card, { width: cardWidth }]}
-        onPress={() => router.push(card.route as any)}
-      >
-        <View style={styles.iconWrap}>
-          <Text style={styles.icon}>{card.icon}</Text>
-        </View>
-        <Text style={styles.cardLabel}>{card.label}</Text>
-        <Text style={styles.cardDesc}>{card.description}</Text>
-      </ScalePressable>
-    )
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>Design</Text>
-            <Text style={styles.subtitle}>Coach tools</Text>
-          </View>
+        {/* ── Top bar ─────────────────────────────────────────────────────── */}
+        <View style={styles.topBar}>
+          {TOOLS.map((t) => (
+            <ScalePressable key={t.key} style={styles.toolBtn} onPress={() => router.push(t.route as any)}>
+              <Ionicons name={t.icon} size={20} color={C.green} />
+              <Text style={styles.toolLabel}>{t.label}</Text>
+            </ScalePressable>
+          ))}
+        </View>
 
-          {/* ── Athletes ─────────────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Pressable style={styles.sectionHeader} onPress={() => openDashboard()} hitSlop={6}>
-              <Text style={styles.sectionTitle}>Athletes</Text>
-              <Text style={styles.sectionAction}>View all ›</Text>
-            </Pressable>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* ── Training timeline ─────────────────────────────────────────── */}
+          <TrainingTimeline />
 
+          {/* ── Athletes ──────────────────────────────────────────────────── */}
+          <View style={styles.athleteSection}>
+            <Text style={styles.label}>Athletes</Text>
             {loadingAthletes ? (
-              <ActivityIndicator style={{ marginVertical: 18 }} color={C.green} />
+              <ActivityIndicator style={{ marginVertical: 14 }} color={C.green} />
             ) : athletes.length === 0 ? (
-              <Text style={styles.emptyText}>No athletes yet.</Text>
+              <Text style={styles.empty}>No athletes yet.</Text>
             ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.athleteStrip}
-              >
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                 {athletes.map((a) => {
                   const name = a.username ?? a.$id
+                  const isSel = selected?.$id === a.$id
                   return (
-                    <ScalePressable
-                      key={a.$id}
-                      style={styles.athleteChip}
-                      onPress={() => openDashboard(a.$id)}
-                    >
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarInitial}>{name[0].toUpperCase()}</Text>
+                    <ScalePressable key={a.$id} style={styles.chip} onPress={() => setSelected(isSel ? null : a)}>
+                      <View style={[styles.avatar, isSel && styles.avatarSel]}>
+                        <Text style={[styles.avatarInitial, isSel && styles.avatarInitialSel]}>{name[0].toUpperCase()}</Text>
                       </View>
-                      <Text style={styles.athleteName} numberOfLines={1}>{name}</Text>
+                      <Text style={[styles.chipName, isSel && styles.chipNameSel]} numberOfLines={1}>{name}</Text>
                     </ScalePressable>
                   )
                 })}
@@ -145,74 +78,54 @@ export default function DesignScreen() {
             )}
           </View>
 
-          {/* ── Programs ─────────────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Programs</Text>
-            <View style={styles.grid}>{PROGRAM_CARDS.map(renderCard)}</View>
-          </View>
+          {/* ── Selected athlete data ─────────────────────────────────────── */}
+          {selected ? (
+            <AthleteAnalytics key={selected.$id} athlete={selected} />
+          ) : (
+            <View style={styles.prompt}>
+              <Text style={styles.promptText}>Pick an athlete to see their training history</Text>
+            </View>
+          )}
 
-          {/* ── Content ──────────────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Content</Text>
-            <View style={styles.grid}>{CONTENT_CARDS.map(renderCard)}</View>
-          </View>
+          <View style={{ height: 32 }} />
         </ScrollView>
       </ScreenEntry>
     </SafeAreaView>
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const H_PAD = 16
-const CARD_GAP = 12
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
 
-  scroll: { paddingHorizontal: H_PAD, paddingBottom: 32 },
-
-  header: { paddingHorizontal: 4, paddingTop: 12, paddingBottom: 12, gap: 2 },
-  title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
-
-  section: { marginTop: 18 },
-  sectionHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 4,
+  topBar: {
+    flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: C.border,
   },
-  sectionTitle: {
-    fontSize: 13, fontWeight: "700", color: C.textSecondary,
-    textTransform: "uppercase", letterSpacing: 0.6,
-    paddingHorizontal: 4, marginBottom: 10,
+  toolBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+    paddingVertical: 10,
   },
-  sectionAction: { fontSize: 13, fontWeight: "600", color: C.green, marginBottom: 10 },
+  toolLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
 
-  // Athletes strip
-  athleteStrip: { gap: 14, paddingHorizontal: 4, paddingVertical: 2 },
-  athleteChip: { alignItems: "center", width: 64, gap: 6 },
+  scroll: { paddingHorizontal: 16, paddingTop: 14, gap: 16 },
+
+  athleteSection: { gap: 8 },
+  label: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.6 },
+  strip: { gap: 14, paddingVertical: 2, paddingHorizontal: 2 },
+  chip: { alignItems: "center", width: 64, gap: 6 },
   avatar: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: C.surfaceHigh, borderWidth: 1, borderColor: C.border,
+    backgroundColor: C.surfaceHigh, borderWidth: 2, borderColor: "transparent",
     alignItems: "center", justifyContent: "center",
   },
+  avatarSel: { backgroundColor: C.green, borderColor: C.green },
   avatarInitial: { fontSize: 22, fontWeight: "800", color: C.green },
-  athleteName: { fontSize: 12, color: C.textSecondary, fontWeight: "600", maxWidth: 64, textAlign: "center" },
-  emptyText: { fontSize: 14, color: C.textMuted, paddingHorizontal: 4, paddingVertical: 8 },
+  avatarInitialSel: { color: C.bg },
+  chipName: { fontSize: 12, color: C.textSecondary, fontWeight: "600", maxWidth: 64, textAlign: "center" },
+  chipNameSel: { color: C.green, fontWeight: "700" },
+  empty: { fontSize: 14, color: C.textMuted, paddingVertical: 8 },
 
-  // Tool grid
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: CARD_GAP },
-  card: {
-    backgroundColor: C.surface, borderRadius: 18,
-    borderWidth: 1, borderColor: C.border,
-    padding: 16, gap: 8, minHeight: 140, justifyContent: "flex-start",
-  },
-  iconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: C.surfaceHigh,
-    alignItems: "center", justifyContent: "center", marginBottom: 4,
-  },
-  icon: { fontSize: 24 },
-  cardLabel: { fontSize: 17, fontWeight: "700", color: C.textPrimary, letterSpacing: -0.2 },
-  cardDesc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
+  prompt: { alignItems: "center", paddingVertical: 30, paddingHorizontal: 24 },
+  promptText: { fontSize: 14, color: C.textMuted, textAlign: "center" },
 })
