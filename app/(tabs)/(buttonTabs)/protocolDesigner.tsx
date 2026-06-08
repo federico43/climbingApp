@@ -971,6 +971,9 @@ function BlockPickerModal({
                 </Pressable>
               )}
             </View>
+            <Text style={{ fontSize: 12, color: C.textMuted, paddingHorizontal: 4, marginBottom: 4 }}>
+              {libraryBlocks.length} block{libraryBlocks.length !== 1 ? "s" : ""} loaded
+            </Text>
             {(() => {
               // Apply search filter, then group by type
               const q = librarySearch.trim().toLowerCase()
