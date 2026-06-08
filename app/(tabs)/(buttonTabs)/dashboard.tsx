@@ -18,14 +18,10 @@ import {
   View,
 } from "react-native"
 import { Calendar } from "react-native-calendars"
-import { BarChart } from "react-native-gifted-charts"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { weeklyFrequency, sessionBars, trainingStats } from "@/utils/athleteAnalytics"
 import { SessionBarsChart } from "@/components/SessionBarsChart"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL } from "@/utils/adaptations"
-
-// Shared axis-label style for the gifted-charts (plain object, not StyleSheet).
-const chartAxis = { color: C.textMuted, fontSize: 10 }
 
 // ─── Helpers (mirrored from home screen) ─────────────────────────────────────
 
@@ -280,33 +276,29 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          {/* Frequency over time */}
-          {freqData.length > 1 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Frequency</Text>
-              <Text style={styles.sectionSub}>
-                {stats.total} sessions · {stats.avgPerWeek}/week avg
-              </Text>
-              <View style={styles.chartWrap}>
-                <BarChart
-                  data={freqData.map((b) => ({ value: b.value, label: b.label }))}
-                  frontColor={C.green}
-                  barWidth={16}
-                  spacing={14}
-                  initialSpacing={10}
-                  roundedTop
-                  noOfSections={Math.max(2, Math.max(...freqData.map((b) => b.value)))}
-                  maxValue={Math.max(2, Math.max(...freqData.map((b) => b.value)))}
-                  yAxisThickness={0}
-                  xAxisThickness={0}
-                  yAxisTextStyle={chartAxis}
-                  xAxisLabelTextStyle={chartAxis}
-                  rulesColor={C.border}
-                  height={140}
-                />
+          {/* Frequency over time — one horizontal bar per week */}
+          {freqData.length > 1 && (() => {
+            const maxCount = Math.max(1, ...freqData.map((b) => b.value))
+            return (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Frequency</Text>
+                <Text style={styles.sectionSub}>
+                  {stats.total} sessions · {stats.avgPerWeek}/week avg
+                </Text>
+                <View style={styles.freqList}>
+                  {freqData.map((b) => (
+                    <View key={b.label} style={styles.freqRow}>
+                      <Text style={styles.freqLabel}>{b.label}</Text>
+                      <View style={styles.freqTrack}>
+                        <View style={[styles.freqBar, { width: `${(b.value / maxCount) * 100}%` }]} />
+                      </View>
+                      <Text style={styles.freqCount}>{b.value}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-            </View>
-          )}
+            )
+          })()}
 
           {/* Training focus — one bar per session, split by adaptation */}
           {focusBars.length > 0 && (
@@ -507,7 +499,12 @@ const styles = StyleSheet.create({
   },
 
   // Charts
-  chartWrap: { marginTop: 8, marginLeft: -6, overflow: "hidden" },
+  freqList: { gap: 6, marginTop: 8 },
+  freqRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  freqLabel: { width: 38, fontSize: 11, color: C.textMuted, textAlign: "right" },
+  freqTrack: { flex: 1, height: 14, borderRadius: 5, backgroundColor: C.surfaceHigh, overflow: "hidden" },
+  freqBar: { height: 14, borderRadius: 5, backgroundColor: C.green, minWidth: 2 },
+  freqCount: { width: 20, fontSize: 11, color: C.textSecondary, textAlign: "right" },
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
