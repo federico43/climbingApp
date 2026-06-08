@@ -977,12 +977,16 @@ function BlockPickerModal({
             {(() => {
               // Apply search filter, then group by type
               const q = librarySearch.trim().toLowerCase()
-              const filtered = q
+              const filtered = (q
                 ? libraryBlocks.filter((b) =>
                     b.name.toLowerCase().includes(q) ||
                     (BLOCK_LABELS[b.type as BlockType] ?? "").toLowerCase().includes(q)
                   )
                 : libraryBlocks
+              )
+                // Case-insensitive A→Z (Appwrite's sort is case-sensitive).
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
               const grouped: Record<string, BlockRow[]> = {}
               for (const row of filtered) {
                 if (!grouped[row.type]) grouped[row.type] = []
