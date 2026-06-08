@@ -107,13 +107,29 @@ export function weeklyAdaptationVolume(sessions: SessionRow[], maxWeeks = 10): A
 
 // ── Per-session bars (one vertical bar per session, split by adaptation) ──────
 
+const BLOCK_TYPE_LABEL: Record<string, string> = {
+  project_bouldering: "Project",
+  constraint_warmup: "Warmup",
+  strength_conditioning: "S&C",
+  exploration_session: "Explore",
+  sequence: "Sequence",
+  free_session: "Free",
+  four_by_four: "4×4",
+}
+
+function blockName(block: any): string {
+  const n = (block?.blockName ?? "").toString().trim()
+  if (n) return n
+  return BLOCK_TYPE_LABEL[block?.type] ?? block?.type ?? "Block"
+}
+
 export interface SessionBar {
   sessionId: string
   date: Date
-  dateStr: string                              // YYYY-MM-DD (for the detail modal)
-  label: string                                // short "M/D" label
+  dateStr: string                                          // YYYY-MM-DD (detail modal)
+  label: string                                            // "4 Jun"
   totalMin: number
-  segments: { color: string; min: number }[]   // top→bottom, fixed adaptation order
+  segments: { name: string; color: string; min: number }[] // one per block, in order
 }
 
 export function sessionBars(sessions: SessionRow[]): { bars: SessionBar[]; present: Adaptation[] } {
@@ -126,17 +142,15 @@ export function sessionBars(sessions: SessionRow[]): { bars: SessionBar[]; prese
     try { blocks = JSON.parse(s.protocol) } catch { /* skip */ }
     try { durations = s.blockDurations ? JSON.parse(s.blockDurations) : {} } catch { /* none */ }
 
-    const mins: Record<string, number> = {}
-    blocks.forEach((block, i) => {
+    // One segment per block, in workout order (not merged by adaptation), so
+    // each segment can show its block name.
+    const segments = blocks.map((block, i) => {
       const adapt = resolveAdaptation(block)
-      const secs = Number(durations[String(i)]) || FALLBACK_BLOCK_SECS
-      mins[adapt] = (mins[adapt] ?? 0) + secs / 60
       present.add(adapt)
-    })
+      const min = Math.round((Number(durations[String(i)]) || FALLBACK_BLOCK_SECS) / 60)
+      return { name: blockName(block), color: ADAPTATION_COLOR[adapt], min }
+    }).filter((seg) => seg.min > 0)
 
-    const segments = ADAPTATIONS
-      .filter((a) => (mins[a] ?? 0) > 0)
-      .map((a) => ({ color: ADAPTATION_COLOR[a], min: Math.round(mins[a]) }))
     const totalMin = segments.reduce((sum, seg) => sum + seg.min, 0)
     const d = sessionDate(s)
 
@@ -144,7 +158,7 @@ export function sessionBars(sessions: SessionRow[]): { bars: SessionBar[]; prese
       sessionId: s.$id,
       date: d,
       dateStr: d.toISOString().slice(0, 10),
-      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      label: `${d.getDate()} ${d.toLocaleDateString(undefined, { month: "short" })}`,
       totalMin,
       segments,
     }
