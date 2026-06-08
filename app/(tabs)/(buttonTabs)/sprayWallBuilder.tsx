@@ -1,9 +1,9 @@
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
-import { saveSprayRoute, updateSprayRoute } from "@/services/BoulderGraphService"
+import { getSprayWall, saveSprayRoute, updateSprayRoute } from "@/services/BoulderGraphService"
 import { resolveNewRoute } from "@/utils/pendingRouteSelection"
 import { parseVariations, RouteVariations } from "@/utils/sequenceVariations"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, StyleSheet } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -28,7 +28,20 @@ export default function SprayWallBuilderScreen() {
   const isEditing = !!params.routeId
   const fromPicker = params.from === "protocolPicker"
   const wallId = params.wallId || undefined
-  const imageSource = params.wallImageUri ? { uri: params.wallImageUri } : FALLBACK_IMAGE
+  // Seed from the passed URL, but also resolve the wall's current image from the
+  // DB by id — the passed param can be empty/stale/mangled depending on the flow
+  // (e.g. creating a route from the protocol picker).
+  const [imageSource, setImageSource] = useState<any>(
+    params.wallImageUri ? { uri: params.wallImageUri } : FALLBACK_IMAGE
+  )
+  useEffect(() => {
+    if (!wallId) return
+    let cancelled = false
+    getSprayWall(wallId)
+      .then((wall) => { if (!cancelled && wall?.imageUri) setImageSource({ uri: wall.imageUri }) })
+      .catch(() => { /* keep the seeded source */ })
+    return () => { cancelled = true }
+  }, [wallId])
 
   const initialVariations: RouteVariations = parseVariations({
     holds: params.routeHolds,
