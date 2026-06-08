@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
+import { ScreenGradient } from "@/components/ScreenGradient"
 import { AthleteAnalytics } from "@/components/AthleteAnalytics"
 import { TrainingTimeline } from "@/components/TrainingTimeline"
 import { AppUser, getAthletes } from "@/services/BoulderGraphService"
@@ -37,6 +38,7 @@ export default function DesignScreen() {
   )
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
         {/* ── Top bar ─────────────────────────────────────────────────────── */}
@@ -91,11 +93,12 @@ export default function DesignScreen() {
         </ScrollView>
       </ScreenEntry>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: "transparent" },
 
   topBar: {
     flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,

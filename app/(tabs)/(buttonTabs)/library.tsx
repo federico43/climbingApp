@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
+import { ScreenGradient } from "@/components/ScreenGradient"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { groupByDate } from "@/utils/dateGroups"
 import { deleteVideoFile, listSavedVideos } from "@/utils/saveVideo"
@@ -162,6 +163,7 @@ export default function LibraryScreen() {
   const groups = useMemo(() => groupByDate(videos), [videos])
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
       <View style={styles.header}>
@@ -211,13 +213,14 @@ export default function LibraryScreen() {
         />
       </Modal>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: "transparent" },
 
   header: {
     paddingHorizontal: 20,

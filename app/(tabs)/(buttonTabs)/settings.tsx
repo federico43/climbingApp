@@ -1,5 +1,6 @@
 import { C } from "@/utils/theme"
 import { ScreenEntry } from "@/components/ScreenEntry"
+import { ScreenGradient } from "@/components/ScreenGradient"
 import { ConsumeAuth } from "@/components/auth-context"
 import { useRouter } from "expo-router"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -10,6 +11,7 @@ export default function SettingsScreen() {
   const router = useRouter()
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
       <View style={styles.header}>
@@ -64,11 +66,12 @@ export default function SettingsScreen() {
       </ScrollView>
       </ScreenEntry>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: "transparent" },
 
   header: {
     paddingHorizontal: 20,
