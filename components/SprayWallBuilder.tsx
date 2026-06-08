@@ -17,7 +17,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import React, { useMemo, useRef, useState } from "react"
-import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Image } from "expo-image"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 // ─── Resize slider ────────────────────────────────────────────────────────────
@@ -156,16 +157,21 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   const drawOrigin   = useRef({ x: 0, y: 0 })   // image-fraction coords of draw start
   const ghostRef     = useRef<{ x: number; y: number; radius: number } | null>(null)
   const { nw, nh } = useImageSize(imageSource)
+  // expo-image reports the real dimensions on load (from its cache, reliable on
+  // iPad where Image.getSize can fail and fall back to 1×1 → a square render).
+  const [loadedSize, setLoadedSize] = useState<{ w: number; h: number } | null>(null)
+  const nwEff = loadedSize?.w || nw
+  const nhEff = loadedSize?.h || nh
 
   // ── Image rect ─────────────────────────────────────────────────────────────
   const { imgW, imgH, imgLeft, imgTop } = useMemo(() => {
     if (!containerW || !containerH) return { imgW: 0, imgH: 0, imgLeft: 0, imgTop: 0 }
-    const ia = nw / nh, ca = containerW / containerH
+    const ia = nwEff / nhEff, ca = containerW / containerH
     let imgW: number, imgH: number
     if (ia > ca) { imgW = containerW;  imgH = containerW / ia  }
     else         { imgH = containerH;  imgW = containerH * ia  }
     return { imgW, imgH, imgLeft: (containerW - imgW) / 2, imgTop: (containerH - imgH) / 2 }
-  }, [containerW, containerH, nw, nh])
+  }, [containerW, containerH, nwEff, nhEff])
 
   // ── Zoom shared values ─────────────────────────────────────────────────────
   const scale      = useSharedValue(1)
@@ -679,7 +685,12 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
               <>
                 <Image source={imageSource}
                   style={{ position: "absolute", left: imgLeft, top: imgTop, width: imgW, height: imgH }}
-                  resizeMode="stretch"
+                  contentFit="fill"
+                  cachePolicy="memory-disk"
+                  onLoad={(e) => {
+                    const s: any = e?.source
+                    if (s?.width && s?.height) setLoadedSize({ w: s.width, h: s.height })
+                  }}
                 />
                 <View style={styles.darkOverlay} pointerEvents="none" />
 
@@ -707,7 +718,8 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                               top:  imgTop  - cy + r,
                               width: imgW, height: imgH,
                             }}
-                            resizeMode="stretch"
+                            contentFit="fill"
+                          cachePolicy="memory-disk"
                           />
                         </View>
                       </View>
@@ -772,7 +784,8 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                       }]}>
                         <Image source={imageSource}
                           style={{ position: "absolute", left: imgLeft - cx + r, top: imgTop - cy + r, width: imgW, height: imgH }}
-                          resizeMode="stretch"
+                          contentFit="fill"
+                          cachePolicy="memory-disk"
                         />
                       </View>
                     </View>
