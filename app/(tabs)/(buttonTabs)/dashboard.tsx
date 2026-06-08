@@ -20,7 +20,8 @@ import {
 import { Calendar } from "react-native-calendars"
 import { BarChart } from "react-native-gifted-charts"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { weeklyFrequency, weeklyAdaptationVolume, trainingStats } from "@/utils/athleteAnalytics"
+import { weeklyFrequency, sessionBars, trainingStats } from "@/utils/athleteAnalytics"
+import { SessionBarsChart } from "@/components/SessionBarsChart"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL } from "@/utils/adaptations"
 
 // Shared axis-label style for the gifted-charts (plain object, not StyleSheet).
@@ -180,7 +181,7 @@ export default function DashboardScreen() {
 
   // ── Analytics over the cycle ──────────────────────────────────────────────
   const freqData = weeklyFrequency(sessions)
-  const adaptVol = weeklyAdaptationVolume(sessions)
+  const { bars: focusBars, present: focusAdaptations } = sessionBars(sessions)
   const stats = trainingStats(sessions)
 
   return (
@@ -307,28 +308,17 @@ export default function DashboardScreen() {
             </View>
           )}
 
-          {/* Adaptation volume over time (eyeball the periodization) */}
-          {adaptVol.present.length > 0 && (
+          {/* Training focus — one bar per session, split by adaptation */}
+          {focusBars.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Training focus</Text>
-              <Text style={styles.sectionSub}>Minutes per week by adaptation</Text>
-              <View style={styles.chartWrap}>
-                <BarChart
-                  stackData={adaptVol.weeks.map((w) => ({ label: w.label, stacks: w.stacks }))}
-                  barWidth={20}
-                  spacing={16}
-                  initialSpacing={10}
-                  yAxisThickness={0}
-                  xAxisThickness={0}
-                  yAxisTextStyle={chartAxis}
-                  xAxisLabelTextStyle={chartAxis}
-                  rulesColor={C.border}
-                  height={160}
-                  noOfSections={4}
-                />
-              </View>
+              <Text style={styles.sectionSub}>Each bar is a session · height = volume</Text>
+              <SessionBarsChart
+                bars={focusBars}
+                onPressBar={(bar) => setSelectedDate(bar.dateStr)}
+              />
               <View style={styles.legendRow}>
-                {adaptVol.present.map((a) => (
+                {focusAdaptations.map((a) => (
                   <View key={a} style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: ADAPTATION_COLOR[a] }]} />
                     <Text style={styles.legendText}>{ADAPTATION_LABEL[a]}</Text>

@@ -105,6 +105,54 @@ export function weeklyAdaptationVolume(sessions: SessionRow[], maxWeeks = 10): A
   return { weeks: weeksOut, present: order }
 }
 
+// ── Per-session bars (one vertical bar per session, split by adaptation) ──────
+
+export interface SessionBar {
+  sessionId: string
+  date: Date
+  dateStr: string                              // YYYY-MM-DD (for the detail modal)
+  label: string                                // short "M/D" label
+  totalMin: number
+  segments: { color: string; min: number }[]   // top→bottom, fixed adaptation order
+}
+
+export function sessionBars(sessions: SessionRow[]): { bars: SessionBar[]; present: Adaptation[] } {
+  const present = new Set<Adaptation>()
+  const sorted = [...sessions].sort((a, b) => sessionDate(a).getTime() - sessionDate(b).getTime())
+
+  const bars: SessionBar[] = sorted.map((s) => {
+    let blocks: any[] = []
+    let durations: Record<string, number> = {}
+    try { blocks = JSON.parse(s.protocol) } catch { /* skip */ }
+    try { durations = s.blockDurations ? JSON.parse(s.blockDurations) : {} } catch { /* none */ }
+
+    const mins: Record<string, number> = {}
+    blocks.forEach((block, i) => {
+      const adapt = resolveAdaptation(block)
+      const secs = Number(durations[String(i)]) || FALLBACK_BLOCK_SECS
+      mins[adapt] = (mins[adapt] ?? 0) + secs / 60
+      present.add(adapt)
+    })
+
+    const segments = ADAPTATIONS
+      .filter((a) => (mins[a] ?? 0) > 0)
+      .map((a) => ({ color: ADAPTATION_COLOR[a], min: Math.round(mins[a]) }))
+    const totalMin = segments.reduce((sum, seg) => sum + seg.min, 0)
+    const d = sessionDate(s)
+
+    return {
+      sessionId: s.$id,
+      date: d,
+      dateStr: d.toISOString().slice(0, 10),
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      totalMin,
+      segments,
+    }
+  })
+
+  return { bars, present: ADAPTATIONS.filter((a) => present.has(a)) }
+}
+
 // ── Headline stats ────────────────────────────────────────────────────────────
 
 export interface TrainingStats {
