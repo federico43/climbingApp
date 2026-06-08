@@ -343,8 +343,9 @@ export default function ProtocolDesignerScreen() {
               <Text style={styles.libraryGroupHeader}>{group}</Text>
               {items.map((p) => {
                 const blocks = p.blocks ? JSON.parse(p.blocks) : []
+                const selected = isWide && view === "editor" && editingProtocol?.$id === p.$id
                 return (
-                  <View key={p.$id} style={styles.protocolCard}>
+                  <View key={p.$id} style={[styles.protocolCard, selected && styles.protocolCardSelected]}>
                     <Pressable style={styles.protocolCardContent} onPress={() => { setEditingProtocol(p); setView("editor") }}>
                       <Text style={styles.protocolName}>{p.name}</Text>
                       <Text style={styles.protocolMeta}>{blocks.length} block{blocks.length !== 1 ? "s" : ""}</Text>
@@ -1734,7 +1735,8 @@ const styles = StyleSheet.create({
   newButtonText: { color: C.bg, fontWeight: "600", fontSize: 14 },
   listContent: { paddingHorizontal: 20, gap: 12, paddingBottom: 40 },
   emptyState: { textAlign: "center", marginTop: 60, color: C.textMuted, fontSize: 15 },
-  protocolCard: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 14, padding: 16, gap: 10 },
+  protocolCard: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 14, padding: 16, gap: 10, borderWidth: 1.5, borderColor: "transparent" },
+  protocolCardSelected: { borderColor: C.green, backgroundColor: C.surfaceHigh },
   protocolCardContent: { flex: 1 },
   protocolName: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
   protocolMeta: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
