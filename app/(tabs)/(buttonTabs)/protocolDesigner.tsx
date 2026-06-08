@@ -409,6 +409,7 @@ export default function ProtocolDesignerScreen() {
 
   const editor = (
     <ProtocolEditor
+      key={editingProtocol?.$id ?? "new"}
       protocol={editingProtocol}
       onDone={() => { setView("list"); fetchProtocols() }}
       onCancel={() => setView("list")}
