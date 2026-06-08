@@ -316,16 +316,6 @@ export default function ProtocolDesignerScreen() {
     }
   }
 
-  if (view === "editor") {
-    return (
-      <ProtocolEditor
-        protocol={editingProtocol}
-        onDone={() => { setView("list"); fetchProtocols() }}
-        onCancel={() => setView("list")}
-      />
-    )
-  }
-
   return (
     <SafeAreaView style={styles.safeContainer}>
       <View style={styles.listHeader}>
@@ -411,6 +401,21 @@ export default function ProtocolDesignerScreen() {
             </ScrollView>
           )}
         </SafeAreaView>
+      </Modal>
+
+      {/* Editor — full-screen modal so it fully covers the list on every
+          platform (a plain view-swap didn't cover the screen on web). */}
+      <Modal
+        visible={view === "editor"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setView("list")}
+      >
+        <ProtocolEditor
+          protocol={editingProtocol}
+          onDone={() => { setView("list"); fetchProtocols() }}
+          onCancel={() => setView("list")}
+        />
       </Modal>
     </SafeAreaView>
   )
