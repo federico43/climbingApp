@@ -105,6 +105,7 @@ export interface AppUser {
   role: UserRole
   username: string
   assignedProtocolId: string | null
+  assignedAt?: string | null   // YYYY-MM-DD the coach assigned the protocol
   [key: string]: any
 }
 
@@ -317,12 +318,23 @@ export async function getAthletes(): Promise<AppUser[]> {
 }
 
 export async function assignProtocol(userId: string, protocolId: string): Promise<void> {
-  await tablesDB.updateRow({
-    databaseId: DATABASE_ID,
-    tableId: USERS_TABLE,
-    rowId: userId,
-    data: { assignedProtocolId: protocolId },
-  })
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  try {
+    await tablesDB.updateRow({
+      databaseId: DATABASE_ID,
+      tableId: USERS_TABLE,
+      rowId: userId,
+      data: { assignedProtocolId: protocolId, assignedAt: today },
+    })
+  } catch (e) {
+    // `assignedAt` column may not exist yet — fall back to just the protocol id.
+    await tablesDB.updateRow({
+      databaseId: DATABASE_ID,
+      tableId: USERS_TABLE,
+      rowId: userId,
+      data: { assignedProtocolId: protocolId },
+    })
+  }
 }
 
 export async function unassignProtocol(userId: string): Promise<void> {
@@ -334,7 +346,7 @@ export async function unassignProtocol(userId: string): Promise<void> {
   })
 }
 
-export async function getAssignedProtocol(userId: string): Promise<ProtocolRow | null> {
+export async function getAssignedProtocol(userId: string): Promise<(ProtocolRow & { assignedAt?: string | null }) | null> {
   const user = await getUsers(userId) as unknown as AppUser
   if (!user?.assignedProtocolId) return null
   const protocol = await tablesDB.getRow({
@@ -342,7 +354,8 @@ export async function getAssignedProtocol(userId: string): Promise<ProtocolRow |
     tableId: PROTOCOLS_TABLE,
     rowId: user.assignedProtocolId,
   })
-  return protocol as unknown as ProtocolRow
+  // Surface when the coach assigned it so the athlete sees that day.
+  return { ...(protocol as unknown as ProtocolRow), assignedAt: user.assignedAt ?? null }
 }
 
 // ─── Protocols ────────────────────────────────────────────────────────────────

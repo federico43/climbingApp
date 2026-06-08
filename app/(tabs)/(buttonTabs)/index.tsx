@@ -117,6 +117,7 @@ export default function HomeScreen() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [protocol, setProtocol] = useState<any[]>([])
   const [protocolName, setProtocolName] = useState("")
+  const [assignedAt, setAssignedAt] = useState<string | null>(null)
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [cameraProject, setCameraProject] = useState<ProjectRow | null>(null)
   const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(null)
@@ -153,9 +154,11 @@ export default function HomeScreen() {
       if (protocolRow) {
         setProtocol(JSON.parse(protocolRow.blocks))
         setProtocolName(protocolRow.name)
+        setAssignedAt(protocolRow.assignedAt ?? null)
       } else {
         setProtocol([])
         setProtocolName("")
+        setAssignedAt(null)
       }
       // Auto-fail projects past their deadline
       const todayStr = new Date().toISOString().slice(0, 10)
@@ -253,8 +256,10 @@ export default function HomeScreen() {
   // actually visible (it's hidden behind the hero otherwise).
   const [introDone, setIntroDone] = useState(heroPlayed)
   const cardEntering = (i: number) => FadeInDown.duration(420).delay(i * 110)
-  // Athletes see the session by its day, not the protocol's name.
-  const todayLabel = `${new Date().getDate()} ${new Date().toLocaleDateString(undefined, { month: "long" })}`
+  // Athletes see the session by the day the coach assigned it (falls back to
+  // today if the assignment predates date tracking), not the protocol's name.
+  const labelDate = assignedAt ? new Date(assignedAt + "T12:00:00") : new Date()
+  const todayLabel = `${labelDate.getDate()} ${labelDate.toLocaleDateString(undefined, { month: "long" })}`
 
   return (
     <>
