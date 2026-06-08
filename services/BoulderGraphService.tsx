@@ -369,11 +369,11 @@ export async function deleteProtocol(id: string): Promise<void> {
 // ─── Block library ────────────────────────────────────────────────────────────
 
 export async function listBlocks(): Promise<BlockRow[]> {
-  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.orderDesc("$createdAt")])
+  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.orderAsc("name")])
 }
 
 export async function listBlocksByType(type: string): Promise<BlockRow[]> {
-  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.equal("type", type), Query.orderDesc("$createdAt")])
+  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.equal("type", type), Query.orderAsc("name")])
 }
 
 export async function saveBlockToLibrary(input: {
