@@ -878,14 +878,15 @@ function BlockPickerModal({
   const [newBlockType, setNewBlockType] = useState<BlockType | null>(null)
   const [librarySearch, setLibrarySearch] = useState("")
 
-  useEffect(() => {
-    async function fetch() {
-      try { setLibraryBlocks(await listBlocks()) }
-      catch (e) { console.error(e) }
-      finally { setLoadingLibrary(false) }
-    }
-    fetch()
-  }, [])
+  async function loadLibrary() {
+    setLoadingLibrary(true)
+    try { setLibraryBlocks(await listBlocks()) }
+    catch (e) { console.error(e) }
+    finally { setLoadingLibrary(false) }
+  }
+  // Initial load, and re-fetch whenever the Library tab is opened so newly
+  // created / updated templates show up without reopening the sheet.
+  useEffect(() => { if (tab === "library") loadLibrary() }, [tab])
 
   function handlePickFromLibrary(row: BlockRow) {
     onAdd(blockFromLibraryRow(row))
@@ -913,6 +914,7 @@ function BlockPickerModal({
     if (saveToLibrary) {
       const { id, ...data } = block
       await saveBlockToLibrary({ name: block.blockName, type: block.type, data })
+      loadLibrary() // so the new template shows in the library tab
     }
     onAdd(block)
   }
@@ -929,7 +931,13 @@ function BlockPickerModal({
           </Pressable>
         )}
         <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>Add block</Text>
-        <View style={styles.iconBackBtn} />
+        {tab === "library" ? (
+          <Pressable onPress={loadLibrary} style={styles.iconBackBtn} hitSlop={10}>
+            <Ionicons name="refresh" size={18} color={C.textSecondary} />
+          </Pressable>
+        ) : (
+          <View style={styles.iconBackBtn} />
+        )}
       </View>
 
       {/* Tabs */}
