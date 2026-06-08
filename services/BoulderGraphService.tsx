@@ -363,22 +363,30 @@ export async function deleteProtocol(id: string): Promise<void> {
 
 // ─── Block library ────────────────────────────────────────────────────────────
 
+// Fetch ALL block rows via cursor pagination. Appwrite caps a single request at
+// 100 rows (and defaults to 25), so without this older blocks were silently
+// dropped once the library grew past one page.
+async function fetchAllBlocks(extraQueries: any[] = []): Promise<BlockRow[]> {
+  const all: BlockRow[] = []
+  let cursor: string | undefined
+  for (;;) {
+    const queries = [...extraQueries, Query.orderDesc("$createdAt"), Query.limit(100)]
+    if (cursor) queries.push(Query.cursorAfter(cursor))
+    const response = await tablesDB.listRows({ databaseId: DATABASE_ID, tableId: BLOCKS_TABLE, queries })
+    const rows = response.rows as unknown as BlockRow[]
+    all.push(...rows)
+    if (rows.length < 100) break
+    cursor = (rows[rows.length - 1] as any).$id
+  }
+  return all
+}
+
 export async function listBlocks(): Promise<BlockRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: BLOCKS_TABLE,
-    queries: [Query.orderDesc("$createdAt")],
-  })
-  return response.rows as unknown as BlockRow[]
+  return fetchAllBlocks()
 }
 
 export async function listBlocksByType(type: string): Promise<BlockRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: BLOCKS_TABLE,
-    queries: [Query.equal("type", type), Query.orderDesc("$createdAt")],
-  })
-  return response.rows as unknown as BlockRow[]
+  return fetchAllBlocks([Query.equal("type", type)])
 }
 
 export async function saveBlockToLibrary(input: {
