@@ -325,6 +325,15 @@ export async function assignProtocol(userId: string, protocolId: string): Promis
   })
 }
 
+export async function unassignProtocol(userId: string): Promise<void> {
+  await tablesDB.updateRow({
+    databaseId: DATABASE_ID,
+    tableId: USERS_TABLE,
+    rowId: userId,
+    data: { assignedProtocolId: null },
+  })
+}
+
 export async function getAssignedProtocol(userId: string): Promise<ProtocolRow | null> {
   const user = await getUsers(userId) as unknown as AppUser
   if (!user?.assignedProtocolId) return null

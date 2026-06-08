@@ -22,6 +22,7 @@ const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 import {
   AppUser,
   assignProtocol,
+  unassignProtocol,
   BlockRow,
   createProtocol,
   deleteBlock,
@@ -457,6 +458,29 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
   const [assignmentSet, setAssignmentSet] = useState<AssignmentSet | null>(null)
   const [assignLibrary, setAssignLibrary] = useState<Map<string, BlockRow>>(new Map())
 
+  // Assign-to-athlete pills. The selection is the *desired* set of athletes for
+  // this protocol; it's applied on Save (so it works for unsaved new protocols).
+  const [athletes, setAthletes] = useState<AppUser[]>([])
+  const [selectedAthletes, setSelectedAthletes] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let cancelled = false
+    getAthletes().then((list) => {
+      if (cancelled) return
+      setAthletes(list)
+      if (protocol) {
+        setSelectedAthletes(new Set(list.filter((a) => a.assignedProtocolId === protocol.$id).map((a) => a.$id)))
+      }
+    }).catch(console.error)
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const toggleAthlete = (id: string) =>
+    setSelectedAthletes((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
   function handleAddBlock(block: Block) {
     setBlocks((prev) => [...prev, block])
     setExpandedBlockId(block.id)
@@ -546,7 +570,20 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
     setSaving(true)
     try {
       const payload = { name: name.trim(), blocks: stripLocalIds(blocks) }
-      if (protocol) { await updateProtocol(protocol.$id, payload) } else { await createProtocol(payload) }
+      let savedId: string
+      if (protocol) { await updateProtocol(protocol.$id, payload); savedId = protocol.$id }
+      else { const created = await createProtocol(payload); savedId = created.$id }
+
+      // Apply the athlete pill selection: assign this protocol to selected
+      // athletes, and unassign any that were on it but got deselected.
+      await Promise.all(athletes.map(async (a) => {
+        const want = selectedAthletes.has(a.$id)
+        if (want && a.assignedProtocolId !== savedId) {
+          await assignProtocol(a.$id, savedId)
+        } else if (!want && protocol && a.assignedProtocolId === protocol.$id) {
+          await unassignProtocol(a.$id)
+        }
+      }))
       onDone()
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save protocol.")
@@ -589,6 +626,27 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
               onChangeText={setName}
               placeholderTextColor="#aaa"
             />
+            {athletes.length > 0 && (
+              <View style={styles.assignWrap}>
+                <Text style={styles.assignLabel}>Assign to</Text>
+                <View style={styles.assignPillRow}>
+                  {athletes.map((a) => {
+                    const sel = selectedAthletes.has(a.$id)
+                    return (
+                      <Pressable
+                        key={a.$id}
+                        style={[styles.assignPill, sel && styles.assignPillActive]}
+                        onPress={() => toggleAthlete(a.$id)}
+                      >
+                        <Text style={[styles.assignPillText, sel && styles.assignPillTextActive]}>
+                          {a.username ?? a.$id}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </View>
+            )}
             <Pressable style={styles.aiGenerateBtn} onPress={() => setAiOpen(true)}>
               <Text style={styles.aiGenerateText}>✨  Generate with AI</Text>
             </Pressable>
@@ -1833,6 +1891,19 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.green, backgroundColor: C.surface,
   },
   aiGenerateText: { fontSize: 14, fontWeight: "700", color: C.green },
+
+  // Assign-to-athlete pills
+  assignWrap: { marginHorizontal: 16, marginTop: 12, gap: 8 },
+  assignLabel: { fontSize: 12, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+  assignPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  assignPill: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  assignPillActive: { backgroundColor: C.green, borderColor: C.green },
+  assignPillText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  assignPillTextActive: { color: C.bg },
+
   aiOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center", alignItems: "center", padding: 24,
