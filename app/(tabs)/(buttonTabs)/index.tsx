@@ -253,6 +253,8 @@ export default function HomeScreen() {
   // actually visible (it's hidden behind the hero otherwise).
   const [introDone, setIntroDone] = useState(heroPlayed)
   const cardEntering = (i: number) => FadeInDown.duration(420).delay(i * 110)
+  // Athletes see the session by its day, not the protocol's name.
+  const todayLabel = `${new Date().getDate()} ${new Date().toLocaleDateString(undefined, { month: "long" })}`
 
   return (
     <>
@@ -289,10 +291,10 @@ export default function HomeScreen() {
               {protocol.length > 0 ? (
                 <ScalePressable
                   style={styles.workoutCard}
-                  onPress={() => workoutCtx.openWorkout(protocol, protocolName)}
+                  onPress={() => workoutCtx.openWorkout(protocol, todayLabel)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.workoutCardTitle}>{protocolName}</Text>
+                    <Text style={styles.workoutCardTitle}>{todayLabel}</Text>
                     <Text style={styles.workoutCardSub}>
                       {protocol.length} block{protocol.length !== 1 ? "s" : ""} · Tap to start
                     </Text>
