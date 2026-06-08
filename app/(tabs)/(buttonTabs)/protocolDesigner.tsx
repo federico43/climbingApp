@@ -246,6 +246,8 @@ export default function ProtocolDesignerScreen() {
   const router = useRouter()
   const { role } = ConsumeAuth()
   const workoutCtx = useWorkoutContext()
+  const { width } = useWindowDimensions()
+  const isWide = width >= 900 // big screen → master-detail (list beside editor)
   const [view, setView] = useState<ScreenView>("list")
   const [protocols, setProtocols] = useState<ProtocolRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -316,7 +318,7 @@ export default function ProtocolDesignerScreen() {
     }
   }
 
-  return (
+  const listContent = (
     <SafeAreaView style={styles.safeContainer}>
       <View style={styles.listHeader}>
         <View style={styles.listHeaderLeft}>
@@ -402,23 +404,37 @@ export default function ProtocolDesignerScreen() {
           )}
         </SafeAreaView>
       </Modal>
-
-      {/* Editor — full-screen modal so it fully covers the list on every
-          platform (a plain view-swap didn't cover the screen on web). */}
-      <Modal
-        visible={view === "editor"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setView("list")}
-      >
-        <ProtocolEditor
-          protocol={editingProtocol}
-          onDone={() => { setView("list"); fetchProtocols() }}
-          onCancel={() => setView("list")}
-        />
-      </Modal>
     </SafeAreaView>
   )
+
+  const editor = (
+    <ProtocolEditor
+      protocol={editingProtocol}
+      onDone={() => { setView("list"); fetchProtocols() }}
+      onCancel={() => setView("list")}
+    />
+  )
+
+  // Big screens: master-detail — keep the protocol list visible beside the
+  // editor instead of swapping the whole screen.
+  if (isWide) {
+    return (
+      <View style={styles.splitRoot}>
+        <View style={styles.splitList}>{listContent}</View>
+        <View style={styles.splitDetail}>
+          {view === "editor" ? editor : (
+            <View style={styles.splitEmpty}>
+              <Text style={styles.splitEmptyText}>Select a protocol, or create a new one.</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    )
+  }
+
+  // Narrow screens: full-screen swap (original behavior).
+  if (view === "editor") return editor
+  return listContent
 }
 
 // ─── Protocol Editor ──────────────────────────────────────────────────────────
@@ -1701,6 +1717,13 @@ function ExercisePickerModal({
 
 const styles = StyleSheet.create({
   safeContainer: { flex: 1, backgroundColor: C.bg },
+
+  // Master-detail (big screens)
+  splitRoot: { flex: 1, flexDirection: "row", backgroundColor: C.bg },
+  splitList: { width: 380, borderRightWidth: 1, borderRightColor: C.border },
+  splitDetail: { flex: 1 },
+  splitEmpty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
+  splitEmptyText: { fontSize: 15, color: C.textMuted, textAlign: "center" },
   listHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
   listHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
   backButton: { paddingRight: 4 },
