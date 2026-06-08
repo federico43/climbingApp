@@ -1536,14 +1536,18 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
       if (route) selectRoute(route)
       else setShowRoutePicker(true)
     })
-    router.push({
-      pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
-      params: {
-        _new: Date.now().toString(),
-        from: "protocolPicker",
-        ...(wall ? { wallId: wall.id, wallImageUri: wall.imageUri ?? "" } : {}),
-      },
-    })
+    // Defer navigation so the route-picker modal fully dismisses first —
+    // otherwise on web it races the navigation and stays as a grey overlay.
+    setTimeout(() => {
+      router.push({
+        pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
+        params: {
+          _new: Date.now().toString(),
+          from: "protocolPicker",
+          ...(wall ? { wallId: wall.id, wallImageUri: wall.imageUri ?? "" } : {}),
+        },
+      })
+    }, 250)
   }
 
   // If this field unmounts mid-flow (block collapsed/deleted), drop the listener
