@@ -14,6 +14,26 @@ export const SPRAY_ROUTES_TABLE = "spray_routes"
 // Table must exist in Appwrite with columns: name (string), imageUri (string)
 export const SPRAY_WALLS_TABLE = "spray_walls"
 
+// Cursor-paginate a table to fetch EVERY row. Appwrite caps a single request
+// (default 25, max 100), so callers that expect the full collection must page
+// through it — otherwise large libraries/histories get silently truncated.
+// `baseQueries` must include the sort order (needed for stable cursoring) and
+// any filters, but NOT a limit.
+async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+  const all: T[] = []
+  let cursor: string | undefined
+  for (;;) {
+    const queries = [...baseQueries, Query.limit(100)]
+    if (cursor) queries.push(Query.cursorAfter(cursor))
+    const response = await tablesDB.listRows({ databaseId: DATABASE_ID, tableId, queries })
+    const rows = response.rows as unknown as T[]
+    all.push(...rows)
+    if (rows.length < 100) break
+    cursor = (rows[rows.length - 1] as any).$id
+  }
+  return all
+}
+
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
 const APPWRITE_ENDPOINT  = "https://nyc.cloud.appwrite.io/v1"
@@ -194,22 +214,12 @@ export async function saveSession(data: any) {
 }
 
 export async function getSessionsByUserId(userId: string): Promise<SessionRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: SESSION_TABLE,
-    queries: [Query.equal("userId", userId), Query.orderDesc("$createdAt"), Query.limit(200)],
-  })
-  return response.rows as unknown as SessionRow[]
+  return listAllRows<SessionRow>(SESSION_TABLE, [Query.equal("userId", userId), Query.orderDesc("$createdAt")])
 }
 
 export async function getSessions(): Promise<SessionRow[]> {
   const user = await account.get()
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: SESSION_TABLE,
-    queries: [Query.equal("userId", user.$id), Query.orderDesc("$createdAt"), Query.limit(200)],
-  })
-  return response.rows as unknown as SessionRow[]
+  return listAllRows<SessionRow>(SESSION_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
 }
 
 export interface ProjectSessionSummary {
@@ -329,12 +339,7 @@ export async function getAssignedProtocol(userId: string): Promise<ProtocolRow |
 // ─── Protocols ────────────────────────────────────────────────────────────────
 
 export async function listProtocols(): Promise<ProtocolRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: PROTOCOLS_TABLE,
-    queries: [Query.orderDesc("$createdAt")],
-  })
-  return response.rows as unknown as ProtocolRow[]
+  return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [Query.orderDesc("$createdAt")])
 }
 
 export async function createProtocol(input: { name: string; blocks: any[] }): Promise<ProtocolRow> {
@@ -363,30 +368,12 @@ export async function deleteProtocol(id: string): Promise<void> {
 
 // ─── Block library ────────────────────────────────────────────────────────────
 
-// Fetch ALL block rows via cursor pagination. Appwrite caps a single request at
-// 100 rows (and defaults to 25), so without this older blocks were silently
-// dropped once the library grew past one page.
-async function fetchAllBlocks(extraQueries: any[] = []): Promise<BlockRow[]> {
-  const all: BlockRow[] = []
-  let cursor: string | undefined
-  for (;;) {
-    const queries = [...extraQueries, Query.orderDesc("$createdAt"), Query.limit(100)]
-    if (cursor) queries.push(Query.cursorAfter(cursor))
-    const response = await tablesDB.listRows({ databaseId: DATABASE_ID, tableId: BLOCKS_TABLE, queries })
-    const rows = response.rows as unknown as BlockRow[]
-    all.push(...rows)
-    if (rows.length < 100) break
-    cursor = (rows[rows.length - 1] as any).$id
-  }
-  return all
-}
-
 export async function listBlocks(): Promise<BlockRow[]> {
-  return fetchAllBlocks()
+  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.orderDesc("$createdAt")])
 }
 
 export async function listBlocksByType(type: string): Promise<BlockRow[]> {
-  return fetchAllBlocks([Query.equal("type", type)])
+  return listAllRows<BlockRow>(BLOCKS_TABLE, [Query.equal("type", type), Query.orderDesc("$createdAt")])
 }
 
 export async function saveBlockToLibrary(input: {
@@ -452,12 +439,7 @@ export interface ExerciseRow {
 }
 
 export async function listExercises(): Promise<ExerciseRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: EXERCISES_TABLE,
-    queries: [Query.orderAsc("name"), Query.limit(200)],
-  })
-  return response.rows as unknown as ExerciseRow[]
+  return listAllRows<ExerciseRow>(EXERCISES_TABLE, [Query.orderAsc("name")])
 }
 
 export async function createExercise(input: {
@@ -524,12 +506,7 @@ export async function getSprayWall(id: string): Promise<SprayWallRow | null> {
 }
 
 export async function getSprayWalls(): Promise<SprayWallRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: SPRAY_WALLS_TABLE,
-    queries: [Query.orderAsc("$createdAt"), Query.limit(50)],
-  })
-  return response.rows as unknown as SprayWallRow[]
+  return listAllRows<SprayWallRow>(SPRAY_WALLS_TABLE, [Query.orderAsc("$createdAt")])
 }
 
 export async function createSprayWall(name: string, imageUri: string, width?: number, height?: number): Promise<SprayWallRow> {
@@ -611,14 +588,9 @@ export async function getSprayRoute(id: string): Promise<SprayRouteRow> {
 }
 
 export async function getSprayRoutes(wallId?: string): Promise<SprayRouteRow[]> {
-  const queries = [Query.orderDesc("$createdAt"), Query.limit(100)]
-  if (wallId) queries.push(Query.equal("wallId", wallId))
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: SPRAY_ROUTES_TABLE,
-    queries,
-  })
-  return response.rows as unknown as SprayRouteRow[]
+  const base = [Query.orderDesc("$createdAt")]
+  if (wallId) base.push(Query.equal("wallId", wallId))
+  return listAllRows<SprayRouteRow>(SPRAY_ROUTES_TABLE, base)
 }
 
 export async function saveSprayRoute(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras): Promise<SprayRouteRow> {
@@ -676,12 +648,7 @@ export interface ProjectRow {
 
 export async function listProjects(): Promise<ProjectRow[]> {
   const user = await account.get()
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: PROJECTS_TABLE,
-    queries: [Query.equal("userId", user.$id), Query.orderDesc("$createdAt"), Query.limit(100)],
-  })
-  return response.rows as unknown as ProjectRow[]
+  return listAllRows<ProjectRow>(PROJECTS_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
 }
 
 export async function getProjectById(id: string): Promise<ProjectRow | null> {
