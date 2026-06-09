@@ -678,6 +678,7 @@ function ProtocolEditor({ protocol, onDone, onCancel }: { protocol: ProtocolRow 
             ) : (
               <DraggableFlatList
                 data={blocks}
+                style={{ flex: 1 }}
                 keyExtractor={(item) => item.id}
                 onDragEnd={({ data }) => setBlocks(data)}
                 renderItem={renderItem}
