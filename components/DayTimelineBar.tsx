@@ -48,11 +48,29 @@ function parseSession(session: SessionRow): {
 
 function formatDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return "—"
-  const m = Math.floor(seconds / 60)
+  const totalMin = Math.floor(seconds / 60)
   const s = seconds % 60
-  if (m === 0) return `${s}s`
-  if (s === 0) return `${m}m`
-  return `${m}m ${s}s`
+  if (totalMin >= 60) {
+    const h = Math.floor(totalMin / 60), m = totalMin % 60
+    return m ? `${h}h ${m}m` : `${h}h`
+  }
+  if (totalMin === 0) return `${s}s`
+  return s ? `${totalMin}m ${s}s` : `${totalMin}m`
+}
+
+const BLOCK_TYPE_LABEL: Record<string, string> = {
+  project_bouldering: "Project",
+  constraint_warmup: "Warmup",
+  strength_conditioning: "S&C",
+  exploration_session: "Explore",
+  sequence: "Sequence",
+  free_session: "Free",
+  four_by_four: "4×4",
+}
+
+function blockLabel(block: any): string {
+  const n = (block?.blockName ?? "").toString().trim()
+  return n || BLOCK_TYPE_LABEL[block?.type] || block?.type || "Block"
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -86,9 +104,12 @@ export function DayTimelineBar({
               return (
                 <Pressable
                   key={seg.blockIndex}
-                  style={{ flex, backgroundColor: color }}
+                  style={[styles.seg, { flex, backgroundColor: color }]}
                   onPress={() => onSegmentPress?.(seg, session)}
-                />
+                >
+                  <Text style={styles.segName} numberOfLines={1}>{blockLabel(seg.block)}</Text>
+                  <Text style={styles.segTime} numberOfLines={1}>{formatDuration(seg.duration)}</Text>
+                </Pressable>
               )
             })}
           </View>
@@ -177,11 +198,17 @@ const styles = StyleSheet.create({
   barOuter: { flex: 1 },
   bar: {
     flexDirection: "row",
-    height: 22,
+    height: 34,
     borderRadius: 6,
     overflow: "hidden",
     backgroundColor: C.surfaceHigh,
   },
+  seg: { justifyContent: "center", alignItems: "center", paddingHorizontal: 4, overflow: "hidden" },
+  segName: {
+    fontSize: 10, fontWeight: "700", color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.55)", textShadowRadius: 2, textShadowOffset: { width: 0, height: 1 },
+  },
+  segTime: { fontSize: 9, color: "rgba(255,255,255,0.85)", marginTop: 1 },
   barEmpty: {
     alignItems: "center", justifyContent: "center",
   },
