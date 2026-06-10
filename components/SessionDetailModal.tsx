@@ -179,6 +179,9 @@ function AttemptStatusRow({
           <Text style={styles.highPointText}>fell move {attempt.highPoint}</Text>
         </View>
       )}
+      {isSequence && !!attempt.variation && (
+        <Text style={styles.variationTag}>{attempt.variation}</Text>
+      )}
     </Pressable>
   )
 }
@@ -469,6 +472,12 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                             <Text style={styles.blockDuration}>{formatDuration(block.duration)}</Text>
                           )}
                         </View>
+                        {block.blockType === "sequence" && !!block.block?.routeName && (
+                          <View style={styles.routeRow}>
+                            <Ionicons name="footsteps" size={13} color={C.green} />
+                            <Text style={styles.routeName} numberOfLines={1}>{block.block.routeName}</Text>
+                          </View>
+                        )}
                         {block.blockType !== "constraint_warmup" && (
                           <>
                             <Text style={styles.blockStats}>
@@ -730,6 +739,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   highPointText: { fontSize: 11, color: C.textSecondary, fontWeight: "600" },
+
+  routeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  routeName: { fontSize: 13, fontWeight: "600", color: C.green, flex: 1 },
+  variationTag: {
+    fontSize: 10, fontWeight: "700", color: C.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.5,
+    backgroundColor: C.surfaceHigh, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
+  },
 
   // ── Add attempt ──
   addAttemptBtn: {
