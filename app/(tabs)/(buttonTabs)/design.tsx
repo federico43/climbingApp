@@ -3,12 +3,13 @@ import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { AthleteAnalytics } from "@/components/AthleteAnalytics"
+import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingTimeline } from "@/components/TrainingTimeline"
 import { AppUser, getAthletes } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useState } from "react"
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 // Top-bar coach tools (the former big cards). Assignments is gone — its review
@@ -22,9 +23,12 @@ const TOOLS: Tool[] = [
 
 export default function DesignScreen() {
   const router = useRouter()
+  const { width } = useWindowDimensions()
+  const isWide = width >= 900
   const [athletes, setAthletes] = useState<AppUser[]>([])
   const [loadingAthletes, setLoadingAthletes] = useState(true)
   const [selected, setSelected] = useState<AppUser | null>(null)
+  const [building, setBuilding] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -82,7 +86,15 @@ export default function DesignScreen() {
 
           {/* ── Selected athlete data ─────────────────────────────────────── */}
           {selected ? (
-            <AthleteAnalytics key={selected.$id} athlete={selected} />
+            <>
+              {isWide && (
+                <Pressable style={styles.addWorkoutBtn} onPress={() => setBuilding(true)}>
+                  <Ionicons name="add" size={18} color={C.bg} />
+                  <Text style={styles.addWorkoutText}>Add workout</Text>
+                </Pressable>
+              )}
+              <AthleteAnalytics key={selected.$id} athlete={selected} />
+            </>
           ) : (
             <View style={styles.prompt}>
               <Text style={styles.promptText}>Pick an athlete to see their training history</Text>
@@ -92,6 +104,16 @@ export default function DesignScreen() {
           <View style={{ height: 32 }} />
         </ScrollView>
       </ScreenEntry>
+
+      {selected && (
+        <Modal visible={building} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setBuilding(false)}>
+          <AthleteWorkoutBuilder
+            athlete={selected}
+            roster={athletes}
+            onClose={() => setBuilding(false)}
+          />
+        </Modal>
+      )}
     </SafeAreaView>
     </ScreenGradient>
   )
@@ -99,6 +121,12 @@ export default function DesignScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
+
+  addWorkoutBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, marginBottom: 12,
+  },
+  addWorkoutText: { fontSize: 16, fontWeight: "800", color: C.bg },
 
   topBar: {
     flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,

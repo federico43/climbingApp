@@ -125,7 +125,7 @@ interface FourByFourBlock extends BaseBlock {
   restTime: number        // rest between sets (seconds)
 }
 
-type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock
+export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -184,7 +184,7 @@ function aiBlockToBlock(ab: AiBlock, libraryById?: Map<string, BlockRow>): Block
   return base as Block
 }
 
-function stripLocalIds(blocks: Block[]): any[] {
+export function stripLocalIds(blocks: Block[]): any[] {
   return blocks.map(({ id, ...rest }) => {
     if (rest.type === "strength_conditioning") {
       const sc = rest as Omit<StrengthConditioningBlock, "id">
@@ -921,7 +921,7 @@ function AssignmentSetEditor({ set, library, onClose, onFinish }: { set: Assignm
 
 // ─── Block Picker Modal ───────────────────────────────────────────────────────
 
-function BlockPickerModal({
+export function BlockPickerModal({
   onAdd,
   onClose,
   embedded,
@@ -1203,7 +1203,7 @@ function NewBlockForm({ type, onBack, onSave }: {
 
 // ─── Block Editor Row ─────────────────────────────────────────────────────────
 
-function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown }: {
+export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown }: {
   block: Block; isExpanded: boolean; isActive: boolean
   onToggleExpand: () => void; onDrag: () => void; onUpdate: (b: Block) => void; onDelete: () => void
   onSaveAsTemplate?: () => void
