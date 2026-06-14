@@ -85,13 +85,9 @@ export default function TabsLayout() {
         />
 
         {/* ── Hidden screens (pushed via router.push) ────────────────── */}
-        <Tabs.Screen name="workout" options={{ href: null }} />
         <Tabs.Screen name="protocolDesigner" options={{ href: null }} />
-        <Tabs.Screen name="calendarScreen" options={{ href: null }} />
-        <Tabs.Screen name="savedVideos" options={{ href: null }} />
         <Tabs.Screen name="exerciseProgress" options={{ href: null }} />
         <Tabs.Screen name="exercises" options={{ href: null }} />
-        <Tabs.Screen name="dashboard" options={{ href: null }} />
         <Tabs.Screen name="sprayWall" options={{ href: null }} />
         <Tabs.Screen name="sprayWallBuilder" options={{ href: null }} />
         <Tabs.Screen name="past-projects" options={{ href: null }} />
