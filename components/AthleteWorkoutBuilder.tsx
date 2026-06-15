@@ -204,7 +204,7 @@ export function AthleteWorkoutBuilder({
 
 const s = StyleSheet.create({
   // Translucent scrim — the Design screen shows through behind the floating cards.
-  root: { flex: 1, backgroundColor: "rgba(8,10,9,0.55)" },
+  root: { flex: 1, backgroundColor: "rgba(8,10,9,0.8)" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 28, paddingTop: 20, paddingBottom: 4,
