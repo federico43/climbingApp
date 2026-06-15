@@ -203,17 +203,23 @@ export function AthleteWorkoutBuilder({
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
+  // Translucent scrim — the Design screen shows through behind the floating cards.
+  root: { flex: 1, backgroundColor: "rgba(8,10,9,0.55)" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: C.border,
+    paddingHorizontal: 28, paddingTop: 20, paddingBottom: 4,
   },
-  cancel: { fontSize: 16, color: C.textSecondary },
-  title: { fontSize: 16, fontWeight: "700", color: C.textPrimary, flex: 1, textAlign: "center", marginHorizontal: 12 },
-  save: { fontSize: 16, color: C.green, fontWeight: "700" },
+  cancel: { fontSize: 16, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
+  title: { fontSize: 16, fontWeight: "700", color: "#fff", flex: 1, textAlign: "center", marginHorizontal: 12 },
+  save: { fontSize: 16, color: C.green, fontWeight: "800" },
 
-  panes: { flex: 1, flexDirection: "row", gap: 16, padding: 16 },
-  card: { flex: 1, backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
+  panes: { flex: 1, flexDirection: "row", gap: 20, paddingHorizontal: 24, paddingTop: 14, paddingBottom: 28 },
+  card: {
+    flex: 1, backgroundColor: C.surface, borderRadius: 24,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden",
+    shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 24, shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
 
   leftHeader: {
     flexDirection: "row", alignItems: "center", gap: 8,

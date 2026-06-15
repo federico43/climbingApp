@@ -106,7 +106,7 @@ export default function DesignScreen() {
       </ScreenEntry>
 
       {selected && (
-        <Modal visible={building} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setBuilding(false)}>
+        <Modal visible={building} transparent animationType="fade" onRequestClose={() => setBuilding(false)}>
           <AthleteWorkoutBuilder
             athlete={selected}
             roster={athletes}
