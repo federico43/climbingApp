@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Per-athlete workout builder (big screen). Two card panes: the workout (left)
 // and the available blocks (right). Saving creates a protocol and assigns it to
@@ -43,6 +44,7 @@ export function AthleteWorkoutBuilder({
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set())
   const [copying, setCopying] = useState(false)
+  const insets = useSafeAreaInsets()
 
   function addBlock(b: Block) { setBlocks((p) => [...p, b]); setExpandedId(b.id) }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
@@ -95,7 +97,7 @@ export function AthleteWorkoutBuilder({
 
   return (
     <View style={s.root}>
-      <View style={s.header}>
+      <View style={[s.header, { paddingTop: insets.top + 14 }]}>
         <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
         <Text style={s.title} numberOfLines={1}>New workout · {athleteName}</Text>
         <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
@@ -103,7 +105,7 @@ export function AthleteWorkoutBuilder({
         </Pressable>
       </View>
 
-      <View style={s.panes}>
+      <View style={[s.panes, { paddingBottom: insets.bottom + 24 }]}>
         {/* Left: the workout */}
         <View style={s.card}>
           <View style={s.leftHeader}>
