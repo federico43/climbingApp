@@ -61,7 +61,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four"
+type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals"
 
 interface BaseBlock {
   id: string
@@ -125,7 +125,15 @@ interface FourByFourBlock extends BaseBlock {
   restTime: number        // rest between sets (seconds)
 }
 
-export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock
+interface IntervalsBlock extends BaseBlock {
+  type: "intervals"
+  description: string
+  series: number     // number of work/rest rounds
+  workTime: number   // work duration per round (seconds)
+  restTime: number   // rest duration between rounds (seconds)
+}
+
+export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -147,6 +155,8 @@ function makeDefaultBlock(type: BlockType, name: string = ""): Block {
       return { id: generateId(), type, blockName: name, description: "" }
     case "four_by_four":
       return { id: generateId(), type, blockName: name, description: "", sets: 4, bouldersPerSet: 4, restTime: 240 }
+    case "intervals":
+      return { id: generateId(), type, blockName: name, description: "", series: 6, workTime: 30, restTime: 60 }
   }
 }
 
@@ -217,6 +227,7 @@ const BLOCK_LABELS: Record<BlockType, string> = {
   sequence: "Sequence",
   free_session: "Free session",
   four_by_four: "4×4",
+  intervals: "Intervals",
 }
 
 const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
@@ -227,6 +238,7 @@ const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
   sequence: "footsteps",
   free_session: "time",
   four_by_four: "grid",
+  intervals: "timer",
 }
 
 const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
@@ -237,6 +249,7 @@ const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   sequence: "Specific route on the spray wall",
   free_session: "Open-ended climbing time",
   four_by_four: "Sets of boulders for endurance",
+  intervals: "Timed work / rest rounds",
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -1098,7 +1111,7 @@ export function BlockPickerModal({
             <>
               <Text style={styles.pickerPrompt}>Choose a block type</Text>
               <View style={styles.blockTypeGrid}>
-                {(["project_bouldering", "constraint_warmup", "strength_conditioning", "exploration_session", "sequence", "four_by_four", "free_session"] as BlockType[]).map((type) => (
+                {(["project_bouldering", "constraint_warmup", "strength_conditioning", "exploration_session", "sequence", "four_by_four", "intervals", "free_session"] as BlockType[]).map((type) => (
                   <Pressable key={type} style={styles.blockTypeCard} onPress={() => setNewBlockType(type)}>
                     <View style={styles.blockTypeIconWrap}>
                       <Ionicons name={BLOCK_ICONS[type]} size={22} color={C.green} />
@@ -1178,6 +1191,9 @@ function NewBlockForm({ type, onBack, onSave }: {
       )}
       {type === "four_by_four" && (
         <FourByFourFields block={block as FourByFourBlock} onUpdate={setBlock} />
+      )}
+      {type === "intervals" && (
+        <IntervalsFields block={block as IntervalsBlock} onUpdate={setBlock} />
       )}
       {type === "free_session" && (
         <>
@@ -1261,6 +1277,7 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
           {block.type === "exploration_session" && <ExplorationSessionFields block={block} onUpdate={onUpdate} />}
           {block.type === "sequence" && <SequenceFields block={block as SequenceBlock} onUpdate={onUpdate} />}
           {block.type === "four_by_four" && <FourByFourFields block={block as FourByFourBlock} onUpdate={onUpdate} />}
+          {block.type === "intervals" && <IntervalsFields block={block as IntervalsBlock} onUpdate={onUpdate} />}
           {block.type === "free_session" && (
             <>
               <Text style={styles.fieldLabel}>Description</Text>
@@ -1398,6 +1415,18 @@ function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdat
       <FieldLabel label="Sets" /><FieldInput value={String(block.sets)} onChange={(v) => update({ sets: parseInt(v) || 0 })} numeric />
       <FieldLabel label="Boulders per set" /><FieldInput value={String(block.bouldersPerSet)} onChange={(v) => update({ bouldersPerSet: parseInt(v) || 0 })} numeric />
       <FieldLabel label="Rest between sets (seconds)" /><FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
+    </>
+  )
+}
+
+function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate: (b: Block) => void }) {
+  function update(fields: Partial<IntervalsBlock>) { onUpdate({ ...block, ...fields }) }
+  return (
+    <>
+      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <FieldLabel label="Series (rounds)" /><FieldInput value={String(block.series)} onChange={(v) => update({ series: parseInt(v) || 0 })} numeric />
+      <FieldLabel label="Work time (seconds)" /><FieldInput value={String(block.workTime)} onChange={(v) => update({ workTime: parseInt(v) || 0 })} numeric />
+      <FieldLabel label="Rest time (seconds)" /><FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
     </>
   )
 }

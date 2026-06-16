@@ -66,6 +66,7 @@ const BLOCK_TYPE_LABEL: Record<string, string> = {
   sequence: "Sequence",
   free_session: "Free",
   four_by_four: "4×4",
+  intervals: "Intervals",
 }
 
 function blockLabel(block: any): string {

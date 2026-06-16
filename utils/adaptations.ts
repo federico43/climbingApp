@@ -66,6 +66,7 @@ const DEFAULT_BY_TYPE: Record<string, Adaptation> = {
   sequence:               "strength",
   free_session:           "general",
   four_by_four:           "power_endurance",
+  intervals:              "conditioning",
 }
 
 export function resolveAdaptation(block: { type?: string; adaptation?: string }): Adaptation {

@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
 import { FourByFourBlock } from "@/components/FourByFourBlock"
+import { IntervalsBlock } from "@/components/IntervalsBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { BoulderLevelOptions, ProjectPickerModal } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
@@ -148,6 +149,18 @@ export function BlockRenderer({
           logAttempt={logAttempt}
           restTimeRemaining={restTimeRemaining}
           startRestTimer={startRestTimer}
+          attempts={blockAttempts}
+          goToNextBlock={goToNextBlock}
+          goToPreviousBlock={onPrevBlock}
+        />
+      )
+
+    case "intervals":
+      return (
+        <IntervalsBlock
+          key={currentBlockIndex}
+          block={block as any}
+          logAttempt={logAttempt}
           attempts={blockAttempts}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
