@@ -1165,14 +1165,19 @@ function NewBlockForm({ type, onBack, onSave }: {
         <Text style={styles.newBlockTypeHeaderText}>{BLOCK_LABELS[type]}</Text>
       </View>
 
-      <Text style={styles.fieldLabel}>Block name</Text>
-      <TextInput
-        style={styles.fieldInput}
-        placeholder="e.g. Silent Feet warmup"
-        value={block.blockName}
-        onChangeText={(v) => setBlock((b) => ({ ...b, blockName: v }))}
-        placeholderTextColor="#aaa"
-      />
+      <View style={styles.nameRow}>
+        <View style={styles.nameField}>
+          <Text style={styles.fieldLabel}>Block name</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="e.g. Silent Feet warmup"
+            value={block.blockName}
+            onChangeText={(v) => setBlock((b) => ({ ...b, blockName: v }))}
+            placeholderTextColor="#aaa"
+          />
+        </View>
+        <BlockNumerics block={block} onUpdate={setBlock} />
+      </View>
 
       {type === "project_bouldering" && (
         <ProjectBoulderingFields block={block as ProjectBoulderingBlock} onUpdate={setBlock} />
@@ -1258,14 +1263,19 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
       </View>
       {isExpanded && (
         <View style={styles.blockFields}>
-          <Text style={styles.fieldLabel}>Block name</Text>
-          <TextInput
-            style={styles.fieldInput}
-            value={block.blockName}
-            onChangeText={(v) => onUpdate({ ...block, blockName: v })}
-            placeholderTextColor="#aaa"
-            placeholder="Block name"
-          />
+          <View style={styles.nameRow}>
+            <View style={styles.nameField}>
+              <Text style={styles.fieldLabel}>Block name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={block.blockName}
+                onChangeText={(v) => onUpdate({ ...block, blockName: v })}
+                placeholderTextColor="#aaa"
+                placeholder="Block name"
+              />
+            </View>
+            <BlockNumerics block={block} onUpdate={onUpdate} />
+          </View>
           <Text style={styles.fieldLabel}>Adaptation</Text>
           <AdaptationPicker
             value={resolveAdaptation(block)}
@@ -1396,13 +1406,71 @@ function FieldInput({ value, onChange, placeholder, numeric, multiline }: {
   )
 }
 
+// A labelled numeric field that shares a row with siblings instead of taking
+// a full-width row on its own.
+function NumField({ label, value, onChange }: {
+  label: string; value: number; onChange: (n: number) => void
+}) {
+  return (
+    <View style={styles.numField}>
+      <FieldLabel label={label} />
+      <FieldInput value={String(value)} onChange={(v) => onChange(parseInt(v) || 0)} numeric />
+    </View>
+  )
+}
+
+// The short numeric fields for a block, rendered as a compact row so they can
+// sit beside the Block name input. Returns null for types with no numerics.
+function BlockNumerics({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  function update(fields: any) { onUpdate({ ...block, ...fields } as Block) }
+  let fields: React.ReactNode = null
+  switch (block.type) {
+    case "project_bouldering":
+      fields = (<>
+        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
+        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+      </>); break
+    case "four_by_four":
+      fields = (<>
+        <NumField label="Sets" value={block.sets} onChange={(n) => update({ sets: n })} />
+        <NumField label="Per set" value={block.bouldersPerSet} onChange={(n) => update({ bouldersPerSet: n })} />
+        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+      </>); break
+    case "intervals":
+      fields = (<>
+        <NumField label="Series" value={block.series} onChange={(n) => update({ series: n })} />
+        <NumField label="Work (s)" value={block.workTime} onChange={(n) => update({ workTime: n })} />
+        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+      </>); break
+    case "strength_conditioning":
+      fields = (<>
+        <NumField label="Rounds" value={block.rounds} onChange={(n) => update({ rounds: n })} />
+        <NumField label="Rest (s)" value={block.restBetweenRounds} onChange={(n) => update({ restBetweenRounds: n })} />
+      </>); break
+    case "sequence":
+      fields = (<>
+        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
+        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+      </>); break
+    case "constraint_warmup":
+      fields = (
+        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
+      ); break
+    case "exploration_session":
+      fields = (
+        <NumField label="Time limit (min)" value={block.timeLimit ?? 0} onChange={(n) => update({ timeLimit: n })} />
+      ); break
+    default:
+      return null
+  }
+  return <View style={styles.numericsRow}>{fields}</View>
+}
+
 function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBoulderingBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<ProjectBoulderingBlock>) { onUpdate({ ...block, ...fields }) }
   return (
     <>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
-      <FieldLabel label="Target attempts" /><FieldInput value={String(block.targetAttempts)} onChange={(v) => update({ targetAttempts: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Rest time (seconds)" /><FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
     </>
   )
 }
@@ -1412,9 +1480,6 @@ function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdat
   return (
     <>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
-      <FieldLabel label="Sets" /><FieldInput value={String(block.sets)} onChange={(v) => update({ sets: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Boulders per set" /><FieldInput value={String(block.bouldersPerSet)} onChange={(v) => update({ bouldersPerSet: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Rest between sets (seconds)" /><FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
     </>
   )
 }
@@ -1424,9 +1489,6 @@ function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate:
   return (
     <>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
-      <FieldLabel label="Series (rounds)" /><FieldInput value={String(block.series)} onChange={(v) => update({ series: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Work time (seconds)" /><FieldInput value={String(block.workTime)} onChange={(v) => update({ workTime: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Rest time (seconds)" /><FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
     </>
   )
 }
@@ -1437,41 +1499,121 @@ function ConstraintWarmupFields({ block, onUpdate }: { block: ConstraintWarmupBl
     <>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
       <FieldLabel label="Grade" /><GradePicker value={block.level} onChange={(v) => update({ level: v })} />
-      <FieldLabel label="Target attempts" /><FieldInput value={String(block.targetAttempts)} onChange={(v) => update({ targetAttempts: parseInt(v) || 0 })} numeric />
     </>
   )
 }
 
+const SC_TYPES: { type: "reps" | "both_sides" | "7/3s"; label: string }[] = [
+  { type: "reps", label: "Reps" },
+  { type: "both_sides", label: "Both sides" },
+  { type: "7/3s", label: "7/3s" },
+]
+
+// Always-on exercise library shown beside the block. Grouped by type; one tap
+// adds an exercise to the block. "+ New" creates one inline and adds it.
+function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void; wide: boolean }) {
+  const [exercises, setExercises] = useState<ExerciseRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [createType, setCreateType] = useState<"reps" | "both_sides" | "7/3s" | null>(null)
+
+  function reload() {
+    setLoading(true)
+    listExercises().then(setExercises).catch(console.error).finally(() => setLoading(false))
+  }
+  useEffect(() => { reload() }, [])
+
+  if (createType) {
+    return (
+      <View style={[styles.libPane, wide && styles.libPaneWide]}>
+        <ExerciseForm
+          fixedType={createType}
+          title={`New ${EXERCISE_TYPE_LABEL[createType]} exercise`}
+          saveLabel="Create & add"
+          onCancel={() => setCreateType(null)}
+          onCreated={(ex) => { setCreateType(null); reload(); onAdd(ex) }}
+        />
+      </View>
+    )
+  }
+
+  return (
+    <View style={[styles.libPane, wide && styles.libPaneWide]}>
+      <Text style={styles.libTitle}>Exercise library</Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 20 }} />
+      ) : (
+        <ScrollView style={styles.libScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+          {SC_TYPES.map((g) => {
+            const items = exercises.filter((e) => e.type === g.type)
+            return (
+              <View key={g.type} style={styles.libGroup}>
+                <View style={styles.libGroupHeader}>
+                  <Text style={styles.libGroupLabel}>{g.label}</Text>
+                  <Pressable onPress={() => setCreateType(g.type)} hitSlop={6}>
+                    <Text style={styles.libNew}>+ New</Text>
+                  </Pressable>
+                </View>
+                {items.length === 0 ? (
+                  <Text style={styles.libEmpty}>None yet</Text>
+                ) : items.map((ex) => (
+                  <Pressable key={ex.$id} style={styles.libItem} onPress={() => onAdd(ex)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.libItemName} numberOfLines={1}>{ex.name}</Text>
+                      {(ex.defaultReps || ex.defaultEdge) && (
+                        <Text style={styles.libItemMeta} numberOfLines={1}>
+                          {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
+                          {ex.defaultEdge ? ` ${ex.defaultEdge}` : ""}
+                          {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
+                        </Text>
+                      )}
+                    </View>
+                    <Ionicons name="add-circle" size={22} color={C.green} />
+                  </Pressable>
+                ))}
+              </View>
+            )
+          })}
+        </ScrollView>
+      )}
+    </View>
+  )
+}
+
 function StrengthConditioningFields({ block, onUpdate }: { block: StrengthConditioningBlock; onUpdate: (b: Block) => void }) {
+  // Measure our own width (not the window's) — this editor can live inside a
+  // half-width card, where the library + cards only fit side by side above ~560.
+  const [paneW, setPaneW] = useState(0)
+  const wide = paneW >= 560
   function update(fields: Partial<StrengthConditioningBlock>) { onUpdate({ ...block, ...fields }) }
 
-  function handleAddExercise(type: "reps" | "both_sides" | "7/3s") {
+  function addFromLibrary(ex: ExerciseRow) {
+    const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps" }
     const newEx: Exercise =
-      type === "reps" ? { id: generateId(), type: "reps", name: "", reps: "4-6" }
-      : type === "both_sides" ? { id: generateId(), type: "both_sides", name: "", reps: "4-6" }
-      : { id: generateId(), type: "7/3s", name: "7/3s", edge: "20mm", series: 6 }
+      ex.type === "7/3s"
+        ? { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
+        : { ...base, reps: ex.defaultReps ?? (ex.unit === "seconds" ? "20-30" : "4-6") }
     update({ exercises: [...block.exercises, newEx] })
   }
 
   return (
-    <>
+    <View onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
-      <FieldLabel label="Rounds" /><FieldInput value={String(block.rounds)} onChange={(v) => update({ rounds: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Rest between rounds (seconds)" /><FieldInput value={String(block.restBetweenRounds)} onChange={(v) => update({ restBetweenRounds: parseInt(v) || 0 })} numeric />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Exercises</Text>
-      {block.exercises.map((ex) => (
-        <ExerciseEditorRow
-          key={ex.id} exercise={ex}
-          onUpdate={(updated) => update({ exercises: block.exercises.map((e) => (e.id === updated.id ? updated : e)) })}
-          onDelete={() => update({ exercises: block.exercises.filter((e) => e.id !== ex.id) })}
-        />
-      ))}
-      <View style={styles.exerciseTypeRow}>
-        <Pressable style={styles.addExerciseButton} onPress={() => handleAddExercise("reps")}><Text style={styles.addExerciseText}>+ Reps</Text></Pressable>
-        <Pressable style={styles.addExerciseButton} onPress={() => handleAddExercise("both_sides")}><Text style={styles.addExerciseText}>+ Both sides</Text></Pressable>
-        <Pressable style={styles.addExerciseButton} onPress={() => handleAddExercise("7/3s")}><Text style={styles.addExerciseText}>+ 7/3s</Text></Pressable>
+      <View style={wide ? styles.scSplit : styles.scStack}>
+        <ExerciseLibraryPane onAdd={addFromLibrary} wide={wide} />
+        <View style={wide ? styles.scCards : styles.scCardsStack}>
+          {block.exercises.length === 0 ? (
+            <Text style={styles.scEmptyHint}>Tap an exercise to add it here.</Text>
+          ) : block.exercises.map((ex) => (
+            <ExerciseEditorRow
+              key={ex.id} exercise={ex}
+              onUpdate={(updated) => update({ exercises: block.exercises.map((e) => (e.id === updated.id ? updated : e)) })}
+              onDelete={() => update({ exercises: block.exercises.filter((e) => e.id !== ex.id) })}
+            />
+          ))}
+        </View>
       </View>
-    </>
+    </View>
   )
 }
 
@@ -1481,8 +1623,6 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
     <>
       <FieldLabel label="Description" />
       <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline placeholder="What should athletes know before starting?" />
-      <FieldLabel label="Time limit (minutes, 0 = no timer)" />
-      <FieldInput value={String(block.timeLimit ?? 0)} onChange={(v) => update({ timeLimit: parseInt(v) || 0 })} numeric placeholder="0" />
     </>
   )
 }
@@ -1491,21 +1631,16 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
 function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercise; onUpdate: (e: Exercise) => void; onDelete: () => void }) {
   function update(fields: Partial<Exercise>) { onUpdate({ ...exercise, ...fields }) }
   const typeLabel = exercise.type === "reps" ? "Reps" : exercise.type === "both_sides" ? "Both sides" : "7/3s"
-  const [showPicker, setShowPicker] = useState(false)
 
   return (
     <View style={styles.exerciseRow}>
       <View style={styles.exerciseRowHeader}>
         <Text style={styles.exerciseTypeTag}>{typeLabel}</Text>
-        <Pressable onPress={onDelete}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
+        <Pressable onPress={onDelete} hitSlop={6}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
       </View>
 
-      {/* Exercise name picker */}
-      <Pressable style={styles.exercisePickerButton} onPress={() => setShowPicker(true)}>
-        <Text style={exercise.name ? styles.exercisePickerName : styles.exercisePickerPlaceholder}>
-          {exercise.name || "Select exercise →"}
-        </Text>
-      </Pressable>
+      <FieldLabel label="Exercise name" />
+      <FieldInput value={exercise.name} onChange={(v) => update({ name: v })} placeholder="Exercise name" />
 
       {(exercise.type === "reps" || exercise.type === "both_sides") && (
         <>
@@ -1519,24 +1654,6 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
           <FieldLabel label="Series" /><FieldInput value={String(exercise.series ?? 6)} onChange={(v) => update({ series: parseInt(v) || 0 })} numeric />
         </>
       )}
-
-      <Modal visible={showPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPicker(false)}>
-        <ExercisePickerModal
-          exerciseType={exercise.type}
-          onSelect={(ex) => {
-            update({
-              name: ex.name,
-              exerciseId: ex.$id,
-              unit: ex.unit ?? "reps",
-              ...(ex.defaultReps ? { reps: ex.defaultReps } : {}),
-              ...(ex.defaultEdge ? { edge: ex.defaultEdge } : {}),
-              ...(ex.defaultSeries ? { series: ex.defaultSeries } : {}),
-            })
-            setShowPicker(false)
-          }}
-          onClose={() => setShowPicker(false)}
-        />
-      </Modal>
     </View>
   )
 }
@@ -1593,10 +1710,6 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
         multiline
         placeholder="What should athletes know before starting?"
       />
-      <FieldLabel label="Target attempts" />
-      <FieldInput value={String(block.targetAttempts)} onChange={(v) => update({ targetAttempts: parseInt(v) || 0 })} numeric />
-      <FieldLabel label="Rest between attempts (seconds)" />
-      <FieldInput value={String(block.restTime)} onChange={(v) => update({ restTime: parseInt(v) || 0 })} numeric />
       <FieldLabel label="Sequence route" />
       <Pressable style={styles.exercisePickerButton} onPress={() => setShowRoutePicker(true)}>
         <Text style={block.routeName ? styles.exercisePickerName : styles.exercisePickerPlaceholder}>
@@ -1739,86 +1852,8 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   )
 }
 
-// ─── Exercise Picker Modal ────────────────────────────────────────────────────
-
 const EXERCISE_TYPE_LABEL: Record<"reps" | "both_sides" | "7/3s", string> = {
   reps: "Reps", both_sides: "Both sides", "7/3s": "7/3s",
-}
-
-function ExercisePickerModal({
-  exerciseType,
-  onSelect,
-  onClose,
-}: {
-  exerciseType: "reps" | "both_sides" | "7/3s"
-  onSelect: (ex: ExerciseRow) => void
-  onClose: () => void
-}) {
-  const [exercises, setExercises] = useState<ExerciseRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState<"list" | "create">("list")
-
-  useEffect(() => {
-    listExercises()
-      .then((all) => setExercises(all.filter((e) => e.type === exerciseType)))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (mode === "create") {
-    return (
-      <ExerciseForm
-        fixedType={exerciseType}
-        title={`New ${EXERCISE_TYPE_LABEL[exerciseType]} exercise`}
-        saveLabel="Create & select"
-        onCancel={() => setMode("list")}
-        onCreated={(ex) => onSelect(ex)}
-      />
-    )
-  }
-
-  return (
-    <SafeAreaView style={styles.safeContainer}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={onClose} style={styles.iconBackBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-        </Pressable>
-        <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>Select exercise</Text>
-        <View style={styles.iconBackBtn} />
-      </View>
-
-      <Pressable style={styles.createNewRow} onPress={() => setMode("create")}>
-        <View style={styles.createNewIconWrap}>
-          <Ionicons name="add" size={20} color={C.green} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.createNewLabel}>Create new exercise</Text>
-          <Text style={styles.createNewSub}>Add a {EXERCISE_TYPE_LABEL[exerciseType]} exercise to your library</Text>
-        </View>
-      </Pressable>
-
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} />
-      ) : exercises.length === 0 ? (
-        <Text style={styles.emptyState}>No {EXERCISE_TYPE_LABEL[exerciseType]} exercises yet. Create one above.</Text>
-      ) : (
-        <ScrollView contentContainerStyle={styles.listContent}>
-          {exercises.map((ex) => (
-            <Pressable key={ex.$id} style={styles.exercisePickerRow} onPress={() => onSelect(ex)}>
-              <Text style={styles.exercisePickerRowName}>{ex.name}</Text>
-              {(ex.defaultReps || ex.defaultEdge) && (
-                <Text style={styles.exercisePickerRowMeta}>
-                  {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
-                  {ex.defaultEdge ? `${ex.defaultEdge}` : ""}
-                  {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
-                </Text>
-              )}
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
-    </SafeAreaView>
-  )
 }
 
 
@@ -2039,6 +2074,10 @@ const styles = StyleSheet.create({
   saveTemplateBtnText: { color: C.green, fontSize: 13, fontWeight: "700" },
   fieldLabel: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 10 },
   fieldInput: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, fontSize: 15, color: C.textPrimary, backgroundColor: C.surfaceHigh },
+  nameRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  nameField: { flex: 1.2 },
+  numericsRow: { flex: 1.8, flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  numField: { flex: 1 },
   fieldInputMultiline: { minHeight: 70, textAlignVertical: "top" },
   switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
   addBlockButton: { borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 12, padding: 14, alignItems: "center", marginTop: 8 },
@@ -2115,6 +2154,25 @@ const styles = StyleSheet.create({
   exerciseRow: { backgroundColor: C.surfaceHigh, borderRadius: 10, padding: 12, gap: 6, marginTop: 6 },
   exerciseRowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   exerciseTypeTag: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted },
+
+  // S&C exercise selection: library pane + selected cards
+  scSplit: { flexDirection: "row", gap: 14, alignItems: "flex-start", marginTop: 6 },
+  scStack: { gap: 12, marginTop: 6 },
+  scCards: { flex: 1, gap: 10 },
+  scCardsStack: { gap: 10 },
+  scEmptyHint: { fontSize: 13, color: C.textMuted, fontStyle: "italic", paddingVertical: 12 },
+  libPane: { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 12 },
+  libPaneWide: { width: 300 },
+  libScroll: { maxHeight: 360 },
+  libTitle: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: "700" },
+  libGroup: { marginBottom: 10 },
+  libGroupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  libGroupLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+  libNew: { fontSize: 13, fontWeight: "700", color: C.green },
+  libEmpty: { fontSize: 12, color: C.textMuted, fontStyle: "italic", paddingVertical: 4 },
+  libItem: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6 },
+  libItemName: { fontSize: 14, fontWeight: "600", color: C.textPrimary },
+  libItemMeta: { fontSize: 11, color: C.textSecondary, marginTop: 1 },
   exercisePickerButton: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, backgroundColor: C.surfaceHigh },
   exercisePickerName: { fontSize: 15, color: C.textPrimary, fontWeight: "500" },
   exercisePickerPlaceholder: { fontSize: 15, color: C.textMuted },
