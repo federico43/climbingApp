@@ -114,7 +114,11 @@ export interface ProtocolRow {
   $createdAt: string
   name: string
   blocks: string
+  athleteId?: string | null   // owner athlete — a "template" belongs to one athlete
 }
+
+// Max templates ("protocols") an athlete can hold.
+export const MAX_ATHLETE_TEMPLATES = 4
 
 export interface BlockRow {
   $id: string
@@ -364,14 +368,69 @@ export async function listProtocols(): Promise<ProtocolRow[]> {
   return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [Query.orderDesc("$createdAt")])
 }
 
-export async function createProtocol(input: { name: string; blocks: any[] }): Promise<ProtocolRow> {
-  const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID,
-    tableId: PROTOCOLS_TABLE,
-    rowId: ID.unique(),
-    data: { name: input.name, blocks: JSON.stringify(input.blocks) },
-  })
-  return response as unknown as ProtocolRow
+export async function createProtocol(input: { name: string; blocks: any[]; athleteId?: string }): Promise<ProtocolRow> {
+  const base = { name: input.name, blocks: JSON.stringify(input.blocks) }
+  try {
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID,
+      tableId: PROTOCOLS_TABLE,
+      rowId: ID.unique(),
+      data: input.athleteId ? { ...base, athleteId: input.athleteId } : base,
+    })
+    return response as unknown as ProtocolRow
+  } catch (e) {
+    // `athleteId` column may not exist yet — fall back to an untagged protocol.
+    if (!input.athleteId) throw e
+    const response = await tablesDB.createRow({
+      databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data: base,
+    })
+    return response as unknown as ProtocolRow
+  }
+}
+
+// An athlete's templates: protocols tagged with their id. Lazily migrates the
+// athlete's currently-assigned (legacy, untagged) protocol into the set, so
+// existing assignments carry over the first time the coach opens the athlete.
+export async function listAthleteTemplates(athleteId: string): Promise<ProtocolRow[]> {
+  let tagged: ProtocolRow[] = []
+  try {
+    tagged = await listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [
+      Query.equal("athleteId", athleteId),
+      Query.orderAsc("$createdAt"),
+    ])
+  } catch {
+    tagged = [] // athleteId column not present yet
+  }
+
+  try {
+    const user = (await getUsers(athleteId)) as unknown as AppUser
+    const assignedId = user?.assignedProtocolId
+    if (assignedId && !tagged.some((p) => p.$id === assignedId)) {
+      const proto = await tablesDB
+        .getRow({ databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: assignedId })
+        .catch(() => null)
+      if (proto) {
+        try {
+          await tablesDB.updateRow({
+            databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: assignedId, data: { athleteId },
+          })
+        } catch { /* column missing — show it anyway, untagged */ }
+        tagged = [{ ...(proto as unknown as ProtocolRow), athleteId }, ...tagged]
+      }
+    }
+  } catch { /* ignore migration errors */ }
+
+  return tagged
+}
+
+// Duplicate a protocol as a new template owned by another athlete.
+export async function copyProtocolToAthlete(
+  source: { name: string; blocks: string },
+  targetAthleteId: string,
+): Promise<ProtocolRow> {
+  let blocks: any[] = []
+  try { blocks = JSON.parse(source.blocks ?? "[]") } catch { blocks = [] }
+  return createProtocol({ name: source.name, blocks, athleteId: targetAthleteId })
 }
 
 export async function updateProtocol(id: string, input: { name: string; blocks: any[] }): Promise<ProtocolRow> {

@@ -1,5 +1,5 @@
 import { C } from "@/utils/theme"
-import { AppUser, ExerciseRow, ProtocolRow, assignProtocol, createProtocol, updateProtocol } from "@/services/BoulderGraphService"
+import { AppUser, ExerciseRow, MAX_ATHLETE_TEMPLATES, ProtocolRow, assignProtocol, createProtocol, listAthleteTemplates, updateProtocol } from "@/services/BoulderGraphService"
 import {
   Block,
   BlockEditorRow,
@@ -19,6 +19,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native"
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
@@ -34,12 +35,14 @@ export function AthleteWorkoutBuilder({
   athlete,
   roster,
   protocol,
+  assignAsToday,
   onClose,
   onSaved,
 }: {
   athlete: AppUser
   roster: AppUser[]
-  protocol?: ProtocolRow | null  // when set, edit this assigned workout instead of creating a new one
+  protocol?: ProtocolRow | null  // when set, edit this template instead of creating a new one
+  assignAsToday?: boolean         // on create, also mark the new template as today's training
   onClose: () => void
   onSaved?: () => void
 }) {
@@ -58,6 +61,9 @@ export function AthleteWorkoutBuilder({
   // The S&C block whose exercise library is open as an overlay over this pane.
   const [libraryBlockId, setLibraryBlockId] = useState<string | null>(null)
   const insets = useSafeAreaInsets()
+  const { width } = useWindowDimensions()
+  const wide = width >= 900  // narrow → single pane + block picker as a sheet
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   function addBlock(b: Block) { setBlocks((p) => [...p, b]); setExpandedId(b.id) }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
@@ -98,8 +104,8 @@ export function AthleteWorkoutBuilder({
       if (editing) {
         await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(blocks) })
       } else {
-        const created = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks) })
-        await assignProtocol(athlete.$id, created.$id)
+        const created = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: athlete.$id })
+        if (assignAsToday) await assignProtocol(athlete.$id, created.$id)
       }
       onSaved?.()
       onClose()
@@ -115,15 +121,27 @@ export function AthleteWorkoutBuilder({
     if (ids.length === 0) { setCopyOpen(false); return }
     setCopying(true)
     try {
-      // Each target gets its own copy so they can diverge later.
+      // Each target gets its own copy (a new template) so they can diverge later.
+      // Respect the per-athlete cap; skip anyone already full.
+      const skipped: string[] = []
+      let copied = 0
       for (const id of ids) {
-        const p = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks) })
-        await assignProtocol(id, p.$id)
+        const count = (await listAthleteTemplates(id)).length
+        if (count >= MAX_ATHLETE_TEMPLATES) {
+          skipped.push(roster.find((r) => r.$id === id)?.username ?? id)
+          continue
+        }
+        await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: id })
+        copied++
       }
       setCopyOpen(false)
       setCopyTargets(new Set())
       onSaved?.()
-      Alert.alert("Copied", `Workout copied to ${ids.length} athlete${ids.length !== 1 ? "s" : ""}.`)
+      Alert.alert(
+        "Copy complete",
+        `Copied to ${copied} athlete${copied !== 1 ? "s" : ""}.` +
+          (skipped.length ? `\nSkipped (already at ${MAX_ATHLETE_TEMPLATES}): ${skipped.join(", ")}.` : ""),
+      )
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not copy the workout.")
     } finally {
@@ -166,7 +184,7 @@ export function AthleteWorkoutBuilder({
               nested in a Modal swallows pressable touches there). */}
           <GestureHandlerRootView style={{ flex: 1 }}>
             {blocks.length === 0 ? (
-              <View style={s.blockList}><Text style={s.empty}>Add blocks from the right →</Text></View>
+              <View style={s.blockList}><Text style={s.empty}>{wide ? "Add blocks from the right →" : "Tap “Add block” below"}</Text></View>
             ) : (
               <DraggableFlatList
                 data={blocks}
@@ -180,6 +198,13 @@ export function AthleteWorkoutBuilder({
               />
             )}
           </GestureHandlerRootView>
+
+          {/* Narrow screens: the block picker opens as a sheet instead of a side pane */}
+          {!wide && (
+            <Pressable style={s.addBlockBtn} onPress={() => setPickerOpen(true)}>
+              <Text style={s.addBlockBtnText}>+ Add block</Text>
+            </Pressable>
+          )}
 
           {/* ⋮ menu */}
           {menuOpen && (
@@ -208,11 +233,20 @@ export function AthleteWorkoutBuilder({
           )}
         </View>
 
-        {/* Right: available blocks */}
-        <View style={s.card}>
-          <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
-        </View>
+        {/* Right: available blocks (wide screens only) */}
+        {wide && (
+          <View style={s.card}>
+            <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
+          </View>
+        )}
       </View>
+
+      {/* Narrow: block picker as a full-screen sheet */}
+      {!wide && (
+        <Modal visible={pickerOpen} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setPickerOpen(false)}>
+          <BlockPickerModal onAdd={(b) => { addBlock(b); setPickerOpen(false) }} onClose={() => setPickerOpen(false)} />
+        </Modal>
+      )}
 
       {/* Copy-to-athlete picker */}
       <Modal visible={copyOpen} transparent animationType="fade" onRequestClose={() => setCopyOpen(false)}>
@@ -295,6 +329,11 @@ const s = StyleSheet.create({
 
   blockList: { padding: 14, gap: 10, paddingBottom: 40 },
   empty: { fontSize: 14, color: C.textMuted, textAlign: "center", marginTop: 24 },
+  addBlockBtn: {
+    margin: 12, borderRadius: 12, paddingVertical: 13, alignItems: "center",
+    borderWidth: 1, borderColor: C.green, borderStyle: "dashed",
+  },
+  addBlockBtnText: { fontSize: 15, fontWeight: "800", color: C.green },
 
   menuBackdrop: { ...StyleSheet.absoluteFillObject },
   menu: {
