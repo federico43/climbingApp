@@ -59,5 +59,19 @@ Permissions: same as `sessions` (so a coach can query an athlete's clips by
 
 ## Request / response
 
+**Presign an upload** (default):
 Request body: `{ "ext": "mp4" }`
 Response: `{ uploadUrl, publicUrl, key, contentType }`
+
+**Delete an object** (coach removing a clip):
+Request body: `{ "action": "delete", "key": "videos/<userId>/…" }`
+Response: `{ ok: true }` — deletes the R2 object. The app deletes the metadata
+row separately (via the `videos` table). Keys are restricted to the `videos/`
+namespace so an arbitrary bucket path can't be deleted.
+
+> Authorization note: the function only requires a signed-in user. In practice
+> only the coach learns object keys (by reading the `videos` table), so keep the
+> `videos` table's **Read** permission restricted to coaches — that's what gates
+> who can delete. (The athlete app never reads this table; clips show from the
+> local library.) The table also needs **Delete** permission for whoever removes
+> rows.

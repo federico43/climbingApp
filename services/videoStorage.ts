@@ -115,3 +115,26 @@ export async function getMyVideos(): Promise<VideoRow[]> {
 export async function deleteVideoRow(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: id })
 }
+
+// Ask the function to delete the actual file from R2 (the device has no R2 keys).
+async function deleteVideoObject(key: string): Promise<void> {
+  if (!VIDEO_PRESIGN_FUNCTION_ID || !key) return
+  const execution = await functions.createExecution({
+    functionId: VIDEO_PRESIGN_FUNCTION_ID,
+    body: JSON.stringify({ action: "delete", key }),
+    async: false,
+    method: ExecutionMethod.POST,
+  })
+  if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
+    const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+    throw new Error(payload?.error ?? `R2 delete failed (status ${execution.responseStatusCode})`)
+  }
+}
+
+// Coach: fully remove a clip — the metadata row and the R2 object. The row goes
+// first (the user-visible part); R2 cleanup is best-effort so a transient R2
+// failure can't block the delete or strand the row.
+export async function deleteVideo(row: Pick<VideoRow, "$id" | "key">): Promise<void> {
+  await deleteVideoRow(row.$id)
+  deleteVideoObject(row.key).catch((e) => console.warn("[video] R2 object delete failed:", e?.message ?? e))
+}

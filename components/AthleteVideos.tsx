@@ -1,6 +1,6 @@
 import { C } from "@/utils/theme"
 import { AppUser } from "@/services/BoulderGraphService"
-import { VideoRow, deleteVideoRow, getVideosByUserId } from "@/services/videoStorage"
+import { VideoRow, deleteVideo, getVideosByUserId } from "@/services/videoStorage"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { Ionicons } from "@expo/vector-icons"
 import * as VideoThumbnails from "expo-video-thumbnails"
@@ -76,7 +76,7 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteVideoRow(v.$id)
+            await deleteVideo(v)
             thumbCache.delete(v.$id)
             setVideos((prev) => prev.filter((x) => x.$id !== v.$id))
           } catch (e: any) {
