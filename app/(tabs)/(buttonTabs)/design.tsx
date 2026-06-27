@@ -3,13 +3,15 @@ import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { AthleteAnalytics } from "@/components/AthleteAnalytics"
+import { AthleteVideos } from "@/components/AthleteVideos"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingTimeline } from "@/components/TrainingTimeline"
-import { AppUser, getAthletes } from "@/services/BoulderGraphService"
+import { AppUser, ProtocolRow, getAssignedProtocol, getAthletes } from "@/services/BoulderGraphService"
+import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
-import { useCallback, useState } from "react"
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
+import { useCallback, useEffect, useState } from "react"
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 // Top-bar coach tools (the former big cards). Assignments is gone — its review
@@ -23,12 +25,16 @@ const TOOLS: Tool[] = [
 
 export default function DesignScreen() {
   const router = useRouter()
+  const workoutCtx = useWorkoutContext()
   const { width } = useWindowDimensions()
   const isWide = width >= 900
   const [athletes, setAthletes] = useState<AppUser[]>([])
   const [loadingAthletes, setLoadingAthletes] = useState(true)
   const [selected, setSelected] = useState<AppUser | null>(null)
   const [building, setBuilding] = useState(false)
+  const [editProtocol, setEditProtocol] = useState<ProtocolRow | null>(null)
+  const [assigned, setAssigned] = useState<ProtocolRow | null>(null)
+  const [loadingAssigned, setLoadingAssigned] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -40,6 +46,27 @@ export default function DesignScreen() {
       return () => { cancelled = true }
     }, [])
   )
+
+  // Load the selected athlete's currently-assigned workout.
+  const loadAssigned = useCallback(() => {
+    if (!selected) { setAssigned(null); return }
+    setLoadingAssigned(true)
+    getAssignedProtocol(selected.$id)
+      .then(setAssigned)
+      .catch((e) => { console.error(e); setAssigned(null) })
+      .finally(() => setLoadingAssigned(false))
+  }, [selected])
+
+  useEffect(() => { loadAssigned() }, [loadAssigned])
+
+  // Run the assigned workout in the player (same as the protocols "Test").
+  function handleTest() {
+    if (!assigned) return
+    let blocks: any[] = []
+    try { blocks = assigned.blocks ? JSON.parse(assigned.blocks) : [] } catch {}
+    if (blocks.length === 0) { Alert.alert("Empty workout", "This workout has no blocks to test."); return }
+    workoutCtx.openWorkout(blocks, assigned.name)
+  }
 
   return (
     <ScreenGradient>
@@ -87,12 +114,53 @@ export default function DesignScreen() {
           {/* ── Selected athlete data ─────────────────────────────────────── */}
           {selected ? (
             <>
-              {isWide && (
-                <Pressable style={styles.addWorkoutBtn} onPress={() => setBuilding(true)}>
-                  <Ionicons name="add" size={18} color={C.bg} />
-                  <Text style={styles.addWorkoutText}>Add workout</Text>
-                </Pressable>
-              )}
+              {/* Assigned workout */}
+              <View style={styles.workoutSection}>
+                <Text style={styles.label}>Assigned workout</Text>
+                {loadingAssigned ? (
+                  <ActivityIndicator style={{ marginVertical: 14 }} color={C.green} />
+                ) : assigned ? (
+                  <View style={styles.workoutCard}>
+                    <View style={styles.workoutNameCol}>
+                      <Text style={styles.workoutName} numberOfLines={1}>{assigned.name}</Text>
+                      <Text style={styles.workoutMeta}>{blockCount(assigned)} block{blockCount(assigned) !== 1 ? "s" : ""}</Text>
+                    </View>
+                    {/* Block-name preview, in order */}
+                    <View style={styles.previewWrap}>
+                      {blockNames(assigned).map((n, i) => (
+                        <View key={i} style={styles.previewChip}>
+                          <Text style={styles.previewIndex}>{i + 1}</Text>
+                          <Text style={styles.previewChipText} numberOfLines={1}>{n}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {isWide && (
+                      <View style={styles.workoutActions}>
+                        <Pressable style={styles.testBtn} onPress={handleTest}>
+                          <Ionicons name="play" size={16} color={C.bg} />
+                          <Text style={styles.testBtnText}>Test</Text>
+                        </Pressable>
+                        <Pressable style={styles.editBtn} onPress={() => { setEditProtocol(assigned); setBuilding(true) }}>
+                          <Ionicons name="create-outline" size={16} color={C.green} />
+                          <Text style={styles.editBtnText}>Edit</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.workoutCard}>
+                    <Text style={styles.workoutMeta}>No workout assigned yet.</Text>
+                    {isWide && (
+                      <Pressable style={styles.addBtnSmall} onPress={() => { setEditProtocol(null); setBuilding(true) }}>
+                        <Ionicons name="add" size={16} color={C.bg} />
+                        <Text style={styles.addBtnSmallText}>Add workout</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              <AthleteVideos key={`vids-${selected.$id}`} athlete={selected} />
               <AthleteAnalytics key={selected.$id} athlete={selected} />
             </>
           ) : (
@@ -110,7 +178,9 @@ export default function DesignScreen() {
           <AthleteWorkoutBuilder
             athlete={selected}
             roster={athletes}
+            protocol={editProtocol}
             onClose={() => setBuilding(false)}
+            onSaved={loadAssigned}
           />
         </Modal>
       )}
@@ -119,14 +189,62 @@ export default function DesignScreen() {
   )
 }
 
+// Number of blocks in a protocol's serialized blocks JSON.
+function blockCount(p: ProtocolRow): number {
+  try { return JSON.parse(p.blocks ?? "[]").length } catch { return 0 }
+}
+
+const BLOCK_TYPE_LABEL: Record<string, string> = {
+  project_bouldering: "Project", constraint_warmup: "Warmup", strength_conditioning: "S&C",
+  exploration_session: "Explore", sequence: "Sequence", free_session: "Free",
+  four_by_four: "4×4", intervals: "Intervals",
+}
+
+// Block names in workout order (custom name, else a short type label).
+function blockNames(p: ProtocolRow): string[] {
+  try {
+    return (JSON.parse(p.blocks ?? "[]") as any[]).map(
+      (b) => (b?.blockName ?? "").toString().trim() || BLOCK_TYPE_LABEL[b?.type] || b?.type || "Block"
+    )
+  } catch { return [] }
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
 
-  addWorkoutBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, marginBottom: 12,
+  workoutSection: { gap: 8 },
+  workoutCard: {
+    flexDirection: "row", alignItems: "flex-start", gap: 12,
+    backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 16, paddingVertical: 14,
   },
-  addWorkoutText: { fontSize: 16, fontWeight: "800", color: C.bg },
+  workoutNameCol: { maxWidth: 200 },
+  workoutName: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  workoutMeta: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
+
+  previewWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, paddingHorizontal: 12 },
+  previewChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.surfaceHigh, borderRadius: 8, paddingLeft: 6, paddingRight: 9, paddingVertical: 4,
+  },
+  previewIndex: { fontSize: 10, fontWeight: "800", color: C.green },
+  previewChipText: { fontSize: 11, color: C.textSecondary, fontWeight: "600", maxWidth: 120 },
+  workoutActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  testBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.green, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  testBtnText: { fontSize: 14, fontWeight: "800", color: C.bg },
+  editBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    borderWidth: 1, borderColor: C.green, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  editBtnText: { fontSize: 14, fontWeight: "700", color: C.green },
+  addBtnSmall: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.green, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  addBtnSmallText: { fontSize: 14, fontWeight: "800", color: C.bg },
 
   topBar: {
     flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,

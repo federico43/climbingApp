@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy"
+import { uploadVideoInBackground } from "@/services/videoStorage"
 
 function getVideoDir(): string {
   return FileSystem.documentDirectory + "bouldervideos/"
@@ -24,6 +25,9 @@ export async function saveVideoLocally(uri: string, blockType?: string): Promise
 
     const destInfo = await FileSystem.getInfoAsync(dest)
     console.log("[saveVideo] dest exists:", destInfo.exists, "size:", (destInfo as any).size ?? "?")
+
+    // Auto-send every recorded clip to the coach (background, non-blocking).
+    uploadVideoInBackground(dest, { blockType })
 
     return dest
   } catch (err) {

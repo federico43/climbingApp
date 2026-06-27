@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,86 @@ interface Props {
   onClose: () => void
   onDeleted: (id: string) => void
   onUpdated: (session: SessionRow) => void
+}
+
+// ─── S&C block view ───────────────────────────────────────────────────────────
+
+function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+  const exercises: any[] = block.exercises ?? []
+
+  // Group scData entries by round number (1-indexed, as logged by StrengthConditioningBlock)
+  const byRound: Record<number, any[]> = {}
+  for (const a of attempts) {
+    if (!a.scData) continue
+    const r = a.scData.round ?? 1
+    if (!byRound[r]) byRound[r] = []
+    byRound[r].push(a.scData)
+  }
+  const loggedRounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
+
+  return (
+    <View style={{ gap: 10 }}>
+      {/* Prescribed exercises */}
+      {exercises.length > 0 && (
+        <View style={styles.scExerciseList}>
+          {exercises.map((ex, i) => (
+            <View key={i} style={styles.scExerciseRow}>
+              <Text style={styles.scExerciseName}>{ex.name}</Text>
+              <Text style={styles.scExerciseReps}>
+                {ex.type === "7/3s"
+                  ? `${ex.series} series · ${ex.edge}`
+                  : ex.type === "both_sides"
+                  ? `${ex.reps} each side`
+                  : ex.reps}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Logged data by round */}
+      {loggedRounds.length > 0 ? (
+        <View style={styles.scLogSection}>
+          {loggedRounds.map((roundNum) => (
+            <View key={roundNum} style={styles.scRound}>
+              <Text style={styles.scRoundLabel}>Round {roundNum}</Text>
+              {byRound[roundNum].map((sc, i) => (
+                <View key={i} style={styles.scLogRow}>
+                  <Text style={styles.scLogName}>{sc.exerciseName}</Text>
+                  {sc.repsCompleted != null ? (
+                    <View style={styles.scLogFields}>
+                      <Text style={styles.scLogDetail}>{sc.repsCompleted} reps</Text>
+                      {!!sc.weight && <Text style={styles.scLogDetail}>{sc.weight}{sc.weightUnit ?? "kg"}</Text>}
+                      {!!sc.rpe && <Text style={styles.scLogDetail}>RPE {sc.rpe}</Text>}
+                    </View>
+                  ) : sc.repsLeft != null ? (
+                    <View style={styles.scLogFields}>
+                      <Text style={styles.scLogDetail}>
+                        {"L: "}{sc.repsLeft} reps{sc.weightLeft ? ` · ${sc.weightLeft}${sc.weightUnit ?? "kg"}` : ""}{sc.rpeLeft ? ` · RPE ${sc.rpeLeft}` : ""}
+                      </Text>
+                      <Text style={styles.scLogDetail}>
+                        {"R: "}{sc.repsRight} reps{sc.weightRight ? ` · ${sc.weightRight}${sc.weightUnit ?? "kg"}` : ""}{sc.rpeRight ? ` · RPE ${sc.rpeRight}` : ""}
+                      </Text>
+                    </View>
+                  ) : sc.seriesDone != null ? (
+                    <View style={styles.scLogFields}>
+                      <Text style={styles.scLogDetail}>{sc.seriesDone} series · {sc.edge}</Text>
+                      {!!sc.rpe && <Text style={styles.scLogDetail}>RPE {sc.rpe}</Text>}
+                    </View>
+                  ) : (
+                    <Text style={styles.scLogDetail}>—</Text>
+                  )}
+                  {!!sc.notes && <Text style={styles.scLogNotes}>"{sc.notes}"</Text>}
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.blockStats}>No exercises logged</Text>
+      )}
+    </View>
+  )
 }
 
 // ─── Attempt status row ────────────────────────────────────────────────────────
@@ -373,6 +453,10 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
       presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
+      {/* React Native Modal renders outside the app's SafeAreaProvider, so
+          re-establish one here or insets read as zero and the header slides
+          under the iOS status bar / notch. */}
+      <SafeAreaProvider>
       <SafeAreaView style={styles.safe} edges={["top"]}>
         {/* Header */}
         <View style={styles.header}>
@@ -478,7 +562,9 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                             <Text style={styles.routeName} numberOfLines={1}>{block.block.routeName}</Text>
                           </View>
                         )}
-                        {block.blockType !== "constraint_warmup" && (
+                        {block.blockType === "strength_conditioning" ? (
+                          <ScBlockView block={block.block} attempts={blockAttempts} />
+                        ) : block.blockType !== "constraint_warmup" && (
                           <>
                             <Text style={styles.blockStats}>
                               {total === 0
@@ -629,6 +715,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
           </ScrollView>
         )}
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   )
 }
@@ -747,6 +834,20 @@ const styles = StyleSheet.create({
     textTransform: "uppercase", letterSpacing: 0.5,
     backgroundColor: C.surfaceHigh, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
   },
+
+  // ── S&C view ──
+  scExerciseList: { gap: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  scExerciseRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 3 },
+  scExerciseName: { fontSize: 13, fontWeight: "600", color: C.textPrimary, flex: 1, marginRight: 8 },
+  scExerciseReps: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
+  scLogSection: { gap: 10 },
+  scRound: { gap: 4 },
+  scRoundLabel: { fontSize: 11, fontWeight: "700", color: C.textMuted, textTransform: "uppercase" as const, letterSpacing: 0.5 },
+  scLogRow: { gap: 2, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: C.border },
+  scLogName: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
+  scLogFields: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  scLogDetail: { fontSize: 12, color: C.textSecondary },
+  scLogNotes: { fontSize: 12, color: C.textMuted, fontStyle: "italic" as const },
 
   // ── Add attempt ──
   addAttemptBtn: {

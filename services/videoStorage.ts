@@ -4,7 +4,7 @@ import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 
 // Deployed Appwrite Function ID for the R2 presign function (fill after deploy).
-export const VIDEO_PRESIGN_FUNCTION_ID = ""
+export const VIDEO_PRESIGN_FUNCTION_ID = "6a3ed6810015d04807b4"
 
 // Appwrite table holding only metadata — the video bytes live in Cloudflare R2.
 export const VIDEOS_TABLE = "videos"
@@ -49,7 +49,7 @@ async function requestUploadUrl(ext: string): Promise<PresignResult> {
   })
   if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
     const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
-    throw new Error(payload?.error ?? "Could not prepare the upload.")
+    throw new Error(payload?.error ?? `Presign failed (status ${execution.responseStatusCode})`)
   }
   return JSON.parse(execution.responseBody) as PresignResult
 }
@@ -84,6 +84,16 @@ export async function uploadVideo(localUri: string, meta: VideoMeta): Promise<Vi
     throw new Error(`R2 upload failed (${result.status})`)
   }
   return createVideoRow(publicUrl, key, meta)
+}
+
+// Fire-and-forget upload used right after a clip is saved locally. Never throws
+// and never blocks the workout — a failed or not-yet-configured upload is just
+// logged. Returns immediately; the PUT happens in the background.
+export function uploadVideoInBackground(localUri: string, meta: VideoMeta): void {
+  if (!VIDEO_PRESIGN_FUNCTION_ID) return  // backend not wired up yet — skip silently
+  uploadVideo(localUri, meta).catch((e) =>
+    console.warn("[video] background upload to coach failed:", e?.message ?? e)
+  )
 }
 
 // Coach: list a given athlete's clips, newest first.

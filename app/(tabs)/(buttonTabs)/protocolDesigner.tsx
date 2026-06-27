@@ -3,7 +3,6 @@ import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
 import { Ionicons } from "@expo/vector-icons"
 import { groupByDate } from "@/utils/dateGroups"
-import { amountLabel } from "@/utils/exerciseUnit"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
@@ -42,7 +41,7 @@ import {
   updateProtocol,
 } from "@/services/BoulderGraphService"
 import { useRouter } from "expo-router"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import {
   ActivityIndicator, Alert,
   KeyboardAvoidingView,
@@ -204,7 +203,7 @@ export function stripLocalIds(blocks: Block[]): any[] {
   })
 }
 
-function injectLocalIds(blocks: any[]): Block[] {
+export function injectLocalIds(blocks: any[]): Block[] {
   return blocks.map((b) => ({
     ...b,
     id: generateId(),
@@ -1509,12 +1508,34 @@ const SC_TYPES: { type: "reps" | "both_sides" | "7/3s"; label: string }[] = [
   { type: "7/3s", label: "7/3s" },
 ]
 
-// Always-on exercise library shown beside the block. Grouped by type; one tap
-// adds an exercise to the block. "+ New" creates one inline and adds it.
-function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void; wide: boolean }) {
+// When present, an ancestor (the workout builder) hosts the exercise library
+// as an overlay over the protocol-detail pane. S&C fields then show a trigger
+// button instead of an inline library.
+export type SCLibraryController = { open: (blockId: string) => void }
+export const SCLibraryContext = createContext<SCLibraryController | null>(null)
+
+// Build a block Exercise from a library row, applying its defaults.
+export function exerciseFromLibrary(ex: ExerciseRow): Exercise {
+  const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps" }
+  return ex.type === "7/3s"
+    ? { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
+    : { ...base, reps: ex.defaultReps ?? (ex.unit === "seconds" ? "20-30" : "4-6") }
+}
+
+// Exercise library: grouped by type, items as wrapping chips sized to their
+// name; one tap adds. `inline` renders a bordered side card; `overlay` fills
+// its parent (used as a pane on top of the protocol detail) with a close button.
+export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", onClose }: {
+  onAdd: (ex: ExerciseRow) => void
+  wide?: boolean
+  variant?: "inline" | "overlay"
+  onClose?: () => void
+}) {
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [createType, setCreateType] = useState<"reps" | "both_sides" | "7/3s" | null>(null)
+  const overlay = variant === "overlay"
+  const containerStyle = overlay ? styles.libOverlayInner : [styles.libPane, wide && styles.libPaneWide]
 
   function reload() {
     setLoading(true)
@@ -1524,7 +1545,7 @@ function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void
 
   if (createType) {
     return (
-      <View style={[styles.libPane, wide && styles.libPaneWide]}>
+      <View style={containerStyle}>
         <ExerciseForm
           fixedType={createType}
           title={`New ${EXERCISE_TYPE_LABEL[createType]} exercise`}
@@ -1537,12 +1558,23 @@ function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void
   }
 
   return (
-    <View style={[styles.libPane, wide && styles.libPaneWide]}>
-      <Text style={styles.libTitle}>Exercise library</Text>
+    <View style={containerStyle}>
+      <View style={styles.libHeader}>
+        <Text style={styles.libTitle}>Exercise library</Text>
+        {overlay && (
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Ionicons name="close" size={22} color={C.textSecondary} />
+          </Pressable>
+        )}
+      </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 20 }} />
       ) : (
-        <ScrollView style={styles.libScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={overlay ? undefined : styles.libScroll}
+          contentContainerStyle={overlay ? { paddingBottom: 20 } : undefined}
+          nestedScrollEnabled keyboardShouldPersistTaps="handled"
+        >
           {SC_TYPES.map((g) => {
             const items = exercises.filter((e) => e.type === g.type)
             return (
@@ -1555,21 +1587,16 @@ function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void
                 </View>
                 {items.length === 0 ? (
                   <Text style={styles.libEmpty}>None yet</Text>
-                ) : items.map((ex) => (
-                  <Pressable key={ex.$id} style={styles.libItem} onPress={() => onAdd(ex)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.libItemName} numberOfLines={1}>{ex.name}</Text>
-                      {(ex.defaultReps || ex.defaultEdge) && (
-                        <Text style={styles.libItemMeta} numberOfLines={1}>
-                          {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
-                          {ex.defaultEdge ? ` ${ex.defaultEdge}` : ""}
-                          {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
-                        </Text>
-                      )}
-                    </View>
-                    <Ionicons name="add-circle" size={22} color={C.green} />
-                  </Pressable>
-                ))}
+                ) : (
+                  <View style={styles.libChips}>
+                    {items.map((ex) => (
+                      <Pressable key={ex.$id} style={styles.libChip} onPress={() => onAdd(ex)}>
+                        <Ionicons name="add" size={15} color={C.green} />
+                        <Text style={styles.libChipText}>{ex.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </View>
             )
           })}
@@ -1580,39 +1607,48 @@ function ExerciseLibraryPane({ onAdd, wide }: { onAdd: (ex: ExerciseRow) => void
 }
 
 function StrengthConditioningFields({ block, onUpdate }: { block: StrengthConditioningBlock; onUpdate: (b: Block) => void }) {
+  // If a builder hosts the library as an overlay, just trigger it; otherwise
+  // fall back to an inline library beside the cards.
+  const lib = useContext(SCLibraryContext)
   // Measure our own width (not the window's) — this editor can live inside a
   // half-width card, where the library + cards only fit side by side above ~560.
   const [paneW, setPaneW] = useState(0)
   const wide = paneW >= 560
   function update(fields: Partial<StrengthConditioningBlock>) { onUpdate({ ...block, ...fields }) }
+  function addFromLibrary(ex: ExerciseRow) { update({ exercises: [...block.exercises, exerciseFromLibrary(ex)] }) }
 
-  function addFromLibrary(ex: ExerciseRow) {
-    const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps" }
-    const newEx: Exercise =
-      ex.type === "7/3s"
-        ? { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
-        : { ...base, reps: ex.defaultReps ?? (ex.unit === "seconds" ? "20-30" : "4-6") }
-    update({ exercises: [...block.exercises, newEx] })
-  }
+  const renderCard = (ex: Exercise) => (
+    <ExerciseEditorRow
+      key={ex.id} exercise={ex}
+      onUpdate={(updated) => update({ exercises: block.exercises.map((e) => (e.id === updated.id ? updated : e)) })}
+      onDelete={() => update({ exercises: block.exercises.filter((e) => e.id !== ex.id) })}
+    />
+  )
 
   return (
     <View onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Exercises</Text>
-      <View style={wide ? styles.scSplit : styles.scStack}>
-        <ExerciseLibraryPane onAdd={addFromLibrary} wide={wide} />
-        <View style={wide ? styles.scCards : styles.scCardsStack}>
-          {block.exercises.length === 0 ? (
-            <Text style={styles.scEmptyHint}>Tap an exercise to add it here.</Text>
-          ) : block.exercises.map((ex) => (
-            <ExerciseEditorRow
-              key={ex.id} exercise={ex}
-              onUpdate={(updated) => update({ exercises: block.exercises.map((e) => (e.id === updated.id ? updated : e)) })}
-              onDelete={() => update({ exercises: block.exercises.filter((e) => e.id !== ex.id) })}
-            />
-          ))}
+      {lib ? (
+        <View style={styles.scCardsStack}>
+          {block.exercises.length === 0
+            ? <Text style={styles.scEmptyHint}>No exercises yet — add from the library.</Text>
+            : block.exercises.map(renderCard)}
+          <Pressable style={styles.scAddBtn} onPress={() => lib.open(block.id)}>
+            <Ionicons name="add" size={18} color={C.green} />
+            <Text style={styles.scAddBtnText}>Add exercise</Text>
+          </Pressable>
         </View>
-      </View>
+      ) : (
+        <View style={wide ? styles.scSplit : styles.scStack}>
+          <ExerciseLibraryPane onAdd={addFromLibrary} wide={wide} />
+          <View style={wide ? styles.scCards : styles.scCardsStack}>
+            {block.exercises.length === 0
+              ? <Text style={styles.scEmptyHint}>Tap an exercise to add it here.</Text>
+              : block.exercises.map(renderCard)}
+          </View>
+        </View>
+      )}
     </View>
   )
 }
@@ -1922,7 +1958,8 @@ const styles = StyleSheet.create({
     flexDirection: "row", flexWrap: "wrap", gap: 10,
   },
   libraryCard: {
-    width: "48%",
+    width: "31%",
+    flexGrow: 1,
     backgroundColor: C.surface,
     borderRadius: 12,
     borderWidth: 1, borderColor: C.border,
@@ -2161,18 +2198,35 @@ const styles = StyleSheet.create({
   scCards: { flex: 1, gap: 10 },
   scCardsStack: { gap: 10 },
   scEmptyHint: { fontSize: 13, color: C.textMuted, fontStyle: "italic", paddingVertical: 12 },
-  libPane: { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 12 },
-  libPaneWide: { width: 300 },
-  libScroll: { maxHeight: 360 },
-  libTitle: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: "700" },
-  libGroup: { marginBottom: 10 },
-  libGroupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  scAddBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    borderWidth: 1, borderColor: C.green, borderStyle: "dashed", borderRadius: 10,
+    paddingVertical: 12, marginTop: 4,
+  },
+  scAddBtnText: { fontSize: 14, fontWeight: "700", color: C.green },
+  // Library reads as its own raised pane card, like the protocol-detail pane.
+  libPane: {
+    backgroundColor: C.surfaceHigh, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 14,
+    shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8,
+  },
+  libPaneWide: { width: 320 },
+  libScroll: { maxHeight: 380 },
+  libOverlayInner: { flex: 1, padding: 16 },
+  libHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  libTitle: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: "700" },
+  libGroup: { marginBottom: 14 },
+  libGroupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   libGroupLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   libNew: { fontSize: 13, fontWeight: "700", color: C.green },
-  libEmpty: { fontSize: 12, color: C.textMuted, fontStyle: "italic", paddingVertical: 4 },
-  libItem: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6 },
-  libItemName: { fontSize: 14, fontWeight: "600", color: C.textPrimary },
-  libItemMeta: { fontSize: 11, color: C.textSecondary, marginTop: 1 },
+  libEmpty: { fontSize: 12, color: C.textMuted, fontStyle: "italic", paddingVertical: 2 },
+  // Chips size to their name and wrap horizontally.
+  libChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  libChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
+    paddingLeft: 8, paddingRight: 12, paddingVertical: 7,
+  },
+  libChipText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
   exercisePickerButton: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, backgroundColor: C.surfaceHigh },
   exercisePickerName: { fontSize: 15, color: C.textPrimary, fontWeight: "500" },
   exercisePickerPlaceholder: { fontSize: 15, color: C.textMuted },

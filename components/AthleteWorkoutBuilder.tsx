@@ -1,23 +1,28 @@
 import { C } from "@/utils/theme"
-import { AppUser, assignProtocol, createProtocol } from "@/services/BoulderGraphService"
+import { AppUser, ExerciseRow, ProtocolRow, assignProtocol, createProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import {
   Block,
   BlockEditorRow,
   BlockPickerModal,
+  ExerciseLibraryPane,
+  SCLibraryContext,
+  exerciseFromLibrary,
+  injectLocalIds,
   stripLocalIds,
 } from "@/app/(tabs)/(buttonTabs)/protocolDesigner"
-import { useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native"
+import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
+import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Per-athlete workout builder (big screen). Two card panes: the workout (left)
@@ -28,27 +33,57 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 export function AthleteWorkoutBuilder({
   athlete,
   roster,
+  protocol,
   onClose,
   onSaved,
 }: {
   athlete: AppUser
   roster: AppUser[]
+  protocol?: ProtocolRow | null  // when set, edit this assigned workout instead of creating a new one
   onClose: () => void
   onSaved?: () => void
 }) {
-  const [name, setName] = useState("")
-  const [blocks, setBlocks] = useState<Block[]>([])
+  const editing = !!protocol
+  const [name, setName] = useState(protocol?.name ?? "")
+  const [blocks, setBlocks] = useState<Block[]>(() => {
+    try { return protocol ? injectLocalIds(JSON.parse(protocol.blocks ?? "[]")) : [] }
+    catch { return [] }
+  })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set())
   const [copying, setCopying] = useState(false)
+  // The S&C block whose exercise library is open as an overlay over this pane.
+  const [libraryBlockId, setLibraryBlockId] = useState<string | null>(null)
   const insets = useSafeAreaInsets()
 
   function addBlock(b: Block) { setBlocks((p) => [...p, b]); setExpandedId(b.id) }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
   function deleteBlock(id: string) { setBlocks((p) => p.filter((x) => x.id !== id)) }
+
+  // Drag-to-reorder via the ☰ handle (long-press starts the drag).
+  const renderBlock = useCallback(({ item, drag, isActive }: RenderItemParams<Block>) => (
+    <BlockEditorRow
+      block={item}
+      isExpanded={expandedId === item.id}
+      isActive={isActive}
+      onToggleExpand={() => setExpandedId((p) => (p === item.id ? null : item.id))}
+      onDrag={drag}
+      onUpdate={updateBlock}
+      onDelete={() => deleteBlock(item.id)}
+    />
+  ), [expandedId])
+
+  // Hosts the exercise library for S&C blocks (signalled via context).
+  const libraryController = useMemo(() => ({ open: setLibraryBlockId }), [])
+  function addExerciseToBlock(blockId: string, ex: ExerciseRow) {
+    setBlocks((p) => p.map((b) =>
+      b.id === blockId && b.type === "strength_conditioning"
+        ? { ...b, exercises: [...b.exercises, exerciseFromLibrary(ex)] }
+        : b))
+  }
 
   function validate(): boolean {
     if (!name.trim()) { Alert.alert("Name required", "Give this workout a name."); return false }
@@ -60,8 +95,12 @@ export function AthleteWorkoutBuilder({
     if (!validate()) return
     setSaving(true)
     try {
-      const protocol = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks) })
-      await assignProtocol(athlete.$id, protocol.$id)
+      if (editing) {
+        await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(blocks) })
+      } else {
+        const created = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks) })
+        await assignProtocol(athlete.$id, created.$id)
+      }
       onSaved?.()
       onClose()
     } catch (e: any) {
@@ -96,10 +135,11 @@ export function AthleteWorkoutBuilder({
   const athleteName = athlete.username ?? athlete.$id
 
   return (
+   <SCLibraryContext.Provider value={libraryController}>
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 14 }]}>
         <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
-        <Text style={s.title} numberOfLines={1}>New workout · {athleteName}</Text>
+        <Text style={s.title} numberOfLines={1}>{editing ? "Edit workout" : "New workout"} · {athleteName}</Text>
         <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
           <Text style={[s.save, saving && { opacity: 0.4 }]}>{saving ? "Saving…" : "Save"}</Text>
         </Pressable>
@@ -121,24 +161,25 @@ export function AthleteWorkoutBuilder({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={s.blockList} keyboardShouldPersistTaps="handled">
+          {/* GestureHandlerRootView wraps ONLY the draggable list. Wrapping the
+              whole builder broke taps on the library overlay on macOS (RNGH
+              nested in a Modal swallows pressable touches there). */}
+          <GestureHandlerRootView style={{ flex: 1 }}>
             {blocks.length === 0 ? (
-              <Text style={s.empty}>Add blocks from the right →</Text>
+              <View style={s.blockList}><Text style={s.empty}>Add blocks from the right →</Text></View>
             ) : (
-              blocks.map((b) => (
-                <BlockEditorRow
-                  key={b.id}
-                  block={b}
-                  isExpanded={expandedId === b.id}
-                  isActive={false}
-                  onToggleExpand={() => setExpandedId((p) => (p === b.id ? null : b.id))}
-                  onDrag={() => {}}
-                  onUpdate={updateBlock}
-                  onDelete={() => deleteBlock(b.id)}
-                />
-              ))
+              <DraggableFlatList
+                data={blocks}
+                containerStyle={{ flex: 1 }}
+                keyExtractor={(item) => item.id}
+                onDragEnd={({ data }) => setBlocks(data)}
+                renderItem={renderBlock}
+                contentContainerStyle={s.blockList}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              />
             )}
-          </ScrollView>
+          </GestureHandlerRootView>
 
           {/* ⋮ menu */}
           {menuOpen && (
@@ -153,6 +194,17 @@ export function AthleteWorkoutBuilder({
                 </Pressable>
               </View>
             </>
+          )}
+
+          {/* Exercise library — a pane on top of the protocol detail */}
+          {libraryBlockId && (
+            <View style={s.libOverlay}>
+              <ExerciseLibraryPane
+                variant="overlay"
+                onClose={() => setLibraryBlockId(null)}
+                onAdd={(ex) => addExerciseToBlock(libraryBlockId, ex)}
+              />
+            </View>
           )}
         </View>
 
@@ -201,6 +253,7 @@ export function AthleteWorkoutBuilder({
         </Pressable>
       </Modal>
     </View>
+   </SCLibraryContext.Provider>
   )
 }
 
@@ -222,6 +275,9 @@ const s = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 24, shadowOffset: { width: 0, height: 12 },
     elevation: 12,
   },
+
+  // Library overlay fills the left card (clipped to its rounded corners).
+  libOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: C.surface, zIndex: 30 },
 
   leftHeader: {
     flexDirection: "row", alignItems: "center", gap: 8,
