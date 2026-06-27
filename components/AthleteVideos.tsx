@@ -1,11 +1,11 @@
 import { C } from "@/utils/theme"
 import { AppUser } from "@/services/BoulderGraphService"
-import { VideoRow, getVideosByUserId } from "@/services/videoStorage"
+import { VideoRow, deleteVideoRow, getVideosByUserId } from "@/services/videoStorage"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { Ionicons } from "@expo/vector-icons"
 import * as VideoThumbnails from "expo-video-thumbnails"
 import { useEffect, useState } from "react"
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Alert, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
 function formatBlockType(type?: string | null): string {
   if (!type) return "Clip"
@@ -68,6 +68,25 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
     return () => { cancelled = true }
   }, [athlete.$id])
 
+  function handleDelete(v: VideoRow) {
+    Alert.alert("Remove clip", "Remove this clip from the athlete's submissions?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteVideoRow(v.$id)
+            thumbCache.delete(v.$id)
+            setVideos((prev) => prev.filter((x) => x.$id !== v.$id))
+          } catch (e: any) {
+            Alert.alert("Error", e?.message ?? "Could not remove the clip.")
+          }
+        },
+      },
+    ])
+  }
+
   if (loading) {
     return <ActivityIndicator style={{ marginVertical: 14 }} color={C.green} />
   }
@@ -76,9 +95,10 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Submitted clips · {videos.length}</Text>
+      <Text style={styles.hint}>Tap to play · long-press to remove</Text>
       <View style={styles.grid}>
         {videos.map((v) => (
-          <Pressable key={v.$id} style={styles.card} onPress={() => setSelected(v)}>
+          <Pressable key={v.$id} style={styles.card} onPress={() => setSelected(v)} onLongPress={() => handleDelete(v)}>
             <View style={styles.thumb}>
               {thumbs[v.$id] ? (
                 <Image source={{ uri: thumbs[v.$id] }} style={styles.thumbImg} />
@@ -119,6 +139,7 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
 const styles = StyleSheet.create({
   section: { gap: 8 },
   label: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.6 },
+  hint: { fontSize: 11, color: C.textMuted, marginTop: -4 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   card: {
     width: "31%", flexGrow: 1,

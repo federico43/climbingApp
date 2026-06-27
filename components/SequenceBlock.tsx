@@ -423,7 +423,7 @@ export function SequenceBlock({
     return (
       <VideoRecorder
         onFinish={async (uri: string) => {
-          const saved = await saveVideoLocally(uri, "sequence")
+          const saved = await saveVideoLocally(uri, "sequence", { projectName: routeName })
           setPendingVideoUri(saved ?? uri)
           enterRest()
         }}

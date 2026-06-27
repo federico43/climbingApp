@@ -5,7 +5,11 @@ function getVideoDir(): string {
   return FileSystem.documentDirectory + "bouldervideos/"
 }
 
-export async function saveVideoLocally(uri: string, blockType?: string): Promise<string | null> {
+export async function saveVideoLocally(
+  uri: string,
+  blockType?: string,
+  meta?: { projectId?: string; projectName?: string; grade?: string },
+): Promise<string | null> {
   const videoDir = getVideoDir()
   console.log("[saveVideo] START — source uri:", uri)
   console.log("[saveVideo] VIDEO_DIR:", videoDir)
@@ -27,7 +31,7 @@ export async function saveVideoLocally(uri: string, blockType?: string): Promise
     console.log("[saveVideo] dest exists:", destInfo.exists, "size:", (destInfo as any).size ?? "?")
 
     // Auto-send every recorded clip to the coach (background, non-blocking).
-    uploadVideoInBackground(dest, { blockType })
+    uploadVideoInBackground(dest, { blockType, ...meta })
 
     return dest
   } catch (err) {

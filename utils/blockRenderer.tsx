@@ -271,7 +271,7 @@ function ConstraintWarmupBlock({
 
   function handleFinishRecording(videoUri: string) {
     setShowCamera(false)
-    saveVideoLocally(videoUri, block.type)
+    saveVideoLocally(videoUri, block.type, { grade: (block as any).level })
     logAttempt({ success: true, video: videoUri })
     if (attemptsDone + 1 >= targetAttempts) {
       setPhase("review")
@@ -837,7 +837,11 @@ function ProjectBlock({
             <VideoRecorder
               onFinish={(videoUri: string) => {
                 setShowCamera(false)
-                saveVideoLocally(videoUri, block.type)
+                saveVideoLocally(videoUri, block.type, {
+                  projectId: selectedProject?.$id,
+                  projectName: selectedProject?.name,
+                  grade: selectedProject?.grade,
+                })
                 enterRest()
               }}
               onClose={() => setShowCamera(false)}
