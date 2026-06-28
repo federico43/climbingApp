@@ -118,15 +118,13 @@ export async function deleteVideoRow(id: string): Promise<void> {
 
 // Ask the function to delete the actual file from R2 (the device has no R2 keys).
 async function deleteVideoObject(key: string): Promise<void> {
-  if (!VIDEO_PRESIGN_FUNCTION_ID || !key) { console.warn("[video] delete skipped — no fnId or key", { key }); return }
-  console.log("[video] delete → key:", key)
+  if (!VIDEO_PRESIGN_FUNCTION_ID || !key) return
   const execution = await functions.createExecution({
     functionId: VIDEO_PRESIGN_FUNCTION_ID,
     body: JSON.stringify({ action: "delete", key }),
     async: false,
     method: ExecutionMethod.POST,
   })
-  console.log("[video] delete ← status:", execution.responseStatusCode, "| body:", execution.responseBody)
   if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
     const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
     throw new Error(payload?.error ?? `R2 delete failed (status ${execution.responseStatusCode})`)
