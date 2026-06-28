@@ -20,7 +20,7 @@ import {
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -50,6 +50,21 @@ export default function DesignScreen() {
   const [copyFor, setCopyFor] = useState<ProtocolRow | null>(null)
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set())
   const [copying, setCopying] = useState(false)
+  // Transient confirmation banner.
+  const [flash, setFlash] = useState<string | null>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function showFlash(msg: string) {
+    setFlash(msg)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => setFlash(null), 2200)
+  }
+
+  // Keep the cached athlete in sync with assignment changes, so re-selecting the
+  // athlete (without a full refetch) shows the correct "today".
+  function patchAssigned(athleteId: string, protocolId: string | null) {
+    setAthletes((prev) => prev.map((a) => (a.$id === athleteId ? { ...a, assignedProtocolId: protocolId } : a)))
+    setSelected((prev) => (prev && prev.$id === athleteId ? { ...prev, assignedProtocolId: protocolId } : prev))
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -74,6 +89,7 @@ export default function DesignScreen() {
   }, [selected])
 
   useEffect(() => { loadTemplates() }, [loadTemplates])
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
 
   const atCap = templates.length >= MAX_ATHLETE_TEMPLATES
 
@@ -88,8 +104,12 @@ export default function DesignScreen() {
 
   async function markToday(p: ProtocolRow) {
     if (!selected) return
-    try { await assignProtocol(selected.$id, p.$id); setTodayId(p.$id) }
-    catch (e: any) { Alert.alert("Error", e?.message ?? "Could not set today's training.") }
+    try {
+      await assignProtocol(selected.$id, p.$id)
+      setTodayId(p.$id)
+      patchAssigned(selected.$id, p.$id)
+      showFlash(`“${p.name}” is now today’s training`)
+    } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not set today's training.") }
   }
 
   function confirmDelete(p: ProtocolRow) {
@@ -101,7 +121,7 @@ export default function DesignScreen() {
           if (!selected) return
           try {
             await deleteProtocol(p.$id)
-            if (todayId === p.$id) { await unassignProtocol(selected.$id); setTodayId(null) }
+            if (todayId === p.$id) { await unassignProtocol(selected.$id); setTodayId(null); patchAssigned(selected.$id, null) }
             setTemplates((prev) => prev.filter((x) => x.$id !== p.$id))
           } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not delete the template.") }
         },
@@ -205,6 +225,8 @@ export default function DesignScreen() {
                     </Pressable>
                   )}
                 </View>
+
+                {flash && <Text style={styles.flash}>✓ {flash}</Text>}
 
                 {loadingTemplates ? (
                   <ActivityIndicator style={{ marginVertical: 14 }} color={C.green} />
@@ -345,6 +367,7 @@ const styles = StyleSheet.create({
 
   workoutSection: { gap: 8 },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  flash: { fontSize: 12, fontWeight: "700", color: C.green },
   workoutCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 12,
     backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border,
