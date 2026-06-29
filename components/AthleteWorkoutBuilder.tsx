@@ -9,7 +9,7 @@ import {
   exerciseFromLibrary,
   injectLocalIds,
   stripLocalIds,
-} from "@/app/(tabs)/(buttonTabs)/protocolDesigner"
+} from "@/components/workoutBlocks"
 import { useCallback, useMemo, useState } from "react"
 import {
   ActivityIndicator,

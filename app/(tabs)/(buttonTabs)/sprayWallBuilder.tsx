@@ -53,11 +53,11 @@ export default function SprayWallBuilderScreen() {
   // This lives in a Tabs navigator, where router.back() jumps to the first tab
   // (Home) rather than the previous screen — so we navigate to the originating
   // tab explicitly. When the flow started from the sequence picker, return to
-  // the protocol designer (which stays mounted, with the picker waiting on the
+  // the Design screen (which hosts the workout builder; the picker waits on the
   // route bus); otherwise return to the spray wall list.
   function returnToOrigin() {
     if (fromPicker) {
-      router.navigate("/(tabs)/(buttonTabs)/protocolDesigner" as any)
+      router.navigate("/(tabs)/(buttonTabs)/design" as any)
     } else {
       router.navigate("/(tabs)/(buttonTabs)/sprayWall" as any)
     }
