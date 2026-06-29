@@ -1,6 +1,5 @@
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { getSprayWall, saveSprayRoute, updateSprayRoute } from "@/services/BoulderGraphService"
-import { resolveNewRoute } from "@/utils/pendingRouteSelection"
 import { parseVariations, RouteVariations } from "@/utils/sequenceVariations"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect, useState } from "react"
@@ -19,14 +18,12 @@ export default function SprayWallBuilderScreen() {
     routeLevel?: string
     routeType?: string
     _new?: string
-    from?: string
     wallId?: string
     wallImageUri?: string
   }>()
   const [saving, setSaving] = useState(false)
 
   const isEditing = !!params.routeId
-  const fromPicker = params.from === "protocolPicker"
   const wallId = params.wallId || undefined
   // Seed from the passed URL, but also resolve the wall's current image from the
   // DB by id — the passed param can be empty/stale/mangled depending on the flow
@@ -51,21 +48,13 @@ export default function SprayWallBuilderScreen() {
   const initialType = params.routeType || undefined
 
   // This lives in a Tabs navigator, where router.back() jumps to the first tab
-  // (Home) rather than the previous screen — so we navigate to the originating
-  // tab explicitly. When the flow started from the sequence picker, return to
-  // the Design screen (which hosts the workout builder; the picker waits on the
-  // route bus); otherwise return to the spray wall list.
+  // (Home) rather than the previous screen — so navigate to the spray wall list
+  // explicitly.
   function returnToOrigin() {
-    if (fromPicker) {
-      router.navigate("/(tabs)/(buttonTabs)/design" as any)
-    } else {
-      router.navigate("/(tabs)/(buttonTabs)/sprayWall" as any)
-    }
+    router.navigate("/(tabs)/(buttonTabs)/sprayWall" as any)
   }
 
   function navigateBack() {
-    // Backing out of a create-new flow: tell the picker it was cancelled.
-    if (fromPicker) resolveNewRoute(null)
     returnToOrigin()
   }
 
@@ -85,9 +74,7 @@ export default function SprayWallBuilderScreen() {
       if (isEditing) {
         await updateSprayRoute(params.routeId!, name.trim(), holds, extras)
       } else {
-        const created = await saveSprayRoute(name.trim(), holds, wallId, extras)
-        // Hand the new route back to the picker so it auto-selects it.
-        if (fromPicker) resolveNewRoute(created)
+        await saveSprayRoute(name.trim(), holds, wallId, extras)
       }
       returnToOrigin()
     } catch (e) {

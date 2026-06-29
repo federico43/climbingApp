@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
-import { awaitNewRoute, cancelAwaitNewRoute } from "@/utils/pendingRouteSelection"
+import { SprayWallBuilder } from "@/components/SprayWallBuilder"
+import { RouteVariations } from "@/utils/sequenceVariations"
 import {
   Adaptation,
   ADAPTATIONS,
@@ -32,11 +33,11 @@ import {
   listProtocols,
   ProtocolRow,
   saveBlockToLibrary,
+  saveSprayRoute,
   upsertBlockTemplate,
   SprayRouteRow,
   updateProtocol,
 } from "@/services/BoulderGraphService"
-import { useRouter } from "expo-router"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import {
   ActivityIndicator, Alert,
@@ -980,12 +981,17 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
 
 // ─── Sequence Fields ──────────────────────────────────────────────────────────
 
+const ROUTE_FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
+
 function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<SequenceBlock>) { onUpdate({ ...block, ...fields }) }
-  const router = useRouter()
   const [showRoutePicker, setShowRoutePicker] = useState(false)
+  // Creating a new route happens in a nested modal (the spray-wall builder),
+  // not a screen push — so it works inside the workout-builder modal.
+  const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
+  const [savingRoute, setSavingRoute] = useState(false)
 
-  function selectRoute(route: SprayRouteRow, wall?: SprayWallRow) {
+  function selectRoute(route: SprayRouteRow, wall?: SprayWallRow | null) {
     update({
       routeId: route.$id, routeName: route.name, routeHolds: route.holds,
       ...(wall?.imageUri ? { wallImageUri: wall.imageUri } : {}),
@@ -994,32 +1000,30 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
     setShowRoutePicker(false)
   }
 
-  // Build a new route on the spray-wall screen, then come back. The builder
-  // publishes its result through the route bus: a saved route auto-selects
-  // itself; backing out reopens the picker so an existing route can be chosen.
-  function handleCreateNew(wall?: { id: string; imageUri?: string }) {
-    setShowRoutePicker(false)
-    awaitNewRoute((route) => {
-      if (route) selectRoute(route)
-      else setShowRoutePicker(true)
-    })
-    // Defer navigation so the route-picker modal fully dismisses first —
-    // otherwise on web it races the navigation and stays as a grey overlay.
-    setTimeout(() => {
-      router.push({
-        pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
-        params: {
-          _new: Date.now().toString(),
-          from: "protocolPicker",
-          ...(wall ? { wallId: wall.id, wallImageUri: wall.imageUri ?? "" } : {}),
-        },
-      })
-    }, 250)
+  // Present the builder on top of the (still-open) route picker — closing the
+  // picker first and presenting simultaneously races on iOS. selectRoute() closes
+  // the picker on a successful save; backing out just drops back to it.
+  function handleCreateNew(wall?: SprayWallRow) {
+    setCreating({ wall: wall ?? null })
   }
 
-  // If this field unmounts mid-flow (block collapsed/deleted), drop the listener
-  // so a later builder result doesn't fire into a dead component.
-  useEffect(() => cancelAwaitNewRoute, [])
+  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
+    if (!name.trim()) { Alert.alert("Name required", "Give the route a name before saving."); return }
+    const holds = data.variations.original ?? []
+    const extras = { level: data.level, type: data.type, variations: data.variations }
+    setSavingRoute(true)
+    try {
+      const wall = creating?.wall ?? null
+      const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
+      selectRoute(created, wall)
+      setCreating(null)
+    } catch (e) {
+      Alert.alert("Error", "Could not save the route. Try again.")
+      console.error(e)
+    } finally {
+      setSavingRoute(false)
+    }
+  }
 
   return (
     <>
@@ -1044,6 +1048,20 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
           onCreateNew={handleCreateNew}
         />
       </Modal>
+
+      {/* Create a new route inline (nested modal — no screen push) */}
+      <Modal visible={creating !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setCreating(null)}>
+        {creating && (
+          <SafeAreaView style={styles.routeBuilderSafe} edges={["top"]}>
+            <SprayWallBuilder
+              imageSource={creating.wall?.imageUri ? { uri: creating.wall.imageUri } : ROUTE_FALLBACK_IMAGE}
+              onBack={() => setCreating(null)}
+              onSave={saveNewRoute}
+              saving={savingRoute}
+            />
+          </SafeAreaView>
+        )}
+      </Modal>
     </>
   )
 }
@@ -1053,7 +1071,7 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
 function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   onSelect: (route: SprayRouteRow, wall?: SprayWallRow) => void
   onClose: () => void
-  onCreateNew: (wall?: { id: string; imageUri?: string }) => void
+  onCreateNew: (wall?: SprayWallRow) => void
 }) {
   const [routes, setRoutes] = useState<SprayRouteRow[]>([])
   const [walls, setWalls] = useState<SprayWallRow[]>([])
@@ -1064,7 +1082,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   // there are several, or proceed wall-less if none exist yet.
   function startCreateNew() {
     if (walls.length === 0) { onCreateNew(); return }
-    if (walls.length === 1) { onCreateNew({ id: walls[0].$id, imageUri: walls[0].imageUri }); return }
+    if (walls.length === 1) { onCreateNew(walls[0]); return }
     setWallPickerVisible(true)
   }
 
@@ -1158,7 +1176,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                 <Pressable
                   key={wall.$id}
                   style={styles.wallPickRow}
-                  onPress={() => { setWallPickerVisible(false); onCreateNew({ id: wall.$id, imageUri: wall.imageUri }) }}
+                  onPress={() => { setWallPickerVisible(false); onCreateNew(wall) }}
                 >
                   <Text style={styles.wallPickName} numberOfLines={1}>{wall.name}</Text>
                   <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
@@ -1181,6 +1199,7 @@ const EXERCISE_TYPE_LABEL: Record<"reps" | "both_sides" | "7/3s", string> = {
 
 const styles = StyleSheet.create({
   safeContainer: { flex: 1, backgroundColor: C.bg },
+  routeBuilderSafe: { flex: 1, backgroundColor: "#0a0a0a" },
 
   // Master-detail (big screens)
   splitRoot: { flex: 1, flexDirection: "row", backgroundColor: C.bg },
