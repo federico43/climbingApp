@@ -247,10 +247,13 @@ export default function DesignScreen() {
                           <Text style={styles.workoutMeta}>{blockCount(p)} block{blockCount(p) !== 1 ? "s" : ""}</Text>
                         </View>
                         <View style={[styles.previewWrap, isWide && styles.previewWrapWide]}>
-                          {blockNames(p).map((n, i) => (
+                          {blockPreviews(p).map((b, i) => (
                             <View key={i} style={styles.previewChip}>
                               <Text style={styles.previewIndex}>{i + 1}</Text>
-                              <Text style={styles.previewChipText} numberOfLines={1}>{n}</Text>
+                              <Text style={styles.previewChipText} numberOfLines={1}>{b.name}</Text>
+                              {b.timeLimit != null && (
+                                <Text style={styles.previewTime}>⏱{b.timeLimit}m</Text>
+                              )}
                             </View>
                           ))}
                         </View>
@@ -353,12 +356,14 @@ const BLOCK_TYPE_LABEL: Record<string, string> = {
   four_by_four: "4×4", intervals: "Intervals",
 }
 
-// Block names in workout order (custom name, else a short type label).
-function blockNames(p: ProtocolRow): string[] {
+// Block previews in workout order: name (custom, else a short type label) plus
+// the time limit in minutes when the block has one.
+function blockPreviews(p: ProtocolRow): { name: string; timeLimit?: number }[] {
   try {
-    return (JSON.parse(p.blocks ?? "[]") as any[]).map(
-      (b) => (b?.blockName ?? "").toString().trim() || BLOCK_TYPE_LABEL[b?.type] || b?.type || "Block"
-    )
+    return (JSON.parse(p.blocks ?? "[]") as any[]).map((b) => ({
+      name: (b?.blockName ?? "").toString().trim() || BLOCK_TYPE_LABEL[b?.type] || b?.type || "Block",
+      timeLimit: typeof b?.timeLimit === "number" && b.timeLimit > 0 ? b.timeLimit : undefined,
+    }))
   } catch { return [] }
 }
 
@@ -394,6 +399,7 @@ const styles = StyleSheet.create({
   },
   previewIndex: { fontSize: 10, fontWeight: "800", color: C.green },
   previewChipText: { fontSize: 11, color: C.textSecondary, fontWeight: "600", maxWidth: 120 },
+  previewTime: { fontSize: 10, color: C.green, fontWeight: "800" },
   workoutActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   testBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
