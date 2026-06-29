@@ -233,10 +233,14 @@ export function AthleteWorkoutBuilder({
           )}
         </View>
 
-        {/* Right: available blocks (wide screens only) */}
+        {/* Right: available blocks (wide screens only). Disable the S&C library
+            overlay context here — a block being *created* isn't in `blocks` yet,
+            so its exercises must be edited inline, not via the host overlay. */}
         {wide && (
           <View style={s.card}>
-            <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
+            <SCLibraryContext.Provider value={null}>
+              <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
+            </SCLibraryContext.Provider>
           </View>
         )}
       </View>
@@ -244,7 +248,9 @@ export function AthleteWorkoutBuilder({
       {/* Narrow: block picker as a full-screen sheet */}
       {!wide && (
         <Modal visible={pickerOpen} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setPickerOpen(false)}>
-          <BlockPickerModal onAdd={(b) => { addBlock(b); setPickerOpen(false) }} onClose={() => setPickerOpen(false)} />
+          <SCLibraryContext.Provider value={null}>
+            <BlockPickerModal onAdd={(b) => { addBlock(b); setPickerOpen(false) }} onClose={() => setPickerOpen(false)} />
+          </SCLibraryContext.Provider>
         </Modal>
       )}
 
