@@ -12,6 +12,8 @@ export interface Block {
   restTime?: number
   targetAttempts?: number
   description?: string
+  // Optional time constraint (minutes) — shown as a countdown while the block runs.
+  timeLimit?: number
   // Target training adaptation — drives pie chart slice color, day timeline,
   // and future adaptation-based analytics. See utils/adaptations.ts for the
   // taxonomy and per-type defaults when unset.

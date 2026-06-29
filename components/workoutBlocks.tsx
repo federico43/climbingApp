@@ -66,6 +66,9 @@ interface BaseBlock {
   // Target training adaptation (technique/strength/power_endurance/...).
   // Optional — defaults are inferred from the block type in utils/adaptations.ts.
   adaptation?: string
+  // Optional time constraint for the block, in minutes (0 / undefined = none).
+  // Shown as a countdown while the block runs.
+  timeLimit?: number
 }
 
 interface ProjectBoulderingBlock extends BaseBlock {
@@ -462,6 +465,7 @@ function NewBlockForm({ type, onBack, onSave }: {
         </View>
         <BlockNumerics block={block} onUpdate={setBlock} />
       </View>
+      <TimeLimitField block={block} onUpdate={setBlock} />
 
       {type === "project_bouldering" && (
         <ProjectBoulderingFields block={block as ProjectBoulderingBlock} onUpdate={setBlock} />
@@ -560,6 +564,7 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
             </View>
             <BlockNumerics block={block} onUpdate={onUpdate} />
           </View>
+          <TimeLimitField block={block} onUpdate={onUpdate} />
           <Text style={styles.fieldLabel}>Adaptation</Text>
           <AdaptationPicker
             value={resolveAdaptation(block)}
@@ -740,14 +745,25 @@ function BlockNumerics({ block, onUpdate }: { block: Block; onUpdate: (b: Block)
       fields = (
         <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
       ); break
-    case "exploration_session":
-      fields = (
-        <NumField label="Time limit (min)" value={block.timeLimit ?? 0} onChange={(n) => update({ timeLimit: n })} />
-      ); break
     default:
       return null
   }
   return <View style={styles.numericsRow}>{fields}</View>
+}
+
+// Universal time-constraint field — every block can optionally cap its duration.
+function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  return (
+    <View style={styles.timeLimitRow}>
+      <FieldLabel label="Time limit (min · 0 = none)" />
+      <FieldInput
+        value={String(block.timeLimit ?? 0)}
+        onChange={(v) => onUpdate({ ...block, timeLimit: parseInt(v) || 0 })}
+        numeric
+        placeholder="0"
+      />
+    </View>
+  )
 }
 
 function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBoulderingBlock; onUpdate: (b: Block) => void }) {
@@ -1418,6 +1434,7 @@ const styles = StyleSheet.create({
   nameField: { flex: 1.2 },
   numericsRow: { flex: 1.8, flexDirection: "row", gap: 10, alignItems: "flex-start" },
   numField: { flex: 1 },
+  timeLimitRow: { maxWidth: 220 },
   fieldInputMultiline: { minHeight: 70, textAlignVertical: "top" },
   switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
   addBlockButton: { borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 12, padding: 14, alignItems: "center", marginTop: 8 },

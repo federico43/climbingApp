@@ -249,6 +249,9 @@ export function WorkOutState({
             Block {currentBlockIndex + 1} of {totalBlocks}
           </Text>
           <View style={styles.progressActions}>
+            {(currentBlock?.timeLimit ?? 0) > 0 && currentBlock?.type !== "exploration_session" && (
+              <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
+            )}
             <Pressable onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
               <Text style={styles.skipBtnText}>Skip</Text>
               <Ionicons name="play-skip-forward" size={14} color={C.textSecondary} />
@@ -308,6 +311,34 @@ export function WorkOutState({
         />
       </BlockEntry>
     </SafeAreaView>
+  )
+}
+
+// Per-block countdown for blocks that carry a time constraint. Remounts per
+// block (keyed by index), turns red and reads "Time's up" at zero — it never
+// auto-advances, so the athlete decides when to move on.
+function BlockCountdown({ minutes }: { minutes: number }) {
+  const total = Math.max(0, Math.round(minutes * 60))
+  const [remaining, setRemaining] = useState(total)
+  useEffect(() => {
+    const end = Date.now() + total * 1000
+    const id = setInterval(() => {
+      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      setRemaining(r)
+      if (r <= 0) clearInterval(id)
+    }, 250)
+    return () => clearInterval(id)
+  }, [total])
+  const over = remaining <= 0
+  const m = Math.floor(remaining / 60)
+  const s = remaining % 60
+  return (
+    <View style={[styles.countdownChip, over && styles.countdownChipOver]}>
+      <Ionicons name="time-outline" size={13} color={over ? C.bg : C.green} />
+      <Text style={[styles.countdownText, over && styles.countdownTextOver]}>
+        {over ? "Time's up" : `${m}:${String(s).padStart(2, "0")}`}
+      </Text>
+    </View>
   )
 }
 
@@ -395,6 +426,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
+  countdownChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5,
+    borderWidth: 1, borderColor: C.green,
+  },
+  countdownChipOver: { backgroundColor: C.red, borderColor: C.red },
+  countdownText: { fontSize: 13, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
+  countdownTextOver: { color: C.bg },
   progressActions: {
     flexDirection: "row",
     alignItems: "center",
