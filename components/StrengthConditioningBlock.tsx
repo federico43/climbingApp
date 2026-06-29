@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, unitNoun, ExerciseUnit } from "@/utils/exerciseUnit"
+import { useBlockTimer } from "@/utils/blockTimer"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import {
@@ -85,6 +86,7 @@ interface Props {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
+  const blockTimer = useBlockTimer()
   const [phase, setPhase] = useState<Phase>("intro")
   const [currentRound, setCurrentRound] = useState(0)
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
@@ -226,7 +228,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             </View>
           </View>
 
-          <CustomButton title="Start" onPress={() => setPhase("circuit")} />
+          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("circuit") }} />
         </ScrollView>
       </View>
     )

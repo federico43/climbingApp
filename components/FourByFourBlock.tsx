@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import type { Attempt } from "@/hooks/WorkoutHook"
+import { useBlockTimer } from "@/utils/blockTimer"
 import React, { useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -48,6 +49,7 @@ export function FourByFourBlock({
   )
   const [grade, setGrade] = useState<string>(() => attempts[0]?.level ?? "")
   const [tops, setTops] = useState<number>(bouldersPerSet)
+  const blockTimer = useBlockTimer()
 
   function startSetRest() {
     setTops(bouldersPerSet)
@@ -95,7 +97,7 @@ export function FourByFourBlock({
           </View>
         </ScrollView>
         <View style={styles.footer}>
-          <CustomButton title="Start" onPress={() => setPhase("active")} disabled={!grade} />
+          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("active") }} disabled={!grade} />
         </View>
       </View>
     )

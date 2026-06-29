@@ -9,6 +9,7 @@ interface Block {
   type: "free_session"
   blockName: string
   description?: string
+  timeLimit?: number   // minutes; when set, show a countdown instead of elapsed
 }
 
 interface Props {
@@ -85,12 +86,20 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock }: Pr
   // ── Running ────────────────────────────────────────────────────────────────
 
   if (phase === "running") {
+    // With a time limit, count down from it (turning red at zero) instead of
+    // showing elapsed time. The countdown starts when the athlete hits Start.
+    const limitSec = (block.timeLimit ?? 0) * 60
+    const hasLimit = limitSec > 0
+    const remaining = Math.max(0, limitSec - elapsed)
+    const over = hasLimit && remaining <= 0
     return (
       <View style={shared_styles.screen}>
         <TopBar title={block.blockName} />
         <View style={styles.centerContent}>
-          <Text style={styles.timerLabel}>elapsed</Text>
-          <Text style={styles.timer}>{formatElapsed(elapsed)}</Text>
+          <Text style={styles.timerLabel}>{hasLimit ? (over ? "time's up" : "remaining") : "elapsed"}</Text>
+          <Text style={[styles.timer, over && { color: C.red }]}>
+            {hasLimit ? formatElapsed(remaining) : formatElapsed(elapsed)}
+          </Text>
           <Pressable style={styles.stopBtn} onPress={stop}>
             <Text style={styles.stopBtnText}>Stop</Text>
           </Pressable>

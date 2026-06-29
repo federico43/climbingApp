@@ -1,9 +1,10 @@
 import { C } from "@/utils/theme"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { BlockRenderer } from "@/utils/blockRenderer"
+import { BlockTimerContext } from "@/utils/blockTimer"
 import { Ionicons } from "@expo/vector-icons"
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Animated, {
   useAnimatedStyle,
@@ -105,6 +106,15 @@ export function WorkOutState({
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
   const [workoutElapsed, setWorkoutElapsed] = useState(0)
+
+  // Time-constraint countdown arms when the block signals it started (Start
+  // pressed), not on block entry. Reset whenever the block changes.
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null)
+  useEffect(() => { setTimerStartedAt(null) }, [currentBlockIndex])
+  const blockTimer = useMemo(
+    () => ({ start: () => setTimerStartedAt((t) => t ?? Date.now()) }),
+    [],
+  )
 
   // Total time spans the real workout — workoutStartTime lives in the hook, so
   // it's the original start even after a resume (not the resume moment).
@@ -249,7 +259,7 @@ export function WorkOutState({
             Block {currentBlockIndex + 1} of {totalBlocks}
           </Text>
           <View style={styles.progressActions}>
-            {(currentBlock?.timeLimit ?? 0) > 0 && currentBlock?.type !== "exploration_session" && (
+            {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
             )}
             <Pressable onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
@@ -295,24 +305,30 @@ export function WorkOutState({
         </View>
       </View>
       <BlockEntry key={currentBlockIndex}>
-        <BlockRenderer
-          block={currentBlock}
-          attemptsDone={attemptsDone}
-          logAttempt={logAttempt}
-          undoLastAttempt={undoLastAttempt}
-          timeRemaining={timeRemaining}
-          restTimeRemaining={restTimeRemaining}
-          startRestTimer={startRestTimer}
-          attempts={attempts}
-          currentBlockIndex={currentBlockIndex}
-          goToNextBlock={handleNext}
-          goToPreviousBlock={goToPreviousBlock}
-          blockStartTime={blockStartTime}
-        />
+        <BlockTimerContext.Provider value={blockTimer}>
+          <BlockRenderer
+            block={currentBlock}
+            attemptsDone={attemptsDone}
+            logAttempt={logAttempt}
+            undoLastAttempt={undoLastAttempt}
+            timeRemaining={timeRemaining}
+            restTimeRemaining={restTimeRemaining}
+            startRestTimer={startRestTimer}
+            attempts={attempts}
+            currentBlockIndex={currentBlockIndex}
+            goToNextBlock={handleNext}
+            goToPreviousBlock={goToPreviousBlock}
+            blockStartTime={blockStartTime}
+          />
+        </BlockTimerContext.Provider>
       </BlockEntry>
     </SafeAreaView>
   )
 }
+
+// Blocks that render their own time display (countdown or work/rest) — the host
+// chip would duplicate it, so skip them.
+const SELF_TIMED_BLOCKS = new Set(["exploration_session", "intervals", "free_session"])
 
 // Per-block countdown for blocks that carry a time constraint. Remounts per
 // block (keyed by index), turns red and reads "Time's up" at zero — it never

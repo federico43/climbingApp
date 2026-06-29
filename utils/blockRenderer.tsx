@@ -9,6 +9,7 @@ import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt, Block } from "@/hooks/WorkoutHook"
+import { useBlockTimer } from "@/utils/blockTimer"
 import { getLastProjectSession, getProjectById, listProjects, markProjectSent, ProjectRow, ProjectSessionSummary } from "@/services/BoulderGraphService"
 import { summarizeProjectNotes } from "@/services/aiProtocol"
 import { Image as CachedImage } from "expo-image"
@@ -220,6 +221,7 @@ function ConstraintWarmupBlock({
   const [phase, setPhase] = useState<Phase>(() =>
     attemptsDone >= targetAttempts ? "review" : "intro"
   )
+  const blockTimer = useBlockTimer()
   const [showCamera, setShowCamera] = useState(false)
   const [reviewElapsed, setReviewElapsed] = useState<number | null>(null)
   const counterScale = useRef(new Animated.Value(1)).current
@@ -304,7 +306,7 @@ function ConstraintWarmupBlock({
           {!!block.description && (
             <Text style={shared_styles.description}>{block.description}</Text>
           )}
-          <CustomButton title="Start" onPress={() => setPhase("ready")} />
+          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("ready") }} />
         </ScrollView>
       </View>
     )
@@ -604,6 +606,7 @@ function ProjectBlock({
   const [phase, setPhase] = useState<ProjectPhase>(() =>
     isComplete ? "review" : attemptsDone > 0 ? "ready" : "intro"
   )
+  const blockTimer = useBlockTimer()
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null)
 
   // Restore the worked-on project from the attempts' projectId when resuming.
@@ -781,7 +784,7 @@ function ProjectBlock({
         <View style={projectStyles.selectFooter}>
           <CustomButton
             title="Start"
-            onPress={() => setPhase("lastSession")}
+            onPress={() => { blockTimer.start(); setPhase("lastSession") }}
             disabled={!selectedProject}
           />
         </View>

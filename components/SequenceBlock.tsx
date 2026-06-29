@@ -4,6 +4,7 @@ import { PlacedHold } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
+import { useBlockTimer } from "@/utils/blockTimer"
 import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useRef, useState } from "react"
@@ -56,6 +57,7 @@ export function SequenceBlock({
     attemptsDone >= targetAttempts ? "review" : "intro"
   )
   const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null)
+  const blockTimer = useBlockTimer()
   const [outcome, setOutcome]           = useState<Outcome | null>(null)
   const [highPoint, setHighPoint]       = useState<number>(1)
   const [rpe, setRpe]                   = useState<string>("")
@@ -288,7 +290,7 @@ export function SequenceBlock({
 
         {/* Fixed start button */}
         <View style={styles.introFooter}>
-          <Pressable style={styles.startBtn} onPress={() => setPhase("active")}>
+          <Pressable style={styles.startBtn} onPress={() => { blockTimer.start(); setPhase("active") }}>
             <Text style={styles.startBtnText}>Start</Text>
           </Pressable>
         </View>
