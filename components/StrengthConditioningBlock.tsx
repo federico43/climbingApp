@@ -12,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -440,43 +439,18 @@ function targetNumber(s: string): number {
 
 // ─── − value + stepper ────────────────────────────────────────────────────────
 
-function Stepper({ value, onChange, step = 1, min = 0, suffix, decimal }: {
-  value: number; onChange: (v: number) => void; step?: number; min?: number; suffix?: string; decimal?: boolean
+function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
+  value: number; onChange: (v: number) => void; step?: number; min?: number; suffix?: string
 }) {
-  // Tap the value to type an exact number (e.g. 22.5kg) — the −/+ buttons are
-  // for quick coarse adjustment, the input is for precision.
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState("")
   const set = (v: number) => onChange(Math.max(min, parseFloat(v.toFixed(2))))
-  function commit() {
-    const n = parseFloat(draft.replace(",", "."))
-    if (!isNaN(n)) set(n)
-    setEditing(false)
-  }
   return (
     <View style={styles.stepperRow}>
       <Pressable style={styles.stepperBtn} onPress={() => set(value - step)} hitSlop={6}>
         <Text style={styles.stepperBtnText}>−</Text>
       </Pressable>
-      {editing ? (
-        <TextInput
-          style={styles.stepperInput}
-          value={draft}
-          onChangeText={setDraft}
-          keyboardType={decimal ? "decimal-pad" : "number-pad"}
-          autoFocus
-          selectTextOnFocus
-          onBlur={commit}
-          onSubmitEditing={commit}
-          returnKeyType="done"
-        />
-      ) : (
-        <Pressable style={{ flex: 1 }} onPress={() => { setDraft(String(value)); setEditing(true) }}>
-          <Text style={styles.stepperValue}>
-            {value}{suffix ? <Text style={styles.stepperSuffix}>{suffix}</Text> : null}
-          </Text>
-        </Pressable>
-      )}
+      <Text style={styles.stepperValue}>
+        {value}{suffix ? <Text style={styles.stepperSuffix}>{suffix}</Text> : null}
+      </Text>
       <Pressable style={styles.stepperBtn} onPress={() => set(value + step)} hitSlop={6}>
         <Text style={styles.stepperBtnText}>+</Text>
       </Pressable>
@@ -558,7 +532,7 @@ function ExerciseDetail({ open, onToggle, weight, setWeight, weightUnit, weightS
       {open && (
         <>
           <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
-          <Stepper value={weight} onChange={setWeight} step={weightStep} decimal />
+          <Stepper value={weight} onChange={setWeight} step={weightStep} />
           <RPEChips value={rpe} onChange={setRpe} label={rpeLabel} />
         </>
       )}
@@ -584,7 +558,7 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDon
   const [weight, setWeight] = useState<number>(startWeight)
   const [rpe, setRpe] = useState(initialRpe ?? "")
   const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
-  const weightStep = weightUnit === "lb" ? 5 : 2.5
+  const weightStep = 0.5
 
   function handleSave() {
     onDone({
@@ -643,7 +617,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, 
   // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
   const initialAmount = isTimed ? 0 : targetNumber(exercise.reps)
   const startWeight = parseFloat(initialWeight ?? "") || 0
-  const weightStep = weightUnit === "lb" ? 5 : 2.5
+  const weightStep = 0.5
 
   const [side, setSide] = useState<Side>("left")
   const [repsLeft, setRepsLeft] = useState(initialAmount)
@@ -979,7 +953,6 @@ const styles = StyleSheet.create({
   stepperBtn: { width: 60, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   stepperBtnText: { fontSize: 28, fontWeight: "400", color: C.green },
   stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
-  stepperInput: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary, padding: 0 },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
   // Rest-between-rounds timer (mirrors the project-bouldering rest screen)
