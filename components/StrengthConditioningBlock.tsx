@@ -459,58 +459,99 @@ function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
 }
 
 // ─── Timed amount control ─────────────────────────────────────────────────────
-// One control for timed exercises: the value and the hold timer are the same
-// number, so they share a single box — −/+ to adjust, Start/Stop to time the
-// hold (which fills the value). Replaces the separate timer + stepper.
+// A real countdown timer for timed exercises: adjust the target duration, then
+// Start → a short "get ready" prep countdown → the hold counts DOWN from the
+// target to zero (or Stop early). The completed seconds are reported via onChange.
 
-function TimedAmountControl({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [running, setRunning] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const startRef = useRef(0)
+const TIMED_PREP_SECS = 5
+
+function TimedAmountControl({ target, onChange }: { target: number; onChange: (v: number) => void }) {
+  type Phase = "idle" | "prepare" | "running" | "done"
+  const [phase, setPhase] = useState<Phase>("idle")
+  const [dur, setDur] = useState(Math.max(1, target || 30))
+  const [remaining, setRemaining] = useState(Math.max(1, target || 30))
+  const [prep, setPrep] = useState(TIMED_PREP_SECS)
+  const [completed, setCompleted] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current) }, [])
+  function clearTick() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null } }
 
-  function start() {
-    setElapsed(0)
-    startRef.current = Date.now()
-    setRunning(true)
+  function startPrepare() {
+    setPhase("prepare")
+    setPrep(TIMED_PREP_SECS)
+    const end = Date.now() + TIMED_PREP_SECS * 1000
     intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
-    }, 200)
+      const r = Math.ceil((end - Date.now()) / 1000)
+      if (r <= 0) { clearTick(); beginRun() } else setPrep(r)
+    }, 100)
   }
-  function stop() {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
-    const secs = Math.round((Date.now() - startRef.current) / 1000)
-    setRunning(false)
-    onChange(secs)
+  function beginRun() {
+    setPhase("running")
+    setRemaining(dur)
+    const end = Date.now() + dur * 1000
+    intervalRef.current = setInterval(() => {
+      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      setRemaining(r)
+      if (r <= 0) { clearTick(); finish(dur) }
+    }, 100)
   }
+  function finish(secs: number) { setCompleted(secs); setPhase("done"); onChange(secs) }
+  function stopEarly() { clearTick(); finish(dur - remaining) }
+  function reset() { clearTick(); setPhase("idle"); setRemaining(dur) }
 
-  const display = running ? elapsed : value
-  return (
-    <View style={styles.timedControl}>
-      <View style={[styles.stepperRow, { flex: 1 }]}>
-        <Pressable
-          style={styles.stepperBtn} hitSlop={6} disabled={running}
-          onPress={() => onChange(Math.max(0, value - 1))}
-        >
-          <Text style={[styles.stepperBtnText, running && { opacity: 0.3 }]}>−</Text>
-        </Pressable>
-        <Text style={styles.stepperValue}>{display}<Text style={styles.stepperSuffix}>s</Text></Text>
-        <Pressable
-          style={styles.stepperBtn} hitSlop={6} disabled={running}
-          onPress={() => onChange(value + 1)}
-        >
-          <Text style={[styles.stepperBtnText, running && { opacity: 0.3 }]}>+</Text>
+  if (phase === "idle") {
+    return (
+      <View style={styles.timedControl}>
+        <View style={[styles.stepperRow, { flex: 1 }]}>
+          <Pressable style={styles.stepperBtn} hitSlop={6} onPress={() => setDur((d) => Math.max(1, d - 1))}>
+            <Text style={styles.stepperBtnText}>−</Text>
+          </Pressable>
+          <Text style={styles.stepperValue}>{dur}<Text style={styles.stepperSuffix}>s</Text></Text>
+          <Pressable style={styles.stepperBtn} hitSlop={6} onPress={() => setDur((d) => d + 1)}>
+            <Text style={styles.stepperBtnText}>+</Text>
+          </Pressable>
+        </View>
+        <Pressable style={styles.holdTimerBtn} onPress={startPrepare}>
+          <Text style={styles.holdTimerBtnText}>Start{"\n"}timer</Text>
         </Pressable>
       </View>
-      <Pressable
-        style={[styles.holdTimerBtn, running && styles.holdTimerBtnStop]}
-        onPress={running ? stop : start}
-      >
-        <Text style={[styles.holdTimerBtnText, running && { color: "#fff" }]}>
-          {running ? "Stop" : "Start\ntimer"}
+    )
+  }
+
+  if (phase === "prepare") {
+    return (
+      <View style={styles.timedActive}>
+        <Text style={styles.timedPhaseLabel}>GET READY</Text>
+        <Text style={[styles.timedBig, { color: C.yellow }]}>{prep}</Text>
+      </View>
+    )
+  }
+
+  if (phase === "running") {
+    const urgent = remaining <= 3
+    return (
+      <View style={styles.timedActive}>
+        <Text style={styles.timedPhaseLabel}>HOLD</Text>
+        <Text style={[styles.timedBig, { color: urgent ? C.red : C.green }]}>
+          {remaining}<Text style={styles.timedBigUnit}>s</Text>
         </Text>
+        <Pressable style={[styles.holdTimerBtn, styles.holdTimerBtnStop, styles.timedStopBtn]} onPress={stopEarly}>
+          <Text style={[styles.holdTimerBtnText, { color: "#fff" }]}>Stop</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
+  // done
+  return (
+    <View style={styles.timedActive}>
+      <Text style={styles.timedPhaseLabel}>DONE</Text>
+      <Text style={[styles.timedBig, { color: C.textPrimary }]}>
+        {completed}<Text style={styles.timedBigUnit}>s</Text>
+      </Text>
+      <Pressable style={styles.holdTimerBtn} onPress={reset}>
+        <Text style={styles.holdTimerBtnText}>Again</Text>
       </Pressable>
     </View>
   )
@@ -553,8 +594,8 @@ interface RepsExerciseUIProps {
 function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: RepsExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
   const startWeight = parseFloat(initialWeight ?? "") || 0
-  // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
-  const [amount, setAmount] = useState<number>(isTimed ? 0 : targetNumber(exercise.reps))
+  // Prefill the target; the timer refines it to the actual completed seconds.
+  const [amount, setAmount] = useState<number>(targetNumber(exercise.reps))
   const [weight, setWeight] = useState<number>(startWeight)
   const [rpe, setRpe] = useState(initialRpe ?? "")
   const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
@@ -584,7 +625,7 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDon
 
         <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
         {isTimed
-          ? <TimedAmountControl value={amount} onChange={setAmount} />
+          ? <TimedAmountControl target={targetNumber(exercise.reps)} onChange={setAmount} />
           : <Stepper value={amount} onChange={setAmount} />}
       </View>
 
@@ -614,8 +655,8 @@ type Side = "left" | "right"
 
 function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: BothSidesExerciseUIProps) {
   const isTimed = exercise.unit === "seconds"
-  // Timed exercises start at 0 (filled by the timer); rep exercises prefill the target.
-  const initialAmount = isTimed ? 0 : targetNumber(exercise.reps)
+  // Prefill the target; for timed exercises the timer refines it.
+  const initialAmount = targetNumber(exercise.reps)
   const startWeight = parseFloat(initialWeight ?? "") || 0
   const weightStep = 0.5
 
@@ -672,7 +713,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, 
 
         <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
         {isTimed
-          ? <TimedAmountControl key={side} value={amount} onChange={setAmount} />
+          ? <TimedAmountControl key={side} target={targetNumber(exercise.reps)} onChange={setAmount} />
           : <Stepper value={amount} onChange={setAmount} />}
       </View>
 
@@ -971,6 +1012,11 @@ const styles = StyleSheet.create({
 
   // Timed amount control — stepper box with the hold button on its right
   timedControl: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 10 },
+  timedActive: { width: "100%", alignItems: "center", gap: 8, paddingVertical: 8 },
+  timedPhaseLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1.5, color: C.textSecondary },
+  timedBig: { fontSize: 60, fontWeight: "800", fontVariant: ["tabular-nums"], lineHeight: 66 },
+  timedBigUnit: { fontSize: 24, fontWeight: "700", color: C.textSecondary },
+  timedStopBtn: { alignSelf: "stretch" },
   holdTimerBtn: {
     paddingHorizontal: 18, borderRadius: 14,
     borderWidth: 1.5, borderColor: C.green,
