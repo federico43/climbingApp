@@ -391,7 +391,13 @@ export async function createProtocol(input: { name: string; blocks: any[]; athle
 // An athlete's templates: protocols tagged with their id. Lazily migrates the
 // athlete's currently-assigned (legacy, untagged) protocol into the set, so
 // existing assignments carry over the first time the coach opens the athlete.
-export async function listAthleteTemplates(athleteId: string): Promise<ProtocolRow[]> {
+export async function listAthleteTemplates(
+  athleteId: string,
+  opts?: { migrate?: boolean },
+): Promise<ProtocolRow[]> {
+  // The coach may tag a legacy assigned protocol on read (migrate); the athlete
+  // app is read-only (it may lack write permission on protocols).
+  const migrate = opts?.migrate ?? true
   let tagged: ProtocolRow[] = []
   try {
     tagged = await listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [
@@ -410,15 +416,17 @@ export async function listAthleteTemplates(athleteId: string): Promise<ProtocolR
         .getRow({ databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: assignedId })
         .catch(() => null)
       if (proto) {
-        try {
-          await tablesDB.updateRow({
-            databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: assignedId, data: { athleteId },
-          })
-        } catch { /* column missing — show it anyway, untagged */ }
+        if (migrate) {
+          try {
+            await tablesDB.updateRow({
+              databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: assignedId, data: { athleteId },
+            })
+          } catch { /* column missing / no write — show it anyway */ }
+        }
         tagged = [{ ...(proto as unknown as ProtocolRow), athleteId }, ...tagged]
       }
     }
-  } catch { /* ignore migration errors */ }
+  } catch { /* ignore */ }
 
   return tagged
 }

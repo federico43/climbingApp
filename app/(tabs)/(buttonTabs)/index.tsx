@@ -7,11 +7,12 @@ import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
   deleteStorageFile,
-  getAssignedProtocol,
   getSessions,
+  listAthleteTemplates,
   listProjects,
   markProjectFailed,
   ProjectRow,
+  ProtocolRow,
   SessionRow,
   updateProject,
   uploadPhoto,
@@ -115,9 +116,7 @@ export default function HomeScreen() {
   const router = useRouter()
   const { width } = useWindowDimensions()
   const [sessions, setSessions] = useState<SessionRow[]>([])
-  const [protocol, setProtocol] = useState<any[]>([])
-  const [protocolName, setProtocolName] = useState("")
-  const [assignedAt, setAssignedAt] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<ProtocolRow[]>([])
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [cameraProject, setCameraProject] = useState<ProjectRow | null>(null)
   const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(null)
@@ -145,21 +144,13 @@ export default function HomeScreen() {
   async function load() {
     setLoading(true)
     try {
-      const [sessData, protocolRow, projectsData] = await Promise.all([
+      const [sessData, templateRows, projectsData] = await Promise.all([
         getSessions(),
-        getAssignedProtocol(User!.$id).catch(() => null),
+        listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]),
         listProjects().catch(() => [] as ProjectRow[]),
       ])
       setSessions(sessData)
-      if (protocolRow) {
-        setProtocol(JSON.parse(protocolRow.blocks))
-        setProtocolName(protocolRow.name)
-        setAssignedAt(protocolRow.assignedAt ?? null)
-      } else {
-        setProtocol([])
-        setProtocolName("")
-        setAssignedAt(null)
-      }
+      setTemplates(templateRows)
       // Auto-fail projects past their deadline
       const todayStr = new Date().toISOString().slice(0, 10)
       const toFail = projectsData.filter((p) => p.status === "active" && p.dueDate < todayStr)
@@ -256,10 +247,6 @@ export default function HomeScreen() {
   // actually visible (it's hidden behind the hero otherwise).
   const [introDone, setIntroDone] = useState(heroPlayed)
   const cardEntering = (i: number) => FadeInDown.duration(420).delay(i * 110)
-  // Athletes see the session by the day the coach assigned it (falls back to
-  // today if the assignment predates date tracking), not the protocol's name.
-  const labelDate = assignedAt ? new Date(assignedAt + "T12:00:00") : new Date()
-  const todayLabel = `${labelDate.getDate()} ${labelDate.toLocaleDateString(undefined, { month: "long" })}`
 
   return (
     <>
@@ -290,25 +277,32 @@ export default function HomeScreen() {
               />
             }
           >
-            {/* ── ASSIGNED WORKOUT ──────────────────────────────────────────── */}
+            {/* ── MY WORKOUTS ───────────────────────────────────────────────── */}
             <Animated.View style={styles.section} entering={cardEntering(0)}>
-              <Text style={styles.sectionTitle}>Today's workout</Text>
-              {protocol.length > 0 ? (
-                <ScalePressable
-                  style={styles.workoutCard}
-                  onPress={() => workoutCtx.openWorkout(protocol, todayLabel)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.workoutCardTitle}>{todayLabel}</Text>
-                    <Text style={styles.workoutCardSub}>
-                      {protocol.length} block{protocol.length !== 1 ? "s" : ""} · Tap to start
-                    </Text>
-                  </View>
-                  <Text style={styles.workoutCardArrow}>›</Text>
-                </ScalePressable>
+              <Text style={styles.sectionTitle}>My workouts</Text>
+              {templates.length > 0 ? (
+                templates.map((t) => {
+                  let blocks: any[] = []
+                  try { blocks = JSON.parse(t.blocks) } catch {}
+                  return (
+                    <ScalePressable
+                      key={t.$id}
+                      style={styles.workoutCard}
+                      onPress={() => workoutCtx.openWorkout(blocks, t.name)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.workoutCardTitle}>{t.name}</Text>
+                        <Text style={styles.workoutCardSub}>
+                          {blocks.length} block{blocks.length !== 1 ? "s" : ""} · Tap to start
+                        </Text>
+                      </View>
+                      <Text style={styles.workoutCardArrow}>›</Text>
+                    </ScalePressable>
+                  )
+                })
               ) : (
                 <View style={styles.workoutCardEmpty}>
-                  <Text style={styles.workoutCardEmptyText}>No protocol assigned yet</Text>
+                  <Text style={styles.workoutCardEmptyText}>No workouts yet</Text>
                 </View>
               )}
             </Animated.View>

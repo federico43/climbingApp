@@ -1,5 +1,5 @@
 import { C } from "@/utils/theme"
-import { AppUser, ExerciseRow, MAX_ATHLETE_TEMPLATES, ProtocolRow, assignProtocol, createProtocol, listAthleteTemplates, updateProtocol } from "@/services/BoulderGraphService"
+import { AppUser, ExerciseRow, MAX_ATHLETE_TEMPLATES, ProtocolRow, createProtocol, listAthleteTemplates, updateProtocol } from "@/services/BoulderGraphService"
 import {
   Block,
   BlockEditorRow,
@@ -35,14 +35,12 @@ export function AthleteWorkoutBuilder({
   athlete,
   roster,
   protocol,
-  assignAsToday,
   onClose,
   onSaved,
 }: {
   athlete: AppUser
   roster: AppUser[]
   protocol?: ProtocolRow | null  // when set, edit this template instead of creating a new one
-  assignAsToday?: boolean         // on create, also mark the new template as today's training
   onClose: () => void
   onSaved?: () => void
 }) {
@@ -104,8 +102,7 @@ export function AthleteWorkoutBuilder({
       if (editing) {
         await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(blocks) })
       } else {
-        const created = await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: athlete.$id })
-        if (assignAsToday) await assignProtocol(athlete.$id, created.$id)
+        await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: athlete.$id })
       }
       onSaved?.()
       onClose()

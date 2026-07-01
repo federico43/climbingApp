@@ -10,17 +10,15 @@ import {
   AppUser,
   MAX_ATHLETE_TEMPLATES,
   ProtocolRow,
-  assignProtocol,
   copyProtocolToAthlete,
   deleteProtocol,
   getAthletes,
   listAthleteTemplates,
-  unassignProtocol,
 } from "@/services/BoulderGraphService"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -42,29 +40,13 @@ export default function DesignScreen() {
   const [selected, setSelected] = useState<AppUser | null>(null)
   const [building, setBuilding] = useState(false)
   const [editProtocol, setEditProtocol] = useState<ProtocolRow | null>(null)
-  // The selected athlete's templates + which one is "today's training".
+  // The selected athlete's templates.
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
   const [loadingTemplates, setLoadingTemplates] = useState(false)
-  const [todayId, setTodayId] = useState<string | null>(null)
   // Copy-to-athlete modal state.
   const [copyFor, setCopyFor] = useState<ProtocolRow | null>(null)
   const [copyTargets, setCopyTargets] = useState<Set<string>>(new Set())
   const [copying, setCopying] = useState(false)
-  // Transient confirmation banner.
-  const [flash, setFlash] = useState<string | null>(null)
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  function showFlash(msg: string) {
-    setFlash(msg)
-    if (flashTimer.current) clearTimeout(flashTimer.current)
-    flashTimer.current = setTimeout(() => setFlash(null), 2200)
-  }
-
-  // Keep the cached athlete in sync with assignment changes, so re-selecting the
-  // athlete (without a full refetch) shows the correct "today".
-  function patchAssigned(athleteId: string, protocolId: string | null) {
-    setAthletes((prev) => prev.map((a) => (a.$id === athleteId ? { ...a, assignedProtocolId: protocolId } : a)))
-    setSelected((prev) => (prev && prev.$id === athleteId ? { ...prev, assignedProtocolId: protocolId } : prev))
-  }
 
   useFocusEffect(
     useCallback(() => {
@@ -77,11 +59,10 @@ export default function DesignScreen() {
     }, [])
   )
 
-  // Load the selected athlete's templates (and which is today's training).
+  // Load the selected athlete's templates.
   const loadTemplates = useCallback(() => {
-    if (!selected) { setTemplates([]); setTodayId(null); return }
+    if (!selected) { setTemplates([]); return }
     setLoadingTemplates(true)
-    setTodayId(selected.assignedProtocolId ?? null)
     listAthleteTemplates(selected.$id)
       .then(setTemplates)
       .catch((e) => { console.error(e); setTemplates([]) })
@@ -89,7 +70,6 @@ export default function DesignScreen() {
   }, [selected])
 
   useEffect(() => { loadTemplates() }, [loadTemplates])
-  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
 
   const atCap = templates.length >= MAX_ATHLETE_TEMPLATES
 
@@ -102,26 +82,14 @@ export default function DesignScreen() {
     workoutCtx.openWorkout(blocks, p.name)
   }
 
-  async function markToday(p: ProtocolRow) {
-    if (!selected) return
-    try {
-      await assignProtocol(selected.$id, p.$id)
-      setTodayId(p.$id)
-      patchAssigned(selected.$id, p.$id)
-      showFlash(`“${p.name}” is now today’s training`)
-    } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not set today's training.") }
-  }
-
   function confirmDelete(p: ProtocolRow) {
     Alert.alert("Delete template", `Delete "${p.name}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete", style: "destructive",
         onPress: async () => {
-          if (!selected) return
           try {
             await deleteProtocol(p.$id)
-            if (todayId === p.$id) { await unassignProtocol(selected.$id); setTodayId(null); patchAssigned(selected.$id, null) }
             setTemplates((prev) => prev.filter((x) => x.$id !== p.$id))
           } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not delete the template.") }
         },
@@ -132,7 +100,6 @@ export default function DesignScreen() {
   // ⋮ menu on a template card.
   function openMenu(p: ProtocolRow) {
     const opts: any[] = []
-    if (todayId !== p.$id) opts.push({ text: "Set as today's training", onPress: () => markToday(p) })
     opts.push({ text: "Copy to another athlete", onPress: () => { setCopyFor(p); setCopyTargets(new Set()) } })
     opts.push({ text: "Delete", style: "destructive", onPress: () => confirmDelete(p) })
     opts.push({ text: "Cancel", style: "cancel" })
@@ -226,8 +193,6 @@ export default function DesignScreen() {
                   )}
                 </View>
 
-                {flash && <Text style={styles.flash}>✓ {flash}</Text>}
-
                 {loadingTemplates ? (
                   <ActivityIndicator style={{ marginVertical: 14 }} color={C.green} />
                 ) : templates.length === 0 ? (
@@ -236,13 +201,11 @@ export default function DesignScreen() {
                   </View>
                 ) : (
                   templates.map((p) => {
-                    const isToday = todayId === p.$id
                     return (
-                      <View key={p.$id} style={[styles.workoutCard, isToday && styles.workoutCardToday, !isWide && styles.workoutCardNarrow]}>
+                      <View key={p.$id} style={[styles.workoutCard, !isWide && styles.workoutCardNarrow]}>
                         <View style={[styles.workoutNameCol, isWide && styles.nameColWide]}>
                           <View style={styles.nameRow}>
                             <Text style={styles.workoutName} numberOfLines={1}>{p.name}</Text>
-                            {isToday && <Text style={styles.todayBadge}>TODAY</Text>}
                           </View>
                           <Text style={styles.workoutMeta}>{blockCount(p)} block{blockCount(p) !== 1 ? "s" : ""}</Text>
                         </View>
@@ -295,7 +258,6 @@ export default function DesignScreen() {
             athlete={selected}
             roster={athletes}
             protocol={editProtocol}
-            assignAsToday={!editProtocol && templates.length === 0}
             onClose={() => setBuilding(false)}
             onSaved={loadTemplates}
           />
@@ -372,19 +334,13 @@ const styles = StyleSheet.create({
 
   workoutSection: { gap: 8 },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  flash: { fontSize: 12, fontWeight: "700", color: C.green },
   workoutCard: {
     flexDirection: "row", alignItems: "flex-start", gap: 12,
     backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border,
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  workoutCardToday: { borderColor: C.green, backgroundColor: C.surfaceHigh },
   workoutCardNarrow: { flexDirection: "column", alignItems: "stretch", gap: 12 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  todayBadge: {
-    fontSize: 10, fontWeight: "800", color: C.bg, backgroundColor: C.green,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: "hidden",
-  },
   menuBtn: { paddingHorizontal: 4, paddingVertical: 8 },
   workoutNameCol: {},
   nameColWide: { maxWidth: 200 },
