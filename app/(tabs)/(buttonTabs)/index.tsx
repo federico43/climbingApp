@@ -573,10 +573,12 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
 
-  // Workout card
+  // Workout card — green outline instead of a green fill
   workoutCard: {
-    backgroundColor: C.green,
+    backgroundColor: C.surfaceHigh,
     borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: C.green,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -584,16 +586,16 @@ const styles = StyleSheet.create({
   workoutCardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: C.bg,
+    color: C.textPrimary,
     marginBottom: 4,
   },
   workoutCardSub: {
     fontSize: 13,
-    color: "rgba(36,35,37,0.55)",
+    color: C.textSecondary,
   },
   workoutCardArrow: {
     fontSize: 26,
-    color: "rgba(36,35,37,0.35)",
+    color: C.green,
     marginLeft: 12,
   },
   workoutCardEmpty: {
