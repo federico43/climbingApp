@@ -473,27 +473,53 @@ function TimedAmountControl({ target, onChange }: { target: number; onChange: (v
   const [prep, setPrep] = useState(TIMED_PREP_SECS)
   const [completed, setCompleted] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const beepRef = useRef<Audio.Sound | null>(null)   // go / done cue
+  const tickRef = useRef<Audio.Sound | null>(null)   // last-3s ticks
+  const lastSecRef = useRef(-1)
 
-  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current) }, [])
+  useEffect(() => {
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+    async function load() {
+      try {
+        const { sound: b } = await Audio.Sound.createAsync(require("@/assets/images/sounds/beepExercise.mp3"))
+        const { sound: t } = await Audio.Sound.createAsync(require("@/assets/images/sounds/beepRest.mp3"))
+        beepRef.current = b
+        tickRef.current = t
+      } catch { /* sounds optional */ }
+    }
+    load()
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      beepRef.current?.unloadAsync()
+      tickRef.current?.unloadAsync()
+    }
+  }, [])
+  function play(ref: React.MutableRefObject<Audio.Sound | null>) {
+    ref.current?.replayAsync().catch(() => {})
+  }
   function clearTick() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null } }
 
   function startPrepare() {
     setPhase("prepare")
     setPrep(TIMED_PREP_SECS)
+    lastSecRef.current = -1
     const end = Date.now() + TIMED_PREP_SECS * 1000
     intervalRef.current = setInterval(() => {
       const r = Math.ceil((end - Date.now()) / 1000)
-      if (r <= 0) { clearTick(); beginRun() } else setPrep(r)
+      if (r !== lastSecRef.current) { lastSecRef.current = r; if (r >= 1 && r <= 3) play(tickRef) }
+      if (r <= 0) { clearTick(); play(beepRef); beginRun() } else setPrep(r)
     }, 100)
   }
   function beginRun() {
     setPhase("running")
     setRemaining(dur)
+    lastSecRef.current = -1
     const end = Date.now() + dur * 1000
     intervalRef.current = setInterval(() => {
       const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      if (r !== lastSecRef.current) { lastSecRef.current = r; if (r >= 1 && r <= 3) play(tickRef) }
       setRemaining(r)
-      if (r <= 0) { clearTick(); finish(dur) }
+      if (r <= 0) { clearTick(); play(beepRef); finish(dur) }
     }, 100)
   }
   function finish(secs: number) { setCompleted(secs); setPhase("done"); onChange(secs) }
