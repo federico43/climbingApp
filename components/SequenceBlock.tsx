@@ -8,10 +8,13 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useRef, useState } from "react"
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
+
+const SEQUENCE_HERO = require("@/assets/images/sequenceBlockPicture.jpeg")
 import {
   parseVariations,
   variationHolds,
@@ -237,8 +240,14 @@ export function SequenceBlock({
         <TopBar title={blockTitle} onBack={goToPreviousBlock} hideBorder />
 
         <ScrollView contentContainerStyle={styles.introContent}>
-          <View style={styles.typePill}>
-            <Text style={styles.typePillText}>Sequence</Text>
+          {/* Full-bleed hero image, fading into the background at the bottom */}
+          <View style={styles.hero}>
+            <Image source={SEQUENCE_HERO} style={styles.heroImg} resizeMode="cover" />
+            <LinearGradient
+              colors={["transparent", C.bg]}
+              style={styles.heroFade}
+              pointerEvents="none"
+            />
           </View>
 
           {!!block.description && (
@@ -267,25 +276,6 @@ export function SequenceBlock({
               <Text style={styles.statLabel}>rest</Text>
             </View>
           </View>
-
-          {/* Route preview */}
-          {holds.length > 0 && (
-            <View style={styles.previewWrapper}>
-              {!!routeName && <Text style={styles.routeLabel}>{routeName}</Text>}
-              <View>
-                <SprayWallViewer imageSource={wallImageSource} holds={holds} style={styles.previewWall} interactive={false} previewWidth={500} naturalSize={wallSize} />
-                {!!block.routeId && (
-                  <Pressable style={styles.reloadBtn} onPress={refreshRoute} hitSlop={8}>
-                    <Ionicons
-                      name={refreshing ? "sync" : "refresh"}
-                      size={18}
-                      color="#fff"
-                    />
-                  </Pressable>
-                )}
-              </View>
-            </View>
-          )}
         </ScrollView>
 
         {/* Fixed start button */}
@@ -647,16 +637,11 @@ const styles = StyleSheet.create({
   // ── Intro
   introContent: { padding: 20, gap: 16, paddingBottom: 8 },
   infoCardDesc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
-  typePill: {
-    alignSelf: "flex-start",
-    backgroundColor: C.surfaceHigh,
-    borderRadius: 6,
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
-  typePillText: {
-    fontSize: 11, fontWeight: "700", color: C.textSecondary,
-    textTransform: "uppercase", letterSpacing: 0.6,
-  },
+  // Full-bleed hero: negative margins cancel the introContent padding so the
+  // image runs edge-to-edge and up to the top bar.
+  hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, height: 300 },
+  heroImg: { width: "100%", height: "100%" },
+  heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 110 },
   statsCard: {
     flexDirection: "row", backgroundColor: C.surface,
     borderRadius: 16, paddingVertical: 18,
