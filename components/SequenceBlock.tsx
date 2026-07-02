@@ -15,6 +15,9 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
 
 const SEQUENCE_HERO = require("@/assets/images/sequenceBlockPicture.jpeg")
+// Preserve the image's real aspect ratio (no cropping) — size the container to it.
+const HERO_META = Image.resolveAssetSource(SEQUENCE_HERO)
+const HERO_ASPECT = HERO_META?.width && HERO_META?.height ? HERO_META.width / HERO_META.height : 16 / 9
 import {
   parseVariations,
   variationHolds,
@@ -638,8 +641,8 @@ const styles = StyleSheet.create({
   introContent: { padding: 20, gap: 16, paddingBottom: 8 },
   infoCardDesc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   // Full-bleed hero: negative margins cancel the introContent padding so the
-  // image runs edge-to-edge and up to the top bar.
-  hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, height: 300 },
+  // image runs edge-to-edge; aspectRatio keeps the image's real proportions.
+  hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, aspectRatio: HERO_ASPECT },
   heroImg: { width: "100%", height: "100%" },
   heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 110 },
   statsCard: {
