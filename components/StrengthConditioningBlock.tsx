@@ -6,6 +6,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,7 +15,10 @@ import {
   Text,
   View,
 } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
+
+const SC_HERO = require("@/assets/images/SCPicture.jpeg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +191,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Full-bleed hero, fading into the background at the bottom */}
+          <View style={styles.hero}>
+            <Image source={SC_HERO} style={styles.heroImg} resizeMode="cover" />
+            <LinearGradient colors={["transparent", C.bg]} style={styles.heroFade} pointerEvents="none" />
+          </View>
+
           {!!block.description && (
             <Text style={styles.description}>{block.description}</Text>
           )}
@@ -961,6 +971,11 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
 
 const styles = StyleSheet.create({
   introContent: { flexGrow: 1, padding: 20, gap: 16 },
+  // Full-bleed hero: negative margins cancel the introContent padding; capped
+  // height + cover crops it so it doesn't dominate the screen.
+  hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, height: 240 },
+  heroImg: { width: "100%", height: "100%" },
+  heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 110 },
   circuitContainer: { paddingHorizontal: 30, paddingVertical: 20, flexGrow: 1 },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 12, color: C.textPrimary },
   description: { fontSize: 16, color: C.textSecondary, lineHeight: 24 },
