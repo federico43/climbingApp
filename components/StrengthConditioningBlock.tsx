@@ -6,7 +6,6 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +14,7 @@ import {
   Text,
   View,
 } from "react-native"
+import { Image } from "expo-image"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 
@@ -193,7 +193,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         >
           {/* Full-bleed hero, fading into the background at the bottom */}
           <View style={styles.hero}>
-            <Image source={SC_HERO} style={styles.heroImg} resizeMode="cover" />
+            <Image source={SC_HERO} style={styles.heroImg} contentFit="cover" contentPosition={{ top: "25%" }} />
             <LinearGradient colors={["transparent", C.bg]} style={styles.heroFade} pointerEvents="none" />
           </View>
 
