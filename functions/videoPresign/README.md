@@ -4,6 +4,13 @@ Mints a short-lived **presigned PUT URL** so the app uploads a video **directly
 to Cloudflare R2** (the bytes never pass through Appwrite — keeps you inside the
 free tier). Returns the public playback URL the app stores in the `videos` table.
 
+Also handles **photos** (spray wall / project / exercise images) the same way —
+pass `{ ext, kind: "image" }` instead of just `{ ext }`. Photos land under an
+`images/` key prefix (vs. `videos/`) in the same bucket. See `uploadPhoto` /
+`deleteStorageFile` in `services/BoulderGraphService.tsx`, and
+`scripts/migrate-photos-to-r2` for backfilling photos that were uploaded before
+this existed (those are still sitting in Appwrite Storage).
+
 ## 1. Cloudflare R2 setup
 
 1. Cloudflare dashboard → **R2** → **Create bucket** (e.g. `climbing-videos`).
@@ -60,14 +67,19 @@ Permissions: same as `sessions` (so a coach can query an athlete's clips by
 ## Request / response
 
 **Presign an upload** (default):
-Request body: `{ "ext": "mp4" }`
+Request body: `{ "ext": "mp4" }` (video) or `{ "ext": "jpg", "kind": "image" }` (photo)
 Response: `{ uploadUrl, publicUrl, key, contentType }`
 
 **Delete an object** (coach removing a clip):
 Request body: `{ "action": "delete", "key": "videos/<userId>/…" }`
 Response: `{ ok: true }` — deletes the R2 object. The app deletes the metadata
 row separately (via the `videos` table). Keys are restricted to the `videos/`
-namespace so an arbitrary bucket path can't be deleted.
+and `images/` namespaces so an arbitrary bucket path can't be deleted.
+
+**Delete a photo** (spray wall / project / exercise photo tables only store
+the URL, not a separate key column):
+Request body: `{ "action": "delete", "kind": "image", "url": "https://pub-xxx.r2.dev/images/<userId>/…" }`
+The function derives the object key by stripping `R2_PUBLIC_BASE` from `url`.
 
 > Authorization note: the function only requires a signed-in user. In practice
 > only the coach learns object keys (by reading the `videos` table), so keep the

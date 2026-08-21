@@ -4,34 +4,33 @@ import { ScalePressable } from "@/components/ScalePressable"
 import { HeroIntro } from "@/components/HeroIntro"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
+import { DailyCheckInModal } from "@/components/DailyCheckInModal"
+import { AthleteCustomizeWorkout } from "@/components/AthleteCustomizeWorkout"
+import { CreateSequenceModal } from "@/components/AthleteSequenceCreator"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
-  deleteStorageFile,
+  deleteProtocol,
+  deleteSprayRoute,
+  getCheckinForToday,
+  getMySprayRoutes,
   getSessions,
   listAthleteTemplates,
   listProjects,
   markProjectFailed,
-  ProjectRow,
   ProtocolRow,
   SessionRow,
-  updateProject,
-  uploadPhoto,
+  SprayRouteRow,
 } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
 import { LinearGradient } from "expo-linear-gradient"
-import ImageCapture from "@/components/ImageCapture"
-import * as ImagePicker from "expo-image-picker"
-import { Image as CachedImage } from "expo-image"
 import { VersionFooter } from "@/components/VersionFooter"
+import { Ionicons } from "@expo/vector-icons"
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -88,24 +87,6 @@ function countSessionsInMonth(sessions: SessionRow[], year: number, month: numbe
   return sessions.filter((s) => sessionDateStr(s).startsWith(prefix)).length
 }
 
-function extractSCExercises(sessions: SessionRow[]): string[] {
-  const names = new Set<string>()
-  for (const session of sessions) {
-    let attempts: any[] = []
-    try { attempts = JSON.parse(session.attempts) } catch {}
-    for (const a of attempts) {
-      if (a.type !== "strength_conditioning") continue
-      if (a.scData?.exerciseName) {
-        names.add(a.scData.exerciseName)
-      } else {
-        const name = (a.notes ?? "").split(" · ")[0]
-        if (name) names.add(name)
-      }
-    }
-  }
-  return Array.from(names).sort()
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 // Plays the hero intro only on the first Home mount of an app launch.
@@ -117,11 +98,14 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
-  const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [cameraProject, setCameraProject] = useState<ProjectRow | null>(null)
-  const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(null)
+  const [customizing, setCustomizing] = useState<ProtocolRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  // Athlete-built sequences (self-owned spray-wall routes) — separate from
+  // the shared, coach-managed Spray Wall screen.
+  const [mySequences, setMySequences] = useState<SprayRouteRow[]>([])
+  const [sequenceModal, setSequenceModal] = useState<{ editing: SprayRouteRow | null } | null>(null)
 
 
   // Workout state lives in the layout-level provider so the mini bar
@@ -129,12 +113,25 @@ export default function HomeScreen() {
   const workoutCtx = useWorkoutContext()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
+  // Daily readiness check-in — asked once per calendar day, before the rest
+  // of Home is usable.
+  const [showCheckin, setShowCheckin] = useState(false)
+
   useFocusEffect(
     useCallback(() => {
       if (!User) return
       load()
     }, [User])
   )
+
+  useEffect(() => {
+    if (!User) return
+    let cancelled = false
+    getCheckinForToday(User.$id).then((row) => {
+      if (!cancelled) setShowCheckin(!row)
+    })
+    return () => { cancelled = true }
+  }, [User])
 
   // Reload after a workout ends (refreshKey bumps from the provider)
   useEffect(() => {
@@ -144,24 +141,21 @@ export default function HomeScreen() {
   async function load() {
     setLoading(true)
     try {
-      const [sessData, templateRows, projectsData] = await Promise.all([
+      const [sessData, templateRows, projectsData, sequenceRows] = await Promise.all([
         getSessions(),
         listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]),
-        listProjects().catch(() => [] as ProjectRow[]),
+        listProjects().catch(() => [] as Awaited<ReturnType<typeof listProjects>>),
+        getMySprayRoutes(User!.$id).catch(() => [] as SprayRouteRow[]),
       ])
       setSessions(sessData)
       setTemplates(templateRows)
+      setMySequences(sequenceRows)
       // Auto-fail projects past their deadline
       const todayStr = new Date().toISOString().slice(0, 10)
       const toFail = projectsData.filter((p) => p.status === "active" && p.dueDate < todayStr)
       for (const p of toFail) {
         markProjectFailed(p.$id).catch(console.error)
       }
-      setProjects(
-        projectsData.map((p) =>
-          toFail.find((f) => f.$id === p.$id) ? { ...p, status: "failed" as const } : p
-        )
-      )
     } catch (e) {
       console.error(e)
     } finally {
@@ -174,9 +168,8 @@ export default function HomeScreen() {
   for (const s of sessions) {
     const d = sessionDateStr(s)
     trainedDays[d] = {
-      selected: true,
-      selectedColor: C.green,
-      selectedTextColor: C.bg,
+      marked: true,
+      dotColor: C.textSecondary,
     }
   }
 
@@ -190,63 +183,83 @@ export default function HomeScreen() {
   const daysThisWeek = countUniqueDaysInRange(sessions, weekStart, weekEnd)
   const daysLastWeek = countUniqueDaysInRange(sessions, lastWeekStart, lastWeekEnd)
 
-  // ── S/C exercises ─────────────────────────────────────────────────────────────
-  const scExercises = extractSCExercises(sessions)
-
-  async function saveProjectImage(project: ProjectRow, sourceUri: string) {
-    setUploadingImageFor(project.$id)
-    try {
-      const cloudUri = await uploadPhoto(sourceUri)
-      // delete previous cloud file if there was one
-      if (project.imageUri) deleteStorageFile(project.imageUri).catch(() => {})
-      await updateProject(project.$id, { imageUri: cloudUri })
-      setProjects((prev) =>
-        prev.map((p) => (p.$id === project.$id ? { ...p, imageUri: cloudUri } : p))
-      )
-    } catch (e: any) {
-      Alert.alert("Upload failed", e?.message ?? "Could not upload the image. Please try again.")
-    } finally {
-      setUploadingImageFor(null)
-    }
-  }
-
-  async function pickProjectImageFromLibrary(project: ProjectRow) {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) return
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: "images",
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    })
-    if (result.canceled) return
-    await saveProjectImage(project, result.assets[0].uri)
-  }
-
-  function handleChangeProjectImage(project: ProjectRow) {
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ["Cancel", "Take photo", "Choose from library"], cancelButtonIndex: 0 },
-        (index) => {
-          if (index === 1) setCameraProject(project)
-          if (index === 2) pickProjectImageFromLibrary(project)
-        }
-      )
-    } else {
-      Alert.alert("Add photo", undefined, [
-        { text: "Take photo", onPress: () => setCameraProject(project) },
-        { text: "Choose from library", onPress: () => pickProjectImageFromLibrary(project) },
-        { text: "Cancel", style: "cancel" },
-      ])
-    }
-  }
-
   // First-launch hero intro. Plays once per app launch (module flag survives tab
   // switches but resets on relaunch). When it finishes, the cards mount and
   // stagger in. The cards mount only after the intro so their entrance is
   // actually visible (it's hidden behind the hero otherwise).
   const [introDone, setIntroDone] = useState(heroPlayed)
   const cardEntering = (i: number) => FadeInDown.duration(420).delay(i * 110)
+
+  // Coach-assigned workouts (start-only) vs. the athlete's own picks from
+  // the shared workout library (freely editable/deletable).
+  const myWorkouts = templates.filter((t) => t.source !== "library")
+  const myLibraryWorkouts = templates.filter((t) => t.source === "library")
+
+  function confirmDeleteLibraryWorkout(p: ProtocolRow) {
+    Alert.alert("Delete workout", `Delete "${p.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteProtocol(p.$id)
+            setTemplates((prev) => prev.filter((x) => x.$id !== p.$id))
+          } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not delete the workout.") }
+        },
+      },
+    ])
+  }
+
+  function openLibraryWorkoutMenu(p: ProtocolRow) {
+    Alert.alert(p.name, undefined, [
+      { text: "Edit", onPress: () => setCustomizing(p) },
+      { text: "Delete", style: "destructive", onPress: () => confirmDeleteLibraryWorkout(p) },
+      { text: "Cancel", style: "cancel" },
+    ])
+  }
+
+  // ── My sequences (athlete-built spray-wall routes) ─────────────────────────
+
+  function tryOutSequence(route: SprayRouteRow) {
+    workoutCtx.openWorkout(
+      [{
+        id: `sequence-${route.$id}`,
+        type: "sequence",
+        blockName: route.name,
+        description: "",
+        targetAttempts: 5,
+        restTime: 120,
+        routeId: route.$id,
+        routeName: route.name,
+        routeHolds: route.holds,
+        startingVariation: "original",
+      }],
+      route.name,
+    )
+  }
+
+  function confirmDeleteSequence(route: SprayRouteRow) {
+    Alert.alert("Delete sequence", `Delete "${route.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSprayRoute(route.$id)
+            setMySequences((prev) => prev.filter((r) => r.$id !== route.$id))
+          } catch (e: any) { Alert.alert("Error", e?.message ?? "Could not delete the sequence.") }
+        },
+      },
+    ])
+  }
+
+  function openSequenceMenu(route: SprayRouteRow) {
+    Alert.alert(route.name, undefined, [
+      { text: "Edit", onPress: () => setSequenceModal({ editing: route }) },
+      { text: "Delete", style: "destructive", onPress: () => confirmDeleteSequence(route) },
+      { text: "Cancel", style: "cancel" },
+    ])
+  }
 
   return (
     <>
@@ -279,9 +292,19 @@ export default function HomeScreen() {
           >
             {/* ── MY WORKOUTS ───────────────────────────────────────────────── */}
             <Animated.View style={styles.section} entering={cardEntering(0)}>
-              <Text style={styles.sectionTitle}>My workouts</Text>
-              {templates.length > 0 ? (
-                templates.map((t) => {
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>My workouts</Text>
+                <Pressable
+                  onPress={() => router.push("/(tabs)/(buttonTabs)/workout-library" as any)}
+                  hitSlop={8}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Text style={styles.browseLibraryText}>Browse library</Text>
+                  <Text style={styles.browseLibraryArrow}>›</Text>
+                </Pressable>
+              </View>
+              {myWorkouts.length > 0 ? (
+                myWorkouts.map((t) => {
                   let blocks: any[] = []
                   try { blocks = JSON.parse(t.blocks) } catch {}
                   return (
@@ -307,134 +330,99 @@ export default function HomeScreen() {
               )}
             </Animated.View>
 
-            {/* ── PROJECTS ─────────────────────────────────────────────────── */}
+            {/* ── MY SEQUENCES (athlete-built spray-wall routes) ──────────────── */}
             <Animated.View style={styles.section} entering={cardEntering(1)}>
-              <Pressable
-                onPress={() => router.push("/past-projects")}
-                hitSlop={8}
-                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
-              >
-                <Text style={styles.sectionTitle}>My projects</Text>
-                <Text style={{ color: C.textSecondary, fontSize: 13, fontWeight: "600" }}>All ›</Text>
-              </Pressable>
-              {projects
-                  .filter((p) => p.status === "active")
-                  .map((p) => {
-                    const daysLeft = Math.ceil(
-                      (new Date(p.dueDate).getTime() - Date.now()) / (1000 * 86400)
-                    )
-                    const locationLabel: Record<string, string> = {
-                      slab: "Slab",
-                      vertical_wall_1: "Vertical wall 1",
-                      vertical_wall_2: "Vertical wall 2",
-                      overhang: "Overhang",
-                    }
-                    const isUploading = uploadingImageFor === p.$id
-                    return (
-                      <Pressable
-                        key={p.$id}
-                        style={styles.projectCard}
-                        onPress={() => router.push("/past-projects")}
-                      >
-                        {/* Image area */}
-                        {isUploading ? (
-                          <View style={[styles.projectCardHeroEmpty, { flexDirection: "row", gap: 10 }]}>
-                            <ActivityIndicator color={C.green} />
-                            <Text style={styles.projectCardAddText}>Uploading…</Text>
-                          </View>
-                        ) : p.imageUri ? (
-                          <View style={styles.projectCardHero}>
-                            <CachedImage source={{ uri: p.imageUri }} style={styles.projectCardHeroImage} contentFit="cover" cachePolicy="memory-disk" transition={150} />
-                            {/* Change / Remove buttons over the image */}
-                            <View style={styles.projectCardImageActions}>
-                              <Pressable
-                                style={styles.projectCardImageBtn}
-                                onPress={() => handleChangeProjectImage(p)}
-                              >
-                                <Text style={styles.projectCardImageBtnText}>Change</Text>
-                              </Pressable>
-                              <Pressable
-                                style={[styles.projectCardImageBtn, { backgroundColor: "rgba(180,30,30,0.7)" }]}
-                                onPress={() => {
-                                  Alert.alert("Remove photo", "Remove this photo from the project?", [
-                                    { text: "Cancel", style: "cancel" },
-                                    {
-                                      text: "Remove",
-                                      style: "destructive",
-                                      onPress: async () => {
-                                        if (p.imageUri) {
-                                          deleteStorageFile(p.imageUri).catch(() => {})
-                                        }
-                                        await updateProject(p.$id, { imageUri: "" })
-                                        setProjects((prev) =>
-                                          prev.map((x) => x.$id === p.$id ? { ...x, imageUri: undefined } : x)
-                                        )
-                                      },
-                                    },
-                                  ])
-                                }}
-                              >
-                                <Text style={styles.projectCardImageBtnText}>Remove</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        ) : (
-                          <Pressable
-                            style={styles.projectCardHeroEmpty}
-                            onPress={() => handleChangeProjectImage(p)}
-                          >
-                            <Text style={styles.projectCardAddText}>+ Add picture</Text>
-                          </Pressable>
-                        )}
-
-                        {/* Info row */}
-                        <View style={styles.projectCardInfo}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.projectCardName}>{p.name}</Text>
-                            <Text style={styles.projectCardMeta}>
-                              {p.grade} · {locationLabel[p.location] ?? p.location}
-                            </Text>
-                          </View>
-                          <View style={styles.projectCardDaysBox}>
-                            <Text style={styles.projectCardDays}>
-                              {daysLeft > 0 ? daysLeft : 0}
-                            </Text>
-                            <Text style={styles.projectCardDaysLabel}>
-                              {daysLeft === 1 ? "day left" : "days left"}
-                            </Text>
-                          </View>
-                        </View>
-                      </Pressable>
-                    )
-                  })
-              }
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>My sequences</Text>
+                <Pressable
+                  onPress={() => setSequenceModal({ editing: null })}
+                  hitSlop={8}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons name="add" size={16} color={C.green} />
+                  <Text style={styles.browseLibraryText}>New sequence</Text>
+                </Pressable>
+              </View>
+              {mySequences.length > 0 ? (
+                mySequences.map((route) => (
+                  <View key={route.$id} style={styles.workoutCard}>
+                    <ScalePressable style={{ flex: 1 }} onPress={() => tryOutSequence(route)}>
+                      <Text style={styles.workoutCardTitle}>{route.name}</Text>
+                      <Text style={styles.workoutCardSub}>
+                        {route.level != null ? `Lvl ${route.level} · ` : ""}Tap to try
+                      </Text>
+                    </ScalePressable>
+                    <Pressable onPress={() => openSequenceMenu(route)} hitSlop={8}>
+                      <Ionicons name="ellipsis-vertical" size={18} color={C.textSecondary} />
+                    </Pressable>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.workoutCardEmpty}>
+                  <Text style={styles.workoutCardEmptyText}>No sequences yet — tap "New sequence" to build one</Text>
+                </View>
+              )}
             </Animated.View>
 
+            {/* ── FROM THE LIBRARY (athlete's own picks, freely editable) ─────── */}
+            {myLibraryWorkouts.length > 0 && (
+              <Animated.View style={styles.section} entering={cardEntering(2)}>
+                <Text style={styles.sectionTitle}>From the library</Text>
+                {myLibraryWorkouts.map((t) => {
+                  let blocks: any[] = []
+                  try { blocks = JSON.parse(t.blocks) } catch {}
+                  return (
+                    <View key={t.$id} style={styles.workoutCard}>
+                      <ScalePressable
+                        style={{ flex: 1 }}
+                        onPress={() => workoutCtx.openWorkout(blocks, t.name)}
+                      >
+                        <Text style={styles.workoutCardTitle}>{t.name}</Text>
+                        <Text style={styles.workoutCardSub}>
+                          {blocks.length} block{blocks.length !== 1 ? "s" : ""} · Tap to start
+                        </Text>
+                      </ScalePressable>
+                      <Pressable onPress={() => openLibraryWorkoutMenu(t)} hitSlop={8}>
+                        <Ionicons name="ellipsis-vertical" size={18} color={C.textSecondary} />
+                      </Pressable>
+                    </View>
+                  )
+                })}
+              </Animated.View>
+            )}
+
             {/* ── MONTHLY CALENDAR ─────────────────────────────────────────── */}
-            <Animated.View style={styles.section} entering={cardEntering(2)}>
+            <Animated.View style={styles.section} entering={cardEntering(3)}>
               <Text style={styles.sectionTitle}>Training consistency</Text>
-              <Calendar
-                markedDates={trainedDays}
-                maxDate={today.toISOString().slice(0, 10)}
-                onDayPress={(day) => {
-                  if (trainedDays[day.dateString]) setSelectedDate(day.dateString)
-                }}
-                theme={{
-                  backgroundColor: C.surface,
-                  calendarBackground: C.surface,
-                  selectedDayBackgroundColor: C.green,
-                  selectedDayTextColor: C.bg,
-                  todayTextColor: C.green,
-                  dayTextColor: C.textPrimary,
-                  textDisabledColor: C.textMuted,
-                  arrowColor: C.green,
-                  monthTextColor: C.textPrimary,
-                  textDayFontWeight: "500",
-                  textMonthFontWeight: "700",
-                  textDayHeaderFontWeight: "600",
-                }}
-                style={styles.calendar}
-              />
+              <View style={styles.calendarWrap}>
+                <LinearGradient
+                  colors={["#1B2420", "#242325", "#242325"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Calendar
+                  markedDates={trainedDays}
+                  maxDate={today.toISOString().slice(0, 10)}
+                  onDayPress={(day) => {
+                    if (trainedDays[day.dateString]) setSelectedDate(day.dateString)
+                  }}
+                  theme={{
+                    backgroundColor: "transparent",
+                    calendarBackground: "transparent",
+                    selectedDayBackgroundColor: C.surfaceHigh,
+                    selectedDayTextColor: C.textPrimary,
+                    todayTextColor: C.green,
+                    dayTextColor: C.textPrimary,
+                    textDisabledColor: C.textMuted,
+                    arrowColor: C.green,
+                    dotColor: C.textSecondary,
+                    monthTextColor: C.textPrimary,
+                    textDayFontWeight: "500",
+                    textMonthFontWeight: "700",
+                    textDayHeaderFontWeight: "600",
+                  }}
+                  style={styles.calendar}
+                />
+              </View>
 
               {/* ── CONSISTENCY STATS ─────────────────────────────────────── */}
               <View style={styles.statsRow}>
@@ -455,37 +443,17 @@ export default function HomeScreen() {
               </View>
             </Animated.View>
 
-            {/* ── S/C PROGRESS ──────────────────────────────────────────────── */}
-            {scExercises.length > 0 && (
-              <Animated.View style={styles.section} entering={cardEntering(3)}>
-                <Text style={styles.sectionTitle}>Strength & conditioning</Text>
-                <Text style={styles.sectionSub}>Tap an exercise to see your progress</Text>
-                <View style={styles.exerciseList}>
-                  {scExercises.map((name, i) => (
-                    <Pressable
-                      key={name}
-                      style={({ pressed }) => [
-                        styles.exerciseRow,
-                        i === scExercises.length - 1 && { borderBottomWidth: 0 },
-                        pressed && { opacity: 0.5 },
-                      ]}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/(tabs)/(buttonTabs)/exerciseProgress",
-                          params: { name },
-                        })
-                      }
-                    >
-                      <Text style={styles.exerciseName}>{name}</Text>
-                      <Text style={styles.exerciseChevron}>›</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </Animated.View>
-            )}
-
             <View style={{ height: 32 }} />
           </ScrollView>
+        )}
+
+        {!introDone || loading ? null : (
+          <ScalePressable
+            style={styles.logFab}
+            onPress={() => router.push("/(tabs)/(buttonTabs)/workout-log")}
+          >
+            <Ionicons name="checkmark" size={28} color={C.bg} />
+          </ScalePressable>
         )}
         </View>
       </SafeAreaView>
@@ -497,6 +465,13 @@ export default function HomeScreen() {
           onDone={() => { heroPlayed = true; setIntroDone(true) }}
         />
       )}
+
+      {/* ── DAILY CHECK-IN ──────────────────────────────────────────────────── */}
+      <DailyCheckInModal
+        visible={introDone && showCheckin}
+        onDone={() => setShowCheckin(false)}
+        onClose={() => setShowCheckin(false)}
+      />
 
       {/* ── SESSION DETAIL MODAL ────────────────────────────────────────────── */}
       <SessionDetailModal
@@ -512,23 +487,33 @@ export default function HomeScreen() {
       />
 
 
-      {/* ── PROJECT CAMERA ──────────────────────────────────────────────────── */}
-      <Modal
-        visible={cameraProject !== null}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setCameraProject(null)}
-      >
-        {cameraProject && (
-          <ImageCapture
-            onFinish={async (uri) => {
-              await saveProjectImage(cameraProject, uri)
-              setCameraProject(null)
-            }}
-            onClose={() => setCameraProject(null)}
+      {/* ── EDIT A LIBRARY-DERIVED WORKOUT ──────────────────────────────────── */}
+      {customizing && User && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setCustomizing(null)}>
+          <AthleteCustomizeWorkout
+            athleteId={User.$id}
+            protocol={customizing}
+            onClose={() => setCustomizing(null)}
+            onSaved={load}
           />
-        )}
-      </Modal>
+        </Modal>
+      )}
+
+      {/* ── CREATE / EDIT A SEQUENCE ────────────────────────────────────────── */}
+      {User && (
+        <CreateSequenceModal
+          visible={sequenceModal !== null}
+          athleteId={User.$id}
+          editing={sequenceModal?.editing ?? null}
+          onClose={() => setSequenceModal(null)}
+          onSaved={(route) => {
+            setMySequences((prev) => {
+              const exists = prev.some((r) => r.$id === route.$id)
+              return exists ? prev.map((r) => (r.$id === route.$id ? route : r)) : [route, ...prev]
+            })
+          }}
+        />
+      )}
 
     </>
   )
@@ -567,10 +552,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: C.textPrimary,
   },
-  sectionSub: {
-    fontSize: 12,
-    color: C.textSecondary,
-    marginTop: -8,
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  browseLibraryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.green,
+  },
+  browseLibraryArrow: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.green,
   },
 
   // Workout card — green outline instead of a green fill
@@ -610,9 +605,12 @@ const styles = StyleSheet.create({
   },
 
   // Calendar
-  calendar: {
+  calendarWrap: {
     borderRadius: 12,
     overflow: "hidden",
+  },
+  calendar: {
+    borderRadius: 12,
   },
 
   // Stats
@@ -644,86 +642,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 15,
   },
-
-  // Exercise list
-  exerciseList: {
-    gap: 0,
-  },
-  exerciseRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 13,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  exerciseName: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: C.textPrimary,
-  },
-  exerciseChevron: {
-    fontSize: 20,
-    color: C.textMuted,
-  },
-
-  // Project cards
-  projectCard: {
-    backgroundColor: C.surfaceHigh,
-    borderRadius: 18,
-    overflow: "hidden",
-  },
-  projectCardHero: {
-    width: "100%",
-    aspectRatio: 1,
-  },
-  projectCardHeroImage: {
-    width: "100%",
-    height: "100%",
-  },
-  projectCardImageActions: {
+  // Log-workout FAB
+  logFab: {
     position: "absolute",
-    bottom: 10,
-    right: 10,
-    flexDirection: "row",
-    gap: 8,
-  },
-  projectCardImageBtn: {
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  projectCardImageBtnText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  projectCardHeroEmpty: {
-    width: "100%",
-    paddingVertical: 16,
+    right: 20,
+    bottom: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: C.green,
     alignItems: "center",
     justifyContent: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  projectCardAddText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: C.green,
-  },
-  projectCardInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  projectCardName: { fontSize: 15, fontWeight: "700", color: C.textPrimary, marginBottom: 3 },
-  projectCardMeta: { fontSize: 12, color: C.textSecondary },
-  projectCardDaysBox: { alignItems: "center", minWidth: 52 },
-  projectCardDays: { fontSize: 22, fontWeight: "800", color: C.green },
-  projectCardDaysLabel: { fontSize: 10, color: C.textSecondary, textAlign: "center" },
-
 })

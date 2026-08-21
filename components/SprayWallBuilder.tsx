@@ -17,7 +17,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import React, { useMemo, useRef, useState } from "react"
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { Image } from "expo-image"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -449,6 +449,13 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   })
 
   function handleTap(tapX: number, tapY: number) {
+    // The route-name field's keyboard only dismisses via its own "Done" key
+    // (onSubmitEditing) — the screen is a plain View, not a ScrollView, so
+    // there's no default tap-outside-to-dismiss the way ProjectPickerModal's
+    // form gets for free. Tapping the wall (to place/select a hold or just
+    // tap away) is the natural place to also close the keyboard, since
+    // otherwise it can get stuck open with no way to put it away on iOS.
+    Keyboard.dismiss()
     if (!imgW) return
     const { ux, uy } = toImageSpace(tapX, tapY)
     for (const hold of [...holds].reverse()) {
@@ -608,7 +615,8 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
 
         <TextInput value={routeName} onChangeText={setRouteName}
           placeholder="Route name..." placeholderTextColor="#555"
-          style={styles.topBarInput} returnKeyType="done" />
+          style={styles.topBarInput} returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()} />
 
         {/* Right: save */}
         <View style={[styles.topBarRight]}>

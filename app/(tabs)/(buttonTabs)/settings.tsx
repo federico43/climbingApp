@@ -2,13 +2,24 @@ import { C } from "@/utils/theme"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { ConsumeAuth } from "@/components/auth-context"
+import { DailyCheckInModal } from "@/components/DailyCheckInModal"
+import { CheckinRow, getCheckinForToday } from "@/services/BoulderGraphService"
 import { useRouter } from "expo-router"
+import { useEffect, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 export default function SettingsScreen() {
   const { User, signOut, role } = ConsumeAuth()
   const router = useRouter()
+
+  const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
+  const [checkinVisible, setCheckinVisible] = useState(false)
+
+  useEffect(() => {
+    if (!User) return
+    getCheckinForToday(User.$id).then(setTodayCheckin)
+  }, [User])
 
   return (
     <ScreenGradient>
@@ -34,6 +45,20 @@ export default function SettingsScreen() {
                 <Text style={styles.roleBadgeText}>{role ?? "athlete"}</Text>
               </View>
             </View>
+          </View>
+        </View>
+
+        {/* Today */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Today</Text>
+          <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.row, styles.rowLast, pressed && { opacity: 0.6 }]}
+              onPress={() => setCheckinVisible(true)}
+            >
+              <Text style={styles.rowLabel}>Daily check-in</Text>
+              <Text style={styles.rowValue}>{todayCheckin ? "Done ✓" : "Not done yet"}</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -65,6 +90,16 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
       </ScreenEntry>
+
+      <DailyCheckInModal
+        visible={checkinVisible}
+        initial={todayCheckin}
+        onClose={() => setCheckinVisible(false)}
+        onDone={() => {
+          setCheckinVisible(false)
+          if (User) getCheckinForToday(User.$id).then(setTodayCheckin)
+        }}
+      />
     </SafeAreaView>
     </ScreenGradient>
   )

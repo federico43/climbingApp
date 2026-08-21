@@ -201,9 +201,10 @@ export default function ExerciseProgressScreen() {
   const [dataPoints, setDataPoints] = useState<DayPoint[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [name, athleteId])
 
   async function load() {
+    setLoading(true)
     try {
       const sessions = athleteId
         ? await getSessionsByUserId(athleteId)
@@ -234,7 +235,10 @@ export default function ExerciseProgressScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable
+          onPress={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
+          style={styles.backBtn}
+        >
           <Text style={styles.backArrow}>←</Text>
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{name}</Text>
@@ -360,6 +364,7 @@ const chartStyles = StyleSheet.create({
     padding: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.border,
+    overflow: "hidden",
   },
   metricLabel: {
     fontSize: 12,

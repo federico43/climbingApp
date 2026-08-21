@@ -5,10 +5,8 @@ import { ScreenGradient } from "@/components/ScreenGradient"
 import { AthleteAnalytics } from "@/components/AthleteAnalytics"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
-import { TrainingTimeline } from "@/components/TrainingTimeline"
 import {
   AppUser,
-  MAX_ATHLETE_TEMPLATES,
   ProtocolRow,
   copyProtocolToAthlete,
   deleteProtocol,
@@ -22,8 +20,7 @@ import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-// Top-bar coach tools (the former big cards). Assignments is gone — its review
-// part is now the inline Training timeline.
+// Top-bar coach tools (the former big cards).
 type Tool = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string }
 const TOOLS: Tool[] = [
   { key: "exercises", label: "Exercises", icon: "barbell-outline", route: "/(tabs)/(buttonTabs)/exercises" },
@@ -59,19 +56,19 @@ export default function DesignScreen() {
     }, [])
   )
 
-  // Load the selected athlete's templates.
+  // Load the selected athlete's coach-assigned templates.
+  // (An athlete's own library-derived saves live in a separate pool and
+  // don't show up in this admin view.)
   const loadTemplates = useCallback(() => {
     if (!selected) { setTemplates([]); return }
     setLoadingTemplates(true)
     listAthleteTemplates(selected.$id)
-      .then(setTemplates)
+      .then((rows) => setTemplates(rows.filter((r) => r.source !== "library")))
       .catch((e) => { console.error(e); setTemplates([]) })
       .finally(() => setLoadingTemplates(false))
   }, [selected])
 
   useEffect(() => { loadTemplates() }, [loadTemplates])
-
-  const atCap = templates.length >= MAX_ATHLETE_TEMPLATES
 
   function openAdd() { setEditProtocol(null); setBuilding(true) }
 
@@ -112,22 +109,11 @@ export default function DesignScreen() {
     if (ids.length === 0) { setCopyFor(null); return }
     setCopying(true)
     try {
-      const skipped: string[] = []
-      let copied = 0
       for (const id of ids) {
-        if ((await listAthleteTemplates(id)).length >= MAX_ATHLETE_TEMPLATES) {
-          skipped.push(athletes.find((a) => a.$id === id)?.username ?? id)
-          continue
-        }
         await copyProtocolToAthlete(copyFor, id)
-        copied++
       }
       setCopyFor(null)
-      Alert.alert(
-        "Copy complete",
-        `Copied to ${copied} athlete${copied !== 1 ? "s" : ""}.` +
-          (skipped.length ? `\nSkipped (already at ${MAX_ATHLETE_TEMPLATES}): ${skipped.join(", ")}.` : ""),
-      )
+      Alert.alert("Copy complete", `Copied to ${ids.length} athlete${ids.length !== 1 ? "s" : ""}.`)
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not copy the template.")
     } finally {
@@ -150,9 +136,6 @@ export default function DesignScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* ── Training timeline ─────────────────────────────────────────── */}
-          <TrainingTimeline />
-
           {/* ── Athletes ──────────────────────────────────────────────────── */}
           <View style={styles.athleteSection}>
             <Text style={styles.label}>Athletes</Text>
@@ -178,19 +161,16 @@ export default function DesignScreen() {
             )}
           </View>
 
-          {/* ── Selected athlete data ─────────────────────────────────────── */}
+          {/* ── Selected athlete data ────────────────────────────────────── */}
           {selected ? (
             <>
-              {/* Templates (this athlete's own protocols, max 4) */}
               <View style={styles.workoutSection}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.label}>Templates · {templates.length}/{MAX_ATHLETE_TEMPLATES}</Text>
-                  {!atCap && (
-                    <Pressable style={styles.addBtnSmall} onPress={openAdd}>
-                      <Ionicons name="add" size={16} color={C.bg} />
-                      <Text style={styles.addBtnSmallText}>Add</Text>
-                    </Pressable>
-                  )}
+                  <Text style={styles.label}>Templates · {templates.length}</Text>
+                  <Pressable style={styles.addBtnSmall} onPress={openAdd}>
+                    <Ionicons name="add" size={16} color={C.bg} />
+                    <Text style={styles.addBtnSmallText}>Add</Text>
+                  </Pressable>
                 </View>
 
                 {loadingTemplates ? (
@@ -239,6 +219,18 @@ export default function DesignScreen() {
                 )}
               </View>
 
+              <Pressable
+                style={styles.logSessionBtn}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/(buttonTabs)/workout-log",
+                    params: { athleteId: selected.$id, athleteName: selected.username },
+                  })
+                }
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color={C.green} />
+                <Text style={styles.logSessionBtnText}>Log a session for {selected.username}</Text>
+              </Pressable>
               <AthleteVideos key={`vids-${selected.$id}`} athlete={selected} />
               <AthleteAnalytics key={selected.$id} athlete={selected} />
             </>
@@ -269,7 +261,7 @@ export default function DesignScreen() {
         <Pressable style={styles.copyBackdrop} onPress={() => setCopyFor(null)}>
           <Pressable style={styles.copyCard} onPress={() => {}}>
             <Text style={styles.copyTitle} numberOfLines={1}>Copy “{copyFor?.name}” to</Text>
-            <Text style={styles.copySub}>Each athlete gets their own copy (max {MAX_ATHLETE_TEMPLATES} each).</Text>
+            <Text style={styles.copySub}>Each athlete gets their own copy.</Text>
             <View style={styles.copyPills}>
               {athletes.filter((a) => a.$id !== selected?.$id).length === 0 ? (
                 <Text style={styles.workoutMeta}>No other athletes.</Text>
@@ -372,6 +364,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
   },
   addBtnSmallText: { fontSize: 14, fontWeight: "800", color: C.bg },
+
+  logSessionBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    borderWidth: 1, borderColor: C.green, borderRadius: 14, paddingVertical: 12,
+  },
+  logSessionBtnText: { fontSize: 14, fontWeight: "700", color: C.green },
 
   // Copy-to-athlete modal
   copyBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },

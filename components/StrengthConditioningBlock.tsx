@@ -7,14 +7,18 @@ import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  useWindowDimensions,
   View,
 } from "react-native"
 import { Image } from "expo-image"
+import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 
@@ -27,6 +31,8 @@ export interface RepExercise {
   name: string
   reps: string
   unit?: ExerciseUnit
+  photoUri?: string
+  notes?: string
 }
 
 export interface BothSidesExercise {
@@ -34,6 +40,8 @@ export interface BothSidesExercise {
   name: string
   reps: string
   unit?: ExerciseUnit
+  photoUri?: string
+  notes?: string
 }
 
 export interface SevenThreesExercise {
@@ -41,6 +49,8 @@ export interface SevenThreesExercise {
   name: string
   edge: string
   series: number
+  photoUri?: string
+  notes?: string
 }
 
 export type Exercise = RepExercise | BothSidesExercise | SevenThreesExercise
@@ -452,16 +462,55 @@ function targetNumber(s: string): number {
 function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
   value: number; onChange: (v: number) => void; step?: number; min?: number; suffix?: string
 }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(String(value))
+
   const set = (v: number) => onChange(Math.max(min, parseFloat(v.toFixed(2))))
+
+  function startEditing() {
+    setText(value ? String(value) : "")
+    setEditing(true)
+  }
+
+  function commit() {
+    const parsed = parseFloat(text.replace(",", "."))
+    if (!Number.isNaN(parsed)) set(parsed)
+    setEditing(false)
+  }
+
+  // If a +/- tap lands while the field is mid-edit, step from the typed
+  // value (not the last committed one) so an in-progress edit isn't lost.
+  function stepBy(delta: number) {
+    const base = editing ? (parseFloat(text.replace(",", ".")) || 0) : value
+    setEditing(false)
+    set(base + delta)
+  }
+
   return (
     <View style={styles.stepperRow}>
-      <Pressable style={styles.stepperBtn} onPress={() => set(value - step)} hitSlop={6}>
+      <Pressable style={styles.stepperBtn} onPress={() => stepBy(-step)} hitSlop={6}>
         <Text style={styles.stepperBtnText}>−</Text>
       </Pressable>
-      <Text style={styles.stepperValue}>
-        {value}{suffix ? <Text style={styles.stepperSuffix}>{suffix}</Text> : null}
-      </Text>
-      <Pressable style={styles.stepperBtn} onPress={() => set(value + step)} hitSlop={6}>
+      {editing ? (
+        <TextInput
+          style={styles.stepperInput}
+          value={text}
+          onChangeText={setText}
+          onBlur={commit}
+          onSubmitEditing={commit}
+          keyboardType="decimal-pad"
+          returnKeyType="done"
+          autoFocus
+          selectTextOnFocus
+        />
+      ) : (
+        <Pressable style={styles.stepperValueTouch} onPress={startEditing} hitSlop={4}>
+          <Text style={styles.stepperValue}>
+            {value}{suffix ? <Text style={styles.stepperSuffix}>{suffix}</Text> : null}
+          </Text>
+        </Pressable>
+      )}
+      <Pressable style={styles.stepperBtn} onPress={() => stepBy(step)} hitSlop={6}>
         <Text style={styles.stepperBtnText}>+</Text>
       </Pressable>
     </View>
@@ -617,6 +666,65 @@ function ExerciseDetail({ open, onToggle, weight, setWeight, weightUnit, weightS
   )
 }
 
+// ─── Exercise Info (photo + how-to notes) ─────────────────────────────────────
+
+// How-to reference for the current exercise: a photo and/or a coach's notes
+// on correct form. Kept as a small trigger (photo thumbnail, or a plain "i"
+// icon when there's only notes) — not shown inline — so it doesn't push the
+// stepper/Done button off screen on a circuit that repeats every round. Tap
+// opens a sheet with the photo (if any) and the notes (if any).
+function ExerciseInfo({ photoUri, notes }: { photoUri?: string; notes?: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const { height: winHeight } = useWindowDimensions()
+  if (!photoUri && !notes) return null
+
+  // Compute explicit pixel caps instead of leaning on percentage-height +
+  // flexShrink — ScrollView needs a real bounded height to know when to
+  // start scrolling rather than growing to fit all of the notes text.
+  const sheetMaxHeight = Math.round(winHeight * 0.75)
+  const imageHeight = photoUri ? 220 : 0
+  const notesMaxHeight = Math.max(100, sheetMaxHeight - imageHeight)
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setExpanded(true)}
+        style={({ pressed }) => [styles.exercisePhotoThumbWrap, pressed && { opacity: 0.7 }]}
+      >
+        {photoUri ? (
+          <>
+            <Image source={{ uri: photoUri }} style={styles.exercisePhotoThumb} contentFit="cover" />
+            <View style={styles.exercisePhotoExpandBadge}>
+              <Ionicons name="expand" size={12} color={C.textPrimary} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.exerciseInfoIconWrap}>
+            <Ionicons name="information-circle-outline" size={26} color={C.textSecondary} />
+          </View>
+        )}
+      </Pressable>
+      <Modal visible={expanded} transparent animationType="fade" onRequestClose={() => setExpanded(false)}>
+        <Pressable style={styles.exercisePhotoModalBackdrop} onPress={() => setExpanded(false)}>
+          <Pressable style={[styles.exerciseInfoSheet, { maxHeight: sheetMaxHeight }]} onPress={() => {}}>
+            {photoUri && (
+              <Image source={{ uri: photoUri }} style={styles.exerciseInfoSheetImage} contentFit="cover" />
+            )}
+            {notes && (
+              <ScrollView style={{ maxHeight: notesMaxHeight }} contentContainerStyle={styles.exerciseInfoNotesContent}>
+                <Text style={styles.exerciseInfoNotesText}>{notes}</Text>
+              </ScrollView>
+            )}
+          </Pressable>
+          <Pressable style={styles.exercisePhotoCloseBtn} onPress={() => setExpanded(false)} hitSlop={10}>
+            <Ionicons name="close" size={22} color={C.textPrimary} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  )
+}
+
 // ─── Reps Exercise UI ─────────────────────────────────────────────────────────
 
 interface RepsExerciseUIProps {
@@ -652,7 +760,10 @@ function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDon
     <View style={styles.exerciseCard}>
       <View style={styles.cardTop}>
         <View style={styles.targetRepsBox}>
-          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <View style={styles.nameRow}>
+            <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
+            <Text style={styles.exerciseName}>{exercise.name}</Text>
+          </View>
           <View style={styles.targetRow}>
             <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
             <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
@@ -736,6 +847,7 @@ function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, 
       <View style={styles.cardTop}>
         <View style={styles.targetRepsBox}>
           <View style={styles.nameRow}>
+            <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
             <Text style={styles.exerciseName}>{exercise.name}</Text>
             <View style={styles.sideChip}>
               <Text style={styles.sideChipText}>{side === "left" ? "LEFT" : "RIGHT"}</Text>
@@ -884,7 +996,10 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
   if (innerPhase === "ready") {
     return (
       <View style={styles.exerciseCard}>
-        <Text style={styles.exerciseName}>7/3s</Text>
+        <View style={styles.nameRow}>
+          <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
+          <Text style={styles.exerciseName}>7/3s</Text>
+        </View>
         <Text style={styles.exerciseTarget}>
           {exercise.series} series · {exercise.edge}
         </Text>
@@ -996,6 +1111,31 @@ const styles = StyleSheet.create({
 
   exerciseCard: { flex: 1, width: "100%", justifyContent: "space-between" },
   cardTop: { gap: 12 },
+  exercisePhotoThumbWrap: { width: 44, height: 44 },
+  exercisePhotoThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: C.surfaceHigh },
+  exercisePhotoExpandBadge: {
+    position: "absolute", bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
+    backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center",
+  },
+  exerciseInfoIconWrap: {
+    width: 44, height: 44, borderRadius: 10, backgroundColor: C.surfaceHigh,
+    alignItems: "center", justifyContent: "center",
+  },
+  exercisePhotoModalBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.9)", alignItems: "center", justifyContent: "center",
+  },
+  exercisePhotoCloseBtn: {
+    position: "absolute", top: 50, right: 20, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center",
+  },
+  // maxHeight is set inline (a pixel value derived from the window height) —
+  // the static value here is just a fallback.
+  exerciseInfoSheet: {
+    width: "88%", maxHeight: "75%", backgroundColor: C.surface, borderRadius: 16, overflow: "hidden",
+  },
+  exerciseInfoSheetImage: { width: "100%", height: 220, backgroundColor: C.surfaceHigh },
+  exerciseInfoNotesContent: { padding: 20 },
+  exerciseInfoNotesText: { fontSize: 15, color: C.textPrimary, lineHeight: 22 },
   cardBottom: { gap: 12 },
   exerciseName: { fontSize: 20, fontWeight: "700", textAlign: "center", color: C.textPrimary },
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
@@ -1034,7 +1174,15 @@ const styles = StyleSheet.create({
   },
   stepperBtn: { width: 60, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   stepperBtnText: { fontSize: 28, fontWeight: "400", color: C.green },
-  stepperValue: { flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  stepperValueTouch: {
+    flex: 1, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: C.border, borderStyle: "dashed",
+  },
+  stepperValue: { textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  stepperInput: {
+    flex: 1, textAlign: "center", fontSize: 24, fontWeight: "800", color: C.textPrimary,
+    paddingVertical: 16, borderBottomWidth: 2, borderBottomColor: C.green,
+  },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
   // Rest-between-rounds timer (mirrors the project-bouldering rest screen)

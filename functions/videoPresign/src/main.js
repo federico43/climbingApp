@@ -11,12 +11,27 @@ import crypto from "node:crypto"
 //                         (r2.dev subdomain or a custom domain)
 //
 // Actions (POST body):
-//   { ext }                 → presign an upload (default)
-//   { action: "delete", key } → delete an object from R2
-const EXT_TYPES = {
+//   { ext, kind }                     → presign an upload (default). kind is
+//                                       "video" (default) or "image".
+//   { action: "delete", key }         → delete a video object (key already
+//                                       known — the `videos` table stores it)
+//   { action: "delete", kind, url }   → delete an image object. Photo tables
+//                                       (spray_walls/projects/exercises) only
+//                                       store the public URL, so the key is
+//                                       derived here from R2_PUBLIC_BASE.
+const VIDEO_EXT_TYPES = {
   mp4: "video/mp4",
   mov: "video/quicktime",
   m4v: "video/x-m4v",
+  // Coach voice-note feedback (expo-av Audio.Recording output).
+  m4a: "audio/m4a",
+  wav: "audio/wav",
+}
+const IMAGE_EXT_TYPES = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
 }
 
 export default async ({ req, res, log, error }) => {
@@ -48,9 +63,13 @@ export default async ({ req, res, log, error }) => {
 
   // ── Delete an object ──────────────────────────────────────────────────────────
   if (body.action === "delete") {
-    const objectKey = typeof body.key === "string" ? body.key : ""
-    // Only ever delete inside our own namespace — never an arbitrary bucket path.
-    if (!objectKey.startsWith("videos/")) {
+    let objectKey = typeof body.key === "string" ? body.key : ""
+    if (!objectKey && typeof body.url === "string") {
+      const base = R2_PUBLIC_BASE.replace(/\/$/, "") + "/"
+      if (body.url.startsWith(base)) objectKey = body.url.slice(base.length)
+    }
+    // Only ever delete inside our own namespaces — never an arbitrary bucket path.
+    if (!objectKey.startsWith("videos/") && !objectKey.startsWith("images/")) {
       return res.json({ error: "Invalid key." }, 400)
     }
     try {
@@ -64,11 +83,13 @@ export default async ({ req, res, log, error }) => {
   }
 
   // ── Presign an upload (default) ─────────────────────────────────────────────
-  const ext = (typeof body.ext === "string" ? body.ext : "mp4").toLowerCase().replace(/[^a-z0-9]/g, "")
+  const kind = body.kind === "image" ? "image" : "video"
+  const EXT_TYPES = kind === "image" ? IMAGE_EXT_TYPES : VIDEO_EXT_TYPES
+  const ext = (typeof body.ext === "string" ? body.ext : (kind === "image" ? "jpg" : "mp4")).toLowerCase().replace(/[^a-z0-9]/g, "")
   const contentType = EXT_TYPES[ext] || "application/octet-stream"
 
-  // Namespace keys by user so one athlete can't overwrite another's clips.
-  const key = `videos/${userId}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`
+  // Namespace keys by kind + user so one athlete can't overwrite another's files.
+  const key = `${kind === "image" ? "images" : "videos"}/${userId}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`
 
   try {
     const uploadUrl = await getSignedUrl(

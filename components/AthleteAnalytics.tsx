@@ -3,7 +3,7 @@ import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { SessionBarsChart } from "@/components/SessionBarsChart"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL } from "@/utils/adaptations"
 import { sessionBars, trainingStats, weeklyFrequency } from "@/utils/athleteAnalytics"
-import { AppUser, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
+import { AppUser, CheckinRow, getCheckinForToday, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useRouter } from "expo-router"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
@@ -62,6 +62,7 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +72,13 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
       .then((s) => { if (!cancelled) setSessions(s) })
       .catch(console.error)
       .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [athlete.$id])
+
+  useEffect(() => {
+    let cancelled = false
+    setTodayCheckin(null)
+    getCheckinForToday(athlete.$id).then((row) => { if (!cancelled) setTodayCheckin(row) })
     return () => { cancelled = true }
   }, [athlete.$id])
 
@@ -98,6 +106,17 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
 
   return (
     <>
+      {/* Today's readiness check-in */}
+      {todayCheckin && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today's readiness</Text>
+          <View style={styles.checkinRow}>
+            <Text style={styles.checkinStat}>Rest {todayCheckin.restRating}/5</Text>
+            <Text style={styles.checkinStat}>Ate: {todayCheckin.ate ? "Yes" : "Not yet"}</Text>
+          </View>
+        </View>
+      )}
+
       {/* Calendar + consistency */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Training consistency</Text>
@@ -210,6 +229,8 @@ const styles = StyleSheet.create({
   section: { backgroundColor: C.surface, borderRadius: 18, padding: 16, gap: 12 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   sectionSub: { fontSize: 12, color: C.textSecondary, marginTop: -8 },
+  checkinRow: { flexDirection: "row", gap: 20 },
+  checkinStat: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   freqList: { gap: 6, marginTop: 8 },
   freqRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   freqLabel: { width: 38, fontSize: 11, color: C.textMuted, textAlign: "right" },

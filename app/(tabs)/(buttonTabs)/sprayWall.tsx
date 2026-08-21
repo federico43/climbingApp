@@ -1,5 +1,6 @@
 import { C } from "@/utils/theme"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
+import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
 import {
   createSprayWall,
   deleteSprayRoute,
@@ -27,6 +28,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -51,6 +53,7 @@ export default function SprayWallScreen() {
   const [wallNameInput, setWallNameInput] = useState("")
   // Wall chooser for new routes when on the "All" filter with multiple walls.
   const [wallPickerVisible, setWallPickerVisible] = useState(false)
+  const [filters, setFilters] = useState<RouteFilters>(EMPTY_ROUTE_FILTERS)
 
   // Walls change rarely and only from this screen — refetch when the screen
   // regains focus, NOT on every wall-filter tap.
@@ -197,12 +200,30 @@ export default function SprayWallScreen() {
 
   // ─── Derived ───────────────────────────────────────────────────────────────
 
-  const grouped = useMemo(() => groupByDate(routes), [routes])
+  const filteredRoutes = useMemo(() => applyRouteFilters(routes, filters), [routes, filters])
+  const grouped = useMemo(() => groupByDate(filteredRoutes), [filteredRoutes])
   const { width } = useWindowDimensions()
   const columns = width >= 1200 ? 4 : width >= 800 ? 3 : 2
   const GRID_PADDING = 16
   const GRID_GAP = 10
   const cardWidth = (width - GRID_PADDING * 2 - GRID_GAP * (columns - 1)) / columns
+
+  // Chunk each date group into rows of `columns` routes so the grid can be
+  // driven by a SectionList — each row only mounts (and starts loading its
+  // thumbnail images) once it's actually scrolled into view. Rendering every
+  // route at once via a plain ScrollView/.map() meant every thumbnail's photo
+  // — full-resolution, since R2 doesn't serve resized previews — started
+  // downloading and decoding simultaneously, which was enough to spike memory
+  // past what a real device allows and get the app killed by the OS.
+  const sections = useMemo(
+    () => grouped.map(({ group, items }) => ({
+      title: group,
+      data: Array.from({ length: Math.ceil(items.length / columns) }, (_, i) =>
+        items.slice(i * columns, i * columns + columns)
+      ),
+    })),
+    [grouped, columns]
+  )
 
   // Index walls by id (O(1) lookups) and parse each route's holds once per load
   // instead of JSON.parse-ing inside the render loop.
@@ -282,77 +303,106 @@ export default function SprayWallScreen() {
         </Pressable>
       </ScrollView>
 
+      {!loading && routes.length > 0 && (
+        <View style={styles.filterBarWrap}>
+          <RouteFilterBar filters={filters} onChange={setFilters} />
+        </View>
+      )}
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={C.green} />
-      ) : (
+      ) : routes.length === 0 ? (
         <ScrollView contentContainerStyle={styles.list}>
-          {routes.length === 0 && (
-            <Text style={styles.empty}>
-              {selectedWallId
-                ? "No routes on this wall yet. Tap + to create one."
-                : "No routes yet. Tap + to create one."}
-            </Text>
-          )}
-          {grouped.map(({ group, items }) => (
-            <View key={group} style={{ marginBottom: 18 }}>
-              <Text style={styles.groupHeader}>{group}</Text>
-              <View style={styles.gridRow}>
-                {items.map((route) => {
-                  const holds = holdsByRoute.get(route.$id) ?? []
-                  return (
-                    <View key={route.$id} style={[styles.card, { width: cardWidth }]}>
-                      <Pressable
-                        style={styles.thumb}
-                        onPress={() =>
-                          router.push({
-                            pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
-                            params: {
-                              routeId: route.$id,
-                              routeName: route.name,
-                              routeHolds: route.holds,
-                              routeVariations: route.variations ?? "",
-                              routeLevel: route.level != null ? String(route.level) : "",
-                              routeType: route.type ?? "",
-                              wallId: route.wallId ?? "",
-                              wallImageUri: wallsById.get(route.wallId ?? "")?.imageUri ?? "",
-                            },
-                          })
-                        }
-                      >
-                        <SprayWallViewer
-                          imageSource={routeImageSource(route)}
-                          holds={holds}
-                          style={{ flex: 1 }}
-                          interactive={false}
-                          previewWidth={500}
-                          naturalSize={wallNaturalSize(route)}
-                        />
-                      </Pressable>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardName} numberOfLines={1}>{route.name}</Text>
-                        <Text style={styles.cardSub}>
-                          {[
-                            route.level != null ? `Lvl ${route.level}` : null,
-                            route.type ? (ROUTE_TYPE_LABEL[route.type] ?? route.type) : null,
-                            `${holds.length} hold${holds.length !== 1 ? "s" : ""}`,
-                          ].filter(Boolean).join(" · ")}
-                        </Text>
-                      </View>
-                      <View style={styles.cardActions}>
-                        <Pressable onPress={() => handleCopyRoute(route)} hitSlop={6} style={styles.iconBtn}>
-                          <Ionicons name="copy-outline" size={16} color={C.textSecondary} />
-                        </Pressable>
-                        <Pressable onPress={() => handleDeleteRoute(route)} hitSlop={6} style={styles.iconBtn}>
-                          <Ionicons name="trash-outline" size={16} color={C.textMuted} />
-                        </Pressable>
-                      </View>
-                    </View>
-                  )
-                })}
-              </View>
-            </View>
-          ))}
+          <Text style={styles.empty}>
+            {selectedWallId
+              ? "No routes on this wall yet. Tap + to create one."
+              : "No routes yet. Tap + to create one."}
+          </Text>
         </ScrollView>
+      ) : filteredRoutes.length === 0 ? (
+        <ScrollView contentContainerStyle={styles.list}>
+          <Text style={styles.empty}>No routes match your filters.</Text>
+        </ScrollView>
+      ) : (
+        // Virtualized: only rows scrolled into view mount their cards (and so
+        // only those start loading/decoding their thumbnail image). See the
+        // `sections` comment above for why that matters on device.
+        <SectionList
+          sections={sections}
+          keyExtractor={(row) => row[0].$id}
+          contentContainerStyle={styles.list}
+          // SectionList's default initialNumToRender (10) still front-loads
+          // far more rows than fit on screen, each doing its own hold-badge
+          // layout math and kicking off an image load — with default settings
+          // that first synchronous batch was still enough to freeze the JS
+          // thread for several seconds. Render just what's visible up front
+          // and stream the rest in small batches as the user scrolls.
+          initialNumToRender={3}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.groupHeader}>{section.title}</Text>
+          )}
+          renderSectionFooter={() => <View style={{ height: 18 }} />}
+          renderItem={({ item: row }) => (
+            <View style={styles.gridRow}>
+              {row.map((route) => {
+                const holds = holdsByRoute.get(route.$id) ?? []
+                return (
+                  <View key={route.$id} style={[styles.card, { width: cardWidth }]}>
+                    <Pressable
+                      style={styles.thumb}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(tabs)/(buttonTabs)/sprayWallBuilder",
+                          params: {
+                            routeId: route.$id,
+                            routeName: route.name,
+                            routeHolds: route.holds,
+                            routeVariations: route.variations ?? "",
+                            routeLevel: route.level != null ? String(route.level) : "",
+                            routeType: route.type ?? "",
+                            wallId: route.wallId ?? "",
+                            wallImageUri: wallsById.get(route.wallId ?? "")?.imageUri ?? "",
+                          },
+                        })
+                      }
+                    >
+                      <SprayWallViewer
+                        imageSource={routeImageSource(route)}
+                        holds={holds}
+                        style={{ flex: 1 }}
+                        interactive={false}
+                        previewWidth={500}
+                        naturalSize={wallNaturalSize(route)}
+                      />
+                    </Pressable>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardName} numberOfLines={1}>{route.name}</Text>
+                      <Text style={styles.cardSub}>
+                        {[
+                          route.level != null ? `Lvl ${route.level}` : null,
+                          route.type ? (ROUTE_TYPE_LABEL[route.type] ?? route.type) : null,
+                          `${holds.length} hold${holds.length !== 1 ? "s" : ""}`,
+                        ].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                    <View style={styles.cardActions}>
+                      <Pressable onPress={() => handleCopyRoute(route)} hitSlop={6} style={styles.iconBtn}>
+                        <Ionicons name="copy-outline" size={16} color={C.textSecondary} />
+                      </Pressable>
+                      <Pressable onPress={() => handleDeleteRoute(route)} hitSlop={6} style={styles.iconBtn}>
+                        <Ionicons name="trash-outline" size={16} color={C.textMuted} />
+                      </Pressable>
+                    </View>
+                  </View>
+                )
+              })}
+            </View>
+          )}
+        />
       )}
 
       <Pressable style={styles.fab} onPress={handleNewRoute}>
@@ -447,6 +497,14 @@ const styles = StyleSheet.create({
 
   wallStripContainer: {
     flexGrow: 0,
+    // Horizontal ScrollView doesn't auto-size its cross-axis (height) to
+    // content on its own — without this it collapses and clips the chips.
+    // flexShrink: 0 keeps it pinned at that height even when the list below
+    // pushes total content past the screen height (otherwise flexbox's
+    // default shrink-to-fit squashes this strip instead of just scrolling
+    // the list).
+    height: 52,
+    flexShrink: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.border,
   },
@@ -470,6 +528,10 @@ const styles = StyleSheet.create({
     minWidth: 36, alignItems: "center",
   },
 
+  filterBarWrap: {
+    paddingTop: 10, paddingBottom: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
   list: { padding: 16, paddingBottom: 140 },
   empty: { textAlign: "center", color: C.textMuted, marginTop: 60, fontSize: 15 },
 

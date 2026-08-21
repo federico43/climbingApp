@@ -90,6 +90,8 @@ export default function TabsLayout() {
         <Tabs.Screen name="sprayWall" options={{ href: null }} />
         <Tabs.Screen name="sprayWallBuilder" options={{ href: null }} />
         <Tabs.Screen name="past-projects" options={{ href: null }} />
+        <Tabs.Screen name="workout-log" options={{ href: null }} />
+        <Tabs.Screen name="workout-library" options={{ href: null }} />
       </Tabs>
 
       {/* Workout modal lives at the layout level so it overlays everything */}

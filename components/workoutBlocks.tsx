@@ -3,9 +3,16 @@ import CustomButton from "@/components/customButton"
 import { Ionicons } from "@expo/vector-icons"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
+import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
-import { RouteVariations } from "@/utils/sequenceVariations"
+import {
+  RouteVariations,
+  VariationKey,
+  VARIATION_LABEL,
+  parseVariations,
+  availableVariations,
+} from "@/utils/sequenceVariations"
 import {
   Adaptation,
   ADAPTATIONS,
@@ -25,6 +32,7 @@ import {
   deleteProtocol,
   ExerciseRow,
   getAthletes,
+  getSprayRoute,
   getSprayRoutes,
   getSprayWalls,
   SprayWallRow,
@@ -36,11 +44,13 @@ import {
   saveSprayRoute,
   upsertBlockTemplate,
   SprayRouteRow,
+  updateBlock,
   updateProtocol,
 } from "@/services/BoulderGraphService"
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator, Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -57,7 +67,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals"
+export type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals"
 
 interface BaseBlock {
   id: string
@@ -82,7 +92,7 @@ interface ConstraintWarmupBlock extends BaseBlock {
 }
 
 interface Exercise {
-  id: string; type: "reps" | "both_sides" | "7/3s"; name: string; exerciseId?: string; unit?: "reps" | "seconds"; reps?: string; edge?: string; series?: number
+  id: string; type: "reps" | "both_sides" | "7/3s"; name: string; exerciseId?: string; unit?: "reps" | "seconds"; reps?: string; edge?: string; series?: number; photoUri?: string; notes?: string
 }
 
 interface StrengthConditioningBlock extends BaseBlock {
@@ -109,11 +119,31 @@ interface SequenceBlock extends BaseBlock {
   wallImageUri?: string
   wallWidth?: number
   wallHeight?: number
+  // Which variation the athlete starts on. Defaults to "original" (try the
+  // base climb first, then calibrate) — the coach can override this to have
+  // the athlete start on Easy or Hard instead.
+  startingVariation?: VariationKey
 }
 
 interface FreeSessionBlock extends BaseBlock {
   type: "free_session"
   description: string
+  // Prompt shown to the athlete above the notes field once the session ends,
+  // e.g. "What did you try?" — lets a coach reuse this block as a simple,
+  // no-project version of Project bouldering (time + one guided note).
+  notePrompt?: string
+  // Example text shown as the notes field's placeholder, e.g. "e.g. Tried
+  // the blue overhang, fell on the last move".
+  noteExample?: string
+  // Optional attached sequence — shown to the athlete during the session for
+  // reference, with no attempt tracking (that's what the "sequence" block
+  // type is for).
+  routeId?: string
+  routeName?: string
+  routeHolds?: string  // JSON stringified PlacedHold[]
+  wallImageUri?: string
+  wallWidth?: number
+  wallHeight?: number
 }
 
 interface FourByFourBlock extends BaseBlock {
@@ -181,12 +211,12 @@ export function injectLocalIds(blocks: any[]): Block[] {
   }))
 }
 
-function blockFromLibraryRow(row: BlockRow): Block {
+export function blockFromLibraryRow(row: BlockRow): Block {
   const data = JSON.parse(row.data)
   return { ...data, id: generateId(), blockName: row.name }
 }
 
-const BLOCK_LABELS: Record<BlockType, string> = {
+export const BLOCK_LABELS: Record<BlockType, string> = {
   project_bouldering: "Project bouldering",
   constraint_warmup: "Constraint warmup",
   strength_conditioning: "Strength & conditioning",
@@ -197,7 +227,7 @@ const BLOCK_LABELS: Record<BlockType, string> = {
   intervals: "Intervals",
 }
 
-const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
+export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
   project_bouldering: "flame",
   constraint_warmup: "thermometer",
   strength_conditioning: "barbell",
@@ -221,21 +251,63 @@ const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
 
 // ─── Block Picker Modal ───────────────────────────────────────────────────────
 
+const LIBRARY_FILTER_VISIBLE_COUNT = 3
+
 export function BlockPickerModal({
   onAdd,
   onClose,
   embedded,
+  initialTab = "new",
+  allowSaveToLibrary = true,
 }: {
   onAdd: (block: Block) => void
   onClose: () => void
   /** When true, render without modal chrome (sidebar on PC). */
   embedded?: boolean
+  /** Which tab opens first — callers browsing an existing library want "library". */
+  initialTab?: "library" | "new"
+  /** Passed through to the "New block" form's save-to-library toggle. */
+  allowSaveToLibrary?: boolean
 }) {
-  const [tab, setTab] = useState<"library" | "new">("new")
+  const [tab, setTab] = useState<"library" | "new">(initialTab)
   const [libraryBlocks, setLibraryBlocks] = useState<BlockRow[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(true)
   const [newBlockType, setNewBlockType] = useState<BlockType | null>(null)
   const [librarySearch, setLibrarySearch] = useState("")
+  const [libraryTypeFilter, setLibraryTypeFilter] = useState<BlockType | null>(null)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
+  const [libraryCardMenuId, setLibraryCardMenuId] = useState<string | null>(null)
+  const [editingRow, setEditingRow] = useState<BlockRow | null>(null)
+  const [editingBlock, setEditingBlock] = useState<Block | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Types actually present in the library — keeps the filter row from showing
+  // chips for types with nothing in them.
+  const availableTypes = useMemo(() => {
+    const present = new Set(libraryBlocks.map((b) => b.type as BlockType))
+    return (Object.keys(BLOCK_LABELS) as BlockType[]).filter((t) => present.has(t))
+  }, [libraryBlocks])
+
+  const filteredLibraryBlocks = useMemo(() => {
+    const q = librarySearch.trim().toLowerCase()
+    return libraryBlocks
+      .filter((b) => !libraryTypeFilter || b.type === libraryTypeFilter)
+      .filter((b) => !q || b.name.toLowerCase().includes(q) || (BLOCK_LABELS[b.type as BlockType] ?? "").toLowerCase().includes(q))
+      .slice()
+      // Case-insensitive A→Z (Appwrite's sort is case-sensitive).
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+  }, [libraryBlocks, librarySearch, libraryTypeFilter])
+
+  const groupedLibraryBlocks = useMemo(() => {
+    const grouped: Record<string, BlockRow[]> = {}
+    for (const row of filteredLibraryBlocks) {
+      if (!grouped[row.type]) grouped[row.type] = []
+      grouped[row.type].push(row)
+    }
+    return (Object.keys(BLOCK_LABELS) as BlockType[])
+      .filter((t) => grouped[t]?.length > 0)
+      .map((type) => ({ type, rows: grouped[type] }))
+  }, [filteredLibraryBlocks])
 
   async function loadLibrary() {
     setLoadingLibrary(true)
@@ -243,15 +315,15 @@ export function BlockPickerModal({
     catch (e) { console.error(e) }
     finally { setLoadingLibrary(false) }
   }
-  // Initial load, and re-fetch whenever the Library tab is opened so newly
-  // created / updated templates show up without reopening the sheet.
-  useEffect(() => { if (tab === "library") loadLibrary() }, [tab])
+  // Load once on mount. Saving a new block to the library (handleSaveNew)
+  // refreshes the list itself, so switching tabs doesn't need to re-fetch.
+  useEffect(() => { loadLibrary() }, [])
 
   function handlePickFromLibrary(row: BlockRow) {
     onAdd(blockFromLibraryRow(row))
   }
 
-  async function handleDeleteFromLibrary(id: string) {
+  async function handleDeleteFromLibrary(id: string, onDeleted?: () => void) {
   Alert.alert("Delete block", "Remove this block from the library?", [
     { text: "Cancel", style: "cancel" },
     {
@@ -261,6 +333,7 @@ export function BlockPickerModal({
         try {
           await deleteBlock(id)
           setLibraryBlocks((prev) => prev.filter((b) => b.$id !== id))
+          onDeleted?.()
         } catch (e: any) {
           Alert.alert("Error", e?.message ?? "Could not delete block.")
         }
@@ -268,6 +341,27 @@ export function BlockPickerModal({
     },
   ])
 }
+
+  function handleEditFromLibrary(row: BlockRow) {
+    setEditingRow(row)
+    setEditingBlock(blockFromLibraryRow(row))
+  }
+
+  async function handleSaveEdit() {
+    if (!editingRow || !editingBlock) return
+    setSavingEdit(true)
+    try {
+      const { id, ...data } = editingBlock
+      const updated = await updateBlock(editingRow.$id, { name: editingBlock.blockName, type: editingBlock.type, data })
+      setLibraryBlocks((prev) => prev.map((b) => (b.$id === updated.$id ? updated : b)))
+      setEditingRow(null)
+      setEditingBlock(null)
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not save changes.")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
 
   async function handleSaveNew(block: Block, saveToLibrary: boolean) {
     if (saveToLibrary) {
@@ -280,6 +374,7 @@ export function BlockPickerModal({
 
   const Container: any = embedded ? View : SafeAreaView
   return (
+    <>
     <Container style={styles.safeContainer}>
       <View style={styles.modalHeader}>
         {embedded ? (
@@ -314,6 +409,39 @@ export function BlockPickerModal({
           <Text style={styles.emptyState}>No blocks in library yet.</Text>
         ) : (
           <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+            {/* Type filter chips — so 79 blocks don't all have to be scrolled
+                through to find one kind. Collapsed to a few + "+N" so this
+                doesn't itself become a wall to scan. */}
+            {availableTypes.length > 1 && (
+              <View style={styles.libraryFilterRow}>
+                {(filtersExpanded ? availableTypes : availableTypes.slice(0, LIBRARY_FILTER_VISIBLE_COUNT)).map((type) => {
+                  const active = libraryTypeFilter === type
+                  return (
+                    <Pressable
+                      key={type}
+                      style={[styles.libraryFilterChip, active && styles.libraryFilterChipActive]}
+                      onPress={() => setLibraryTypeFilter(active ? null : type)}
+                    >
+                      <Ionicons name={BLOCK_ICONS[type]} size={13} color={active ? C.bg : C.textSecondary} />
+                      <Text style={[styles.libraryFilterChipText, active && styles.libraryFilterChipTextActive]}>
+                        {BLOCK_LABELS[type]}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
+                {!filtersExpanded && availableTypes.length > LIBRARY_FILTER_VISIBLE_COUNT && (
+                  <Pressable style={styles.libraryFilterChip} onPress={() => setFiltersExpanded(true)}>
+                    <Text style={styles.libraryFilterChipText}>+{availableTypes.length - LIBRARY_FILTER_VISIBLE_COUNT}</Text>
+                  </Pressable>
+                )}
+                {filtersExpanded && availableTypes.length > LIBRARY_FILTER_VISIBLE_COUNT && (
+                  <Pressable style={styles.libraryFilterChip} onPress={() => setFiltersExpanded(false)}>
+                    <Text style={styles.libraryFilterChipText}>Less</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
             {/* Search bar */}
             <View style={styles.librarySearchWrap}>
               <Ionicons name="search" size={16} color={C.textMuted} />
@@ -330,38 +458,14 @@ export function BlockPickerModal({
                 </Pressable>
               )}
             </View>
-            <Text style={{ fontSize: 12, color: C.textMuted, paddingHorizontal: 4, marginBottom: 4 }}>
-              {libraryBlocks.length} block{libraryBlocks.length !== 1 ? "s" : ""} loaded
-            </Text>
-            {(() => {
-              // Apply search filter, then group by type
-              const q = librarySearch.trim().toLowerCase()
-              const filtered = (q
-                ? libraryBlocks.filter((b) =>
-                    b.name.toLowerCase().includes(q) ||
-                    (BLOCK_LABELS[b.type as BlockType] ?? "").toLowerCase().includes(q)
-                  )
-                : libraryBlocks
-              )
-                // Case-insensitive A→Z (Appwrite's sort is case-sensitive).
-                .slice()
-                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-              const grouped: Record<string, BlockRow[]> = {}
-              for (const row of filtered) {
-                if (!grouped[row.type]) grouped[row.type] = []
-                grouped[row.type].push(row)
-              }
-              const orderedTypes = (Object.keys(BLOCK_LABELS) as BlockType[]).filter(
-                (t) => grouped[t]?.length > 0
-              )
-              if (orderedTypes.length === 0) {
-                return <Text style={styles.emptyState}>No blocks match.</Text>
-              }
-              return orderedTypes.map((type) => (
+            {groupedLibraryBlocks.length === 0 ? (
+              <Text style={styles.emptyState}>No blocks match.</Text>
+            ) : (
+              groupedLibraryBlocks.map(({ type, rows }) => (
                 <View key={type} style={{ marginBottom: 18 }}>
                   <Text style={styles.libraryGroupHeader}>{BLOCK_LABELS[type]}</Text>
                   <View style={styles.libraryGrid}>
-                    {grouped[type].map((row) => (
+                    {rows.map((row) => (
                       <Pressable
                         key={row.$id}
                         style={styles.libraryCard}
@@ -378,23 +482,28 @@ export function BlockPickerModal({
                           </Text>
                         </View>
                         <Pressable
-                          onPress={() => handleDeleteFromLibrary(row.$id)}
-                          style={styles.libraryCardDelete}
+                          onPress={() => setLibraryCardMenuId(row.$id)}
+                          style={styles.libraryCardMenuBtn}
                           hitSlop={8}
                         >
-                          <Ionicons name="close" size={14} color={C.textMuted} />
+                          <Ionicons name="ellipsis-horizontal" size={15} color={C.textMuted} />
                         </Pressable>
                       </Pressable>
                     ))}
                   </View>
                 </View>
               ))
-            })()}
+            )}
+            <Text style={styles.libraryResultsFooter}>
+              {filteredLibraryBlocks.length} result{filteredLibraryBlocks.length !== 1 ? "s" : ""}
+            </Text>
           </ScrollView>
         )
       ) : (
         <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
-          {newBlockType === null ? (
+          {/* Embedded (PC sidebar): the type grid stays put — details open in
+              their own modal instead of taking over this narrow pane. */}
+          {embedded || newBlockType === null ? (
             <>
               <Text style={styles.pickerPrompt}>Choose a block type</Text>
               <View style={styles.blockTypeGrid}>
@@ -414,23 +523,113 @@ export function BlockPickerModal({
               type={newBlockType}
               onBack={() => setNewBlockType(null)}
               onSave={handleSaveNew}
+              allowSaveToLibrary={allowSaveToLibrary}
             />
           )}
         </ScrollView>
       )}
     </Container>
+
+    {embedded && !!newBlockType && (
+    <Modal visible transparent animationType="fade" onRequestClose={() => setNewBlockType(null)}>
+      <Pressable style={styles.editBackdrop} onPress={() => setNewBlockType(null)}>
+        <Pressable style={styles.editCard} onPress={() => {}}>
+          <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+            <NewBlockForm
+              type={newBlockType}
+              onBack={() => setNewBlockType(null)}
+              onSave={async (block, saveToLibrary) => { await handleSaveNew(block, saveToLibrary); setNewBlockType(null) }}
+              allowSaveToLibrary={allowSaveToLibrary}
+            />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+    )}
+
+    {!!editingRow && (
+    <Modal visible transparent animationType="fade" onRequestClose={() => setEditingRow(null)}>
+      <Pressable style={styles.editBackdrop} onPress={() => setEditingRow(null)}>
+        <Pressable style={styles.editCard} onPress={() => {}}>
+          <View style={styles.editorHeader}>
+            <Pressable onPress={() => setEditingRow(null)} hitSlop={10}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+            <Text style={styles.editorTitle}>Edit block</Text>
+            <Pressable onPress={handleSaveEdit} disabled={savingEdit} hitSlop={10}>
+              <Text style={[styles.saveText, savingEdit && { opacity: 0.5 }]}>
+                {savingEdit ? "Saving…" : "Save"}
+              </Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+            {editingBlock && (
+              <BlockEditorRow
+                block={editingBlock}
+                isExpanded
+                isActive={false}
+                standalone
+                onToggleExpand={() => {}}
+                onDrag={() => {}}
+                onUpdate={setEditingBlock}
+                onDelete={() => editingRow && handleDeleteFromLibrary(editingRow.$id, () => setEditingRow(null))}
+              />
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+    )}
+
+    {!!libraryCardMenuId && (
+    <Modal visible transparent animationType="fade" onRequestClose={() => setLibraryCardMenuId(null)}>
+      <Pressable style={styles.actionSheetBackdrop} onPress={() => setLibraryCardMenuId(null)}>
+        <View style={styles.actionSheet}>
+          <Pressable
+            style={styles.actionSheetItem}
+            onPress={() => {
+              const row = libraryBlocks.find((b) => b.$id === libraryCardMenuId)
+              setLibraryCardMenuId(null)
+              if (row) handleEditFromLibrary(row)
+            }}
+          >
+            <Text style={styles.actionSheetItemText}>Edit</Text>
+          </Pressable>
+          <Pressable
+            style={styles.actionSheetItem}
+            onPress={() => {
+              const id = libraryCardMenuId
+              setLibraryCardMenuId(null)
+              if (id) handleDeleteFromLibrary(id)
+            }}
+          >
+            <Text style={[styles.actionSheetItemText, { color: C.red }]}>Delete</Text>
+          </Pressable>
+          <View style={styles.actionSheetDivider} />
+          <Pressable style={styles.actionSheetItem} onPress={() => setLibraryCardMenuId(null)}>
+            <Text style={styles.actionSheetItemText}>Cancel</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+    )}
+    </>
   )
 }
 
 // ─── New Block Form ───────────────────────────────────────────────────────────
 
-function NewBlockForm({ type, onBack, onSave }: {
+function NewBlockForm({ type, onBack, onSave, allowSaveToLibrary = true }: {
   type: BlockType
   onBack: () => void
   onSave: (block: Block, saveToLibrary: boolean) => Promise<void>
+  // When false, this block is a one-off (e.g. an athlete describing a past
+  // session) — hide the toggle entirely instead of polluting the shared
+  // coach-facing library with it.
+  allowSaveToLibrary?: boolean
 }) {
   const [block, setBlock] = useState<Block>(makeDefaultBlock(type))
-  const [saveToLibrary, setSaveToLibrary] = useState(true)
+  const [saveToLibrary, setSaveToLibrary] = useState(allowSaveToLibrary)
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
@@ -489,21 +688,15 @@ function NewBlockForm({ type, onBack, onSave }: {
         <IntervalsFields block={block as IntervalsBlock} onUpdate={setBlock} />
       )}
       {type === "free_session" && (
-        <>
-          <FieldLabel label="Description" />
-          <FieldInput
-            value={(block as FreeSessionBlock).description}
-            onChange={(v) => setBlock({ ...(block as FreeSessionBlock), description: v })}
-            placeholder="What will athletes do during this session?"
-            multiline
-          />
-        </>
+        <FreeSessionFields block={block as FreeSessionBlock} onUpdate={setBlock} />
       )}
 
-      <View style={styles.switchRow}>
-        <Text style={styles.fieldLabel}>Save to library</Text>
-        <Switch value={saveToLibrary} onValueChange={setSaveToLibrary} />
-      </View>
+      {allowSaveToLibrary && (
+        <View style={styles.switchRow}>
+          <Text style={styles.fieldLabel}>Save to library</Text>
+          <Switch value={saveToLibrary} onValueChange={setSaveToLibrary} />
+        </View>
+      )}
 
       <CustomButton title={saving ? "Saving…" : "Add to protocol"} onPress={handleSave} />
     </View>
@@ -512,97 +705,199 @@ function NewBlockForm({ type, onBack, onSave }: {
 
 // ─── Block Editor Row ─────────────────────────────────────────────────────────
 
-export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown }: {
+export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown, standalone }: {
   block: Block; isExpanded: boolean; isActive: boolean
   onToggleExpand: () => void; onDrag: () => void; onUpdate: (b: Block) => void; onDelete: () => void
   onSaveAsTemplate?: () => void
   // Desktop reorder controls. When provided, replace the touch drag handle with
   // ▲/▼ buttons; an undefined callback means that direction is disabled (ends).
   onMoveUp?: () => void; onMoveDown?: () => void
+  // Editing a single block on its own (e.g. from the template library) rather
+  // than as a row in a reorderable list — drops the drag handle and the title/
+  // chevron bar (nothing to reorder or collapse), and swaps the bare "✕" for a
+  // labeled, still-confirmed delete action so it can't be hit by accident.
+  standalone?: boolean
 }) {
   const reorderButtons = onMoveUp !== undefined || onMoveDown !== undefined
+  const showFields = standalone || isExpanded
+  const editingBorder = !standalone && isExpanded
   return (
-    <View style={[styles.blockRow, isActive && styles.blockRowActive]}>
-      <View style={styles.blockRowHeader}>
-        {reorderButtons ? (
-          <View style={styles.moveButtons}>
-            <Pressable onPress={onMoveUp} disabled={!onMoveUp} style={styles.moveButton} hitSlop={6}>
-              <Text style={[styles.moveButtonText, !onMoveUp && styles.moveButtonDisabled]}>▲</Text>
-            </Pressable>
-            <Pressable onPress={onMoveDown} disabled={!onMoveDown} style={styles.moveButton} hitSlop={6}>
-              <Text style={[styles.moveButtonText, !onMoveDown && styles.moveButtonDisabled]}>▼</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Pressable onLongPress={onDrag} style={styles.dragHandle}>
-            <Text style={styles.dragHandleText}>☰</Text>
-          </Pressable>
-        )}
-        <Pressable style={styles.blockRowTitle} onPress={onToggleExpand}>
-          <View>
-            <Text style={styles.blockTypeLabel}>{block.blockName || BLOCK_LABELS[block.type]}</Text>
-            <Text style={styles.blockTypeSubLabel}>{BLOCK_LABELS[block.type]}</Text>
-          </View>
-          <Text style={styles.expandChevron}>{isExpanded ? "▲" : "▼"}</Text>
-        </Pressable>
-        <Pressable onPress={onDelete} style={styles.blockDeleteButton}>
-          <Text style={styles.deleteButtonText}>✕</Text>
-        </Pressable>
-      </View>
-      {isExpanded && (
-        <View style={styles.blockFields}>
-          <View style={styles.nameRow}>
-            <View style={styles.nameField}>
-              <Text style={styles.fieldLabel}>Block name</Text>
-              <TextInput
-                style={styles.fieldInput}
-                value={block.blockName}
-                onChangeText={(v) => onUpdate({ ...block, blockName: v })}
-                placeholderTextColor="#aaa"
-                placeholder="Block name"
-              />
+    <View style={[
+      standalone ? styles.blockRowStandalone : styles.blockRow,
+      isActive && styles.blockRowActive,
+      editingBorder && styles.blockRowEditing,
+    ]}>
+      {standalone ? (
+        <StandaloneHeader block={block} onSaveAsTemplate={onSaveAsTemplate} onDelete={onDelete} />
+      ) : (
+        <View style={styles.blockRowHeader}>
+          {reorderButtons ? (
+            <View style={styles.moveButtons}>
+              <Pressable onPress={onMoveUp} disabled={!onMoveUp} style={styles.moveButton} hitSlop={6}>
+                <Text style={[styles.moveButtonText, !onMoveUp && styles.moveButtonDisabled]}>▲</Text>
+              </Pressable>
+              <Pressable onPress={onMoveDown} disabled={!onMoveDown} style={styles.moveButton} hitSlop={6}>
+                <Text style={[styles.moveButtonText, !onMoveDown && styles.moveButtonDisabled]}>▼</Text>
+              </Pressable>
             </View>
-            <BlockNumerics block={block} onUpdate={onUpdate} />
-          </View>
-          <TimeLimitField block={block} onUpdate={onUpdate} />
-          <Text style={styles.fieldLabel}>Adaptation</Text>
-          <AdaptationPicker
-            value={resolveAdaptation(block)}
-            onChange={(v) => onUpdate({ ...block, adaptation: v })}
-          />
-          {block.type === "project_bouldering" && <ProjectBoulderingFields block={block} onUpdate={onUpdate} />}
-          {block.type === "constraint_warmup" && <ConstraintWarmupFields block={block} onUpdate={onUpdate} />}
-          {block.type === "strength_conditioning" && <StrengthConditioningFields block={block} onUpdate={onUpdate} />}
-          {block.type === "exploration_session" && <ExplorationSessionFields block={block} onUpdate={onUpdate} />}
-          {block.type === "sequence" && <SequenceFields block={block as SequenceBlock} onUpdate={onUpdate} />}
-          {block.type === "four_by_four" && <FourByFourFields block={block as FourByFourBlock} onUpdate={onUpdate} />}
-          {block.type === "intervals" && <IntervalsFields block={block as IntervalsBlock} onUpdate={onUpdate} />}
-          {block.type === "free_session" && (
-            <>
-              <Text style={styles.fieldLabel}>Description</Text>
-              <TextInput
-                style={[styles.fieldInput, { minHeight: 72, textAlignVertical: "top" }]}
-                value={(block as FreeSessionBlock).description}
-                onChangeText={(v) => onUpdate({ ...block, description: v } as FreeSessionBlock)}
-                placeholder="What will athletes do during this session?"
-                placeholderTextColor="#aaa"
-                multiline
-              />
-            </>
-          )}
-
-          {onSaveAsTemplate && (
-            <Pressable style={styles.saveTemplateBtn} onPress={onSaveAsTemplate}>
-              <Text style={styles.saveTemplateBtnText}>Save as template</Text>
+          ) : (
+            <Pressable onLongPress={onDrag} style={styles.dragHandle}>
+              <DragGripIcon />
             </Pressable>
           )}
+          <View style={[styles.blockRowDot, { backgroundColor: ADAPTATION_COLOR[resolveAdaptation(block)] }]} />
+          <Text style={styles.blockRowCompactName} numberOfLines={1}>
+            {block.blockName || BLOCK_LABELS[block.type]}
+          </Text>
+          <Pressable onPress={onToggleExpand} style={styles.blockRowEditBtn} hitSlop={8}>
+            <Ionicons name={isExpanded ? "chevron-up" : "pencil"} size={16} color={isExpanded ? C.green : C.textSecondary} />
+          </Pressable>
         </View>
+      )}
+      {showFields && (
+        standalone ? (
+          <StandaloneBlockFields block={block} onUpdate={onUpdate} />
+        ) : (
+          <View style={styles.blockFields}>
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Text style={styles.fieldLabel}>Block name</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={block.blockName}
+                  onChangeText={(v) => onUpdate({ ...block, blockName: v })}
+                  placeholderTextColor="#aaa"
+                  placeholder="Block name"
+                />
+              </View>
+              <BlockNumerics block={block} onUpdate={onUpdate} />
+            </View>
+            <TimeLimitToggle block={block} onUpdate={onUpdate} />
+            <Text style={styles.fieldLabel}>
+              Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
+            </Text>
+            <AdaptationPicker
+              value={resolveAdaptation(block)}
+              onChange={(v) => onUpdate({ ...block, adaptation: v })}
+            />
+            <TypeSpecificFields block={block} onUpdate={onUpdate} />
+            {onSaveAsTemplate && (
+              <Pressable style={styles.saveTemplateBtn} onPress={onSaveAsTemplate}>
+                <Text style={styles.saveTemplateBtnText}>Save as template</Text>
+              </Pressable>
+            )}
+            <Pressable style={styles.blockDeleteFooterBtn} onPress={onDelete}>
+              <Ionicons name="trash-outline" size={14} color={C.red} />
+              <Text style={styles.blockDeleteFooterBtnText}>Delete block</Text>
+            </Pressable>
+          </View>
+        )
       )}
     </View>
   )
 }
 
+// The block-type-specific fields (plus the free-session description), shared
+// between the compact list row and the standalone editor.
+function TypeSpecificFields({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  return (
+    <>
+      {block.type === "project_bouldering" && <ProjectBoulderingFields block={block} onUpdate={onUpdate} />}
+      {block.type === "constraint_warmup" && <ConstraintWarmupFields block={block} onUpdate={onUpdate} />}
+      {block.type === "strength_conditioning" && <StrengthConditioningFields block={block} onUpdate={onUpdate} />}
+      {block.type === "exploration_session" && <ExplorationSessionFields block={block} onUpdate={onUpdate} />}
+      {block.type === "sequence" && <SequenceFields block={block as SequenceBlock} onUpdate={onUpdate} />}
+      {block.type === "four_by_four" && <FourByFourFields block={block as FourByFourBlock} onUpdate={onUpdate} />}
+      {block.type === "intervals" && <IntervalsFields block={block as IntervalsBlock} onUpdate={onUpdate} />}
+      {block.type === "free_session" && (
+        <FreeSessionFields block={block as FreeSessionBlock} onUpdate={onUpdate} />
+      )}
+    </>
+  )
+}
+
+// ─── Standalone editor (template library) ──────────────────────────────────────
+
+// Dot + type label + "···" actions, replacing the list row's drag handle and
+// bare "✕" — neither means anything when there's only one block on screen.
+function StandaloneHeader({ block, onSaveAsTemplate, onDelete }: {
+  block: Block; onSaveAsTemplate?: () => void; onDelete: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const color = ADAPTATION_COLOR[resolveAdaptation(block)]
+  return (
+    <>
+      <View style={styles.standaloneHeaderRow}>
+        <View style={styles.standaloneHeaderLeft}>
+          <View style={[styles.standaloneDot, { backgroundColor: color }]} />
+          <Text style={styles.standaloneHeaderTitle}>{BLOCK_LABELS[block.type]}</Text>
+        </View>
+        <Pressable onPress={() => setMenuOpen(true)} hitSlop={10} style={styles.standaloneMenuBtn}>
+          <Ionicons name="ellipsis-horizontal" size={18} color={C.textSecondary} />
+        </Pressable>
+      </View>
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={styles.actionSheetBackdrop} onPress={() => setMenuOpen(false)}>
+          <View style={styles.actionSheet}>
+            {onSaveAsTemplate && (
+              <Pressable
+                style={styles.actionSheetItem}
+                onPress={() => { setMenuOpen(false); onSaveAsTemplate() }}
+              >
+                <Text style={styles.actionSheetItemText}>Save as template</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={styles.actionSheetItem}
+              onPress={() => { setMenuOpen(false); onDelete() }}
+            >
+              <Text style={[styles.actionSheetItemText, { color: C.red }]}>Delete block</Text>
+            </Pressable>
+            <View style={styles.actionSheetDivider} />
+            <Pressable style={styles.actionSheetItem} onPress={() => setMenuOpen(false)}>
+              <Text style={styles.actionSheetItemText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
+  )
+}
+
+function StandaloneBlockFields({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  return (
+    <View style={styles.standaloneFields}>
+      <Text style={styles.fieldLabel}>Block name</Text>
+      <TextInput
+        style={styles.fieldInput}
+        value={block.blockName}
+        onChangeText={(v) => onUpdate({ ...block, blockName: v })}
+        placeholderTextColor="#aaa"
+        placeholder="Block name"
+      />
+
+      <BlockNumerics block={block} onUpdate={onUpdate} standalone />
+
+      <TimeLimitToggle block={block} onUpdate={onUpdate} />
+
+      <Text style={styles.fieldLabel}>
+        Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
+      </Text>
+      <AdaptationPicker
+        value={resolveAdaptation(block)}
+        onChange={(v) => onUpdate({ ...block, adaptation: v })}
+      />
+
+      <TypeSpecificFields block={block} onUpdate={onUpdate} />
+    </View>
+  )
+}
+
 // ─── Field Components ─────────────────────────────────────────────────────────
+
+// "general"/"test" are fallback-only buckets (used when a block has no real
+// adaptation) — never offered as a pick.
+const PICKABLE_ADAPTATIONS = ADAPTATIONS.filter((a) => a !== "general" && a !== "test")
 
 function AdaptationPicker({
   value,
@@ -612,27 +907,22 @@ function AdaptationPicker({
   onChange: (v: Adaptation) => void
 }) {
   return (
-    <View style={styles.adaptationRow}>
-      {ADAPTATIONS.map((a) => {
+    <View style={styles.adaptationRowStandalone}>
+      {PICKABLE_ADAPTATIONS.map((a) => {
         const selected = value === a
         const color = ADAPTATION_COLOR[a]
         return (
           <Pressable
             key={a}
             onPress={() => onChange(a)}
-            style={[
-              styles.adaptationChip,
-              selected && { backgroundColor: color, borderColor: color },
-            ]}
+            style={[styles.adaptationChipStandalone, selected && { borderColor: color, backgroundColor: color + "22" }]}
           >
-            <View
-              style={[
-                styles.adaptationDot,
-                { backgroundColor: color },
-                selected && { backgroundColor: C.bg },
-              ]}
-            />
-            <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+            {selected ? (
+              <Ionicons name="checkmark" size={15} color={color} />
+            ) : (
+              <View style={[styles.adaptationDot, { backgroundColor: color }]} />
+            )}
+            <Text style={[styles.adaptationChipTextStandalone, selected && { color, fontWeight: "700" }]}>
               {ADAPTATION_LABEL[a]}
             </Text>
           </Pressable>
@@ -679,6 +969,15 @@ function GradePicker({
   )
 }
 
+// A 2×3 dot grid reads as "drag me" more clearly than a "☰" glyph.
+function DragGripIcon() {
+  return (
+    <View style={styles.dragGrip}>
+      {[0, 1, 2, 3, 4, 5].map((i) => <View key={i} style={styles.dragGripDot} />)}
+    </View>
+  )
+}
+
 function FieldLabel({ label }: { label: string }) {
   return <Text style={styles.fieldLabel}>{label}</Text>
 }
@@ -708,47 +1007,131 @@ function NumField({ label, value, onChange }: {
   )
 }
 
+// m:ss is far more scannable mid-workout than a raw second count.
+function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds || 0))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+}
+
+// Accepts "3:00" or a bare "180" (seconds) so quick edits still work.
+function parseDuration(text: string): number {
+  const trimmed = text.trim()
+  if (trimmed.includes(":")) {
+    const [m, s] = trimmed.split(":")
+    return (parseInt(m) || 0) * 60 + (parseInt(s) || 0)
+  }
+  return parseInt(trimmed) || 0
+}
+
+// A rest/duration field displayed as m:ss instead of raw seconds. Keeps its
+// own text while typing so "3:0…" isn't reformatted out from under the user;
+// commits (and reformats) on blur.
+function RestField({ label, value, onChange }: {
+  label: string; value: number; onChange: (n: number) => void
+}) {
+  const [text, setText] = useState(formatDuration(value))
+  useEffect(() => { setText(formatDuration(value)) }, [value])
+  return (
+    <View style={styles.numField}>
+      <FieldLabel label={label} />
+      <TextInput
+        style={styles.fieldInput}
+        value={text}
+        onChangeText={setText}
+        onBlur={() => { const secs = parseDuration(text); setText(formatDuration(secs)); onChange(secs) }}
+        placeholder="0:00"
+        placeholderTextColor="#aaa"
+        keyboardType="numbers-and-punctuation"
+      />
+    </View>
+  )
+}
+
+// Same idea as NumField, but as a −/value/+ stepper instead of a raw text
+// box — used by the standalone editor, where there's room and the mockup
+// calls for it.
+function StepperField({ label, value, onChange, min = 0, step = 1 }: {
+  label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
+}) {
+  return (
+    <View style={styles.stepperField}>
+      <FieldLabel label={label} />
+      <View style={styles.stepperControl}>
+        <Pressable onPress={() => onChange(Math.max(min, value - step))} style={styles.stepperBtn} hitSlop={8}>
+          <Text style={styles.stepperBtnText}>−</Text>
+        </Pressable>
+        <Text style={styles.stepperValue} numberOfLines={1}>{value}</Text>
+        <Pressable onPress={() => onChange(value + step)} style={styles.stepperBtn} hitSlop={8}>
+          <Text style={styles.stepperBtnText}>+</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
+// StepperField's duration counterpart — steps in 15s increments, shown as m:ss.
+function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
+  label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
+}) {
+  return (
+    <View style={styles.stepperField}>
+      <FieldLabel label={label} />
+      <View style={styles.stepperControl}>
+        <Pressable onPress={() => onChange(Math.max(min, value - step))} style={styles.stepperBtn} hitSlop={8}>
+          <Text style={styles.stepperBtnText}>−</Text>
+        </Pressable>
+        <Text style={styles.stepperValue} numberOfLines={1}>{formatDuration(value)}</Text>
+        <Pressable onPress={() => onChange(value + step)} style={styles.stepperBtn} hitSlop={8}>
+          <Text style={styles.stepperBtnText}>+</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
 // The short numeric fields for a block, rendered as a compact row so they can
 // sit beside the Block name input. Returns null for types with no numerics.
-function BlockNumerics({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate: (b: Block) => void; standalone?: boolean }) {
   function update(fields: any) { onUpdate({ ...block, ...fields } as Block) }
+  const Field = standalone ? StepperField : NumField
+  const Rest = standalone ? StepperRestField : RestField
   let fields: React.ReactNode = null
   switch (block.type) {
     case "project_bouldering":
       fields = (<>
-        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
-        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+        <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
+        <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
     case "four_by_four":
       fields = (<>
-        <NumField label="Sets" value={block.sets} onChange={(n) => update({ sets: n })} />
-        <NumField label="Per set" value={block.bouldersPerSet} onChange={(n) => update({ bouldersPerSet: n })} />
-        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+        <Field label="Sets" value={block.sets} onChange={(n) => update({ sets: n })} min={1} />
+        <Field label="Per set" value={block.bouldersPerSet} onChange={(n) => update({ bouldersPerSet: n })} min={1} />
+        <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
     case "intervals":
       fields = (<>
-        <NumField label="Series" value={block.series} onChange={(n) => update({ series: n })} />
-        <NumField label="Work (s)" value={block.workTime} onChange={(n) => update({ workTime: n })} />
-        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+        <Field label="Series" value={block.series} onChange={(n) => update({ series: n })} min={1} />
+        <Rest label={standalone ? "Work" : "Work (s)"} value={block.workTime} onChange={(n) => update({ workTime: n })} />
+        <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
     case "strength_conditioning":
       fields = (<>
-        <NumField label="Rounds" value={block.rounds} onChange={(n) => update({ rounds: n })} />
-        <NumField label="Rest (s)" value={block.restBetweenRounds} onChange={(n) => update({ restBetweenRounds: n })} />
+        <Field label="Rounds" value={block.rounds} onChange={(n) => update({ rounds: n })} min={1} />
+        <Rest label="Rest" value={block.restBetweenRounds} onChange={(n) => update({ restBetweenRounds: n })} />
       </>); break
     case "sequence":
       fields = (<>
-        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
-        <NumField label="Rest (s)" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+        <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
+        <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
     case "constraint_warmup":
       fields = (
-        <NumField label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} />
+        <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
       ); break
     default:
       return null
   }
-  return <View style={styles.numericsRow}>{fields}</View>
+  return <View style={standalone ? styles.numericsRowStandalone : styles.numericsRow}>{fields}</View>
 }
 
 // Universal time-constraint field — every block can optionally cap its duration.
@@ -762,6 +1145,36 @@ function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block
         numeric
         placeholder="0"
       />
+    </View>
+  )
+}
+
+// Standalone editor's Time limit row: an Off/On switch, with a minutes
+// stepper that only appears once it's on.
+function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const enabled = (block.timeLimit ?? 0) > 0
+  return (
+    <View style={{ gap: 10 }}>
+      <View style={styles.timeLimitToggleRow}>
+        <Text style={styles.timeLimitToggleLabel}>Time limit</Text>
+        <View style={styles.timeLimitToggleRight}>
+          <Text style={styles.timeLimitToggleStatus}>{enabled ? `${block.timeLimit} min` : "Off"}</Text>
+          <Switch
+            value={enabled}
+            onValueChange={(v) => onUpdate({ ...block, timeLimit: v ? (block.timeLimit || 10) : 0 })}
+            trackColor={{ true: C.green, false: C.surfaceHigh }}
+            thumbColor={C.textPrimary}
+          />
+        </View>
+      </View>
+      {enabled && (
+        <StepperField
+          label="Minutes"
+          value={block.timeLimit ?? 10}
+          onChange={(n) => onUpdate({ ...block, timeLimit: Math.max(1, n) })}
+          min={1}
+        />
+      )}
     </View>
   )
 }
@@ -817,7 +1230,7 @@ export const SCLibraryContext = createContext<SCLibraryController | null>(null)
 
 // Build a block Exercise from a library row, applying its defaults.
 export function exerciseFromLibrary(ex: ExerciseRow): Exercise {
-  const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps" }
+  const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps", photoUri: ex.photoUri, notes: ex.notes }
   return ex.type === "7/3s"
     ? { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
     : { ...base, reps: ex.defaultReps ?? (ex.unit === "seconds" ? "20-30" : "4-6") }
@@ -835,8 +1248,10 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [createType, setCreateType] = useState<"reps" | "both_sides" | "7/3s" | null>(null)
+  const [search, setSearch] = useState("")
   const overlay = variant === "overlay"
   const containerStyle = overlay ? styles.libOverlayInner : [styles.libPane, wide && styles.libPaneWide]
+  const query = search.trim().toLowerCase()
 
   function reload() {
     setLoading(true)
@@ -858,6 +1273,8 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
     )
   }
 
+  const totalMatches = query ? exercises.filter((e) => e.name.toLowerCase().includes(query)).length : exercises.length
+
   return (
     <View style={containerStyle}>
       <View style={styles.libHeader}>
@@ -868,8 +1285,28 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
           </Pressable>
         )}
       </View>
+      {!loading && exercises.length > 0 && (
+        <View style={styles.libSearchWrap}>
+          <Ionicons name="search" size={14} color={C.textMuted} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search exercises"
+            placeholderTextColor={C.textMuted}
+            style={styles.libSearchInput}
+            autoCorrect={false}
+          />
+          {!!search && (
+            <Pressable onPress={() => setSearch("")} hitSlop={10}>
+              <Ionicons name="close-circle" size={16} color={C.textMuted} />
+            </Pressable>
+          )}
+        </View>
+      )}
       {loading ? (
         <ActivityIndicator style={{ marginTop: 20 }} />
+      ) : query && totalMatches === 0 ? (
+        <Text style={styles.libEmpty}>No exercises match “{search.trim()}”.</Text>
       ) : (
         <ScrollView
           style={overlay ? undefined : styles.libScroll}
@@ -877,7 +1314,11 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
           nestedScrollEnabled keyboardShouldPersistTaps="handled"
         >
           {SC_TYPES.map((g) => {
-            const items = exercises.filter((e) => e.type === g.type)
+            const items = exercises.filter((e) => e.type === g.type && (!query || e.name.toLowerCase().includes(query)))
+            // While searching, skip a type entirely once it has no matches —
+            // showing "None yet" here would misleadingly imply the type has
+            // no exercises at all, rather than just none matching the search.
+            if (query && items.length === 0) return null
             return (
               <View key={g.type} style={styles.libGroup}>
                 <View style={styles.libGroupHeader}>
@@ -976,6 +1417,13 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
         <Pressable onPress={onDelete} hitSlop={6}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
       </View>
 
+      {exercise.photoUri && (
+        <Image source={{ uri: exercise.photoUri }} style={styles.exercisePhotoThumb} />
+      )}
+      {exercise.notes && (
+        <Text style={styles.exerciseNotesPreview} numberOfLines={3}>{exercise.notes}</Text>
+      )}
+
       <FieldLabel label="Exercise name" />
       <FieldInput value={exercise.name} onChange={(v) => update({ name: v })} placeholder="Exercise name" />
 
@@ -1006,13 +1454,34 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
   // not a screen push — so it works inside the workout-builder modal.
   const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
   const [savingRoute, setSavingRoute] = useState(false)
+  // Saving closes two nested native <Modal>s at once (the builder, then —
+  // via selectRoute — the picker sheet underneath it). On iOS that races the
+  // two UIKit dismiss animations and can strand a blank white view that
+  // nothing can dismiss (same failure as the route-preview modal below), so
+  // there we close only the builder and defer selectRoute to its onDismiss.
+  const pendingRouteSelectRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
+  // Which variations the selected route actually has — drives the "Starting
+  // difficulty" picker below. Re-fetched whenever the route changes (covers
+  // both a fresh pick and re-opening an already-configured block).
+  const [availableVars, setAvailableVars] = useState<VariationKey[]>(["original"])
+
+  useEffect(() => {
+    if (!block.routeId) { setAvailableVars(["original"]); return }
+    let cancelled = false
+    getSprayRoute(block.routeId)
+      .then((row) => { if (!cancelled) setAvailableVars(availableVariations(parseVariations(row))) })
+      .catch(() => { /* keep default */ })
+    return () => { cancelled = true }
+  }, [block.routeId])
 
   function selectRoute(route: SprayRouteRow, wall?: SprayWallRow | null) {
     update({
       routeId: route.$id, routeName: route.name, routeHolds: route.holds,
+      startingVariation: "original",
       ...(wall?.imageUri ? { wallImageUri: wall.imageUri } : {}),
       ...(wall?.width && wall?.height ? { wallWidth: wall.width, wallHeight: wall.height } : {}),
     })
+    setAvailableVars(availableVariations(parseVariations(route)))
     setShowRoutePicker(false)
   }
 
@@ -1031,8 +1500,13 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
     try {
       const wall = creating?.wall ?? null
       const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
-      selectRoute(created, wall)
-      setCreating(null)
+      if (Platform.OS === "ios") {
+        pendingRouteSelectRef.current = { route: created, wall }
+        setCreating(null)
+      } else {
+        selectRoute(created, wall)
+        setCreating(null)
+      }
     } catch (e) {
       Alert.alert("Error", "Could not save the route. Try again.")
       console.error(e)
@@ -1057,6 +1531,28 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
         </Text>
       </Pressable>
 
+      {availableVars.length > 1 && (
+        <>
+          <FieldLabel label="Starting difficulty" />
+          <View style={styles.adaptationRow}>
+            {availableVars.map((k) => {
+              const selected = (block.startingVariation ?? "original") === k
+              return (
+                <Pressable
+                  key={k}
+                  onPress={() => update({ startingVariation: k })}
+                  style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+                >
+                  <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+                    {VARIATION_LABEL[k]}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </>
+      )}
+
       <Modal visible={showRoutePicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoutePicker(false)}>
         <RoutePickerModal
           onSelect={selectRoute}
@@ -1066,7 +1562,148 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
       </Modal>
 
       {/* Create a new route inline (nested modal — no screen push) */}
-      <Modal visible={creating !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setCreating(null)}>
+      <Modal
+        visible={creating !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setCreating(null)}
+        onDismiss={() => {
+          const pending = pendingRouteSelectRef.current
+          if (!pending) return
+          pendingRouteSelectRef.current = null
+          selectRoute(pending.route, pending.wall)
+        }}
+      >
+        {creating && (
+          <SafeAreaView style={styles.routeBuilderSafe} edges={["top"]}>
+            <SprayWallBuilder
+              imageSource={creating.wall?.imageUri ? { uri: creating.wall.imageUri } : ROUTE_FALLBACK_IMAGE}
+              onBack={() => setCreating(null)}
+              onSave={saveNewRoute}
+              saving={savingRoute}
+            />
+          </SafeAreaView>
+        )}
+      </Modal>
+    </>
+  )
+}
+
+// Free session's optional attached sequence: the same route picker/creator as
+// a Sequence block, but with no attempts/rest/variation fields — the route is
+// just shown to the athlete for reference while they climb freely.
+function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpdate: (b: Block) => void }) {
+  function update(fields: Partial<FreeSessionBlock>) { onUpdate({ ...block, ...fields } as FreeSessionBlock) }
+  const [showRoutePicker, setShowRoutePicker] = useState(false)
+  const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
+  const [savingRoute, setSavingRoute] = useState(false)
+  const pendingRouteSelectRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
+
+  function selectRoute(route: SprayRouteRow, wall?: SprayWallRow | null) {
+    update({
+      routeId: route.$id, routeName: route.name, routeHolds: route.holds,
+      ...(wall?.imageUri ? { wallImageUri: wall.imageUri } : {}),
+      ...(wall?.width && wall?.height ? { wallWidth: wall.width, wallHeight: wall.height } : {}),
+    })
+    setShowRoutePicker(false)
+  }
+
+  function handleCreateNew(wall?: SprayWallRow) {
+    setCreating({ wall: wall ?? null })
+  }
+
+  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
+    if (!name.trim()) { Alert.alert("Name required", "Give the route a name before saving."); return }
+    const holds = data.variations.original ?? []
+    const extras = { level: data.level, type: data.type, variations: data.variations }
+    setSavingRoute(true)
+    try {
+      const wall = creating?.wall ?? null
+      const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
+      if (Platform.OS === "ios") {
+        pendingRouteSelectRef.current = { route: created, wall }
+        setCreating(null)
+      } else {
+        selectRoute(created, wall)
+        setCreating(null)
+      }
+    } catch (e) {
+      Alert.alert("Error", "Could not save the route. Try again.")
+      console.error(e)
+    } finally {
+      setSavingRoute(false)
+    }
+  }
+
+  function clearRoute() {
+    update({ routeId: "", routeName: "", routeHolds: "", wallImageUri: undefined, wallWidth: undefined, wallHeight: undefined })
+  }
+
+  return (
+    <>
+      <FieldLabel label="Description" />
+      <FieldInput
+        value={block.description}
+        onChange={(v) => update({ description: v })}
+        placeholder="What will athletes do during this session?"
+        multiline
+      />
+
+      <Text style={styles.fieldLabel}>
+        Note prompt <Text style={styles.fieldLabelHint}>· optional</Text>
+      </Text>
+      <FieldInput
+        value={block.notePrompt ?? ""}
+        onChange={(v) => update({ notePrompt: v })}
+        placeholder="e.g. What block did you try?"
+      />
+
+      <Text style={styles.fieldLabel}>
+        Note example <Text style={styles.fieldLabelHint}>· optional</Text>
+      </Text>
+      <FieldInput
+        value={block.noteExample ?? ""}
+        onChange={(v) => update({ noteExample: v })}
+        placeholder="Shown as a hint inside the note field"
+      />
+
+      <Text style={styles.fieldLabel}>
+        Sequence <Text style={styles.fieldLabelHint}>· optional</Text>
+      </Text>
+      <View style={styles.freeSessionRouteRow}>
+        <Pressable style={[styles.exercisePickerButton, { flex: 1 }]} onPress={() => setShowRoutePicker(true)}>
+          <Text style={block.routeName ? styles.exercisePickerName : styles.exercisePickerPlaceholder} numberOfLines={1}>
+            {block.routeName || "Attach a sequence →"}
+          </Text>
+        </Pressable>
+        {!!block.routeName && (
+          <Pressable onPress={clearRoute} hitSlop={10} style={styles.freeSessionClearRouteBtn}>
+            <Ionicons name="close-circle" size={20} color={C.textMuted} />
+          </Pressable>
+        )}
+      </View>
+
+      <Modal visible={showRoutePicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoutePicker(false)}>
+        <RoutePickerModal
+          onSelect={selectRoute}
+          onClose={() => setShowRoutePicker(false)}
+          onCreateNew={handleCreateNew}
+        />
+      </Modal>
+
+      {/* Create a new route inline (nested modal — no screen push) */}
+      <Modal
+        visible={creating !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setCreating(null)}
+        onDismiss={() => {
+          const pending = pendingRouteSelectRef.current
+          if (!pending) return
+          pendingRouteSelectRef.current = null
+          selectRoute(pending.route, pending.wall)
+        }}
+      >
         {creating && (
           <SafeAreaView style={styles.routeBuilderSafe} edges={["top"]}>
             <SprayWallBuilder
@@ -1093,6 +1730,18 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [loading, setLoading] = useState(true)
   const [wallPickerVisible, setWallPickerVisible] = useState(false)
+  // Full-screen route preview — the list thumb is only 80x80, too small to
+  // read the moves before committing to a route.
+  const [previewRoute, setPreviewRoute] = useState<SprayRouteRow | null>(null)
+  // Selecting a route from the preview closes two nested native <Modal>s at
+  // once (the preview, then — via onSelect — the picker sheet). On iOS,
+  // dismissing both in the same tick races the two UIKit presentations and
+  // can strand a blank white view that nothing can dismiss. So on iOS we
+  // close only the preview here and defer onSelect to its onDismiss (fires
+  // once the native dismiss animation actually finishes); Android's Modal
+  // doesn't have that race, so it can select immediately.
+  const pendingSelectRef = useRef<{ route: SprayRouteRow; wall?: SprayWallRow } | null>(null)
+  const [filters, setFilters] = useState<RouteFilters>(EMPTY_ROUTE_FILTERS)
 
   // A new route must live on a wall: use the only wall, prompt to choose when
   // there are several, or proceed wall-less if none exist yet.
@@ -1123,6 +1772,7 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
     const uri = route.wallId ? wallsById.get(route.wallId)?.imageUri : undefined
     return uri ? { uri } : WALL_IMAGE
   }
+  const filteredRoutes = useMemo(() => applyRouteFilters(routes, filters), [routes, filters])
 
   return (
     <SafeAreaView style={styles.safeContainer}>
@@ -1144,13 +1794,19 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
         </View>
       </Pressable>
 
+      {!loading && routes.length > 0 && (
+        <RouteFilterBar filters={filters} onChange={setFilters} walls={walls} />
+      )}
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
       ) : routes.length === 0 ? (
         <Text style={styles.emptyState}>No routes saved yet.</Text>
+      ) : filteredRoutes.length === 0 ? (
+        <Text style={styles.emptyState}>No routes match your filters.</Text>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-          {routes.map((route) => {
+          {filteredRoutes.map((route) => {
             const holds = holdsByRoute.get(route.$id) ?? []
             return (
               <Pressable
@@ -1167,6 +1823,14 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                     previewWidth={500}
                     naturalSize={(() => { const w = wallsById.get(route.wallId ?? ""); return w?.width && w?.height ? { w: w.width, h: w.height } : null })()}
                   />
+                  <Pressable
+                    style={styles.routePickerZoomBtn}
+                    hitSlop={10}
+                    accessibilityLabel="Preview route full size"
+                    onPress={(e) => { e.stopPropagation(); setPreviewRoute(route) }}
+                  >
+                    <Ionicons name="expand" size={15} color="#fff" />
+                  </Pressable>
                 </View>
                 <View style={styles.routePickerBody}>
                   <Text style={styles.exercisePickerRowName} numberOfLines={1}>{route.name}</Text>
@@ -1180,6 +1844,60 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
           })}
         </ScrollView>
       )}
+
+      {/* Full-screen route preview — pinch/pan to inspect the moves before picking */}
+      <Modal
+        visible={previewRoute !== null}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setPreviewRoute(null)}
+        onDismiss={() => {
+          const pending = pendingSelectRef.current
+          if (!pending) return
+          pendingSelectRef.current = null
+          onSelect(pending.route, pending.wall)
+        }}
+      >
+        {previewRoute && (
+          <SafeAreaView style={styles.routePreviewSafe}>
+            <View style={styles.modalHeader}>
+              <Pressable onPress={() => setPreviewRoute(null)} style={styles.iconBackBtn} hitSlop={10}>
+                <Ionicons name="close" size={22} color={C.textSecondary} />
+              </Pressable>
+              <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]} numberOfLines={1}>
+                {previewRoute.name}
+              </Text>
+              <View style={styles.iconBackBtn} />
+            </View>
+            <SprayWallViewer
+              imageSource={routeImageSource(previewRoute)}
+              holds={holdsByRoute.get(previewRoute.$id) ?? []}
+              style={{ flex: 1 }}
+              freeGesture
+              previewWidth={1200}
+              naturalSize={(() => { const w = wallsById.get(previewRoute.wallId ?? ""); return w?.width && w?.height ? { w: w.width, h: w.height } : null })()}
+            />
+            <Text style={styles.routePreviewHint}>Pinch or double-tap to zoom</Text>
+            <View style={styles.routePreviewFooter}>
+              <CustomButton
+                title="Select this route"
+                onPress={() => {
+                  const r = previewRoute
+                  const wall = wallsById.get(r.wallId ?? "")
+                  if (Platform.OS === "ios") {
+                    // Defer to onDismiss above so the two modals close one at a time.
+                    pendingSelectRef.current = { route: r, wall }
+                    setPreviewRoute(null)
+                  } else {
+                    setPreviewRoute(null)
+                    onSelect(r, wall)
+                  }
+                }}
+              />
+            </View>
+          </SafeAreaView>
+        )}
+      </Modal>
 
       {/* Wall chooser — a new route must live on a wall */}
       <Modal visible={wallPickerVisible} transparent animationType="fade" onRequestClose={() => setWallPickerVisible(false)}>
@@ -1273,12 +1991,24 @@ const styles = StyleSheet.create({
     flex: 1, color: C.textPrimary, fontSize: 14,
     paddingVertical: 10, padding: 0,
   },
+  libraryFilterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  libraryFilterChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: C.surface, borderRadius: 16,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: C.border,
+  },
+  libraryFilterChipActive: { backgroundColor: C.green, borderColor: C.green },
+  libraryFilterChipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
+  libraryFilterChipTextActive: { color: C.bg },
+  libraryResultsFooter: { fontSize: 12, color: C.textMuted, textAlign: "center", marginTop: 4, marginBottom: 8 },
   libraryGrid: {
     flexDirection: "row", flexWrap: "wrap", gap: 10,
   },
+  // No fixed width/column count — each card hugs its name, so short names get
+  // small boxes and long ones get bigger boxes (wrapping past maxWidth).
   libraryCard: {
-    width: "31%",
-    flexGrow: 1,
+    minWidth: 130, maxWidth: 260,
     backgroundColor: C.surface,
     borderRadius: 12,
     borderWidth: 1, borderColor: C.border,
@@ -1286,16 +2016,25 @@ const styles = StyleSheet.create({
   },
   libraryCardRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    paddingRight: 20,  // leave room for the delete icon
+    paddingRight: 20,  // leave room for the "···" menu button
   },
   libraryCardName: {
     fontSize: 13, fontWeight: "600", color: C.textPrimary,
-    flex: 1,
+    flexShrink: 1,
   },
-  libraryCardDelete: {
+  libraryCardMenuBtn: {
     position: "absolute", top: 6, right: 6,
     width: 22, height: 22, borderRadius: 11,
     alignItems: "center", justifyContent: "center",
+  },
+  editBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center", justifyContent: "center", padding: 20,
+  },
+  editCard: {
+    width: "100%", maxWidth: 480, maxHeight: "85%",
+    backgroundColor: C.bg, borderRadius: 16,
+    borderWidth: 1, borderColor: C.border, overflow: "hidden",
   },
   libraryGroupHeader: {
     fontSize: 12, fontWeight: "700", color: C.textSecondary,
@@ -1389,28 +2128,44 @@ const styles = StyleSheet.create({
   splitLeft: { flex: 1, borderRightWidth: 1, borderRightColor: C.border },
   splitRight: { width: 420, backgroundColor: C.bg },
   blockList: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 140, gap: 10 },
-  blockRow: { backgroundColor: C.surface, borderRadius: 14, overflow: "hidden", marginBottom: 10 },
+  blockRow: {
+    // surfaceHigh (not surface) — the pane it sits in is already surface-colored,
+    // so a same-color card would have no visible edge, just floating text.
+    backgroundColor: C.surfaceHigh, borderRadius: 14, overflow: "hidden", marginBottom: 10,
+    borderWidth: 1, borderColor: "transparent",
+  },
+  blockRowStandalone: { backgroundColor: "transparent" },
   blockRowActive: { opacity: 0.8, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 4 },
+  // The one block currently open for editing gets a subtle green outline so
+  // it reads as "in edit" without needing a separate modal.
+  blockRowEditing: { borderColor: C.green },
   blockRowHeader: { flexDirection: "row", alignItems: "center", padding: 14, gap: 10 },
   dragHandle: { padding: 4 },
-  dragHandleText: { fontSize: 16, color: C.textMuted },
+  dragGrip: {
+    width: 12, height: 18, flexDirection: "row", flexWrap: "wrap",
+    justifyContent: "space-between", alignContent: "space-between",
+  },
+  dragGripDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: C.textMuted },
   moveButtons: { justifyContent: "center", gap: 2 },
   moveButton: { paddingHorizontal: 4, paddingVertical: 1 },
   moveButtonText: { fontSize: 12, color: C.textSecondary },
   moveButtonDisabled: { color: C.border },
-  blockRowTitle: { flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  blockTypeLabel: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  blockTypeSubLabel: { fontSize: 12, color: C.textMuted, marginTop: 2 },
-  expandChevron: { fontSize: 11, color: C.textMuted },
-  blockDeleteButton: { padding: 4 },
+  blockRowDot: { width: 9, height: 9, borderRadius: 4.5 },
+  blockRowCompactName: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  blockRowEditBtn: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
   blockFields: { paddingHorizontal: 14, paddingBottom: 14, gap: 6, borderTopWidth: 1, borderTopColor: C.border },
+  blockDeleteFooterBtn: {
+    marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  blockDeleteFooterBtnText: { color: C.red, fontSize: 13, fontWeight: "700" },
   adaptationRow: {
     flexDirection: "row", flexWrap: "wrap", gap: 6,
     paddingVertical: 4,
   },
   adaptationChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: C.surfaceHigh, borderRadius: 14,
+    backgroundColor: C.bg, borderRadius: 16,
     paddingHorizontal: 10, paddingVertical: 6,
     borderWidth: 1, borderColor: C.border,
   },
@@ -1428,13 +2183,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18, paddingVertical: 9, alignSelf: "flex-start",
   },
   saveTemplateBtnText: { color: C.green, fontSize: 13, fontWeight: "700" },
-  fieldLabel: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 10 },
-  fieldInput: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, fontSize: 15, color: C.textPrimary, backgroundColor: C.surfaceHigh },
+  fieldLabel: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 10, marginBottom: 6 },
+  fieldLabelHint: { textTransform: "none", letterSpacing: 0, color: C.textMuted },
+  // Inset well (page-bg color, not the card's surfaceHigh) so inputs read as
+  // distinct wells instead of blending into the block row behind them.
+  fieldInput: { borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 10, fontSize: 15, color: C.textPrimary, backgroundColor: C.bg },
   nameRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   nameField: { flex: 1.2 },
   numericsRow: { flex: 1.8, flexDirection: "row", gap: 10, alignItems: "flex-start" },
   numField: { flex: 1 },
   timeLimitRow: { maxWidth: 220 },
+
+  // ── Standalone editor (template library) ──────────────────────────────────
+  standaloneHeaderRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  standaloneHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  standaloneDot: { width: 10, height: 10, borderRadius: 5 },
+  standaloneHeaderTitle: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  standaloneMenuBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: "center", justifyContent: "center",
+  },
+  standaloneFields: { paddingHorizontal: 16, paddingBottom: 24, gap: 10 },
+
+  actionSheetBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  actionSheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    paddingBottom: 24, paddingTop: 6,
+  },
+  actionSheetItem: { paddingHorizontal: 20, paddingVertical: 15, alignItems: "center" },
+  actionSheetItemText: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
+  actionSheetDivider: { height: 8 },
+
+  adaptationRowStandalone: {
+    flexDirection: "row", flexWrap: "wrap", gap: 8,
+    paddingVertical: 4,
+  },
+  adaptationChipStandalone: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.bg, borderRadius: 18,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: C.border,
+  },
+  adaptationChipTextStandalone: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+
+  stepperField: { flex: 1 },
+  stepperControl: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: C.bg, borderRadius: 24,
+    borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 4, height: 48,
+  },
+  stepperBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  stepperBtnText: { fontSize: 22, fontWeight: "600", color: C.textSecondary },
+  stepperValue: { flex: 1, textAlign: "center", fontSize: 18, fontWeight: "700", color: C.textPrimary },
+  numericsRowStandalone: { flexDirection: "row", gap: 12 },
+
+  timeLimitToggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  timeLimitToggleLabel: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  timeLimitToggleRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  timeLimitToggleStatus: { fontSize: 14, color: C.textSecondary },
   fieldInputMultiline: { minHeight: 70, textAlignVertical: "top" },
   switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
   addBlockButton: { borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 12, padding: 14, alignItems: "center", marginTop: 8 },
@@ -1509,6 +2322,8 @@ const styles = StyleSheet.create({
   addExerciseButton: { flex: 1, borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 10, padding: 10, alignItems: "center" },
   addExerciseText: { fontSize: 13, color: C.textMuted },
   exerciseRow: { backgroundColor: C.surfaceHigh, borderRadius: 10, padding: 12, gap: 6, marginTop: 6 },
+  exercisePhotoThumb: { width: "100%", height: 110, borderRadius: 8, backgroundColor: C.surface },
+  exerciseNotesPreview: { fontSize: 12, color: C.textSecondary, fontStyle: "italic" },
   exerciseRowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   exerciseTypeTag: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted },
 
@@ -1534,6 +2349,17 @@ const styles = StyleSheet.create({
   libOverlayInner: { flex: 1, padding: 16 },
   libHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   libTitle: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: "700" },
+  libSearchWrap: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: C.surfaceHigh, borderRadius: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1, borderColor: C.border,
+    marginBottom: 12,
+  },
+  libSearchInput: {
+    flex: 1, color: C.textPrimary, fontSize: 13,
+    paddingVertical: 8, padding: 0,
+  },
   libGroup: { marginBottom: 14 },
   libGroupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   libGroupLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
@@ -1550,6 +2376,8 @@ const styles = StyleSheet.create({
   exercisePickerButton: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, backgroundColor: C.surfaceHigh },
   exercisePickerName: { fontSize: 15, color: C.textPrimary, fontWeight: "500" },
   exercisePickerPlaceholder: { fontSize: 15, color: C.textMuted },
+  freeSessionRouteRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  freeSessionClearRouteBtn: { padding: 2 },
   exercisePickerRow: { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
   exercisePickerRowName: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
 
@@ -1562,7 +2390,18 @@ const styles = StyleSheet.create({
     width: 80, height: 80, borderRadius: 8, overflow: "hidden",
     backgroundColor: C.surfaceHigh,
   },
+  routePickerZoomBtn: {
+    position: "absolute", right: 4, bottom: 4,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center", justifyContent: "center",
+  },
   routePickerBody: { flex: 1, gap: 2 },
+  routePreviewSafe: { flex: 1, backgroundColor: C.bg },
+  routePreviewHint: {
+    textAlign: "center", fontSize: 12, color: C.textMuted, paddingVertical: 8,
+  },
+  routePreviewFooter: { paddingHorizontal: 20, paddingBottom: 12 },
   exercisePickerRowMeta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   listHeaderActions: { flexDirection: "row", gap: 8, alignItems: "center" },
   exercisesButton: { borderWidth: 1, borderColor: C.green, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },

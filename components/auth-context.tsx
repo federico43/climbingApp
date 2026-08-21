@@ -2,7 +2,6 @@ import { createContext, PropsWithChildren, use, useContext, useEffect, useState 
 import {account} from '@/components/AppWrite'
 import { ID, Models } from 'appwrite'
 import { logRecord, getUsers} from '@/services/BoulderGraphService'
-import { prefetchAppImages } from '@/utils/prefetchWallImages'
 import { useRouter } from 'expo-router'
 //how do you use use context 
 //create the information structure. has to be a type object. Obviously.
@@ -38,9 +37,6 @@ export default function Auth_context({children}:PropsWithChildren) {
     try {
         const session = await account.get()
         setUser(session)
-        // Signed in — warm the spray-wall photos into the image cache in the
-        // background so they render instantly later.
-        prefetchAppImages()
         const userInfo = await getUsers(session.$id)
         if (userInfo) {
         setusername(userInfo.username)
@@ -96,7 +92,6 @@ export default function Auth_context({children}:PropsWithChildren) {
             await account.createEmailPasswordSession({email: email,password: password})
             const session = await account.get()
             setUser(session)
-            prefetchAppImages()
             setError(null)
             return true
         }catch (error){

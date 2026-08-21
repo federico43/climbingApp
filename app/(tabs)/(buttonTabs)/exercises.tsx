@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { amountLabel } from "@/utils/exerciseUnit"
+import { Ionicons } from "@expo/vector-icons"
 import {
   deleteExercise,
   ExerciseRow,
@@ -13,6 +14,7 @@ import React, { useCallback, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -43,6 +45,8 @@ export default function ExercisesScreen() {
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [editingExercise, setEditingExercise] = useState<ExerciseRow | null>(null)
+  const [search, setSearch] = useState("")
 
   useFocusEffect(
     useCallback(() => {
@@ -79,11 +83,16 @@ export default function ExercisesScreen() {
     ])
   }
 
-  // Group by type
+  // Filter by search, then group by type. `exercises` is already kept sorted
+  // alphabetically (server query on load, re-sorted after create/edit), so
+  // each group comes out alphabetical for free.
+  const query = search.trim().toLowerCase()
+  const filtered = query ? exercises.filter((ex) => ex.name.toLowerCase().includes(query)) : exercises
   const grouped: Record<ExerciseType, ExerciseRow[]> = { reps: [], both_sides: [], "7/3s": [] }
-  for (const ex of exercises) {
+  for (const ex of filtered) {
     if (grouped[ex.type]) grouped[ex.type].push(ex)
   }
+  const hasResults = filtered.length > 0
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -112,34 +121,79 @@ export default function ExercisesScreen() {
           )}
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
-            const list = grouped[type]
-            if (!list.length) return null
-            return (
-              <View key={type} style={styles.section}>
-                <Text style={styles.sectionHeader}>{TYPE_LABELS[type]}</Text>
-                {list.map((ex) => (
-                  <View key={ex.$id} style={styles.row}>
-                    <View style={styles.rowInfo}>
-                      <Text style={styles.rowName}>{ex.name}</Text>
-                      <Text style={styles.rowMeta}>
-                        {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
-                        {ex.defaultEdge ? `${ex.defaultEdge} edge` : ""}
-                        {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
-                      </Text>
-                    </View>
-                    {isCoach && (
-                      <Pressable onPress={() => handleDelete(ex)} style={styles.deleteBtn}>
-                        <Text style={styles.deleteBtnText}>✕</Text>
+        <>
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={16} color={C.textMuted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search exercises"
+              placeholderTextColor={C.textMuted}
+              style={styles.searchInput}
+              autoCorrect={false}
+            />
+            {!!search && (
+              <Pressable onPress={() => setSearch("")} hitSlop={10}>
+                <Ionicons name="close-circle" size={18} color={C.textMuted} />
+              </Pressable>
+            )}
+          </View>
+
+          {!hasResults ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={styles.emptyTitle}>No matches</Text>
+              <Text style={styles.emptyText}>
+                No exercises match “{search.trim()}”.
+                {isCoach ? " Try a different search, or tap “+ New” above." : " Try a different search."}
+              </Text>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+              {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
+                const list = grouped[type]
+                if (!list.length) return null
+                return (
+                  <View key={type} style={styles.section}>
+                    <Text style={styles.sectionHeader}>{TYPE_LABELS[type]}</Text>
+                    {list.map((ex) => (
+                      <Pressable
+                        key={ex.$id}
+                        style={({ pressed }) => [styles.row, isCoach && pressed && styles.rowPressed]}
+                        onPress={isCoach ? () => setEditingExercise(ex) : undefined}
+                      >
+                        {ex.photoUri ? (
+                          <Image source={{ uri: ex.photoUri }} style={styles.rowThumb} />
+                        ) : null}
+                        <View style={styles.rowInfo}>
+                          <View style={styles.rowNameLine}>
+                            <Text style={styles.rowName} numberOfLines={1}>{ex.name}</Text>
+                            {ex.notes ? (
+                              <Ionicons name="document-text-outline" size={13} color={C.textMuted} style={styles.rowNotesIcon} />
+                            ) : null}
+                          </View>
+                          <Text style={styles.rowMeta}>
+                            {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
+                            {ex.defaultEdge ? `${ex.defaultEdge} edge` : ""}
+                            {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
+                          </Text>
+                        </View>
+                        {isCoach && (
+                          <>
+                            <Ionicons name="chevron-forward" size={16} color={C.textMuted} style={styles.rowChevron} />
+                            <Pressable onPress={() => handleDelete(ex)} style={styles.deleteBtn} hitSlop={8}>
+                              <Text style={styles.deleteBtnText}>✕</Text>
+                            </Pressable>
+                          </>
+                        )}
                       </Pressable>
-                    )}
+                    ))}
                   </View>
-                ))}
-              </View>
-            )
-          })}
-        </ScrollView>
+                )
+              })}
+            </ScrollView>
+          )}
+        </>
       )}
 
       <Modal
@@ -157,6 +211,27 @@ export default function ExercisesScreen() {
             setShowCreate(false)
           }}
         />
+      </Modal>
+
+      <Modal
+        visible={!!editingExercise}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditingExercise(null)}
+      >
+        {editingExercise && (
+          <ExerciseForm
+            exercise={editingExercise}
+            title="Edit exercise"
+            onCancel={() => setEditingExercise(null)}
+            onCreated={(ex) => {
+              setExercises((prev) =>
+                prev.map((e) => (e.$id === ex.$id ? ex : e)).sort((a, b) => a.name.localeCompare(b.name))
+              )
+              setEditingExercise(null)
+            }}
+          />
+        )}
       </Modal>
     </SafeAreaView>
   )
@@ -186,6 +261,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   newBtnText: { color: C.bg, fontWeight: "600", fontSize: 13 },
+  searchWrap: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.surface, borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1, borderColor: C.border,
+    marginHorizontal: 16, marginTop: 14,
+  },
+  searchInput: {
+    flex: 1, color: C.textPrimary, fontSize: 14,
+    paddingVertical: 10, padding: 0,
+  },
   empty: {
     flex: 1,
     alignItems: "center",
@@ -214,9 +300,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
+  rowPressed: { backgroundColor: C.surfaceHigh },
+  rowThumb: { width: 40, height: 40, borderRadius: 8, backgroundColor: C.surfaceHigh, marginRight: 12 },
   rowInfo: { flex: 1 },
-  rowName: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  rowNameLine: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rowName: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flexShrink: 1 },
+  rowNotesIcon: { flexShrink: 0 },
   rowMeta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  rowChevron: { marginRight: 4 },
   deleteBtn: { padding: 6 },
   deleteBtnText: { fontSize: 15, color: C.textMuted },
   // Modal

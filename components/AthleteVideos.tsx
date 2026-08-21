@@ -1,6 +1,6 @@
 import { C } from "@/utils/theme"
 import { AppUser } from "@/services/BoulderGraphService"
-import { VideoRow, deleteVideo, getVideosByUserId } from "@/services/videoStorage"
+import { VideoRow, deleteVideo, getFeedbackForAthlete, getVideosByUserId } from "@/services/videoStorage"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { Ionicons } from "@expo/vector-icons"
 import * as VideoThumbnails from "expo-video-thumbnails"
@@ -42,29 +42,48 @@ async function makeThumb(id: string, url: string): Promise<string | null> {
 export function AthleteVideos({ athlete }: { athlete: AppUser }) {
   const [videos, setVideos] = useState<VideoRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<VideoRow | null>(null)
+  // Tapping a card opens it to just watch; tapping the pencil badge opens the
+  // same viewer straight into the feedback flow. One modal, one component.
+  const [viewing, setViewing] = useState<{ video: VideoRow; startInFeedbackMode: boolean } | null>(null)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
+  const [feedbackVideoIds, setFeedbackVideoIds] = useState<Set<string>>(new Set())
+
+  function refreshFeedbackIds() {
+    getFeedbackForAthlete(athlete.$id)
+      .then((rows) => setFeedbackVideoIds(new Set(rows.map((r) => r.videoId))))
+      .catch((e: any) => console.warn("[feedback] getFeedbackForAthlete failed:", e?.message ?? e))
+  }
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     getVideosByUserId(athlete.$id)
-      .then(async (v) => {
+      .then((v) => {
         if (cancelled) return
         setVideos(v)
-        // Seed from cache, then lazily generate the rest.
+        // Seed from cache, then generate the rest in parallel — the grid
+        // renders now with play-icon placeholders for whatever isn't cached
+        // yet. This used to await each thumbnail one at a time (each with a
+        // 6s worst-case timeout), so a coach with a few dozen clips could
+        // stare at a blank spinner for minutes before seeing anything.
         const seeded: Record<string, string> = {}
-        for (const row of v) { const c = thumbCache.get(row.$id); if (c) seeded[row.$id] = c }
-        setThumbs(seeded)
+        const toGenerate: VideoRow[] = []
         for (const row of v) {
-          if (cancelled) break
-          if (thumbCache.has(row.$id)) continue
-          const t = await makeThumb(row.$id, row.url)
-          if (!cancelled && t) setThumbs((prev) => ({ ...prev, [row.$id]: t }))
+          const c = thumbCache.get(row.$id)
+          if (c) seeded[row.$id] = c
+          else toGenerate.push(row)
         }
+        setThumbs(seeded)
+        Promise.all(
+          toGenerate.map(async (row) => {
+            const t = await makeThumb(row.$id, row.url)
+            if (!cancelled && t) setThumbs((prev) => ({ ...prev, [row.$id]: t }))
+          })
+        )
       })
       .catch((e) => { console.error(e); if (!cancelled) setVideos([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
+    refreshFeedbackIds()
     return () => { cancelled = true }
   }, [athlete.$id])
 
@@ -95,10 +114,15 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Submitted clips · {videos.length}</Text>
-      <Text style={styles.hint}>Tap to play · long-press to remove</Text>
+      <Text style={styles.hint}>Tap to play · pencil icon to give feedback · long-press to remove</Text>
       <View style={styles.grid}>
         {videos.map((v) => (
-          <Pressable key={v.$id} style={styles.card} onPress={() => setSelected(v)} onLongPress={() => handleDelete(v)}>
+          <Pressable
+            key={v.$id}
+            style={styles.card}
+            onPress={() => setViewing({ video: v, startInFeedbackMode: false })}
+            onLongPress={() => handleDelete(v)}
+          >
             <View style={styles.thumb}>
               {thumbs[v.$id] ? (
                 <Image source={{ uri: thumbs[v.$id] }} style={styles.thumbImg} />
@@ -106,6 +130,18 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
               <View style={styles.playBadge}>
                 <Ionicons name="play" size={16} color="#fff" />
               </View>
+              {v.imported && (
+                <View style={styles.importedBadge}>
+                  <Ionicons name="download-outline" size={14} color="#fff" />
+                </View>
+              )}
+              <Pressable
+                style={styles.feedbackBadge}
+                hitSlop={6}
+                onPress={(e) => { e.stopPropagation(); setViewing({ video: v, startInFeedbackMode: true }) }}
+              >
+                <Ionicons name={feedbackVideoIds.has(v.$id) ? "checkmark-circle" : "create-outline"} size={16} color="#fff" />
+              </Pressable>
             </View>
             <View style={styles.cardBody}>
               <Text style={styles.cardLabel} numberOfLines={1}>
@@ -119,19 +155,25 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
         ))}
       </View>
 
-      <Modal
-        visible={selected !== null}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setSelected(null)}
-        statusBarTranslucent
-      >
-        <VideoPlayerModal
-          uri={selected?.url ?? null}
-          title={selected ? (selected.projectName || formatBlockType(selected.blockType)) : ""}
-          onClose={() => setSelected(null)}
-        />
-      </Modal>
+      {viewing && (
+        <Modal
+          visible
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setViewing(null)}
+          statusBarTranslucent
+        >
+          <VideoPlayerModal
+            uri={viewing.video.url}
+            title={viewing.video.projectName || formatBlockType(viewing.video.blockType)}
+            onClose={() => setViewing(null)}
+            video={viewing.video}
+            canGiveFeedback
+            startInFeedbackMode={viewing.startInFeedbackMode}
+            onFeedbackSent={refreshFeedbackIds}
+          />
+        </Modal>
+      )}
     </View>
   )
 }
@@ -151,6 +193,16 @@ const styles = StyleSheet.create({
   playBadge: {
     width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.45)", paddingLeft: 2,
+  },
+  feedbackBadge: {
+    position: "absolute", top: 6, right: 6,
+    width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  importedBadge: {
+    position: "absolute", top: 6, left: 6,
+    width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
   },
   cardBody: { padding: 10, gap: 2 },
   cardLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },

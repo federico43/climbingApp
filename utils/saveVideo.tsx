@@ -5,10 +5,31 @@ function getVideoDir(): string {
   return FileSystem.documentDirectory + "bouldervideos/"
 }
 
+function extOf(uri: string): string {
+  const m = /\.([a-zA-Z0-9]+)(?:\?|$)/.exec(uri)
+  const ext = (m?.[1] ?? "mov").toLowerCase()
+  return ext === "mp4" ? ext : "mov"
+}
+
 export async function saveVideoLocally(
   uri: string,
   blockType?: string,
   meta?: { projectId?: string; projectName?: string; grade?: string },
+  options?: {
+    // Recorded clips are always .mov/.mp4 straight from the camera; an
+    // imported clip keeps whatever container it already came in so it isn't
+    // silently relabeled to a format it isn't.
+    ext?: string
+    // Recorded clips auto-submit to the coach during a monitored block.
+    // Imported clips are a deliberate, out-of-session action, so callers can
+    // opt out and let the athlete decide instead.
+    notifyCoach?: boolean
+    // Tags the filename so the Library grid can badge this clip as pulled in
+    // from the camera roll rather than recorded live, and — if notifyCoach is
+    // on — carries the same flag onto the remote `videos` row so the coach's
+    // view shows the identical badge.
+    imported?: boolean
+  },
 ): Promise<string | null> {
   const videoDir = getVideoDir()
   console.log("[saveVideo] START — source uri:", uri)
@@ -18,7 +39,9 @@ export async function saveVideoLocally(
     await FileSystem.makeDirectoryAsync(videoDir, { intermediates: true })
     console.log("[saveVideo] directory ready")
 
-    const filename = `boulderapp_${blockType ?? "video"}_${Date.now()}.mov`
+    const ext = options?.ext ?? extOf(uri)
+    const tag = options?.imported ? "_imported" : ""
+    const filename = `boulderapp_${blockType ?? "video"}${tag}_${Date.now()}.${ext}`
     const dest = videoDir + filename
 
     const sourceInfo = await FileSystem.getInfoAsync(uri)
@@ -30,8 +53,9 @@ export async function saveVideoLocally(
     const destInfo = await FileSystem.getInfoAsync(dest)
     console.log("[saveVideo] dest exists:", destInfo.exists, "size:", (destInfo as any).size ?? "?")
 
-    // Auto-send every recorded clip to the coach (background, non-blocking).
-    uploadVideoInBackground(dest, { blockType, ...meta })
+    if (options?.notifyCoach ?? true) {
+      uploadVideoInBackground(dest, { blockType, ...meta, imported: options?.imported })
+    }
 
     return dest
   } catch (err) {

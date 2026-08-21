@@ -69,7 +69,12 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
     }
     return imageSource
   }, [imageSource, previewWidth])
-  const { nw, nh } = useImageSize(source)
+  // Skip the (expensive, full-resolution) size probe entirely when the wall's
+  // dimensions are already known — with many routes on screen, calling
+  // Image.getSize() on every thumbnail meant downloading every full-size
+  // photo concurrently just to read its header, which was enough to spike
+  // memory and crash the app on device.
+  const { nw, nh } = useImageSize(naturalSize ? null : source)
   // expo-image reports the real dimensions on load (from its cache, so fast).
   // Prefer those over useImageSize's Image.getSize, which re-downloads the full
   // image — that's what made the wall briefly render at the wrong aspect ratio.

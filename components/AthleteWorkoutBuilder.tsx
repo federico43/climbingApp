@@ -1,5 +1,6 @@
 import { C } from "@/utils/theme"
-import { AppUser, ExerciseRow, MAX_ATHLETE_TEMPLATES, ProtocolRow, createProtocol, listAthleteTemplates, updateProtocol } from "@/services/BoulderGraphService"
+import { AppUser, ExerciseRow, ProtocolRow, createProtocol, updateProtocol } from "@/services/BoulderGraphService"
+import { AthleteRecentSessionsSummary } from "@/components/AthleteRecentSessionsSummary"
 import {
   Block,
   BlockEditorRow,
@@ -10,11 +11,13 @@ import {
   injectLocalIds,
   stripLocalIds,
 } from "@/components/workoutBlocks"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -31,6 +34,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 // the athlete. The left pane's ⋮ menu copies the workout to other athletes.
 // Built additively — reuses the existing block editor/picker without changing
 // the protocol-designer screen.
+//
+// When `athlete` is omitted, the builder is in library mode: it saves an
+// untagged (global) protocol instead of one owned by a specific athlete.
 export function AthleteWorkoutBuilder({
   athlete,
   roster,
@@ -38,7 +44,7 @@ export function AthleteWorkoutBuilder({
   onClose,
   onSaved,
 }: {
-  athlete: AppUser
+  athlete?: AppUser | null
   roster: AppUser[]
   protocol?: ProtocolRow | null  // when set, edit this template instead of creating a new one
   onClose: () => void
@@ -62,6 +68,26 @@ export function AthleteWorkoutBuilder({
   const { width } = useWindowDimensions()
   const wide = width >= 900  // narrow → single pane + block picker as a sheet
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Right pane (block picker/library) width — user-resizable by dragging the
+  // divider. Kept in a ref too so the pan handlers (created once) always read
+  // the latest value instead of the one captured at mount.
+  const [rightPaneWidth, setRightPaneWidth] = useState(340)
+  const rightPaneWidthRef = useRef(rightPaneWidth)
+  useEffect(() => { rightPaneWidthRef.current = rightPaneWidth }, [rightPaneWidth])
+  const dragStartWidthRef = useRef(rightPaneWidth)
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2,
+      onPanResponderGrant: () => { dragStartWidthRef.current = rightPaneWidthRef.current },
+      onPanResponderMove: (_, g) => {
+        const min = 280
+        const max = Math.max(min, width * 0.6)
+        setRightPaneWidth(Math.min(max, Math.max(min, dragStartWidthRef.current - g.dx)))
+      },
+    })
+  ).current
 
   function addBlock(b: Block) { setBlocks((p) => [...p, b]); setExpandedId(b.id) }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
@@ -99,10 +125,12 @@ export function AthleteWorkoutBuilder({
     if (!validate()) return
     setSaving(true)
     try {
+      // No athlete selected → this is a global library workout.
+      const source = athlete ? undefined : "library"
       if (editing) {
-        await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(blocks) })
+        await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(blocks), source })
       } else {
-        await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: athlete.$id })
+        await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: athlete?.$id, source })
       }
       onSaved?.()
       onClose()
@@ -119,26 +147,13 @@ export function AthleteWorkoutBuilder({
     setCopying(true)
     try {
       // Each target gets its own copy (a new template) so they can diverge later.
-      // Respect the per-athlete cap; skip anyone already full.
-      const skipped: string[] = []
-      let copied = 0
       for (const id of ids) {
-        const count = (await listAthleteTemplates(id)).length
-        if (count >= MAX_ATHLETE_TEMPLATES) {
-          skipped.push(roster.find((r) => r.$id === id)?.username ?? id)
-          continue
-        }
         await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: id })
-        copied++
       }
       setCopyOpen(false)
       setCopyTargets(new Set())
       onSaved?.()
-      Alert.alert(
-        "Copy complete",
-        `Copied to ${copied} athlete${copied !== 1 ? "s" : ""}.` +
-          (skipped.length ? `\nSkipped (already at ${MAX_ATHLETE_TEMPLATES}): ${skipped.join(", ")}.` : ""),
-      )
+      Alert.alert("Copy complete", `Copied to ${ids.length} athlete${ids.length !== 1 ? "s" : ""}.`)
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not copy the workout.")
     } finally {
@@ -146,23 +161,29 @@ export function AthleteWorkoutBuilder({
     }
   }
 
-  const otherAthletes = roster.filter((a) => a.$id !== athlete.$id)
-  const athleteName = athlete.username ?? athlete.$id
+  const otherAthletes = roster.filter((a) => a.$id !== athlete?.$id)
+  const athleteName = athlete?.username ?? athlete?.$id ?? null
 
   return (
    <SCLibraryContext.Provider value={libraryController}>
     <View style={s.root}>
-      <View style={[s.header, { paddingTop: insets.top + 14 }]}>
-        <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
-        <Text style={s.title} numberOfLines={1}>{editing ? "Edit workout" : "New workout"} · {athleteName}</Text>
-        <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
-          <Text style={[s.save, saving && { opacity: 0.4 }]}>{saving ? "Saving…" : "Save"}</Text>
-        </Pressable>
-      </View>
+      <View style={[s.shell, { marginTop: insets.top + 14, marginBottom: insets.bottom + 24 }]}>
+        <View style={s.header}>
+          <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
+          <View style={s.titleWrap}>
+            <Text style={s.title} numberOfLines={1}>
+              {editing ? "Edit workout" : "New workout"}{athleteName ? ` · ${athleteName}` : " · Library"}
+            </Text>
+            <Text style={s.titleStatus}>{editing ? "Editing" : "Creating"} · unsaved changes</Text>
+          </View>
+          <Pressable onPress={handleSave} disabled={saving} hitSlop={8}>
+            <Text style={[s.save, saving && { opacity: 0.4 }]}>{saving ? "Saving…" : "Save"}</Text>
+          </Pressable>
+        </View>
 
-      <View style={[s.panes, { paddingBottom: insets.bottom + 24 }]}>
+        <View style={s.panes}>
         {/* Left: the workout */}
-        <View style={s.card}>
+        <View style={s.leftPane}>
           <View style={s.leftHeader}>
             <TextInput
               style={s.nameInput}
@@ -175,6 +196,10 @@ export function AthleteWorkoutBuilder({
               <Text style={s.dots}>⋮</Text>
             </Pressable>
           </View>
+
+          {/* What the athlete did last time — collapsed by default so it
+              doesn't eat into the block list on narrow screens. */}
+          {athlete && <AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} />}
 
           {/* GestureHandlerRootView wraps ONLY the draggable list. Wrapping the
               whole builder broke taps on the library overlay on macOS (RNGH
@@ -230,16 +255,27 @@ export function AthleteWorkoutBuilder({
           )}
         </View>
 
+        {/* Drag to resize the pane split */}
+        {wide && (
+          <View
+            style={[s.paneDivider, Platform.OS === "web" && ({ cursor: "col-resize" } as any)]}
+            {...panResponder.panHandlers}
+          >
+            <View style={s.paneDividerGrip} />
+          </View>
+        )}
+
         {/* Right: available blocks (wide screens only). Disable the S&C library
             overlay context here — a block being *created* isn't in `blocks` yet,
             so its exercises must be edited inline, not via the host overlay. */}
         {wide && (
-          <View style={s.card}>
+          <View style={[s.rightPane, { width: rightPaneWidth }]}>
             <SCLibraryContext.Provider value={null}>
               <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
             </SCLibraryContext.Provider>
           </View>
         )}
+        </View>
       </View>
 
       {/* Narrow: block picker as a full-screen sheet */}
@@ -295,23 +331,37 @@ export function AthleteWorkoutBuilder({
 }
 
 const s = StyleSheet.create({
-  // Translucent scrim — the Design screen shows through behind the floating cards.
-  root: { flex: 1, backgroundColor: "rgba(8,10,9,0.8)" },
-  header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 28, paddingTop: 20, paddingBottom: 4,
-  },
-  cancel: { fontSize: 16, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
-  title: { fontSize: 16, fontWeight: "700", color: "#fff", flex: 1, textAlign: "center", marginHorizontal: 12 },
-  save: { fontSize: 16, color: C.green, fontWeight: "800" },
-
-  panes: { flex: 1, flexDirection: "row", gap: 20, paddingHorizontal: 24, paddingTop: 14, paddingBottom: 28 },
-  card: {
-    flex: 1, backgroundColor: C.surface, borderRadius: 24,
+  // Solid dark gray — same tone as the library pane, so the whole screen
+  // reads as one dedicated surface instead of a scrim over Design.
+  root: { flex: 1, backgroundColor: C.surface },
+  // One continuous sheet — header included — instead of a header floating on
+  // the scrim above two separate cards.
+  shell: {
+    flex: 1, marginHorizontal: 24,
+    backgroundColor: C.surface, borderRadius: 24,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", overflow: "hidden",
     shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 24, shadowOffset: { width: 0, height: 12 },
     elevation: 12,
   },
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: C.border,
+  },
+  cancel: { fontSize: 16, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
+  titleWrap: { flex: 1, marginHorizontal: 12 },
+  title: { fontSize: 16, fontWeight: "700", color: "#fff", textAlign: "center" },
+  // A persistent reminder that this whole screen is a draft — nothing here
+  // is saved until "Save" is tapped, unlike the tabs it floats over.
+  titleStatus: { fontSize: 11, fontWeight: "600", color: C.green, textAlign: "center", marginTop: 2 },
+  save: { fontSize: 16, color: C.green, fontWeight: "800" },
+
+  panes: { flex: 1, flexDirection: "row" },
+  leftPane: { flex: 1, minWidth: 280 },
+  // Width is user-controlled via the drag divider (default set in state).
+  rightPane: { minWidth: 280 },
+  paneDivider: { width: 14, alignItems: "center", justifyContent: "center" },
+  paneDividerGrip: { width: 3, height: 44, borderRadius: 2, backgroundColor: C.border },
 
   // Library overlay fills the left card (clipped to its rounded corners).
   libOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: C.surface, zIndex: 30 },

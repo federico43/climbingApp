@@ -137,6 +137,7 @@ export function BlockRenderer({
       return (
         <FreeSessionBlock
           block={block as any}
+          logAttempt={logAttempt}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
         />

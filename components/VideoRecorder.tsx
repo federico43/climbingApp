@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { ResizeMode, Video } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -17,6 +18,21 @@ const RING_BORDER = 4
 const INNER_IDLE  = 64
 const INNER_REC   = 28
 
+// iOS reports lenses as localized device names (e.g. "Back Ultra Wide Camera"),
+// not stable IDs, and lumps in virtual multi-lens devices ("Dual", "Triple")
+// that auto-switch on their own — we only want the single-lens ones a user
+// can explicitly pick, mapped to the familiar .5×/1×/2× labels.
+const LENS_LABEL_ORDER = ["0.5×", "1×", "2×"]
+
+function classifyLens(name: string): { id: string; label: string } | null {
+  const n = name.toLowerCase()
+  if (n.includes("dual") || n.includes("triple") || n.includes("depth") || n.includes("lidar") || n.includes("continuity")) return null
+  if (n.includes("ultra wide")) return { id: name, label: "0.5×" }
+  if (n.includes("telephoto")) return { id: name, label: "2×" }
+  if (n.includes("wide") || n.includes("camera")) return { id: name, label: "1×" }
+  return null
+}
+
 export default function VideoRecorder({ onFinish, onClose }: any) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [micPermission, requestMicPermission] = useMicrophonePermissions()
@@ -26,6 +42,54 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [facing, setFacing] = useState<CameraType>("back")
   const [elapsed, setElapsed] = useState(0)
+  const [availableLenses, setAvailableLenses] = useState<string[]>([])
+  const [selectedLens, setSelectedLens] = useState<string | undefined>(undefined)
+
+  // Lens set differs between front/back cameras — drop the previous pick
+  // whenever the active camera changes so we don't apply a stale lens id.
+  useEffect(() => {
+    setSelectedLens(undefined)
+  }, [facing])
+
+  const lensOptions = LENS_LABEL_ORDER
+    .map((label) => {
+      const match = availableLenses.map(classifyLens).find((l) => l?.label === label)
+      return match ?? null
+    })
+    .filter((l): l is { id: string; label: string } => l !== null)
+
+  // Leaving `selectedLens` unset doesn't mean the hardware opens on 1× — on
+  // iOS 17+ AVFoundation can boot the *system-wide* last-used lens (e.g. if
+  // 0.5× was picked in the Camera app or a prior session), which silently
+  // mismatched our "1× is active" default highlight. Force it explicitly the
+  // moment we know the options, so displayed state always matches hardware.
+  useEffect(() => {
+    if (selectedLens || lensOptions.length === 0) return
+    const defaultLens = lensOptions.find((l) => l.label === "1×") ?? lensOptions[0]
+    setSelectedLens(defaultLens.id)
+  }, [lensOptions, selectedLens])
+
+  const activeLensId = selectedLens
+
+  // Preview playback of the just-recorded clip, looping and autoplaying.
+  const previewPlayer = useVideoPlayer(previewUri ? { uri: previewUri } : null, (p) => {
+    p.loop = true
+    p.play()
+  })
+
+  // Let the camera's mic activate without cutting off music/podcasts already
+  // playing in another app (e.g. Spotify) — default iOS/Android behavior
+  // otherwise stops other audio the moment recording starts.
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.MixWithOthers,
+      shouldDuckAndroid: true,
+    })
+  }, [])
 
   // ── Recording timer ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -132,14 +196,11 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   if (previewUri) {
     return (
       <View style={{ flex: 1, backgroundColor: "black" }}>
-        <Video
-          source={{ uri: previewUri }}
+        <VideoView
+          player={previewPlayer}
           style={{ flex: 1 }}
-          resizeMode={ResizeMode.CONTAIN}
-          shouldPlay
-          isLooping
-          isMuted={false}
-          useNativeControls={false}
+          contentFit="contain"
+          nativeControls={false}
         />
         <View style={styles.previewControls}>
           <Pressable
@@ -178,6 +239,8 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         style={{ width: "100%", height: "100%" }}
         facing={facing}
         mode="video"
+        selectedLens={Platform.OS === "ios" ? selectedLens : undefined}
+        onAvailableLensesChanged={(e) => setAvailableLenses(e.lenses)}
       />
 
       {/* Recording indicator chip at top */}
@@ -185,6 +248,23 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         <View style={styles.recChip} pointerEvents="none">
           <Animated.View style={[styles.recDot, recDotStyle]} />
           <Text style={styles.recText}>REC  {mm}:{ss}</Text>
+        </View>
+      )}
+
+      {/* Lens picker — only meaningful on iOS devices with multiple back lenses */}
+      {lensOptions.length > 1 && (
+        <View style={styles.lensRow} pointerEvents="box-none">
+          {lensOptions.map((lens) => (
+            <TouchableOpacity
+              key={lens.id}
+              onPress={() => setSelectedLens(lens.id)}
+              style={[styles.lensBtn, activeLensId === lens.id && styles.lensBtnActive]}
+            >
+              <Text style={[styles.lensBtnText, activeLensId === lens.id && styles.lensBtnTextActive]}>
+                {lens.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -256,6 +336,26 @@ const styles = StyleSheet.create({
   recText: {
     color: "white", fontSize: 13, fontWeight: "700", letterSpacing: 1.2,
     fontVariant: ["tabular-nums"],
+  },
+
+  // Lens picker (.5×/1×/2×)
+  lensRow: {
+    position: "absolute", bottom: 140, alignSelf: "center",
+    flexDirection: "row", gap: 10,
+  },
+  lensBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center", justifyContent: "center",
+  },
+  lensBtnActive: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+  },
+  lensBtnText: {
+    color: "white", fontSize: 13, fontWeight: "700",
+  },
+  lensBtnTextActive: {
+    color: "#111",
   },
 
   // Record button

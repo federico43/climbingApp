@@ -1,9 +1,10 @@
 import { C } from "@/utils/theme"
-import { createExercise, ExerciseRow } from "@/services/BoulderGraphService"
+import { createExercise, ExerciseRow, updateExercise, uploadPhoto } from "@/services/BoulderGraphService"
 import { ExerciseUnit } from "@/utils/exerciseUnit"
 import { useState } from "react"
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import * as ImagePicker from "expo-image-picker"
 
 export type ExerciseType = "reps" | "both_sides" | "7/3s"
 
@@ -11,31 +12,53 @@ const TYPE_LABELS: Record<ExerciseType, string> = {
   reps: "Reps", both_sides: "Both sides", "7/3s": "7/3s",
 }
 
-// Single source of truth for the "create exercise" UI, shared by the Exercises
-// library screen and the inline picker in the protocol designer. Pass a
-// `fixedType` to lock the type (and hide the type picker) when the caller
-// already knows it — otherwise the user picks the type here.
+// Single source of truth for the "create/edit exercise" UI, shared by the
+// Exercises library screen and the inline picker in the protocol designer.
+// Pass a `fixedType` to lock the type (and hide the type picker) when the
+// caller already knows it — otherwise the user picks the type here. Pass
+// `exercise` to edit an existing library row instead of creating a new one.
 export function ExerciseForm({
   fixedType,
+  exercise,
   title = "New exercise",
   saveLabel = "Save",
   onCancel,
   onCreated,
 }: {
   fixedType?: ExerciseType
+  exercise?: ExerciseRow
   title?: string
   saveLabel?: string
   onCancel: () => void
   onCreated: (ex: ExerciseRow) => void
 }) {
-  const [name, setName] = useState("")
-  const [type, setType] = useState<ExerciseType>(fixedType ?? "reps")
-  const [unit, setUnit] = useState<ExerciseUnit>("reps")
-  const [defaultReps, setDefaultReps] = useState("")
-  const [defaultEdge, setDefaultEdge] = useState("")
-  const [defaultSeries, setDefaultSeries] = useState("6")
+  const [name, setName] = useState(exercise?.name ?? "")
+  const [type, setType] = useState<ExerciseType>(exercise?.type ?? fixedType ?? "reps")
+  const [unit, setUnit] = useState<ExerciseUnit>(exercise?.unit ?? "reps")
+  const [defaultReps, setDefaultReps] = useState(exercise?.defaultReps ?? "")
+  const [defaultEdge, setDefaultEdge] = useState(exercise?.defaultEdge ?? "")
+  const [defaultSeries, setDefaultSeries] = useState(String(exercise?.defaultSeries ?? 6))
+  // Photo: either the existing remote URL, a freshly picked local uri (not yet
+  // uploaded), or undefined once removed.
+  const [photoUri, setPhotoUri] = useState<string | undefined>(exercise?.photoUri)
+  const [notes, setNotes] = useState(exercise?.notes ?? "")
   const [saving, setSaving] = useState(false)
   const measurable = type === "reps" || type === "both_sides"
+
+  async function handlePickPhoto() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to add an exercise photo.")
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.85,
+    })
+    if (result.canceled || !result.assets[0]) return
+    setPhotoUri(result.assets[0].uri)
+  }
 
   async function handleSave() {
     if (!name.trim()) {
@@ -53,10 +76,25 @@ export function ExerciseForm({
         const s = parseInt(defaultSeries)
         if (!isNaN(s) && s > 0) payload.defaultSeries = s
       }
-      const created = await createExercise(payload)
-      onCreated(created)
+      if (photoUri) {
+        // Only upload if it's a freshly picked local file — an existing
+        // photoUri is already a remote URL.
+        payload.photoUri = photoUri.startsWith("http") ? photoUri : await uploadPhoto(photoUri)
+      } else if (exercise?.photoUri) {
+        // The photo was removed — clear it explicitly so the update persists that.
+        payload.photoUri = ""
+      }
+      if (notes.trim()) {
+        payload.notes = notes.trim()
+      } else if (exercise?.notes) {
+        payload.notes = ""
+      }
+      const saved = exercise
+        ? await updateExercise(exercise.$id, payload)
+        : await createExercise(payload)
+      onCreated(saved)
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Could not create exercise.")
+      Alert.alert("Error", e?.message ?? "Could not save exercise.")
       setSaving(false)
     }
   }
@@ -82,6 +120,36 @@ export function ExerciseForm({
           value={name}
           onChangeText={setName}
           autoFocus
+        />
+
+        <Text style={styles.label}>Photo (optional)</Text>
+        {photoUri ? (
+          <View style={styles.photoPreviewWrap}>
+            <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+            <View style={styles.photoActions}>
+              <Pressable onPress={handlePickPhoto} hitSlop={8}>
+                <Text style={styles.photoActionText}>Change</Text>
+              </Pressable>
+              <Pressable onPress={() => setPhotoUri(undefined)} hitSlop={8}>
+                <Text style={styles.photoActionTextRemove}>Remove</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable style={styles.photoAddBtn} onPress={handlePickPhoto}>
+            <Text style={styles.photoAddBtnText}>+ Add photo</Text>
+          </Pressable>
+        )}
+
+        <Text style={styles.label}>Notes (optional)</Text>
+        <TextInput
+          style={[styles.input, styles.notesInput]}
+          placeholder="Cues for correct form, e.g. keep elbows tucked, full range of motion…"
+          placeholderTextColor="#aaa"
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          textAlignVertical="top"
         />
 
         {!fixedType && (
@@ -181,4 +249,15 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: C.green, borderColor: C.green },
   chipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   chipTextActive: { color: C.bg },
+  photoAddBtn: {
+    borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 10,
+    paddingVertical: 16, alignItems: "center", backgroundColor: C.surface,
+  },
+  photoAddBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  photoPreviewWrap: { flexDirection: "row", alignItems: "center", gap: 14 },
+  photoPreview: { width: 84, height: 84, borderRadius: 10, backgroundColor: C.surface },
+  photoActions: { gap: 10 },
+  photoActionText: { fontSize: 14, fontWeight: "600", color: C.green },
+  photoActionTextRemove: { fontSize: 14, fontWeight: "600", color: C.red },
+  notesInput: { minHeight: 90 },
 })

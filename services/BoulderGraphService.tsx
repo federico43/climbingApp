@@ -1,5 +1,6 @@
-import { account, tablesDB, storage } from "@/components/AppWrite"
-import { ID, Query } from "appwrite"
+import { account, tablesDB, storage, functions } from "@/components/AppWrite"
+import { ExecutionMethod, ID, Query } from "appwrite"
+import * as FileSystem from "expo-file-system/legacy"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -13,6 +14,9 @@ export const BLOCKS_TABLE = "blocks"
 export const SPRAY_ROUTES_TABLE = "spray_routes"
 // Table must exist in Appwrite with columns: name (string), imageUri (string)
 export const SPRAY_WALLS_TABLE = "spray_walls"
+// Table must exist in Appwrite with columns: userId (string), date (string,
+// "YYYY-MM-DD"), restRating (integer, 1-5), ate (boolean)
+export const CHECKIN_TABLE = "checkins"
 
 // Cursor-paginate a table to fetch EVERY row. Appwrite caps a single request
 // (default 25, max 100), so callers that expect the full collection must page
@@ -35,63 +39,84 @@ async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise
 }
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
+// Photos (spray wall / project / exercise images) upload straight to Cloudflare
+// R2 via a presigned URL — same pipeline and the same Appwrite Function as
+// video (see services/videoStorage.ts), just with kind: "image". The bytes
+// never pass through Appwrite, so they don't count against its bandwidth quota.
 
-const APPWRITE_ENDPOINT  = "https://nyc.cloud.appwrite.io/v1"
-const APPWRITE_PROJECT   = "689e515d000c2e1af428"
+// Same Appwrite Function as VIDEO_PRESIGN_FUNCTION_ID in services/videoStorage.ts
+// (kept as its own constant here to avoid a circular import — videoStorage.ts
+// already imports DATABASE_ID from this file).
+const PHOTO_PRESIGN_FUNCTION_ID = "6a3ed6810015d04807b4"
 
-/**
- * Upload a local image URI to Appwrite Storage and return the public view URL.
- * Uses fetch + FormData directly because the Appwrite web SDK does not handle
- * React Native's { uri, name, type } file format in its createFile method.
- * The bucket must have "Read" for "Any" role so the URL works in <Image />.
- */
-export async function uploadPhoto(localUri: string): Promise<string> {
-  const fileId = ID.unique()
-  const ext    = localUri.split(".").pop()?.split("?")[0]?.toLowerCase() ?? "jpg"
-  const mime   = ext === "png" ? "image/png" : "image/jpeg"
+// Project cover photos and exercise demo photos uploaded before the R2 switch
+// are still sitting in Appwrite Storage (spray wall photos are already fully
+// migrated — see scripts/migrate-photos-to-r2). Rather than keep paying
+// Appwrite bandwidth to serve those until they're migrated too, blank them
+// out here so every screen's existing `photoUri ? <Image/> : <fallback>`
+// check just renders the fallback instead.
+function isAppwriteStorageUrl(url?: string): boolean {
+  return typeof url === "string" && url.includes("/storage/buckets/")
+}
+function hideAppwriteHostedPhoto<T>(row: T, field: keyof T): T {
+  const url = row[field] as unknown as string | undefined
+  return isAppwriteStorageUrl(url) ? { ...row, [field]: undefined } : row
+}
 
-  const body = new FormData()
-  body.append("fileId", fileId)
-  body.append("file", { uri: localUri, name: `${fileId}.${ext}`, type: mime } as any)
+interface PhotoPresignResult { uploadUrl: string; publicUrl: string; contentType: string }
 
-  // No JWT — the session cookie is sent automatically by React Native's
-  // HTTP stack and is enough for authentication. Adding JWT on top of it
-  // causes Appwrite to reject the request (403 user_jwt_and_cookie_set).
-  const res = await fetch(
-    `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files`,
-    {
-      method: "POST",
-      headers: {
-        "X-Appwrite-Project": APPWRITE_PROJECT,
-      },
-      body,
-    }
-  )
-
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.status.toString())
-    throw new Error(`Upload failed: ${msg}`)
+async function requestPhotoUploadUrl(ext: string): Promise<PhotoPresignResult> {
+  const execution = await functions.createExecution({
+    functionId: PHOTO_PRESIGN_FUNCTION_ID,
+    body: JSON.stringify({ ext, kind: "image" }),
+    async: false,
+    method: ExecutionMethod.POST,
+  })
+  if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
+    const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+    throw new Error(payload?.error ?? `Presign failed (status ${execution.responseStatusCode})`)
   }
-
-  const data = await res.json()
-  return `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${data.$id}/view?project=${APPWRITE_PROJECT}`
+  return JSON.parse(execution.responseBody) as PhotoPresignResult
 }
 
 /**
- * Delete a file from Appwrite Storage by its view URL.
- * Silently ignores errors (best-effort cleanup).
+ * Upload a local image URI straight to R2 (presigned PUT) and return the
+ * public playback URL. Replaces the old Appwrite Storage upload — same
+ * signature, so every call site (sprayWall, projects, exercises) is unchanged.
+ */
+export async function uploadPhoto(localUri: string): Promise<string> {
+  const m   = /\.([a-zA-Z0-9]+)(?:\?|$)/.exec(localUri)
+  const ext = (m?.[1] ?? "jpg").toLowerCase()
+  const { uploadUrl, publicUrl, contentType } = await requestPhotoUploadUrl(ext)
+
+  const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
+    httpMethod: "PUT",
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: { "Content-Type": contentType },
+  })
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`R2 upload failed (${result.status})`)
+  }
+  return publicUrl
+}
+
+/**
+ * Delete an R2-hosted photo by its public URL. Photo tables only store the
+ * URL (no separate key column like `videos` has), so the function derives
+ * the R2 object key server-side from R2_PUBLIC_BASE. Best-effort — callers
+ * already treat this as fire-and-forget cleanup.
  */
 export async function deleteStorageFile(fileUrl: string): Promise<void> {
-  const match = fileUrl.match(/\/files\/([^/?]+)/)
-  if (!match) return
-  const fileId = match[1]
-  const res = await fetch(
-    `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${fileId}`,
-    { method: "DELETE", headers: { "X-Appwrite-Project": APPWRITE_PROJECT } }
-  )
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.status.toString())
-    throw new Error(`Delete failed (${res.status}): ${msg}`)
+  if (!fileUrl) return
+  const execution = await functions.createExecution({
+    functionId: PHOTO_PRESIGN_FUNCTION_ID,
+    body: JSON.stringify({ action: "delete", kind: "image", url: fileUrl }),
+    async: false,
+    method: ExecutionMethod.POST,
+  })
+  if (execution.responseStatusCode < 200 || execution.responseStatusCode >= 300) {
+    const payload = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+    throw new Error(payload?.error ?? `Delete failed (status ${execution.responseStatusCode})`)
   }
 }
 
@@ -115,10 +140,12 @@ export interface ProtocolRow {
   name: string
   blocks: string
   athleteId?: string | null   // owner athlete — a "template" belongs to one athlete
+  // Missing/undefined athleteId → a global library workout, browsable by any athlete.
+  // On an athlete-owned row: "library" means the athlete saved it themselves from
+  // the library (shown separately on Home, freely editable/deletable by them);
+  // anything else (incl. missing, for pre-existing rows) means the coach assigned it.
+  source?: "coach" | "library" | null
 }
-
-// Max templates ("protocols") an athlete can hold.
-export const MAX_ATHLETE_TEMPLATES = 4
 
 export interface BlockRow {
   $id: string
@@ -189,10 +216,12 @@ export interface SessionRow {
   blockDurations?: string
 }
 
-export async function saveSession(data: any) {
+// `forUserId` lets a coach log a session on behalf of an athlete — omit it
+// to save under the logged-in user (the normal self-logging path).
+export async function saveSession(data: any, forUserId?: string) {
   try {
-    const user = await account.get()
-    const payload = { ...data, userId: user.$id }
+    const userId = forUserId ?? (await account.get()).$id
+    const payload = { ...data, userId }
     try {
       return await tablesDB.createRow({
         databaseId: DATABASE_ID,
@@ -225,6 +254,58 @@ export async function getSessionsByUserId(userId: string): Promise<SessionRow[]>
 export async function getSessions(): Promise<SessionRow[]> {
   const user = await account.get()
   return listAllRows<SessionRow>(SESSION_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
+}
+
+// ─── Daily check-in ───────────────────────────────────────────────────────────
+
+export interface CheckinRow {
+  $id: string
+  $createdAt: string
+  userId: string
+  date: string        // "YYYY-MM-DD", local calendar day the check-in is for
+  restRating: number  // 1 (exhausted) – 5 (fully rested)
+  ate: boolean
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// Null when the athlete hasn't checked in yet today (or the lookup fails —
+// treated as "not checked in" so the prompt can still surface).
+export async function getCheckinForToday(userId: string): Promise<CheckinRow | null> {
+  try {
+    const result = await tablesDB.listRows({
+      databaseId: DATABASE_ID,
+      tableId: CHECKIN_TABLE,
+      queries: [Query.equal("userId", userId), Query.equal("date", todayStr()), Query.limit(1)],
+    })
+    const row = result.rows[0] as any
+    if (!row) return null
+    // restRating/ate are stored as strings in Appwrite (schema constraint) —
+    // convert back to number/boolean at this boundary so callers get the
+    // proper types.
+    return { ...row, restRating: Number(row.restRating), ate: row.ate === "true" } as CheckinRow
+  } catch (error) {
+    console.error("Failed to load today's check-in", error)
+    return null
+  }
+}
+
+// Creates today's check-in, or updates it if the athlete already submitted
+// one (e.g. filling it in later from Settings, then reopening to correct it).
+export async function saveCheckin(restRating: number, ate: boolean): Promise<CheckinRow | undefined> {
+  try {
+    const user = await account.get()
+    const existing = await getCheckinForToday(user.$id)
+    const data = { userId: user.$id, date: todayStr(), restRating: String(restRating), ate: String(ate) }
+    const row = existing
+      ? await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: CHECKIN_TABLE, rowId: existing.$id, data })
+      : await tablesDB.createRow({ databaseId: DATABASE_ID, tableId: CHECKIN_TABLE, rowId: ID.unique(), data })
+    return { ...(row as any), restRating, ate } as CheckinRow
+  } catch (error) {
+    console.error("Failed to save check-in", error)
+  }
 }
 
 export interface ProjectSessionSummary {
@@ -368,24 +449,35 @@ export async function listProtocols(): Promise<ProtocolRow[]> {
   return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [Query.orderDesc("$createdAt")])
 }
 
-export async function createProtocol(input: { name: string; blocks: any[]; athleteId?: string }): Promise<ProtocolRow> {
-  const base = { name: input.name, blocks: JSON.stringify(input.blocks) }
+// Global workout library: protocols a coach explicitly published (no owning
+// athlete AND tagged source: "library"). Requiring the explicit tag — not
+// just a missing athleteId — keeps any orphaned/untagged row (legacy data,
+// a failed save, anything that isn't a deliberate publish) out of the
+// athlete-facing library.
+export async function listLibraryWorkouts(): Promise<ProtocolRow[]> {
   try {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID,
-      tableId: PROTOCOLS_TABLE,
-      rowId: ID.unique(),
-      data: input.athleteId ? { ...base, athleteId: input.athleteId } : base,
-    })
-    return response as unknown as ProtocolRow
-  } catch (e) {
-    // `athleteId` column may not exist yet — fall back to an untagged protocol.
-    if (!input.athleteId) throw e
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data: base,
-    })
-    return response as unknown as ProtocolRow
+    return await listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [
+      Query.equal("source", "library"),
+      Query.isNull("athleteId"),
+      Query.orderDesc("$createdAt"),
+    ])
+  } catch {
+    // Query.isNull may be unsupported for this attribute — filter client-side.
+    const all = await listProtocols()
+    return all.filter((p) => p.source === "library" && !p.athleteId)
   }
+}
+
+export async function createProtocol(
+  input: { name: string; blocks: any[]; athleteId?: string; source?: "coach" | "library" },
+): Promise<ProtocolRow> {
+  const data: Record<string, any> = { name: input.name, blocks: JSON.stringify(input.blocks) }
+  if (input.athleteId) data.athleteId = input.athleteId
+  if (input.source) data.source = input.source
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data,
+  })
+  return response as unknown as ProtocolRow
 }
 
 // An athlete's templates: protocols tagged with their id. Lazily migrates the
@@ -441,12 +533,14 @@ export async function copyProtocolToAthlete(
   return createProtocol({ name: source.name, blocks, athleteId: targetAthleteId })
 }
 
-export async function updateProtocol(id: string, input: { name: string; blocks: any[] }): Promise<ProtocolRow> {
+export async function updateProtocol(
+  id: string,
+  input: { name: string; blocks: any[]; source?: "coach" | "library" },
+): Promise<ProtocolRow> {
+  const data: Record<string, any> = { name: input.name, blocks: JSON.stringify(input.blocks) }
+  if (input.source) data.source = input.source
   const response = await tablesDB.updateRow({
-    databaseId: DATABASE_ID,
-    tableId: PROTOCOLS_TABLE,
-    rowId: id,
-    data: { name: input.name, blocks: JSON.stringify(input.blocks) },
+    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: id, data,
   })
   return response as unknown as ProtocolRow
 }
@@ -525,20 +619,27 @@ export interface ExerciseRow {
   defaultReps?: string
   defaultEdge?: string
   defaultSeries?: number
+  photoUri?: string  // cloud URL (from uploadPhoto) showing how to perform the exercise
+  notes?: string     // coach's notes on correct form / cues
 }
 
 export async function listExercises(): Promise<ExerciseRow[]> {
-  return listAllRows<ExerciseRow>(EXERCISES_TABLE, [Query.orderAsc("name")])
+  const rows = await listAllRows<ExerciseRow>(EXERCISES_TABLE, [Query.orderAsc("name")])
+  return rows.map((row) => hideAppwriteHostedPhoto(row, "photoUri"))
 }
 
-export async function createExercise(input: {
+type ExerciseInput = {
   name: string
   type: "reps" | "both_sides" | "7/3s"
   unit?: "reps" | "seconds"
   defaultReps?: string
   defaultEdge?: string
   defaultSeries?: number
-}): Promise<ExerciseRow> {
+  photoUri?: string
+  notes?: string
+}
+
+export async function createExercise(input: ExerciseInput): Promise<ExerciseRow> {
   try {
     const response = await tablesDB.createRow({
       databaseId: DATABASE_ID,
@@ -548,20 +649,36 @@ export async function createExercise(input: {
     })
     return response as unknown as ExerciseRow
   } catch (e) {
-    // The `unit` column may not exist yet — retry without it so the app keeps
-    // working until the column is added in Appwrite. We still merge the unit
-    // back into the returned object so the caller (and the block it's added to,
-    // which stores exercises as JSON) remembers it even though the library row
-    // didn't persist it.
-    if (input.unit === undefined) throw e
-    const { unit, ...rest } = input
+    // The `unit` / `photoUri` / `notes` columns may not exist yet — retry
+    // without them so the app keeps working until the columns are added in
+    // Appwrite. We still merge them back into the returned object so the
+    // caller (and the block it's added to, which stores exercises as JSON)
+    // remembers them even though the library row didn't persist them.
+    if (input.unit === undefined && input.photoUri === undefined && input.notes === undefined) throw e
+    const { unit, photoUri, notes, ...rest } = input
     const response = await tablesDB.createRow({
       databaseId: DATABASE_ID,
       tableId: EXERCISES_TABLE,
       rowId: ID.unique(),
       data: rest,
     })
-    return { ...(response as unknown as ExerciseRow), unit }
+    return { ...(response as unknown as ExerciseRow), unit, photoUri, notes }
+  }
+}
+
+export async function updateExercise(id: string, input: ExerciseInput): Promise<ExerciseRow> {
+  try {
+    const response = await tablesDB.updateRow({
+      databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id, data: input,
+    })
+    return response as unknown as ExerciseRow
+  } catch (e) {
+    if (input.unit === undefined && input.photoUri === undefined && input.notes === undefined) throw e
+    const { unit, photoUri, notes, ...rest } = input
+    const response = await tablesDB.updateRow({
+      databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id, data: rest,
+    })
+    return { ...(response as unknown as ExerciseRow), unit, photoUri, notes }
   }
 }
 
@@ -629,12 +746,15 @@ export interface SprayRouteRow {
   level?: number     // absolute difficulty 1–8
   type?: string      // route type: "base" | "max_bouldering" | …
   variations?: string // JSON { easy?, original, hard? } of PlacedHold[]
+  athleteId?: string // owner athlete — a self-built sequence belongs to one athlete.
+                      // Missing/undefined → a coach/shared route (visible in Spray Wall).
 }
 
 export interface SprayRouteExtras {
   level?: number
   type?: string
   variations?: { easy?: any[]; original: any[]; hard?: any[] }
+  athleteId?: string
 }
 
 function buildRouteData(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras) {
@@ -643,6 +763,7 @@ function buildRouteData(name: string, holds: any[], wallId?: string, extras?: Sp
   if (extras?.level != null) data.level = extras.level
   if (extras?.type) data.type = extras.type
   if (extras?.variations) data.variations = JSON.stringify(extras.variations)
+  if (extras?.athleteId) data.athleteId = extras.athleteId
   return data
 }
 
@@ -657,14 +778,18 @@ function coreRouteData(data: any) {
 // Resize a wall photo to a small server-side preview. Appwrite's /preview
 // transformations are a paid feature and return blank on the current plan, so
 // this is disabled (returns the original URL). expo-image caching still applies.
-// To actually shrink images, resize them on upload (expo-image-manipulator).
+// Only ever mattered for legacy Appwrite-hosted photo URLs anyway — new
+// uploads go straight to R2 (uploadPhoto, above), which has no equivalent
+// transform endpoint, so this is a no-op for those regardless of the flag.
 const IMAGE_TRANSFORMS_ENABLED = false
+const LEGACY_APPWRITE_ENDPOINT = "https://nyc.cloud.appwrite.io/v1"
+const LEGACY_APPWRITE_PROJECT  = "689e515d000c2e1af428"
 export function wallPreviewUrl(uri: string | undefined, width: number): string | undefined {
   if (!IMAGE_TRANSFORMS_ENABLED || !uri || typeof uri !== "string") return uri
   const m = uri.match(/\/files\/([^/?]+)\//)
   if (!m) return uri
   const fileId = m[1]
-  return `${APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${fileId}/preview?project=${APPWRITE_PROJECT}&width=${Math.round(width)}&quality=70&output=webp`
+  return `${LEGACY_APPWRITE_ENDPOINT}/storage/buckets/${MEDIA_BUCKET_ID}/files/${fileId}/preview?project=${LEGACY_APPWRITE_PROJECT}&width=${Math.round(width)}&quality=70&output=webp`
 }
 
 export async function getSprayRoute(id: string): Promise<SprayRouteRow> {
@@ -680,6 +805,20 @@ export async function getSprayRoutes(wallId?: string): Promise<SprayRouteRow[]> 
   const base = [Query.orderDesc("$createdAt")]
   if (wallId) base.push(Query.equal("wallId", wallId))
   return listAllRows<SprayRouteRow>(SPRAY_ROUTES_TABLE, base)
+}
+
+// Sequences an athlete built themselves (tagged with their id), newest first.
+export async function getMySprayRoutes(athleteId: string): Promise<SprayRouteRow[]> {
+  try {
+    return await listAllRows<SprayRouteRow>(SPRAY_ROUTES_TABLE, [
+      Query.equal("athleteId", athleteId),
+      Query.orderDesc("$createdAt"),
+    ])
+  } catch {
+    // athleteId column not present yet — filter client-side.
+    const all = await getSprayRoutes()
+    return all.filter((r) => r.athleteId === athleteId)
+  }
 }
 
 export async function saveSprayRoute(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras): Promise<SprayRouteRow> {
@@ -737,7 +876,8 @@ export interface ProjectRow {
 
 export async function listProjects(): Promise<ProjectRow[]> {
   const user = await account.get()
-  return listAllRows<ProjectRow>(PROJECTS_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
+  const rows = await listAllRows<ProjectRow>(PROJECTS_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
+  return rows.map((row) => hideAppwriteHostedPhoto(row, "imageUri"))
 }
 
 export async function getProjectById(id: string): Promise<ProjectRow | null> {
@@ -747,7 +887,7 @@ export async function getProjectById(id: string): Promise<ProjectRow | null> {
       tableId: PROJECTS_TABLE,
       rowId: id,
     })
-    return row as unknown as ProjectRow
+    return hideAppwriteHostedPhoto(row as unknown as ProjectRow, "imageUri")
   } catch {
     return null
   }

@@ -69,23 +69,26 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const saved = await loadPersistedWorkout()
       if (!saved) return
-      const hasWork = Array.isArray(saved.attempts) && saved.attempts.length > 0
       const ageMs = Date.now() - (saved.savedAt ?? 0)
       const STALE_MS = 12 * 60 * 60 * 1000 // 12h: don't resume an ancient session
 
-      if (!hasWork) {
-        await clearPersistedWorkout()
-        return
-      }
+      // A snapshot only ever gets written while a workout is genuinely
+      // running (see the save effect below), so its mere existence here
+      // means the app closed mid-session — even if the athlete hadn't
+      // logged their first attempt yet. Requiring attempts.length > 0
+      // used to silently drop that progress (block index, elapsed time)
+      // on every relaunch until the first attempt was logged.
       if (ageMs > STALE_MS) {
-        await saveSession(
-          serializeSession(
-            saved.protocol ?? [],
-            saved.attempts,
-            saved.blockDurations ?? {},
-            new Set(saved.skippedBlocks ?? []),
-          ),
-        )
+        if ((saved.attempts?.length ?? 0) > 0) {
+          await saveSession(
+            serializeSession(
+              saved.protocol ?? [],
+              saved.attempts,
+              saved.blockDurations ?? {},
+              new Set(saved.skippedBlocks ?? []),
+            ),
+          )
+        }
         await clearPersistedWorkout()
         return
       }

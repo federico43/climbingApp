@@ -21,6 +21,7 @@ import {
   availableVariations,
   stepVariation,
   VARIATION_LABEL,
+  VARIATION_KEYS,
   type RouteVariations,
   type VariationKey,
 } from "@/utils/sequenceVariations"
@@ -69,12 +70,15 @@ export function SequenceBlock({
   // Route variations + which one we're on. The block was authored with a
   // snapshot of routeHolds (the original) at design time, but the route may
   // have been edited since — we re-fetch by routeId on mount for the current
-  // variations. We start on the Original; the first-attempt calibration and the
-  // manual switcher move between the available variations.
+  // variations. We start on the coach-chosen variation (default Original);
+  // the first-attempt calibration and the manual switcher move between the
+  // available variations from there.
   const [variations, setVariations] = useState<RouteVariations>(() => {
     try { return { original: JSON.parse(block.routeHolds ?? "[]") } } catch { return { original: [] } }
   })
-  const [activeVariation, setActiveVariation] = useState<VariationKey>("original")
+  const [activeVariation, setActiveVariation] = useState<VariationKey>(
+    VARIATION_KEYS.includes(block.startingVariation) ? block.startingVariation : "original"
+  )
   const holds: PlacedHold[] = variationHolds(variations, activeVariation)
   const availableVars = availableVariations(variations)
 

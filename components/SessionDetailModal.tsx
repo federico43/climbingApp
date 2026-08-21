@@ -1,8 +1,10 @@
 import { C } from "@/utils/theme"
 import { AdaptationDonut, AdaptationDonutLegend, DonutSlice } from "@/components/AdaptationDonut"
-import { deleteSession, SessionRow, updateSession } from "@/services/BoulderGraphService"
+import { deleteSession, getSprayRoute, getSprayWall, SessionRow, updateSession } from "@/services/BoulderGraphService"
+import { SprayWallViewer } from "@/components/SprayWallViewer"
+import { parseVariations, variationHolds, type RouteVariations, type VariationKey } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import {
   Alert,
   Modal,
@@ -14,6 +16,8 @@ import {
   View,
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+
+const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -196,6 +200,78 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
   )
 }
 
+// ─── Free session block view ───────────────────────────────────────────────────
+
+function FreeSessionBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+  const notedAttempts = attempts.filter((a) => !!a.notes)
+  if (notedAttempts.length === 0) {
+    return <Text style={styles.blockStats}>No note added</Text>
+  }
+  return (
+    <View style={{ gap: 10 }}>
+      {notedAttempts.map((a, i) => (
+        <View key={i} style={styles.scLogRow}>
+          <Text style={styles.scRoundLabel}>{block?.notePrompt || "Note"}</Text>
+          <Text style={styles.attemptNotes}>{a.notes}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
+// ─── Sequence block view ──────────────────────────────────────────────────────
+
+function SequenceBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+  const [variations, setVariations] = useState<RouteVariations>(() => {
+    try { return { original: JSON.parse(block.routeHolds ?? "[]") } } catch { return { original: [] } }
+  })
+  const [wallImageSource, setWallImageSource] = useState<any>(
+    block.wallImageUri ? { uri: block.wallImageUri } : WALL_IMAGE
+  )
+  const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(
+    block.wallWidth && block.wallHeight ? { w: block.wallWidth, h: block.wallHeight } : null
+  )
+
+  // Refresh from the live route/wall in case they were edited since this
+  // session was logged — falls back to the block's own snapshot on failure.
+  useEffect(() => {
+    if (!block.routeId) return
+    let cancelled = false
+    getSprayRoute(block.routeId)
+      .then(async (row) => {
+        if (cancelled) return
+        setVariations(parseVariations(row))
+        if (row.wallId) {
+          const wall = await getSprayWall(row.wallId)
+          if (cancelled) return
+          if (wall?.imageUri) setWallImageSource({ uri: wall.imageUri })
+          if (wall?.width && wall?.height) setWallSize({ w: wall.width, h: wall.height })
+        }
+      })
+      .catch(() => {/* keep snapshot */})
+    return () => { cancelled = true }
+  }, [block.routeId])
+
+  // Show the variation the athlete actually climbed (their most recent
+  // logged attempt), defaulting to the original.
+  const activeVariation: VariationKey =
+    ([...attempts].reverse().find((a) => a.variation)?.variation as VariationKey) ?? "original"
+  const holds = variationHolds(variations, activeVariation)
+
+  return (
+    <View style={[styles.sequenceWallWrap, { aspectRatio: wallSize ? wallSize.w / wallSize.h : 4 / 3 }]}>
+      <SprayWallViewer
+        imageSource={wallImageSource}
+        holds={holds}
+        style={{ flex: 1 }}
+        interactive={false}
+        previewWidth={700}
+        naturalSize={wallSize}
+      />
+    </View>
+  )
+}
+
 // ─── Attempt status row ────────────────────────────────────────────────────────
 
 function AttemptStatusRow({
@@ -212,10 +288,20 @@ function AttemptStatusRow({
   const isProjectBouldering = blockType === "project_bouldering"
   const isSequence = blockType === "sequence"
   const isConstraintWarmup = blockType === "constraint_warmup"
+  const isFreeSession = blockType === "free_session"
   const sent = attempt.success
 
   if (isConstraintWarmup) {
     return <View style={styles.attemptStatusRow} />
+  }
+
+  if (isFreeSession) {
+    // A free-session note isn't a send/fail attempt — just show when it was logged.
+    return (
+      <View style={styles.attemptStatusRow}>
+        {attempt.timestamp && <Text style={styles.attemptTimestamp}>{formatTime(attempt.timestamp)}</Text>}
+      </View>
+    )
   }
 
   if (isProjectBouldering) {
@@ -562,8 +648,13 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                             <Text style={styles.routeName} numberOfLines={1}>{block.block.routeName}</Text>
                           </View>
                         )}
+                        {block.blockType === "sequence" && (
+                          <SequenceBlockView block={block.block} attempts={blockAttempts} />
+                        )}
                         {block.blockType === "strength_conditioning" ? (
                           <ScBlockView block={block.block} attempts={blockAttempts} />
+                        ) : block.blockType === "free_session" ? (
+                          <FreeSessionBlockView block={block.block} attempts={blockAttempts} />
                         ) : block.blockType !== "constraint_warmup" && (
                           <>
                             <Text style={styles.blockStats}>
@@ -662,11 +753,13 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
 
                         {eb.blockType !== "constraint_warmup" && (
                           <>
-                            <Text style={styles.blockStats}>
-                              {total === 0
-                                ? "No attempts logged"
-                                : `${sends} send${sends !== 1 ? "s" : ""}  /  ${total} attempt${total !== 1 ? "s" : ""}`}
-                            </Text>
+                            {eb.blockType !== "free_session" && (
+                              <Text style={styles.blockStats}>
+                                {total === 0
+                                  ? "No attempts logged"
+                                  : `${sends} send${sends !== 1 ? "s" : ""}  /  ${total} attempt${total !== 1 ? "s" : ""}`}
+                              </Text>
+                            )}
 
                             {blockAttempts.length > 0 && (
                               <View style={styles.attemptList}>
@@ -686,7 +779,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                                         style={styles.notesInput}
                                         value={attempt.notes ?? ""}
                                         onChangeText={(t) => updateNotes(eb.key, aidx, t)}
-                                        placeholder="Add a note…"
+                                        placeholder={eb.blockType === "free_session" ? (eb.block?.notePrompt || "Add a note…") : "Add a note…"}
                                         placeholderTextColor={C.textMuted}
                                         multiline
                                       />
@@ -701,7 +794,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
 
                             <Pressable style={styles.addAttemptBtn} onPress={() => addAttempt(eb)}>
                               <Ionicons name="add" size={15} color={C.green} />
-                              <Text style={styles.addAttemptText}>Add attempt</Text>
+                              <Text style={styles.addAttemptText}>{eb.blockType === "free_session" ? "Add note" : "Add attempt"}</Text>
                             </Pressable>
                           </>
                         )}
@@ -829,6 +922,10 @@ const styles = StyleSheet.create({
 
   routeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   routeName: { fontSize: 13, fontWeight: "600", color: C.green, flex: 1 },
+  sequenceWallWrap: {
+    width: "100%", marginTop: 8, borderRadius: 10, overflow: "hidden",
+    backgroundColor: C.surfaceHigh,
+  },
   variationTag: {
     fontSize: 10, fontWeight: "700", color: C.textSecondary,
     textTransform: "uppercase", letterSpacing: 0.5,
