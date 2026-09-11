@@ -11,37 +11,54 @@ const PROJECT = process.env.APPWRITE_FUNCTION_PROJECT_ID || "689e515d000c2e1af42
 const DATABASE_ID = process.env.DATABASE_ID || "68bd9dd7003c15f7147e"
 const USERS_TABLE = process.env.USERS_TABLE || "users"
 
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+async function appwriteFetch(path, log) {
+  const apiKey = process.env.APPWRITE_API_KEY
+  if (!apiKey) return null
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey }
+  try {
+    const r = await fetch(`${ENDPOINT}${path}`, { headers })
+    if (!r.ok) return null
+    return await r.json()
+  } catch (e) {
+    log?.(`Appwrite request failed: ${e?.message ?? e}`)
+    return null
+  }
+}
+
+// Reads a user's row through the server API key (so the client can't spoof a
+// role or read another user's row). Tries both REST shapes: the newer
+// TablesDB rows path and the classic Databases documents path, so this works
+// regardless of Appwrite version.
+async function getUserRow(userId, log) {
+  if (!process.env.APPWRITE_API_KEY) {
+    log?.("APPWRITE_API_KEY not set — cannot read user row")
+    return null
+  }
+  const id = encodeURIComponent(userId)
+  return (
+    (await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows/${id}`, log)) ??
+    (await appwriteFetch(`/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents/${id}`, log))
+  )
+}
+
+async function listCoachRows(log) {
+  const query = encodeURIComponent(JSON.stringify({ method: "equal", attribute: "role", values: ["coach"] }))
+  const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows?queries[]=${query}`, log)
+  if (viaTables) return viaTables.rows ?? []
+  const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents?queries[]=${query}`, log)
+  return viaDocs?.documents ?? []
+}
+
 /**
  * Confirm the caller exists and has the coach role. Returns true/false; never
- * throws. Reads the user's row through the stable Databases REST endpoint using
- * the server API key (so the client can't spoof a role).
+ * throws.
  */
 async function isCoach(userId, log) {
-  const apiKey = process.env.APPWRITE_API_KEY
-  if (!apiKey) {
-    log?.("APPWRITE_API_KEY not set — cannot verify coach role")
-    return false
-  }
-  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey }
-  const id = encodeURIComponent(userId)
-  // Try both REST shapes: the newer TablesDB rows path and the classic
-  // Databases documents path, so this works regardless of Appwrite version.
-  const urls = [
-    `${ENDPOINT}/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows/${id}`,
-    `${ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents/${id}`,
-  ]
-  for (const url of urls) {
-    try {
-      const r = await fetch(url, { headers })
-      if (!r.ok) continue
-      const row = await r.json()
-      return row?.role === "coach"
-    } catch {
-      // try the next shape
-    }
-  }
-  log?.(`Could not read user row for ${userId} on either REST path`)
-  return false
+  const row = await getUserRow(userId, log)
+  if (!row) log?.(`Could not read user row for ${userId} on either REST path`)
+  return row?.role === "coach"
 }
 
 export default async ({ req, res, log, error }) => {
@@ -56,6 +73,52 @@ export default async ({ req, res, log, error }) => {
   const userId = req.headers["x-appwrite-user-id"]
   if (!userId) {
     return res.json({ error: "Not authenticated." }, 401)
+  }
+
+  // ── Action: notify the coach(es) that an athlete finished a workout ──────────
+  // Doesn't need ANTHROPIC_API_KEY — keep it ahead of that check.
+  if (body.action === "notifyCoach") {
+    // Only an athlete finishing their own workout triggers a coach ping — a
+    // coach logging their own session (or a caller we can't identify) is a
+    // silent no-op, not an error, so the client doesn't need to know the difference.
+    const caller = await getUserRow(userId, log)
+    if (!caller || caller.role !== "athlete") {
+      return res.json({ ok: true, notified: 0 }, 200)
+    }
+
+    const protocolName = typeof body.protocolName === "string" ? body.protocolName.trim().slice(0, 120) : ""
+    const athleteName = caller.username || "An athlete"
+
+    const coaches = (await listCoachRows(log)).filter(
+      (c) => c.$id !== userId && typeof c.pushToken === "string" && c.pushToken
+    )
+    if (coaches.length === 0) return res.json({ ok: true, notified: 0 }, 200)
+
+    const messages = coaches.map((c) => ({
+      to: c.pushToken,
+      sound: "default",
+      title: "Workout completed",
+      body: protocolName ? `${athleteName} finished "${protocolName}".` : `${athleteName} finished a workout.`,
+      data: { type: "workout_completed", athleteId: userId },
+    }))
+
+    try {
+      const r = await fetch(EXPO_PUSH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(messages),
+      })
+      const result = await r.json().catch(() => null)
+      if (!r.ok) {
+        error(`Expo push send failed: ${r.status} ${JSON.stringify(result)}`)
+        return res.json({ error: "Could not send notification." }, 502)
+      }
+      log(`Notified ${messages.length} coach(es)`)
+      return res.json({ ok: true, notified: messages.length }, 200)
+    } catch (e) {
+      error(`Expo push send failed: ${e?.message ?? e}`)
+      return res.json({ error: "Could not send notification." }, 502)
+    }
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
