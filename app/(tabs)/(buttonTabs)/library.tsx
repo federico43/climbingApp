@@ -11,6 +11,7 @@ import { getFeedbackForAthlete, getMyVideos, VideoFeedbackRow, VideoRow } from "
 import { groupByDate } from "@/utils/dateGroups"
 import { deleteVideoFile, listSavedVideos, saveVideoLocally } from "@/utils/saveVideo"
 import { useFocusEffect } from "@react-navigation/native"
+import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import * as ImagePicker from "expo-image-picker"
 import * as VideoThumbnails from "expo-video-thumbnails"
@@ -99,6 +100,7 @@ async function getThumbnail(filename: string, uri: string): Promise<string | nul
 
 export default function LibraryScreen() {
   const { User } = ConsumeAuth()
+  const router = useRouter()
   const [videos, setVideos] = useState<VideoItem[]>(videoListCache)
   const [loading, setLoading] = useState(videoListCache.length === 0)
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null)
@@ -260,8 +262,11 @@ export default function LibraryScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
       <View style={styles.header}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
+        </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Library</Text>
+          <Text style={styles.title}>Videos</Text>
           <Text style={styles.subtitle}>Saved attempt videos</Text>
         </View>
         <Pressable style={styles.addButton} onPress={handlePickVideo} hitSlop={8}>
@@ -422,6 +427,10 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 20,
     gap: 12,
+  },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18, marginRight: 12, marginTop: 2,
+    backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center",
   },
   title: {
     fontSize: 28,

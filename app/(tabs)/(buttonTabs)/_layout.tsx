@@ -1,5 +1,7 @@
-import { ConsumeAuth } from "@/components/auth-context"
+import { useAuth } from "@/components/auth-context"
+import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
 import { WorkOutState } from "@/components/workOutState"
+import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import { BottomTabBar } from "@react-navigation/bottom-tabs"
 import { Ionicons } from "@expo/vector-icons"
@@ -19,17 +21,37 @@ import Animated, {
 import { C } from "@/utils/theme"
 
 export default function TabsLayout() {
-  const { role, isLoadingUser } = ConsumeAuth()
+  const { isLoadingUser } = useAuth()
+  if (isLoadingUser) return null
+  return (
+    <ActivePlanProvider>
+      <TabsWithPlan />
+    </ActivePlanProvider>
+  )
+}
+
+function TabsWithPlan() {
+  const { role } = useAuth()
+  const { plan, loading: loadingPlan } = useActivePlan()
   // Inset folded into the bar's own height/padding so icons sit just above the
   // home indicator / nav bar — no dead space below them.
   const insets = useSafeAreaInsets()
 
-  if (isLoadingUser) return null
+  // Wait for the plan so Home doesn't flash before redirecting to Plan.
+  if (loadingPlan) return null
+
+  // With a plan, Plan is home: no Home tab — and athletes, left with one
+  // tab, get no tab bar at all (docs/redesign.md §9).
+  const hasPlan = !!plan
+  const hideBar = hasPlan && role !== "coach"
 
   return (
     <WorkoutProvider>
       <Tabs
-        tabBar={(props) => <CustomTabBar tabBarProps={props} />}
+        tabBar={(props) => <CustomTabBar tabBarProps={props} hideBar={hideBar} />}
+        // Hidden screens (Settings, Videos, …) are pushed like a stack, so
+        // back should return to where they were opened from, not to Home.
+        backBehavior="history"
         screenOptions={{
           headerShown: false,
           sceneStyle: { backgroundColor: C.bg },
@@ -50,17 +72,18 @@ export default function TabsLayout() {
           name="index"
           options={{
             title: "Home",
+            href: hasPlan ? null : undefined,
             tabBarIcon: ({ focused, color }) => (
               <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
             ),
           }}
         />
         <Tabs.Screen
-          name="library"
+          name="plan"
           options={{
-            title: "Library",
+            title: "Plan",
             tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "videocam" : "videocam-outline"} size={22} color={color} />
+              <Ionicons name={focused ? "calendar" : "calendar-outline"} size={22} color={color} />
             ),
           }}
         />
@@ -74,17 +97,14 @@ export default function TabsLayout() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="settings"
-          options={{
-            title: "Settings",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
-            ),
-          }}
-        />
 
         {/* ── Hidden screens (pushed via router.push) ────────────────── */}
+        {/* Settings opens from the gear top-right (SettingsButton); Videos from Settings. */}
+        <Tabs.Screen name="settings" options={{ href: null }} />
+        <Tabs.Screen name="library" options={{ href: null }} />
+        <Tabs.Screen name="my-workouts" options={{ href: null }} />
+        <Tabs.Screen name="my-sequences" options={{ href: null }} />
+        <Tabs.Screen name="past-workouts" options={{ href: null }} />
         <Tabs.Screen name="exerciseProgress" options={{ href: null }} />
         <Tabs.Screen name="exercises" options={{ href: null }} />
         <Tabs.Screen name="sprayWall" options={{ href: null }} />
@@ -96,14 +116,17 @@ export default function TabsLayout() {
 
       {/* Workout modal lives at the layout level so it overlays everything */}
       <WorkoutModalHost />
+      {/* Tapped homework notifications → the homework card on home */}
+      <HomeworkNotificationRouter hasPlan={hasPlan} />
     </WorkoutProvider>
   )
 }
 
 // ─── Custom tab bar — adds MinimizedWorkoutBar above the default ──────────────
 
-function CustomTabBar({ tabBarProps }: { tabBarProps: any }) {
+function CustomTabBar({ tabBarProps, hideBar }: { tabBarProps: any; hideBar: boolean }) {
   const ctx = useWorkoutContext()
+  const insets = useSafeAreaInsets()
   const showMiniBar = ctx.workoutActive && ctx.workoutMinimized
   // The safe-area inset is folded into the tab bar's own height/padding
   // (see tabBarStyle), so no extra padding is needed here.
@@ -123,7 +146,12 @@ function CustomTabBar({ tabBarProps }: { tabBarProps: any }) {
           }}
         />
       )}
-      <BottomTabBar {...tabBarProps} />
+      {hideBar ? (
+        // No tabs to show — keep only the safe-area spacing (under the mini bar, if any).
+        <View style={{ height: insets.bottom }} />
+      ) : (
+        <BottomTabBar {...tabBarProps} />
+      )}
     </View>
   )
 }
@@ -156,6 +184,7 @@ function WorkoutModalHost() {
           onWorkoutEnd={ctx.endWorkout}
           onClose={ctx.closeModal}
           onMinimize={ctx.minimize}
+          onSetCoached={ctx.setBlockCoached}
         />
       </GestureHandlerRootView>
     </View>

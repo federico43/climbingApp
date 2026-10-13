@@ -1,4 +1,4 @@
-import { saveSession } from "@/services/BoulderGraphService"
+import { saveSession, SessionLink } from "@/services/BoulderGraphService"
 import { serializeSession } from "@/utils/workoutSession"
 import { useCallback, useEffect, useRef, useState } from "react"
 
@@ -8,6 +8,7 @@ export type WorkoutStatus = "idle" | "running" | "completed"
 
 export interface Block {
   type: string
+  blockName?: string
   timer?: number
   restTime?: number
   targetAttempts?: number
@@ -18,6 +19,7 @@ export interface Block {
   // and future adaptation-based analytics. See utils/adaptations.ts for the
   // taxonomy and per-type defaults when unset.
   adaptation?: string
+  coached?: boolean // run by the coach in person — see workoutBlocks.tsx BaseBlock
 }
 
 export interface Attempt {
@@ -34,11 +36,13 @@ export interface Attempt {
   highPoint?: number
   routeId?: string    // sequence: which spray-wall route
   variation?: string  // sequence: which variation (easy/original/hard)
+  coached?: boolean   // logged on a coached block (the Done marker, or a coach's sequence)
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useWorkout(protocolInput: Block[]) {
+// `link` = the workout this run was started from; saved on the session.
+export function useWorkout(protocolInput: Block[], link: SessionLink | null = null) {
   // Use the protocol reactively: the provider holds it as state and sets it via
   // openWorkout/resume, so derived values (currentBlock, totalBlocks) always
   // reflect the active protocol — and a restored protocol reaches the hook.
@@ -85,10 +89,10 @@ export function useWorkout(protocolInput: Block[]) {
   useEffect(() => {
     if (status === "completed") {
       // Skipped blocks are dropped and indices remapped (see serializeSession).
-      saveSession(serializeSession(protocol, attempts, blockDurations, skippedBlocks))
+      saveSession({ ...serializeSession(protocol, attempts, blockDurations, skippedBlocks), ...link })
     }
     // deps include the data so the persisted closure is never stale
-  }, [status, attempts, protocol, blockDurations, skippedBlocks])
+  }, [status, attempts, protocol, blockDurations, skippedBlocks, link])
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 

@@ -72,12 +72,14 @@ export function stepVariation(v: RouteVariations, from: VariationKey, dir: -1 | 
 
 // ─── Route type & level ─────────────────────────────────────────────────────────
 
-export const ROUTE_TYPES = ["base", "max_bouldering"] as const
+export const ROUTE_TYPES = ["base", "max_bouldering", "power", "coordination"] as const
 export type RouteType = (typeof ROUTE_TYPES)[number]
 
 export const ROUTE_TYPE_LABEL: Record<string, string> = {
   base: "Base",
   max_bouldering: "Max bouldering",
+  power: "Power",
+  coordination: "Coordination",
 }
 
 export const MIN_LEVEL = 1

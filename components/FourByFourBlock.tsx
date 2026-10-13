@@ -1,18 +1,34 @@
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
+import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
+import { getSessions, getUsers } from "@/services/BoulderGraphService"
+import { findBlockRuns } from "@/utils/blockHistory"
 import { useBlockTimer } from "@/utils/blockTimer"
-import React, { useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { colourIndex, colourLabel } from "@/utils/boulderColours"
+import {
+  attemptGrades, authoredGrades, fitGrades, liveStepDown, pendingStepDowns, suggestNextFourByFour,
+  type FourByFourSuggestion,
+} from "@/utils/progression/fourByFour"
+import { FOUR_BY_FOUR_RULES } from "@/utils/progression/profiles"
+import React, { useEffect, useState } from "react"
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 
-// 4×4 endurance protocol: N sets of M boulders at a chosen grade, resting
-// between sets. Each set logs how many of the boulders were topped.
+// 4×4 power-endurance protocol: N sets of M boulders, resting between sets.
+// Each boulder slot has its own colour (block.boulderGrades); each set logs
+// how many boulders were topped plus the slot colours climbed (scData.grades).
 //
-// Phases: preview (pick grade) → active (which set) → rest (timer + tops) →
+// Phases: preview (colours) → active (which set) → rest (timer + tops) →
 //         …repeat… → review.
+//
+// Progression (spec §3.3, utils/progression/fourByFour.ts): on a fresh start
+// the suggested colours are preloaded with a banner that stays until the
+// athlete overrides it by picking one colour for every boulder (the coach
+// already approved the colours in the editor, so there's no "planned" option). In session, a fall in
+// sets 1–2 lowers one boulder for the remaining sets (liveStepDown).
 
 type Phase = "preview" | "active" | "rest" | "review"
 
@@ -47,9 +63,59 @@ export function FourByFourBlock({
   const [phase, setPhase] = useState<Phase>(() =>
     attemptsDone >= sets ? "review" : attemptsDone > 0 ? "active" : "preview"
   )
-  const [grade, setGrade] = useState<string>(() => attempts[0]?.level ?? "")
+  // The slot colours being climbed. Resuming → the last logged set's, plus a
+  // step-down the log shows was owed (app closed right after a fall); fresh
+  // → the coach's colours until the suggestion loads (empty = athlete picks).
+  const [grades, setGrades] = useState<string[]>(() => {
+    let g = attemptGrades(attempts[attempts.length - 1], bouldersPerSet)
+    if (!g) return authoredGrades(block) ?? []
+    if (attemptsDone < sets) {
+      for (let k = pendingStepDowns(attempts, bouldersPerSet); k > 0; k--) {
+        const step = liveStepDown(g)
+        if (!step) break
+        g = step.grades
+      }
+    }
+    return g
+  })
+  // Shown on the next set after a live step-down.
+  const [stepNotice, setStepNotice] = useState<string | null>(null)
+  // True once the athlete chose to pick one colour themselves.
+  const [pickOwn, setPickOwn] = useState(false)
   const [tops, setTops] = useState<number>(bouldersPerSet)
   const blockTimer = useBlockTimer()
+  const { User } = ConsumeAuth()
+
+  const [suggestion, setSuggestion] = useState<FourByFourSuggestion | null>(null)
+  const [suggestionReady, setSuggestionReady] = useState(attemptsDone > 0)
+  useEffect(() => {
+    if (attemptsDone > 0) return   // not applied on resume
+    let cancelled = false
+    Promise.all([getSessions(), User?.$id ? getUsers(User.$id) : Promise.resolve(null)])
+      .then(([sessions, user]) => {
+        if (cancelled) return
+        const runs = findBlockRuns(sessions, { type: "four_by_four", blockName: block.blockName, libraryBlockId: block.libraryBlockId })
+        const sug = suggestNextFourByFour(runs, {
+          bouldersPerSet, flashLevel: (user as any)?.flashLevel, authored: authoredGrades(block),
+        })
+        if (!sug) return
+        setSuggestion(sug)
+        setGrades(sug.grades)
+      })
+      .catch(console.error)
+      .finally(() => { if (!cancelled) setSuggestionReady(true) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Override: the athlete picks one colour for every boulder (Start waits
+  // for the pick). The banner goes with it.
+  function declineSuggestion() {
+    setSuggestion(null)
+    setGrades([])
+    setPickOwn(true)
+  }
+  const ready = grades.length === bouldersPerSet
 
   function startSetRest() {
     setTops(bouldersPerSet)
@@ -59,7 +125,19 @@ export function FourByFourBlock({
 
   function logSet() {
     // The set is logged as completed; `tops` is the real metric (in scData).
-    logAttempt({ success: true, level: grade, scData: { tops, set: attemptsDone + 1 } })
+    // `level` = the hardest slot, for anything that reads one colour per attempt.
+    const hardest = grades.reduce((a, b) => (colourIndex(b) > colourIndex(a) ? b : a), grades[0])
+    const set = attemptsDone + 1
+    logAttempt({ success: true, level: hardest, scData: { tops, set, grades } })
+    setStepNotice(null)
+    // Fell in set 1–2 → one boulder one colour easier for the remaining sets.
+    if (!isLastSet && tops < bouldersPerSet && set <= FOUR_BY_FOUR_RULES.earlyFallSets) {
+      const step = liveStepDown(grades)
+      if (step) {
+        setGrades(step.grades)
+        setStepNotice(`Fell in set ${set} — boulder ${step.slot + 1} is now ${colourLabel(step.grades[step.slot])} for the rest of the sets.`)
+      }
+    }
     setPhase(isLastSet ? "review" : "active")
   }
 
@@ -79,25 +157,49 @@ export function FourByFourBlock({
             <View style={styles.statItem}><Text style={styles.statNum}>{restTime >= 60 ? `${Math.round(restTime / 60)}m` : `${restTime}s`}</Text><Text style={styles.statLabel}>rest</Text></View>
           </View>
 
-          <Text style={styles.sectionLabel}>What grade?</Text>
-          <View style={styles.gradeRow}>
-            {BoulderLevelOptions.map((g) => {
-              const sel = grade === g.value
-              return (
-                <Pressable
-                  key={g.value}
-                  style={[styles.gradeChip, sel && { backgroundColor: g.color, borderColor: g.color }]}
-                  onPress={() => setGrade(g.value)}
-                >
-                  <View style={[styles.gradeDot, { backgroundColor: g.color }, sel && { backgroundColor: g.on }]} />
-                  <Text style={[styles.gradeText, sel && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
-                </Pressable>
-              )
-            })}
-          </View>
+          {/* Progression suggestion — stays until the athlete overrides it
+              (same persistent pattern as S&C and sequence). */}
+          {!!suggestion && (
+            <View style={styles.suggestionBanner}>
+              <Text style={styles.suggestionBannerLast}>{suggestion.lastTime}</Text>
+              <Text style={styles.suggestionBannerText}>{suggestion.note}</Text>
+              <Pressable onPress={declineSuggestion} hitSlop={8}>
+                <Text style={styles.suggestionDecline}>Choose my own colour</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {!suggestionReady ? (
+            <ActivityIndicator color={C.green} />
+          ) : (ready && !pickOwn) ? (
+            <>
+              <Text style={styles.sectionLabel}>Boulders</Text>
+              <SlotPills grades={grades} />
+            </>
+          ) : (
+            <>
+              {/* No colours set (or the athlete overrode them): one colour for every boulder. */}
+              <Text style={styles.sectionLabel}>What grade?</Text>
+              <View style={styles.gradeRow}>
+                {BoulderLevelOptions.map((g) => {
+                  const sel = ready && grades.every((x) => x === g.value)
+                  return (
+                    <Pressable
+                      key={g.value}
+                      style={[styles.gradeChip, sel && { backgroundColor: g.color, borderColor: g.color }]}
+                      onPress={() => setGrades(fitGrades([g.value], bouldersPerSet) ?? [])}
+                    >
+                      <View style={[styles.gradeDot, { backgroundColor: g.color }, sel && { backgroundColor: g.on }]} />
+                      <Text style={[styles.gradeText, sel && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            </>
+          )}
         </ScrollView>
         <View style={styles.footer}>
-          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("active") }} disabled={!grade} />
+          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("active") }} disabled={!ready} />
         </View>
       </View>
     )
@@ -105,7 +207,6 @@ export function FourByFourBlock({
 
   // ── Active — which set ──────────────────────────────────────────────────────
   if (phase === "active") {
-    const gradeOpt = BoulderLevelOptions.find((g) => g.value === grade)
     return (
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} />
@@ -115,13 +216,8 @@ export function FourByFourBlock({
             {attemptsDone + 1}
             <Text style={styles.setOf}> / {sets}</Text>
           </Text>
-          {gradeOpt && (
-            <View style={[styles.gradePill, { backgroundColor: gradeOpt.color }]}>
-              <Text style={[styles.gradePillText, { color: gradeOpt.on }]}>
-                {gradeOpt.label} · {bouldersPerSet} boulders
-              </Text>
-            </View>
-          )}
+          {ready && <View style={{ marginTop: 8 }}><SlotPills grades={grades} /></View>}
+          {!!stepNotice && <Text style={styles.stepNotice}>{stepNotice}</Text>}
           <View style={{ width: "100%", marginTop: 28 }}>
             <CustomButton title="Done — log tops" onPress={startSetRest} />
           </View>
@@ -174,18 +270,20 @@ export function FourByFourBlock({
 
   // ── Review ──────────────────────────────────────────────────────────────────
   const totalTops = attempts.reduce((s, a) => s + (a.scData?.tops ?? 0), 0)
-  const gradeOpt = BoulderLevelOptions.find((g) => g.value === (attempts[0]?.level ?? grade))
   return (
     <View style={shared_styles.screen}>
       <TopBar title="Review" />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={shared_styles.title}>{totalTops} tops</Text>
-        {gradeOpt && (
-          <Text style={styles.reviewGrade}>{gradeOpt.label} · {attempts.length} set{attempts.length !== 1 ? "s" : ""}</Text>
-        )}
+        <Text style={styles.reviewGrade}>{attempts.length} set{attempts.length !== 1 ? "s" : ""}</Text>
         {attempts.map((a, i) => (
           <View key={i} style={styles.reviewRow}>
             <Text style={styles.reviewSet}>Set {i + 1}</Text>
+            <View style={styles.reviewDots}>
+              {(attemptGrades(a, bouldersPerSet) ?? []).map((g, j) => (
+                <View key={j} style={[styles.reviewDot, { backgroundColor: BoulderLevelOptions.find((o) => o.value === g)?.color ?? C.border }]} />
+              ))}
+            </View>
             <Text style={styles.reviewTops}>{a.scData?.tops ?? 0} / {bouldersPerSet} tops</Text>
           </View>
         ))}
@@ -193,6 +291,23 @@ export function FourByFourBlock({
           <CustomButton title="Continue" onPress={goToNextBlock} />
         </View>
       </ScrollView>
+    </View>
+  )
+}
+
+// The boulder slots as numbered colour pills, in climbing order.
+function SlotPills({ grades }: { grades: string[] }) {
+  return (
+    <View style={styles.slotRow}>
+      {grades.map((g, i) => {
+        const opt = BoulderLevelOptions.find((o) => o.value === g)
+        return (
+          <View key={i} style={[styles.slotPill, opt && { backgroundColor: opt.color, borderColor: opt.color }]}>
+            <Text style={[styles.slotNum, opt && { color: opt.on }]}>{i + 1}</Text>
+            <Text style={[styles.slotLabel, opt && { color: opt.on }]}>{opt?.label ?? g}</Text>
+          </View>
+        )
+      })}
     </View>
   )
 }
@@ -232,8 +347,22 @@ const styles = StyleSheet.create({
   setLabel: { fontSize: 14, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
   setBig: { fontSize: 80, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   setOf: { fontSize: 36, fontWeight: "700", color: C.textMuted },
-  gradePill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, marginTop: 8 },
-  gradePillText: { fontSize: 14, fontWeight: "800" },
+  slotRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  slotPill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  slotNum: { fontSize: 12, fontWeight: "800", color: C.textMuted, fontVariant: ["tabular-nums"] },
+  slotLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+
+  suggestionBanner: {
+    backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 6,
+  },
+  suggestionBannerLast: { fontSize: 12.5, color: C.textSecondary, lineHeight: 17 },
+  suggestionBannerText: { fontSize: 12.5, fontWeight: "600", color: C.green, lineHeight: 17 },
+  suggestionDecline: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary, textDecorationLine: "underline" },
 
   // Rest
   restContainer: { flex: 1, backgroundColor: C.bg, paddingTop: 16, paddingBottom: 36, paddingHorizontal: 24 },
@@ -261,4 +390,7 @@ const styles = StyleSheet.create({
   },
   reviewSet: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   reviewTops: { fontSize: 14, color: C.green, fontWeight: "700" },
+  reviewDots: { flex: 1, flexDirection: "row", gap: 4, marginHorizontal: 12 },
+  reviewDot: { width: 10, height: 10, borderRadius: 5 },
+  stepNotice: { fontSize: 13, fontWeight: "600", color: C.textSecondary, textAlign: "center", marginTop: 12, paddingHorizontal: 12 },
 })

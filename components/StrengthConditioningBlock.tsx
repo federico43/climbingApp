@@ -1,23 +1,36 @@
 import { C } from "@/utils/theme"
-import CustomButton from "@/components/customButton"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
-import { amountLabel, unitNoun, ExerciseUnit } from "@/utils/exerciseUnit"
+import { amountLabel, ExerciseUnit } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
+import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
+import { getSessions, type ExerciseRow as LibraryExercise } from "@/services/BoulderGraphService"
+import {
+  Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
+} from "@/utils/scProgression"
+import { findScSessions, readRound, setsAtFinalLoad } from "@/utils/scHistory"
+import { basisLine, planNextForFocus, type FocusEntry } from "@/utils/scNext"
+import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, usableAt, type ResolvedChain } from "@/utils/levelChain"
+import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
+import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
 import { Audio } from "expo-av"
+import * as Haptics from "expo-haptics"
 import React, { useEffect, useRef, useState } from "react"
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   useWindowDimensions,
   View,
 } from "react-native"
 import { Image } from "expo-image"
+import { ZoomableImage } from "@/components/ZoomableImage"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -29,24 +42,41 @@ const SC_HERO = require("@/assets/images/SCPicture.jpeg")
 export interface RepExercise {
   type: "reps"
   name: string
+  exerciseId?: string  // back-reference to the library row this was added from
   reps: string
   unit?: ExerciseUnit
   photoUri?: string
   notes?: string
+  focus?: Focus
+  loadMode?: LoadMode
+  levels?: LevelStep[]
+  loadStep?: number     // weight mode: smallest jump; the live library's value wins
+  settingHarder?: string // adjustable-setting hints; the live library's win
+  settingEasier?: string
+  movementType?: string // "mobility" = no weight/RPE/progression, just done
 }
 
 export interface BothSidesExercise {
   type: "both_sides"
   name: string
+  exerciseId?: string  // back-reference to the library row this was added from
   reps: string
   unit?: ExerciseUnit
   photoUri?: string
   notes?: string
+  focus?: Focus
+  loadMode?: LoadMode
+  levels?: LevelStep[]
+  loadStep?: number     // weight mode: smallest jump; the live library's value wins
+  settingHarder?: string // adjustable-setting hints; the live library's win
+  settingEasier?: string
+  movementType?: string // "mobility" = no weight/RPE/progression, just done
 }
 
 export interface SevenThreesExercise {
   type: "7/3s"
   name: string
+  exerciseId?: string  // back-reference to the library row this was added from
   edge: string
   series: number
   photoUri?: string
@@ -63,8 +93,6 @@ export interface StrengthConditioningBlock {
   exercises: Exercise[]
 }
 
-type WeightUnit = "kg" | "lb"
-
 interface ExerciseLog {
   exerciseIndex: number
   exerciseName: string
@@ -73,7 +101,12 @@ interface ExerciseLog {
   repsCompleted?: string
   weight?: string
   weightUnit?: WeightUnit
+  // When the exercise's loadMode is "level", the level actually performed —
+  // its identity (id + exerciseName above) is what gets logged and matched
+  // against next time, not the container exercise's.
+  levelId?: string
   rpe?: string
+  effort?: Effort   // what the athlete tapped; rpe is its mapping
   notes?: string
   // both sides
   repsLeft?: string
@@ -85,6 +118,14 @@ interface ExerciseLog {
   // 7/3s
   edge?: string
   seriesDone?: number
+  // Set when this round ran at an automatic easier load (planRoundDrop) and
+  // the athlete kept it: what the load was before the drop.
+  adjustedFrom?: { weight?: string; levelId?: string }
+  // Done as an easier library exercise the athlete swapped in (its id).
+  swappedTo?: string
+  // Exercises with an adjustable setting: the athlete's "I'm on the
+  // hardest setting" switch for this round.
+  atHardestSetting?: boolean
 }
 
 type Phase = "intro" | "circuit" | "rest" | "review"
@@ -100,15 +141,86 @@ interface Props {
 
 export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
   const blockTimer = useBlockTimer()
+  const { height: winHeight } = useWindowDimensions()
   const [phase, setPhase] = useState<Phase>("intro")
   const [currentRound, setCurrentRound] = useState(0)
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
   const [logs, setLogs] = useState<ExerciseLog[]>([])
-  const [weightUnit, setWeightUnit] = useState<WeightUnit>("kg")
-  // Last weight / RPE used per exercise, so later rounds prefill them (set once,
-  // adjust only when they change).
+  // Remembered per device (utils/weightUnit) and switched from the weight
+  // stepper itself, so blocks without weights never ask for it.
+  const [weightUnit, setWeightUnitState] = useState<WeightUnit>("kg")
+  // Switching converts the remembered weights too, so 20 kg becomes 44 lb
+  // rather than "20 lb".
+  function setWeightUnit(u: WeightUnit) {
+    if (u === weightUnit) return
+    const from = weightUnit
+    setLastWeights((prev) => Object.fromEntries(Object.entries(prev).map(([k, w]) => [k, String(convertWeight(parseFloat(w) || 0, from, u))])))
+    setWeightUnitState(u)
+    saveWeightUnit(u)
+  }
+  // Last weight / level used per exercise, so later rounds prefill them
+  // (set once, adjust only when they change). Seeded from the athlete's own
+  // history on mount (see the effect below), then kept up to date round to
+  // round within this session by handleExerciseDone.
   const [lastWeights, setLastWeights] = useState<Record<number, string>>({})
-  const [lastRpe, setLastRpe] = useState<Record<number, string>>({})
+  const [lastLevels, setLastLevels] = useState<Record<number, LevelStep>>({})
+  // Each level exercise's full chain, resolved from the live library on
+  // mount (see resolveExerciseChain). Absent = weight mode.
+  const [chains, setChains] = useState<Record<number, ResolvedChain>>({})
+  // Each weight-mode exercise's smallest weight jump (library first).
+  const [loadSteps, setLoadSteps] = useState<Record<number, number | undefined>>({})
+  // Adjustable-setting hints per exercise (library first, block copy offline)
+  // and the "hardest setting" switch to start each round on.
+  const [settings, setSettings] = useState<Record<number, ExerciseSetting>>({})
+  const [lastHardest, setLastHardest] = useState<Record<number, boolean>>({})
+  // Each exercise's recent sessions (any focus, newest first) — the
+  // end-of-block card judges today on top of them (deload / stall rules,
+  // explosiveness following max force).
+  const [pastSessions, setPastSessions] = useState<Record<number, FocusEntry[]>>({})
+  // History + library loaded (or given up on) — Start waits for it so round
+  // 1 doesn't mount before its prefill exists.
+  const [prefillReady, setPrefillReady] = useState(false)
+  // Why the seeded weight/level is what it is, e.g. "▲ 20 → 21 kg — 6 reps
+  // on every set" (see planNextForFocus). Unset when there's nothing to judge.
+  const [suggestionNotes, setSuggestionNotes] = useState<Record<number, string>>({})
+  // What each note is based on ("Last time · Sep 30 · 10, 9, 8 reps").
+  const [suggestionDetails, setSuggestionDetails] = useState<Record<number, string>>({})
+  // An exercise's last round came in under the floor: its next round is one
+  // step easier (already applied to lastWeights / lastLevels), with this
+  // banner + Undo. Cleared once that round is logged.
+  const [roundDrops, setRoundDrops] = useState<Record<number, RoundDrop>>({})
+  // The live exercise library (null offline) — the easier-exercise picker
+  // reads it. Swaps: block exercise index → the easier exercise the athlete
+  // picked, used for the rest of the block.
+  const [library, setLibrary] = useState<LibraryExercise[] | null>(null)
+  const [swaps, setSwaps] = useState<Record<number, LibraryExercise>>({})
+  // Which exercise the picker is for; kept after closing so the sheet's
+  // content doesn't change while it slides away.
+  const [pickerFor, setPickerFor] = useState<number | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  // The full-screen "Switch sides" card (timed both-sides holds) is shown on
+  // the block's first switch only; after that the glow + haptic carry it.
+  const [switchCardSeen, setSwitchCardSeen] = useState(false)
+
+  // The exercise as it's actually being done: the swap, if any, keeps the
+  // block's target (focus, reps, sides) but takes the picked exercise's
+  // identity, photo and notes, and progresses by weight (no ladder).
+  // The setting hints for the exercise as it's being done (a swap brings its own).
+  function settingFor(idx: number): ExerciseSetting | undefined {
+    const swap = swaps[idx]
+    return swap ? settingOf(swap) : settings[idx]
+  }
+
+  function effectiveExercise(idx: number): Exercise {
+    const ex = block.exercises[idx]
+    const swap = swaps[idx]
+    if (!swap || ex.type === "7/3s") return ex
+    return {
+      ...ex, name: swap.name, exerciseId: swap.$id, photoUri: swap.photoUri, notes: swap.notes,
+      loadMode: "weight", levels: undefined, loadStep: swap.loadStep ?? undefined,
+      settingHarder: swap.settingHarder || undefined, settingEasier: swap.settingEasier || undefined,
+    }
+  }
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
@@ -117,6 +229,76 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     return () => {
       if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
     }
+  }, [])
+
+  // Seed round-1 prefills from the athlete's most recent prior session, run
+  // through the focus-vs-RPE-band suggestion so the first round of a new
+  // session already reflects last time's result rather than starting blank.
+  // Level chains come from the live library, so a chain edited after this
+  // block was saved (or one the block's copy never knew about) still applies.
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      withTimeout(getSessions(), PREFILL_TIMEOUT_MS).catch(() => null),
+      withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
+      loadWeightUnit(),
+    ])
+      .then(([sessions, library, unit]) => {
+        if (cancelled) return
+        setWeightUnitState(unit)
+        const resolved: Record<number, ResolvedChain> = {}
+        const weights: Record<number, string> = {}
+        const levels: Record<number, LevelStep> = {}
+        const notes: Record<number, string> = {}
+
+        const steps: Record<number, number | undefined> = {}
+        const sets: Record<number, ExerciseSetting> = {}
+        const details: Record<number, string> = {}
+        const hardest: Record<number, boolean> = {}
+        const past: Record<number, FocusEntry[]> = {}
+
+        block.exercises.forEach((ex, idx) => {
+          if (ex.type === "7/3s" || ex.movementType === "mobility") return
+          const chain = resolveExerciseChain(ex, library)
+          if (chain) resolved[idx] = chain
+          const row = library ? findLibraryRow(ex, library) : undefined
+          steps[idx] = row?.loadStep ?? ex.loadStep ?? undefined
+          const setting = settingOf(row ?? ex)
+          if (setting) sets[idx] = setting
+          if (!sessions) return
+          // Search the whole family — every member of the full chain — since
+          // a round could have been logged under any of them.
+          const candidateIds = chain ? chainIds(chain, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
+          // Every focus: planNextForFocus picks today's focus's history, and
+          // explosiveness starts from max force (scNext.ts). Weights come
+          // back in the athlete's current unit.
+          const history = findScSessions(sessions, candidateIds, ex.name, { unit, limit: HISTORY_LOOKBACK })
+          if (history.length === 0) return
+          past[idx] = history
+
+          const next = planNextForFocus({ ...ex, setting }, chain ?? undefined, steps[idx], unit, history, "last time")
+          if (next.atHardest != null) hardest[idx] = next.atHardest
+          if (next.level) levels[idx] = next.level
+          if (next.weight != null) weights[idx] = String(next.weight)
+          if (next.note) notes[idx] = next.note
+          const basis = basisLine(next, ex.focus, next.level?.name ?? ex.name, unit)
+          if (basis) details[idx] = basis
+        })
+
+        setChains(resolved)
+        setLibrary(library)
+        setLoadSteps(steps)
+        setSettings(sets)
+        setSuggestionDetails(details)
+        setLastHardest((prev) => ({ ...hardest, ...prev }))
+        setPastSessions(past)
+        setLastWeights((prev) => ({ ...weights, ...prev }))
+        setLastLevels((prev) => ({ ...levels, ...prev }))
+        setSuggestionNotes((prev) => ({ ...notes, ...prev }))
+      })
+      .finally(() => { if (!cancelled) setPrefillReady(true) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function startRestTimer(duration: number, onDone: () => void) {
@@ -140,24 +322,76 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
     const idx = currentExerciseIndex
-    const fullLog: ExerciseLog = { ...log, exerciseIndex: idx, round: currentRound }
+    const fullLog: ExerciseLog = { ...log, exerciseIndex: idx, round: currentRound, swappedTo: swaps[idx]?.$id }
     setLogs((prev) => [...prev, fullLog])
 
-    // Remember the weight / RPE for this exercise so the next round prefills them.
+    // Remember the weight / level for this exercise so the next round prefills them.
+    // (Reps and effort are never prefilled — see AmountInput.)
     const usedWeight = log.weight ?? log.weightRight ?? log.weightLeft
     if (usedWeight) setLastWeights((prev) => ({ ...prev, [idx]: usedWeight }))
-    const usedRpe = log.rpe ?? log.rpeRight ?? log.rpeLeft
-    if (usedRpe) setLastRpe((prev) => ({ ...prev, [idx]: usedRpe }))
+    // Always remember the level picked, the prescribed step included — so
+    // stepping back down in round 2 isn't undone by round 3 reopening on
+    // round 1's harder level.
+    const swap = swaps[idx]
+    const chainNow = swap ? undefined : chains[idx]
+    if (chainNow) setLastLevels((prev) => ({ ...prev, [idx]: { exerciseId: log.levelId ?? "", name: log.exerciseName } }))
+    const setting = settingFor(idx)
+    if (setting) setLastHardest((prev) => ({ ...prev, [idx]: !!log.atHardestSetting }))
+
+    // Under the floor → the next round of this exercise starts one step
+    // easier (weaker side for both-sides). Only when there is a next round.
+    const ex = effectiveExercise(idx)
+    let drop: RoundDrop | null = null
+    if (ex && ex.type !== "7/3s" && ex.movementType !== "mobility" && currentRound < block.rounds - 1) {
+      const round = readRound(log)
+      const chain = chainNow
+      const target = targetFor(ex.focus, ex.reps, ex.unit === "seconds" ? "seconds" : "reps")
+      if (setting?.easier) {
+        // An adjustable setting: the banner says how to make it easier;
+        // nothing changes automatically (sc-modifications-plan Q5).
+        drop = planRoundDrop(target, round.amount, { kind: "weight", weight: 0, unit: weightUnit }, setting.easier)
+      } else if (chain) {
+        const at = chainIndexOf(chain, log.levelId)
+        // Only levels tagged for today's focus ("Used for") — e.g. never a
+        // negative pull-up on an explosiveness day.
+        drop = planRoundDrop(target, round.amount, { kind: "level", chain: chain.chain, idx: at >= 0 ? at : chain.prescribedIdx, usable: usableAt(chain, ex.focus) })
+      } else {
+        drop = planRoundDrop(target, round.amount, { kind: "weight", weight: round.weight ?? 0, loadStep: swap ? swap.loadStep ?? undefined : loadSteps[idx], unit: weightUnit })
+      }
+      // Above the range: make it harder now (setup hint, or a little more
+      // weight) — a suggestion only.
+      drop ??= planRoundRaise(target, round.amount, ex.focus, {
+        settingHarder: setting?.harder, atHardest: !!log.atHardestSetting,
+        weight: round.weight, loadStep: swap ? swap.loadStep ?? undefined : loadSteps[idx], unit: weightUnit, level: !!chain,
+      })
+    }
+    setRoundDrops((prev) => {
+      const next = { ...prev }
+      if (drop) next[idx] = drop
+      else delete next[idx]
+      return next
+    })
+    if (drop?.weight != null) setLastWeights((prev) => ({ ...prev, [idx]: String(drop!.weight) }))
+    if (drop?.level) setLastLevels((prev) => ({ ...prev, [idx]: drop!.level! }))
+    if (drop?.bannerOnly && !drop.raise && setting) setLastHardest((prev) => ({ ...prev, [idx]: false }))
 
     logAttempt({
       success: true,
       scData: {
+        // A level round is logged under the LEVEL's identity, not the
+        // container's — reps/sets belong to whichever exercise was actually
+        // performed, and next time's history lookup needs to find it there.
+        exerciseId: log.levelId ?? ex?.exerciseId,
         exerciseName: log.exerciseName,
+        // The focus it was programmed for, so next time's prefill only
+        // compares against rounds done at the same focus.
+        focus: block.exercises[idx]?.type !== "7/3s" ? (block.exercises[idx] as RepExercise | BothSidesExercise)?.focus : undefined,
         round: currentRound + 1,
         repsCompleted: log.repsCompleted,
         weight: log.weight,
         weightUnit: log.weightUnit ?? "kg",
         rpe: log.rpe,
+        effort: log.effort,
         repsLeft: log.repsLeft,
         repsRight: log.repsRight,
         weightLeft: log.weightLeft,
@@ -167,8 +401,18 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         edge: log.edge,
         seriesDone: log.seriesDone,
         notes: log.notes,
+        adjustedFrom: log.adjustedFrom,
+        atHardestSetting: log.atHardestSetting,
+        // A swapped round belongs to the picked exercise's history; this
+        // points back at what the block prescribed (for the coach).
+        swappedFrom: swap ? { exerciseId: block.exercises[idx]?.exerciseId, exerciseName: block.exercises[idx]?.name } : undefined,
       },
     })
+
+    // No mid-session popup on reaching the top of the range: a single round
+    // at the ceiling isn't the rule (every set is — see decideNext), and the
+    // old "add weight" alert contradicted next session's call. The review
+    // screen's "Next time" card says what the rule decided.
 
     const isLastExercise = currentExerciseIndex === block.exercises.length - 1
     const isLastRound = currentRound === block.rounds - 1
@@ -207,48 +451,33 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             <LinearGradient colors={["transparent", C.bg]} style={styles.heroFade} pointerEvents="none" />
           </View>
 
+          <View style={styles.introHead}>
+            <Text style={styles.exKicker}>Strength & conditioning</Text>
+            <Text style={styles.introTitle}>{blockTitle}</Text>
+            <Text style={styles.introMeta}>
+              {block.rounds} round{block.rounds !== 1 ? "s" : ""} · {block.exercises.length} exercise{block.exercises.length !== 1 ? "s" : ""}
+              {block.restBetweenRounds > 0 ? ` · ${formatRest(block.restBetweenRounds)} rest` : ""}
+            </Text>
+          </View>
+
           {!!block.description && (
             <Text style={styles.description}>{block.description}</Text>
           )}
 
-          <View style={styles.overviewCard}>
-            <Text style={styles.overviewLabel}>
-              {block.rounds} round{block.rounds !== 1 ? "s" : ""} · {block.exercises.length} exercise{block.exercises.length !== 1 ? "s" : ""}
-            </Text>
-            {block.exercises.map((ex, i) => (
-              <View key={i} style={styles.overviewRow}>
-                <Text style={styles.overviewDot}>·</Text>
-                <Text style={styles.overviewExercise}>
-                  {ex.name}
-                  {ex.type === "reps"
-                    ? `  ${amountLabel(ex.reps, ex.unit)}`
-                    : ex.type === "both_sides"
-                    ? `  ${amountLabel(ex.reps, ex.unit)} · both sides`
-                    : `  ${ex.series} series · ${ex.edge}`}
-                </Text>
-              </View>
-            ))}
+          <View style={styles.exList}>
+            {block.exercises.map((ex, i) => <ExerciseRow key={i} exercise={ex} />)}
           </View>
-
-          <View style={styles.unitRow}>
-            <Text style={styles.unitLabel}>Weight unit</Text>
-            <View style={styles.unitToggle}>
-              {(["kg", "lb"] as WeightUnit[]).map((u) => (
-                <Pressable
-                  key={u}
-                  style={[styles.unitChip, weightUnit === u && styles.unitChipSelected]}
-                  onPress={() => setWeightUnit(u)}
-                >
-                  <Text style={[styles.unitChipText, weightUnit === u && styles.unitChipTextSelected]}>
-                    {u}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("circuit") }} />
         </ScrollView>
+        <View style={styles.screenFooter}>
+          {prefillReady ? (
+            <PillButton title="Start" icon="play" onPress={() => { blockTimer.start(); setPhase("circuit") }} />
+          ) : (
+            <View style={styles.prefillLoading}>
+              <ActivityIndicator color={C.green} />
+              <Text style={styles.prefillLoadingText}>Loading your last session…</Text>
+            </View>
+          )}
+        </View>
       </View>
     )
   }
@@ -268,32 +497,51 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       setCurrentExerciseIndex(0)
       setPhase("circuit")
     }
+    const upNext = block.exercises[0]
+    // Ring sized to the screen, and smaller for each easier-round note, so
+    // the notes and "Up next" fit without scrolling on most phones. The
+    // content still scrolls if they don't.
+    const dropCount = Object.keys(roundDrops).length
+    const ringSize = Math.round(Math.max(150, Math.min(260, winHeight * 0.32) - dropCount * 40))
     return (
-      <View style={styles.restContainer}>
-        <View style={styles.restHeader}>
-          <Text style={styles.restRoundLabel}>Next: round {currentRound + 2} of {block.rounds}</Text>
-          <Text style={styles.restSub}>Rest</Text>
-        </View>
-        <View style={styles.restCircle}>
-          <AnimatedCircularProgress
-            size={300} width={10} fill={fillPercent}
-            tintColor={restUrgent ? C.red : C.green}
-            backgroundColor={C.surface}
-            rotation={0}
-          >
-            {() => {
-              const t = restTimeRemaining ?? 0
-              const display = t > 0
-                ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
-                : "go!"
-              return <Text style={styles.restTimerText}>{display}</Text>
-            }}
-          </AnimatedCircularProgress>
-        </View>
-        <View style={styles.restFooter}>
-          <Pressable style={styles.skipBtn} onPress={skipRest}>
-            <Text style={styles.skipBtnText}>Skip rest</Text>
-          </Pressable>
+      <View style={shared_styles.screen}>
+        <ScrollView contentContainerStyle={styles.restContainer} showsVerticalScrollIndicator={false}>
+          <Text style={styles.exKicker}>Rest</Text>
+          <Text style={styles.introTitle}>Round {currentRound + 2} of {block.rounds} next</Text>
+          <View style={styles.restCircle}>
+            <AnimatedCircularProgress
+              size={ringSize} width={ringSize > 200 ? 10 : 8} fill={fillPercent}
+              tintColor={restUrgent ? C.red : C.green}
+              backgroundColor={C.surface}
+              rotation={0}
+            >
+              {() => {
+                const t = restTimeRemaining ?? 0
+                const display = t > 0
+                  ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+                  : "go!"
+                return <Text style={[styles.restTimerText, { fontSize: Math.round(ringSize * 0.25) }]}>{display}</Text>
+              }}
+            </AnimatedCircularProgress>
+          </View>
+          {Object.entries(roundDrops).map(([i, d]) => (
+            <View key={i} style={styles.restDrop}>
+              <Ionicons name="arrow-down-circle" size={20} color={C.yellow} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.restDropName}>{block.exercises[Number(i)]?.name}</Text>
+                <Text style={styles.restDropText}>{d.note}</Text>
+              </View>
+            </View>
+          ))}
+          {!!upNext && (
+            <>
+              <Text style={styles.sectionLabel}>Up next</Text>
+              <ExerciseRow exercise={upNext} />
+            </>
+          )}
+        </ScrollView>
+        <View style={styles.screenFooter}>
+          <PillButton title="Skip rest" icon="play-skip-forward" variant="secondary" onPress={skipRest} />
         </View>
       </View>
     )
@@ -302,7 +550,18 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // ── Circuit ─────────────────────────────────────────────────────────────────
 
   if (phase === "circuit") {
-    const exercise = block.exercises[currentExerciseIndex]
+    const exercise = effectiveExercise(currentExerciseIndex)
+    const swapped = swaps[currentExerciseIndex]
+    const roundKey = `${currentRound}-${currentExerciseIndex}-${swapped?.$id ?? ""}`
+    const pickEasier = () => { setPickerFor(currentExerciseIndex); setPickerOpen(true) }
+    const undoSwap = () => setSwaps((prev) => { const n = { ...prev }; delete n[currentExerciseIndex]; return n })
+    const swapNote = swapped ? `Swapped from ${block.exercises[currentExerciseIndex].name} for the rest of this block` : undefined
+    // Round 2+ skips the brief (the athlete knows the exercise) unless the
+    // load was just made easier or the exercise was just swapped.
+    const justSwapped = !!swapped && !logs.some((l) => l.exerciseIndex === currentExerciseIndex && l.swappedTo === swapped.$id)
+    const startOnBrief = currentRound === 0 || !!roundDrops[currentExerciseIndex] || justSwapped
+    // Share of the block's exercises done so far, across all rounds.
+    const progress = (currentRound * block.exercises.length + currentExerciseIndex) / (block.rounds * block.exercises.length)
 
     return (
       <KeyboardAvoidingView
@@ -322,42 +581,59 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
               setPhase("intro")
             }
           }}
-          right={
-            <Text style={styles.topBarRight}>
-              {currentExerciseIndex + 1}/{block.exercises.length}
-            </Text>
-          }
         />
-        <ScrollView
-          contentContainerStyle={styles.circuitContainer}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {exercise.type === "reps" ? (
-            <RepsExerciseUI
-              key={`${currentRound}-${currentExerciseIndex}`}
-              exercise={exercise}
-              weightUnit={weightUnit}
-              initialWeight={lastWeights[currentExerciseIndex] ?? ""}
-              initialRpe={lastRpe[currentExerciseIndex] ?? ""}
-              onDone={(log) => handleExerciseDone(log)}
-            />
-          ) : exercise.type === "both_sides" ? (
-            <BothSidesExerciseUI
-              key={`${currentRound}-${currentExerciseIndex}`}
-              exercise={exercise}
-              weightUnit={weightUnit}
-              initialWeight={lastWeights[currentExerciseIndex] ?? ""}
-              initialRpe={lastRpe[currentExerciseIndex] ?? ""}
-              onDone={(log) => handleExerciseDone(log)}
-            />
-          ) : (
-            <SevenThreesUI
-              exercise={exercise}
-              onDone={(log) => handleExerciseDone(log)}
-            />
-          )}
-        </ScrollView>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
+        {exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
+          <MobilityExerciseUI
+            key={`${currentRound}-${currentExerciseIndex}`}
+            exercise={exercise}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        ) : exercise.type !== "7/3s" ? (
+          <LoggedExerciseUI
+            key={roundKey}
+            exercise={exercise}
+            levelChain={swapped ? undefined : chains[currentExerciseIndex]}
+            weightUnit={weightUnit}
+            onWeightUnitChange={setWeightUnit}
+            initialWeight={lastWeights[currentExerciseIndex] ?? ""}
+            initialLevel={swapped ? undefined : lastLevels[currentExerciseIndex]}
+            setting={settingFor(currentExerciseIndex)}
+            initialHardest={!!lastHardest[currentExerciseIndex]}
+            suggestionNote={currentRound === 0 ? suggestionNotes[currentExerciseIndex] : undefined}
+            suggestionDetail={currentRound === 0 ? suggestionDetails[currentExerciseIndex] : undefined}
+            roundDrop={roundDrops[currentExerciseIndex]}
+            onPickEasier={pickEasier}
+            swapNote={swapNote}
+            onUndoSwap={undoSwap}
+            startOnBrief={startOnBrief}
+            showSwitchCard={!switchCardSeen}
+            onSwitchCardShown={() => setSwitchCardSeen(true)}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        ) : (
+          <SevenThreesUI
+            exercise={exercise}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        )}
+        <EasierExercisePicker
+          visible={pickerOpen}
+          original={pickerFor !== null ? block.exercises[pickerFor] : undefined}
+          library={library}
+          onClose={() => setPickerOpen(false)}
+          onPick={(row) => {
+            const i = pickerFor!
+            setSwaps((prev) => ({ ...prev, [i]: row }))
+            // The drop banner did its job; the picked exercise starts fresh
+            // (no weight carried over from a different exercise).
+            setRoundDrops((prev) => { const n = { ...prev }; delete n[i]; return n })
+            setLastWeights((prev) => { const n = { ...prev }; delete n[i]; return n })
+            setPickerOpen(false)
+          }}
+        />
       </KeyboardAvoidingView>
     )
   }
@@ -365,89 +641,166 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // ── Review ──────────────────────────────────────────────────────────────────
 
   if (phase === "review") {
+    // What next session will start on, per exercise — the same rule the
+    // prefill applies, run over today's rounds.
+    const nextTime = block.exercises.flatMap((ex, idx) => {
+      if (ex.type === "7/3s" || ex.movementType === "mobility") return []
+      // Swapped rounds were a different exercise — they don't judge this one.
+      const swappedTo = logs.find((l) => l.exerciseIndex === idx && l.swappedTo)
+      const rounds = logs
+        .filter((l) => l.exerciseIndex === idx && !l.swappedTo)
+        .sort((a, b) => a.round - b.round)
+        .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit))
+      const summary = setsAtFinalLoad(rounds)
+      const today: FocusEntry | null = summary ? { focus: ex.focus, date: new Date().toISOString(), prescribed: ex.reps, unit: ex.unit === "seconds" ? "seconds" : "reps", summary } : null
+      const { note } = today ? planNextForFocus({ ...ex, setting: settings[idx] }, chains[idx], loadSteps[idx], weightUnit, [today, ...(pastSessions[idx] ?? [])], "today") : { note: "" }
+      const swapNote = swappedTo ? `Swapped to ${swappedTo.exerciseName} — this exercise needs an easier version on its ladder` : ""
+      const text = [note, swapNote].filter(Boolean).join("\n")
+      return text ? [{ name: ex.name, note: text }] : []
+    })
     return (
-      <ScrollView contentContainerStyle={styles.reviewContainer}>
-        <Text style={styles.title}>Circuit complete</Text>
-
-        {Array.from({ length: block.rounds }).map((_, roundIndex) => (
-          <View key={roundIndex} style={styles.reviewRound}>
-            <Text style={styles.reviewRoundTitle}>Round {roundIndex + 1}</Text>
-            {logs
-              .filter((l) => l.round === roundIndex)
-              .map((l, i) => {
-                const exUnit = (block.exercises[l.exerciseIndex] as any)?.unit as ExerciseUnit | undefined
-                return (
-                <View key={i} style={styles.reviewRow}>
-                  <Text style={styles.reviewExerciseName}>{l.exerciseName}</Text>
-
-                  {l.repsCompleted != null && (
-                    <Text style={styles.reviewDetail}>
-                      {amountLabel(l.repsCompleted, exUnit)}
-                      {l.weight ? ` · ${l.weight}${l.weightUnit ?? "kg"}` : ""}
-                      {l.rpe ? ` · RPE ${l.rpe}` : ""}
-                    </Text>
-                  )}
-
-                  {l.repsLeft != null && (
-                    <>
-                      <Text style={styles.reviewDetail}>
-                        L: {amountLabel(l.repsLeft, exUnit)}
-                        {l.weightLeft ? ` · ${l.weightLeft}${l.weightUnit ?? "kg"}` : ""}
-                        {l.rpeLeft ? ` · RPE ${l.rpeLeft}` : ""}
-                      </Text>
-                      <Text style={styles.reviewDetail}>
-                        R: {amountLabel(l.repsRight, exUnit)}
-                        {l.weightRight ? ` · ${l.weightRight}${l.weightUnit ?? "kg"}` : ""}
-                        {l.rpeRight ? ` · RPE ${l.rpeRight}` : ""}
-                      </Text>
-                    </>
-                  )}
-
-                  {l.seriesDone != null && (
-                    <Text style={styles.reviewDetail}>
-                      {l.seriesDone} series · {l.edge}
-                      {l.rpe ? ` · RPE ${l.rpe}` : ""}
-                    </Text>
-                  )}
-
-                  {l.notes ? (
-                    <Text style={styles.reviewNotes}>"{l.notes}"</Text>
-                  ) : null}
-                </View>
-                )
-              })}
+      <View style={shared_styles.screen}>
+        <ScrollView contentContainerStyle={styles.reviewContainer} showsVerticalScrollIndicator={false}>
+          <View style={styles.introHead}>
+            <Text style={styles.exKicker}>Block done</Text>
+            <Text style={styles.introTitle}>Circuit complete</Text>
           </View>
-        ))}
 
-        <CustomButton title="Continue" onPress={goToNextBlock} />
-      </ScrollView>
+          {nextTime.length > 0 && (
+            <View style={styles.nextTimeCard}>
+              <Text style={styles.nextTimeTitle}>Next time</Text>
+              {nextTime.map((n, i) => (
+                <View key={i} style={styles.nextTimeRow}>
+                  <Text style={styles.nextTimeName}>{n.name}</Text>
+                  <Text style={styles.nextTimeNote}>{n.note}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {Array.from({ length: block.rounds }).map((_, roundIndex) => (
+            <View key={roundIndex} style={styles.reviewRound}>
+              <Text style={styles.reviewRoundTitle}>Round {roundIndex + 1}</Text>
+              {logs
+                .filter((l) => l.round === roundIndex)
+                .map((l, i) => {
+                  const exUnit = (block.exercises[l.exerciseIndex] as any)?.unit as ExerciseUnit | undefined
+                  return (
+                  <View key={i} style={styles.reviewRow}>
+                    <Text style={styles.reviewExerciseName}>{l.exerciseName}</Text>
+
+                    {l.repsCompleted != null && (
+                      <Text style={styles.reviewDetail}>
+                        {amountLabel(l.repsCompleted, exUnit)}
+                        {l.weight ? ` · ${l.weight}${l.weightUnit ?? "kg"}` : ""}
+                        {l.rpe ? ` · RPE ${l.rpe}` : ""}
+                      </Text>
+                    )}
+
+                    {l.repsLeft != null && (
+                      <>
+                        <Text style={styles.reviewDetail}>
+                          L: {amountLabel(l.repsLeft, exUnit)}
+                          {l.weightLeft ? ` · ${l.weightLeft}${l.weightUnit ?? "kg"}` : ""}
+                          {l.rpeLeft ? ` · RPE ${l.rpeLeft}` : ""}
+                        </Text>
+                        <Text style={styles.reviewDetail}>
+                          R: {amountLabel(l.repsRight, exUnit)}
+                          {l.weightRight ? ` · ${l.weightRight}${l.weightUnit ?? "kg"}` : ""}
+                          {l.rpeRight ? ` · RPE ${l.rpeRight}` : ""}
+                        </Text>
+                      </>
+                    )}
+
+                    {l.seriesDone != null && (
+                      <Text style={styles.reviewDetail}>
+                        {l.seriesDone} series · {l.edge}
+                        {l.rpe ? ` · RPE ${l.rpe}` : ""}
+                      </Text>
+                    )}
+
+                    {l.notes ? (
+                      <Text style={styles.reviewNotes}>"{l.notes}"</Text>
+                    ) : null}
+                  </View>
+                  )
+                })}
+            </View>
+          ))}
+        </ScrollView>
+        <View style={styles.screenFooter}>
+          <PillButton title="Continue" icon="arrow-forward" onPress={goToNextBlock} />
+        </View>
+      </View>
     )
   }
 
   return null
 }
 
-// ─── RPE Chips ────────────────────────────────────────────────────────────────
-
-function RPEChips({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
+// Named-step equivalent of RPEChips, for exercises that progress by level
+// (e.g. calisthenics) instead of a numeric weight. Wraps rather than scrolls
+// since most lists are short enough to fit two rows.
+//
+// Shows the whole chain, easiest → hardest, including levels easier than
+// the one the coach prescribed — the athlete can always step down.
+function LevelPicker({ levelChain, value, suggested, onChange }: {
+  levelChain: ResolvedChain; value?: string; suggested?: string; onChange: (v: LevelStep) => void
+}) {
+  const prescribedId = levelChain.chain[levelChain.prescribedIdx]?.exerciseId
   return (
     <>
-      <Text style={styles.rpeLabel}>{label ?? "RPE"}</Text>
-      <View style={styles.rpeRow}>
-        {["6", "7", "8", "9", "10"].map((val) => (
-          <Pressable
-            key={val}
-            style={[styles.rpeChip, value === val && styles.rpeChipSelected]}
-            onPress={() => onChange(val)}
-          >
-            <Text style={[styles.rpeChipText, value === val && styles.rpeChipTextSelected]}>
-              {val}
-            </Text>
-          </Pressable>
-        ))}
+      <Text style={styles.sectionLabel}>Level</Text>
+      <View style={styles.levelPickerRow}>
+        {levelChain.chain.map((lvl) => {
+          const selected = value === lvl.exerciseId
+          // One tag per chip: the recommended step wins over the coach's
+          // pick, and stays marked after the athlete picks something else so
+          // they can still see (and return to) it.
+          const tag = suggested === lvl.exerciseId ? "Suggested" : prescribedId === lvl.exerciseId ? "Prescribed" : null
+          return (
+            <Pressable
+              key={lvl.exerciseId || lvl.name}
+              style={[styles.levelChip, selected && styles.levelChipSelected]}
+              onPress={() => onChange(lvl)}
+            >
+              <Text style={[styles.levelChipText, selected && styles.levelChipTextSelected]} numberOfLines={1}>
+                {lvl.name}
+              </Text>
+              {!!tag && (
+                <Text style={[styles.levelChipSuggested, selected && styles.levelChipSuggestedSelected]}>
+                  {tag}
+                </Text>
+              )}
+            </Pressable>
+          )
+        })}
       </View>
     </>
   )
+}
+
+// An exercise's adjustable-setting hints, if it has any.
+interface ExerciseSetting { harder?: string; easier?: string }
+function settingOf(x: { settingHarder?: string | null; settingEasier?: string | null }): ExerciseSetting | undefined {
+  const harder = x.settingHarder?.trim() || undefined
+  const easier = x.settingEasier?.trim() || undefined
+  return harder || easier ? { harder, easier } : undefined
+}
+
+// Sessions read per exercise, any focus: enough for three of one focus
+// (stall rule) while the plan rotates three focuses.
+const HISTORY_LOOKBACK = 10
+
+// History + library fetches can hang offline; past this, start without them
+// (the block's own copy of each chain is the fallback).
+const PREFILL_TIMEOUT_MS = 6000
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms)
+    promise.then((v) => { clearTimeout(t); resolve(v) }, (e) => { clearTimeout(t); reject(e) })
+  })
 }
 
 // The prescribed amount may be a single value or a range ("10", "4-6"). Use the
@@ -518,9 +871,10 @@ function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
 }
 
 // ─── Timed amount control ─────────────────────────────────────────────────────
-// A real countdown timer for timed exercises: adjust the target duration, then
-// Start → a short "get ready" prep countdown → the hold counts DOWN from the
-// target to zero (or Stop early). The completed seconds are reported via onChange.
+// A real countdown timer for timed exercises: set the timer length (±5 s,
+// captioned so it doesn't read as the logged value), then Start → a short
+// "get ready" prep countdown → the hold counts DOWN to zero (or Stop early).
+// The completed seconds are reported via onChange and shown as "Logged".
 
 const TIMED_PREP_SECS = 5
 
@@ -587,18 +941,22 @@ function TimedAmountControl({ target, onChange }: { target: number; onChange: (v
 
   if (phase === "idle") {
     return (
-      <View style={styles.timedControl}>
-        <View style={[styles.stepperRow, { flex: 1 }]}>
-          <Pressable style={styles.stepperBtn} hitSlop={6} onPress={() => setDur((d) => Math.max(1, d - 1))}>
-            <Text style={styles.stepperBtnText}>−</Text>
+      <View style={styles.timerCard}>
+        <View style={styles.timerLengthRow}>
+          <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => Math.max(5, d - 5))}>
+            <Text style={styles.timerAdjustText}>−5 s</Text>
           </Pressable>
-          <Text style={styles.stepperValue}>{dur}<Text style={styles.stepperSuffix}>s</Text></Text>
-          <Pressable style={styles.stepperBtn} hitSlop={6} onPress={() => setDur((d) => d + 1)}>
-            <Text style={styles.stepperBtnText}>+</Text>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={styles.timerLengthValue}>{dur}<Text style={styles.timedBigUnit}> s</Text></Text>
+            <Text style={styles.timerLengthCaption}>Timer length</Text>
+          </View>
+          <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => d + 5)}>
+            <Text style={styles.timerAdjustText}>+5 s</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.holdTimerBtn} onPress={startPrepare}>
-          <Text style={styles.holdTimerBtnText}>Start{"\n"}timer</Text>
+        <Pressable style={({ pressed }) => [styles.timerStartBtn, pressed && { opacity: 0.8 }]} onPress={startPrepare}>
+          <Ionicons name="play" size={16} color={C.green} />
+          <Text style={styles.timerStartText}>Start {dur} s hold</Text>
         </Pressable>
       </View>
     )
@@ -631,90 +989,396 @@ function TimedAmountControl({ target, onChange }: { target: number; onChange: (v
   // done
   return (
     <View style={styles.timedActive}>
-      <Text style={styles.timedPhaseLabel}>DONE</Text>
+      <Text style={styles.timedPhaseLabel}>LOGGED</Text>
       <Text style={[styles.timedBig, { color: C.textPrimary }]}>
-        {completed}<Text style={styles.timedBigUnit}>s</Text>
+        {completed}<Text style={styles.timedBigUnit}> s</Text>
       </Text>
-      <Pressable style={styles.holdTimerBtn} onPress={reset}>
-        <Text style={styles.holdTimerBtnText}>Again</Text>
+      <Pressable style={[styles.holdTimerBtn, styles.timedAgainBtn]} onPress={reset}>
+        <Text style={styles.holdTimerBtnText}>Redo hold</Text>
       </Pressable>
     </View>
   )
 }
 
-// Weight + RPE, collapsed behind a toggle by default (timed holds rarely log
-// them). The caret flips ▸/▾ to open/close.
-function ExerciseDetail({ open, onToggle, weight, setWeight, weightUnit, weightStep, rpe, setRpe, rpeLabel }: {
-  open: boolean; onToggle: () => void
-  weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
-  rpe: string; setRpe: (v: string) => void; rpeLabel?: string
+// ─── Logging controls ────────────────────────────────────────────────────────
+
+// How many reps (or seconds) were done. Nothing is preselected: Done stays
+// locked until the athlete picks, so a tap-through can't log a perfect set
+// by accident. Buttons run one under the floor to one over the top ("13+");
+// "Other" opens a stepper for anything else. (Timed holds use the Timer
+// step instead — see LoggedExerciseUI.)
+function AmountInput({ target, value, onChange }: {
+  target: Target | null
+  value: number | null
+  onChange: (v: number) => void
 }) {
+  const [manual, setManual] = useState(false)
+  if (!target || manual) {
+    return <Stepper value={value ?? target?.low ?? 0} onChange={onChange} />
+  }
+  const choices = repChoices(target)
+  const top = choices[choices.length - 1]
+  const inChoices = value != null && choices.includes(value)
+  return (
+    <View style={styles.chipGrid}>
+      {choices.map((n) => {
+        const selected = value === n
+        return (
+          <Pressable key={n} style={[styles.repChip, selected && styles.repChipSelected]} onPress={() => onChange(n)}>
+            <Text style={[styles.repChipText, selected && styles.repChipTextSelected]}>{n === top ? `${n}+` : n}</Text>
+          </Pressable>
+        )
+      })}
+      <Pressable
+        style={[styles.repChip, styles.repChipWide, value != null && !inChoices && styles.repChipSelected]}
+        onPress={() => { setManual(true); if (value == null) onChange(target.low) }}
+      >
+        <Text style={[styles.repChipText, value != null && !inChoices && styles.repChipTextSelected]}>Other</Text>
+      </Pressable>
+    </View>
+  )
+}
+
+// Effort in three words, optional; tapping the selected one clears it.
+function EffortChips({ value, onChange }: { value: Effort | null; onChange: (v: Effort | null) => void }) {
+  return (
+    <View style={styles.chipGrid}>
+      {EFFORTS.map((e) => {
+        const selected = value === e
+        return (
+          <Pressable key={e} style={[styles.repChip, styles.effortChip, selected && styles.repChipSelected]} onPress={() => onChange(selected ? null : e)}>
+            <Text style={[styles.repChipText, selected && styles.repChipTextSelected]}>{EFFORT_LABEL[e]}</Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
+// The load, as a line ("20 kg" / "Bodyweight") that opens the stepper and
+// the kg / lb switch only when tapped. Level mode shows the ladder instead.
+function LoadControl({
+  weight, setWeight, weightUnit, onWeightUnitChange, weightStep,
+  levelChain, level, setLevel, suggestedLevelId, suggestionNote, suggestionDetail,
+}: {
+  weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
+  onWeightUnitChange: (u: WeightUnit) => void
+  levelChain?: ResolvedChain   // present = level mode
+  level?: LevelStep; setLevel?: (v: LevelStep) => void
+  suggestedLevelId?: string
+  suggestionNote?: string
+  suggestionDetail?: string
+}) {
+  const [editing, setEditing] = useState(false)
   return (
     <View style={{ width: "100%", gap: 12 }}>
-      <Pressable style={styles.detailToggle} onPress={onToggle}>
-        <Text style={styles.detailCaret}>{open ? "▾" : "▸"}</Text>
-        <Text style={styles.detailToggleText}>Weight & RPE</Text>
-      </Pressable>
-      {open && (
-        <>
-          <Text style={styles.miniLabel}>Weight ({weightUnit})</Text>
-          <Stepper value={weight} onChange={setWeight} step={weightStep} />
-          <RPEChips value={rpe} onChange={setRpe} label={rpeLabel} />
-        </>
+      {!!suggestionNote && (
+        <View style={styles.suggestionBanner}>
+          <Text style={styles.suggestionBannerText}>{suggestionNote}</Text>
+          {!!suggestionDetail && <Text style={styles.suggestionBannerDetail}>{suggestionDetail}</Text>}
+        </View>
+      )}
+      {levelChain ? (
+        <LevelPicker
+          levelChain={levelChain} value={level?.exerciseId} suggested={suggestedLevelId}
+          onChange={(v) => setLevel?.(v)}
+        />
+      ) : editing ? (
+        <View style={styles.inputSection}>
+          <View style={styles.weightLabelRow}>
+            <Text style={styles.sectionLabel}>Weight</Text>
+            <View style={styles.unitToggle}>
+              {(["kg", "lb"] as WeightUnit[]).map((u) => (
+                <Pressable
+                  key={u}
+                  style={[styles.unitChip, weightUnit === u && styles.unitChipSelected]}
+                  onPress={() => { if (u !== weightUnit) setWeight(convertWeight(weight, weightUnit, u)); onWeightUnitChange(u) }}
+                  hitSlop={6}
+                >
+                  <Text style={[styles.unitChipText, weightUnit === u && styles.unitChipTextSelected]}>{u}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <Stepper value={weight} onChange={setWeight} step={weightStep} suffix={` ${weightUnit}`} />
+        </View>
+      ) : (
+        <Pressable style={styles.weightLine} onPress={() => setEditing(true)}>
+          <Ionicons name="barbell-outline" size={18} color={C.textSecondary} />
+          <Text style={styles.weightLineValue}>{weight > 0 ? `${weight} ${weightUnit}` : "Bodyweight"}</Text>
+          <Text style={styles.linkText}>{weight > 0 ? "Change" : "Add weight"}</Text>
+        </Pressable>
       )}
     </View>
   )
 }
 
-// ─── Exercise Info (photo + how-to notes) ─────────────────────────────────────
+// ─── Easier-round banner ──────────────────────────────────────────────────────
 
-// How-to reference for the current exercise: a photo and/or a coach's notes
-// on correct form. Kept as a small trigger (photo thumbnail, or a plain "i"
-// icon when there's only notes) — not shown inline — so it doesn't push the
-// stepper/Done button off screen on a circuit that repeats every round. Tap
-// opens a sheet with the photo (if any) and the notes (if any).
-function ExerciseInfo({ photoUri, notes }: { photoUri?: string; notes?: string }) {
-  const [expanded, setExpanded] = useState(false)
+// Shown at the top of an exercise when its previous round came in under the
+// floor and this round was made one step easier (planRoundDrop). Undo puts
+// the load back; a note-only drop (nothing to lower) has no Undo.
+function RoundDropBanner({ drop, onUndo, onPickEasier }: { drop: RoundDrop; onUndo: () => void; onPickEasier?: () => void }) {
+  return (
+    <View style={[styles.roundDropBanner, drop.raise && styles.roundRaiseBanner]}>
+      <View style={styles.roundDropTop}>
+        <Ionicons name={drop.raise ? "arrow-up-circle" : "arrow-down-circle"} size={20} color={drop.raise ? C.green : C.yellow} />
+        <Text style={styles.roundDropText}>{drop.note}</Text>
+        {!!drop.undo && (
+          <Pressable onPress={onUndo} hitSlop={8} style={styles.roundDropUndo}>
+            <Text style={styles.roundDropUndoText}>Undo</Text>
+          </Pressable>
+        )}
+      </View>
+      {drop.pickEasier && !!onPickEasier && (
+        <Pressable onPress={onPickEasier} style={styles.roundDropPick}>
+          <Ionicons name="swap-horizontal" size={16} color={C.bg} />
+          <Text style={styles.roundDropPickText}>Pick an easier exercise</Text>
+        </Pressable>
+      )}
+    </View>
+  )
+}
+
+// Shown while a block exercise is swapped for an easier one; Undo goes back.
+function SwapBanner({ note, onUndo }: { note: string; onUndo: () => void }) {
+  return (
+    <View style={[styles.roundDropBanner, styles.swapBanner]}>
+      <View style={styles.roundDropTop}>
+        <Ionicons name="swap-horizontal" size={20} color={C.green} />
+        <Text style={styles.roundDropText}>{note}</Text>
+        <Pressable onPress={onUndo} hitSlop={8} style={styles.roundDropUndo}>
+          <Text style={styles.roundDropUndoText}>Undo</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
+// Easier exercises to swap to when nothing on the prescribed one can be
+// lowered: library exercises of the same movement pattern (same pattern
+// first, then the rest), never mobility or 7/3s. Picking one swaps it in
+// for the rest of the block; the round logs point back to the original.
+function EasierExercisePicker({ visible, original, library, onPick, onClose }: {
+  visible: boolean
+  original?: Exercise
+  library: LibraryExercise[] | null
+  onPick: (row: LibraryExercise) => void
+  onClose: () => void
+}) {
+  const own = original && library ? findLibraryRow(original, library) : undefined
+  const pattern = (own?.movementType ?? (original && original.type !== "7/3s" ? original.movementType : undefined)) as MovementType | undefined
+  const candidates = (library ?? [])
+    .filter((row) => row.$id !== own?.$id && row.type !== "7/3s" && row.movementType !== "mobility")
+    .sort((a, b) => Number(b.movementType === pattern) - Number(a.movementType === pattern) || a.name.localeCompare(b.name))
+  const samePattern = candidates.filter((row) => row.movementType === pattern)
+  const others = candidates.filter((row) => row.movementType !== pattern)
+  const section = (title: string, rows: LibraryExercise[]) => rows.length > 0 && (
+    <>
+      <Text style={styles.pickerSection}>{title}</Text>
+      {rows.map((row) => (
+        <Pressable key={row.$id} style={styles.pickerRow} onPress={() => onPick(row)}>
+          {row.photoUri ? (
+            <Image source={{ uri: row.photoUri }} style={styles.exRowThumb} contentFit="cover" />
+          ) : (
+            <View style={[styles.exRowThumb, styles.exRowIcon]}>
+              <Ionicons name="barbell-outline" size={20} color={C.green} />
+            </View>
+          )}
+          <Text style={styles.pickerName} numberOfLines={2}>{row.name}</Text>
+          <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+        </Pressable>
+      ))}
+    </>
+  )
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.pickerBackdrop}>
+        <View style={styles.pickerSheet}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Pick an easier exercise</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={24} color={C.textSecondary} />
+            </Pressable>
+          </View>
+          <Text style={styles.pickerHint}>
+            Used instead of {original?.name ?? "this exercise"} for the rest of this block. Same rep target.
+          </Text>
+          <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+            {library === null ? (
+              <Text style={styles.pickerHint}>{"Couldn't load the exercise library — check your connection."}</Text>
+            ) : (
+              <>
+                {section(pattern ? `${MOVEMENT_TYPE_LABEL[pattern] ?? pattern} exercises` : "Exercises", pattern ? samePattern : candidates)}
+                {!!pattern && section("Other exercises", others)}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+// The pre-drop load to log on a round done at the easier load — only while
+// the athlete is still on it (not undone, not changed by hand).
+function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: LevelStep | undefined): ExerciseLog["adjustedFrom"] {
+  if (!drop?.undo) return undefined
+  if (drop.weight != null && weight === drop.weight) return { weight: String(drop.undo.weight) }
+  if (drop.level && level?.exerciseId === drop.level.exerciseId) return { levelId: drop.undo.level?.exerciseId || undefined }
+  return undefined
+}
+
+// ─── Exercise Photo (shown directly, not behind a tap) ────────────────────────
+
+// The exercise's demo photo is the first thing on the screen — what to do
+// matters most when an exercise comes up — so it renders as a full-bleed
+// hero (4:3, cover-cropped, fading into the name below) whenever the
+// exercise has one. Tapping still opens a larger view
+// (useful for reading the coach's notes, if any, or zooming in), but seeing
+// the photo itself no longer requires that tap.
+function ExercisePhotoBanner({ photoUri, notes }: { photoUri?: string; notes?: string }) {
+  // "sheet" = photo + coach's notes; "full" = photo alone, filling the screen
+  // (pinch / double-tap to zoom, swipe down to close — see ZoomableImage). One Modal with swapped content rather than two
+  // stacked Modals, which iOS doesn't present reliably.
+  const [view, setView] = useState<"sheet" | "full" | null>(null)
+  const close = () => setView(null)
+  // The remote photo can take up to ~30s to fetch (no CDN in front of
+  // Appwrite storage yet). Track load state so the banner shows progress
+  // instead of sitting there as a flat, inert-looking box — otherwise it
+  // reads as broken/empty rather than "still loading". Reset whenever the
+  // uri changes (e.g. exercise swapped).
+  const [imageLoading, setImageLoading] = useState(true)
+  // Percent of bytes downloaded so far. Starts at 0/indeterminate — the
+  // server doesn't report a content-length until the response headers
+  // arrive, so we show a plain spinner until the first onProgress event
+  // gives us something real to draw, then switch to an actual percentage.
+  const [progress, setProgress] = useState(0)
+  const [hasProgress, setHasProgress] = useState(false)
+  useEffect(() => {
+    setImageLoading(true)
+    setProgress(0)
+    setHasProgress(false)
+  }, [photoUri])
   const { height: winHeight } = useWindowDimensions()
-  if (!photoUri && !notes) return null
+  if (!photoUri) return null
 
   // Compute explicit pixel caps instead of leaning on percentage-height +
   // flexShrink — ScrollView needs a real bounded height to know when to
   // start scrolling rather than growing to fit all of the notes text.
   const sheetMaxHeight = Math.round(winHeight * 0.75)
-  const imageHeight = photoUri ? 220 : 0
-  const notesMaxHeight = Math.max(100, sheetMaxHeight - imageHeight)
+  const notesMaxHeight = Math.max(100, sheetMaxHeight - 220)
+  // The hero: full width, 4:3, but never more than ~45% of the screen so
+  // the inputs below stay in reach.
+  const heroMaxHeight = Math.round(winHeight * 0.45)
+
+  return (
+    <>
+      <Pressable
+        // Nothing to read alongside the photo → skip the sheet and go straight
+        // to fullscreen.
+        onPress={() => setView(notes ? "sheet" : "full")}
+        style={({ pressed }) => [styles.exercisePhotoBanner, { maxHeight: heroMaxHeight }, pressed && { opacity: 0.9 }]}
+      >
+        <Image
+          source={{ uri: photoUri }}
+          style={styles.exercisePhotoBannerImage}
+          contentFit="cover"
+          onLoadEnd={() => setImageLoading(false)}
+          onProgress={({ loaded, total }) => {
+            if (total > 0) {
+              setHasProgress(true)
+              setProgress(Math.round((loaded / total) * 100))
+            }
+          }}
+        />
+        {imageLoading && (
+          <View style={styles.exercisePhotoBannerLoading}>
+            {hasProgress ? (
+              <AnimatedCircularProgress
+                size={48}
+                width={4}
+                fill={progress}
+                tintColor={C.green}
+                backgroundColor={C.border}
+                rotation={0}
+              >
+                {() => <Text style={styles.exercisePhotoProgressText}>{progress}%</Text>}
+              </AnimatedCircularProgress>
+            ) : (
+              <ActivityIndicator size="small" color={C.textSecondary} />
+            )}
+          </View>
+        )}
+        <LinearGradient colors={["transparent", C.bg]} style={styles.exercisePhotoFade} pointerEvents="none" />
+        <View style={[styles.exercisePhotoExpandBadge, styles.exercisePhotoExpandBadgeHero]}>
+          <Ionicons name="expand" size={13} color={C.bg} />
+        </View>
+      </Pressable>
+      <Modal visible={view !== null} transparent animationType="fade" onRequestClose={close}>
+        {view === "full" ? (
+          <View style={styles.exercisePhotoFullBackdrop}>
+            <ZoomableImage
+              uri={photoUri}
+              onTap={() => (notes ? setView("sheet") : close())}
+              onDismiss={close}
+            />
+            <Pressable style={styles.exercisePhotoCloseBtn} onPress={close} hitSlop={10}>
+              <Ionicons name="close" size={22} color={C.textPrimary} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable style={styles.exercisePhotoModalBackdrop} onPress={close}>
+            <Pressable style={[styles.exerciseInfoSheet, { maxHeight: sheetMaxHeight }]} onPress={() => {}}>
+              {/* contain, not cover — this is the "see the whole photo" view, so
+                  letterboxing beats cropping content out when the aspect ratio
+                  doesn't match the sheet. Tap it for fullscreen. */}
+              <Pressable onPress={() => setView("full")}>
+                <Image source={{ uri: photoUri }} style={styles.exerciseInfoSheetImage} contentFit="contain" />
+                <View style={styles.exercisePhotoExpandBadge}>
+                  <Ionicons name="expand" size={13} color={C.bg} />
+                </View>
+              </Pressable>
+              {notes && (
+                <ScrollView style={{ maxHeight: notesMaxHeight }} contentContainerStyle={styles.exerciseInfoNotesContent}>
+                  <Text style={styles.exerciseInfoNotesText}>{notes}</Text>
+                </ScrollView>
+              )}
+            </Pressable>
+            <Pressable style={styles.exercisePhotoCloseBtn} onPress={close} hitSlop={10}>
+              <Ionicons name="close" size={22} color={C.textPrimary} />
+            </Pressable>
+          </Pressable>
+        )}
+      </Modal>
+    </>
+  )
+}
+
+// ─── Exercise Notes (text-only fallback, no photo to show by default) ────────
+
+// When there's no photo, there's nothing to show inline — coach's notes stay
+// behind a plain "i" trigger next to the exercise name, same as before.
+function ExerciseNotesIcon({ notes }: { notes?: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const { height: winHeight } = useWindowDimensions()
+  if (!notes) return null
+  const sheetMaxHeight = Math.round(winHeight * 0.75)
 
   return (
     <>
       <Pressable
         onPress={() => setExpanded(true)}
-        style={({ pressed }) => [styles.exercisePhotoThumbWrap, pressed && { opacity: 0.7 }]}
+        style={({ pressed }) => [styles.exerciseInfoIconWrap, pressed && { opacity: 0.7 }]}
       >
-        {photoUri ? (
-          <>
-            <Image source={{ uri: photoUri }} style={styles.exercisePhotoThumb} contentFit="cover" />
-            <View style={styles.exercisePhotoExpandBadge}>
-              <Ionicons name="expand" size={12} color={C.textPrimary} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.exerciseInfoIconWrap}>
-            <Ionicons name="information-circle-outline" size={26} color={C.textSecondary} />
-          </View>
-        )}
+        <Ionicons name="information-circle-outline" size={26} color={C.textSecondary} />
       </Pressable>
       <Modal visible={expanded} transparent animationType="fade" onRequestClose={() => setExpanded(false)}>
         <Pressable style={styles.exercisePhotoModalBackdrop} onPress={() => setExpanded(false)}>
           <Pressable style={[styles.exerciseInfoSheet, { maxHeight: sheetMaxHeight }]} onPress={() => {}}>
-            {photoUri && (
-              <Image source={{ uri: photoUri }} style={styles.exerciseInfoSheetImage} contentFit="cover" />
-            )}
-            {notes && (
-              <ScrollView style={{ maxHeight: notesMaxHeight }} contentContainerStyle={styles.exerciseInfoNotesContent}>
-                <Text style={styles.exerciseInfoNotesText}>{notes}</Text>
-              </ScrollView>
-            )}
+            <ScrollView style={{ maxHeight: sheetMaxHeight }} contentContainerStyle={styles.exerciseInfoNotesContent}>
+              <Text style={styles.exerciseInfoNotesText}>{notes}</Text>
+            </ScrollView>
           </Pressable>
           <Pressable style={styles.exercisePhotoCloseBtn} onPress={() => setExpanded(false)} hitSlop={10}>
             <Ionicons name="close" size={22} color={C.textPrimary} />
@@ -725,162 +1389,458 @@ function ExerciseInfo({ photoUri, notes }: { photoUri?: string; notes?: string }
   )
 }
 
-// ─── Reps Exercise UI ─────────────────────────────────────────────────────────
+// ─── Screen scaffolding (same look as Home / Plan) ───────────────────────────
 
-interface RepsExerciseUIProps {
-  exercise: RepExercise
+// The app's main action button: 52 high, radius 16, as on LatestWorkoutCard.
+// "secondary" is the quieter grey version (Skip rest).
+function PillButton({ title, onPress, icon, variant = "primary", disabled }: {
+  title: string
+  onPress: () => void
+  icon?: React.ComponentProps<typeof Ionicons>["name"]
+  variant?: "primary" | "secondary"
+  disabled?: boolean
+}) {
+  const primary = variant === "primary"
+  const color = primary ? C.bg : C.textPrimary
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.pillBtn,
+        !primary && styles.pillBtnSecondary,
+        pressed && { opacity: 0.8 },
+        disabled && { opacity: 0.4 },
+      ]}
+    >
+      {!!icon && <Ionicons name={icon} size={18} color={color} />}
+      <Text style={[styles.pillBtnText, { color }]}>{title}</Text>
+    </Pressable>
+  )
+}
+
+// Scrolling content with the action pinned below it, so Done is always in
+// the same place no matter how long the exercise's content is.
+// `background` sits behind everything (the both-sides glow — the footer goes
+// transparent so it shows through); `overlay` covers the whole screen, button
+// included (the switch card); changing `scrollKey` remounts the scroll so it
+// starts at the top.
+function ExerciseScreen({ children, footer, background, overlay, scrollKey }: {
+  children: React.ReactNode; footer?: React.ReactNode; background?: React.ReactNode; overlay?: React.ReactNode; scrollKey?: string
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      {background}
+      <ScrollView
+        key={scrollKey}
+        contentContainerStyle={styles.screenContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+      {!!footer && <View style={[styles.screenFooter, !!background && { backgroundColor: "transparent" }]}>{footer}</View>}
+      {overlay}
+    </View>
+  )
+}
+
+// A lavender (C.side) glow coming in from the edge of the side being worked — left to
+// right on the left side, right to left on the right. A background: render
+// it before the content it sits behind. Timed both-sides holds only.
+// Doesn't take touches.
+const GLOW_STOPS = [0, 0.4, 0.8]
+const GLOW_ALPHA = { normal: [0.16, 0.04, 0], strong: [0.35, 0.08, 0] }
+const SIDE_RGB = "167,139,250"   // C.side
+
+function SideGlow({ side, strong }: { side: Side; strong?: boolean }) {
+  const from = { x: side === "left" ? 0 : 1, y: 0.5 }
+  const to = { x: side === "left" ? 1 : 0, y: 0.5 }
+  const alpha = strong ? GLOW_ALPHA.strong : GLOW_ALPHA.normal
+  return (
+    <LinearGradient
+      colors={alpha.map((a) => `rgba(${SIDE_RGB},${a})`) as [string, string, string]}
+      locations={GLOW_STOPS as [number, number, number]}
+      start={from} end={to}
+      style={styles.sideGlow}
+      pointerEvents="none"
+    />
+  )
+}
+
+// The moment athletes used to miss: switching sides. A full-screen card for
+// ~1.5 s (tap to skip), the glow already on the new side, so the change
+// can't go unnoticed. First switch of the block only — later switches get
+// the glow, the title and a haptic, without the wait.
+function SwitchSidesCard({ side, onDone }: { side: Side; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1500)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <Pressable style={styles.switchCard} onPress={onDone}>
+      <SideGlow side={side} strong />
+      <View style={{ gap: 10 }}>
+        <Ionicons name={side === "left" ? "arrow-back" : "arrow-forward"} size={40} color={C.side} />
+        <Text style={styles.switchCardKicker}>Switch sides</Text>
+        <Text style={styles.switchCardTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+      </View>
+    </Pressable>
+  )
+}
+
+// What to do, in one glance: the target paired with the trained quality —
+// "● Max force · 3–6 reps" — so the athlete knows why this rep range.
+function targetLine(ex: Exercise): { label?: string; color?: string; amount: string } {
+  if (ex.type === "7/3s") return { amount: `7s hang · 3s rest × ${ex.series} · ${ex.edge}` }
+  const range = ex.reps ? amountLabel(ex.reps.replace(/\s*-\s*/, "–"), ex.unit) : ""
+  const amount = ex.type === "both_sides" && range ? `${range} each side` : range
+  if (ex.movementType === "mobility") return { label: "Mobility", color: C.textSecondary, amount }
+  if (ex.focus) return { label: FOCUS_LABEL[ex.focus], color: FOCUS_COLOR[ex.focus], amount }
+  return { amount }
+}
+
+// One exercise as a row (intro list, "Up next" on the rest screen): photo
+// thumb (or an icon), name, and the same focus · target line as the header.
+// With `onPress` it's the compact header on the Timer / Log steps: `name` is
+// the level actually done, `load` the weight, and tapping goes to the brief.
+function ExerciseRow({ exercise, name, load, onPress }: { exercise: Exercise; name?: string; load?: string; onPress?: () => void }) {
+  const { label, color, amount } = targetLine(exercise)
+  const icon = exercise.type === "7/3s" ? "hand-left-outline"
+    : exercise.movementType === "mobility" ? "body-outline" : "barbell-outline"
+  return (
+    <Pressable style={({ pressed }) => [styles.exRow, pressed && { opacity: 0.8 }]} onPress={onPress} disabled={!onPress}>
+      {exercise.photoUri ? (
+        <Image source={{ uri: exercise.photoUri }} style={styles.exRowThumb} contentFit="cover" />
+      ) : (
+        <View style={[styles.exRowThumb, styles.exRowIcon]}>
+          <Ionicons name={icon} size={20} color={C.green} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.exRowName} numberOfLines={2}>{name ?? exercise.name}</Text>
+        <View style={styles.exTargetRow}>
+          {!!label && <View style={[styles.exFocusDot, { backgroundColor: color }]} />}
+          <Text style={styles.exRowDetail} numberOfLines={1}>
+            {!!label && <Text style={{ color }}>{label}</Text>}
+            {!!label && !!amount ? " · " : ""}
+            {amount}
+          </Text>
+        </View>
+        {!!load && <Text style={styles.exRowLoad}>{load}</Text>}
+      </View>
+      {!!onPress && <Ionicons name="chevron-forward" size={18} color={C.textSecondary} />}
+    </Pressable>
+  )
+}
+
+// 90 → "1:30", 60 → "1 min", 45 → "45 s".
+function formatRest(secs: number): string {
+  if (secs < 60) return `${secs} s`
+  const m = Math.floor(secs / 60)
+  const r = secs % 60
+  return r ? `${m}:${String(r).padStart(2, "0")}` : `${m} min`
+}
+
+// Kicker + name + target line, sitting right under the photo (overlapping
+// its fade) so photo and name read as one thing.
+function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }) {
+  const { label, color, amount } = targetLine(exercise)
+  return (
+    <View style={[styles.exHeader, !exercise.photoUri && { marginTop: 16 }]}>
+      <View style={styles.exNameRow}>
+        <Text style={styles.exName}>
+          {name}
+        </Text>
+        <ExerciseNotesIcon notes={exercise.notes} />
+      </View>
+      {(!!label || !!amount) && (
+        <View style={styles.exTargetRow}>
+          {!!label && <View style={[styles.exFocusDot, { backgroundColor: color }]} />}
+          {!!label && <Text style={[styles.exFocusLabel, { color }]}>{label}</Text>}
+          {!!label && !!amount && <Text style={styles.exTargetSep}>·</Text>}
+          {!!amount && <Text style={styles.exTargetAmount}>{amount}</Text>}
+        </View>
+      )}
+    </View>
+  )
+}
+
+// ─── Reps / both-sides exercise: Brief → (Timer) → Log ───────────────────────
+// docs/sc-block-ux.md Phase 7. The athlete reads the exercise, puts the
+// phone down, trains, comes back and reports — so the screen is split by
+// before vs after:
+// - Brief: what to do (photo, focus cue) and everything that sets the load
+//   (weight / level, suggestion, easier-round and swap banners).
+// - Timer: timed exercises only; both-sides runs left → right here.
+// - Log: what happened — reps (or seconds) per side, one effort, Done.
+
+type Side = "left" | "right"
+type Step = "brief" | "timer" | "log"
+
+interface LoggedExerciseUIProps {
+  exercise: RepExercise | BothSidesExercise
+  levelChain?: ResolvedChain
   weightUnit: WeightUnit
+  onWeightUnitChange: (u: WeightUnit) => void
   initialWeight?: string
-  initialRpe?: string
+  initialLevel?: LevelStep
+  suggestionNote?: string
+  suggestionDetail?: string   // what the note is based on
+  roundDrop?: RoundDrop
+  onPickEasier?: () => void
+  swapNote?: string        // set while swapped for an easier exercise
+  onUndoSwap?: () => void
+  setting?: ExerciseSetting  // adjustable setting: the coach's hints
+  initialHardest?: boolean   // the "hardest setting" switch to start on
+  startOnBrief: boolean    // false in round 2+ unless something changed
+  showSwitchCard: boolean  // timed both-sides: first switch of the block only
+  onSwitchCardShown: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
-function RepsExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: RepsExerciseUIProps) {
+function LoggedExerciseUI({
+  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, suggestionNote, suggestionDetail,
+  roundDrop, onPickEasier, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, showSwitchCard, onSwitchCardShown, onDone,
+}: LoggedExerciseUIProps) {
+  const sides = exercise.type === "both_sides"
   const isTimed = exercise.unit === "seconds"
+  const isLevelMode = !!levelChain
+  const target = targetFor(exercise.focus, exercise.reps, isTimed ? "seconds" : "reps")
+  const timerTarget = targetNumber(exercise.reps)
   const startWeight = parseFloat(initialWeight ?? "") || 0
-  // Prefill the target; the timer refines it to the actual completed seconds.
-  const [amount, setAmount] = useState<number>(targetNumber(exercise.reps))
-  const [weight, setWeight] = useState<number>(startWeight)
-  const [rpe, setRpe] = useState(initialRpe ?? "")
-  const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
+  // With no suggested level (no history yet), start on the prescribed step.
+  const startLevel = initialLevel ?? (levelChain ? levelChain.chain[levelChain.prescribedIdx] : undefined)
   const weightStep = 0.5
+
+  const [step, setStep] = useState<Step>(startOnBrief ? "brief" : isTimed ? "timer" : "log")
+  // One load for the exercise (both sides included) — it's set before lifting.
+  const [weight, setWeight] = useState<number>(startWeight)
+  const [level, setLevel] = useState<LevelStep | undefined>(startLevel)
+  const [effort, setEffort] = useState<Effort | null>(null)
+  // Set on the brief, like the load: the app can't measure the setting, so
+  // the athlete says when they're on the hardest one.
+  const [hardest, setHardest] = useState(!!initialHardest)
+  // Reps / seconds per side; one-sided exercises use `left` only. Nothing is
+  // preselected — Done waits for a pick (see AmountInput).
+  const [amounts, setAmounts] = useState<Record<Side, number | null>>({ left: null, right: null })
+  const setAmount = (s: Side) => (v: number) => setAmounts((prev) => ({ ...prev, [s]: v }))
+  // Timer step, both-sides: whose hold is up, and the switch card.
+  const [timerSide, setTimerSide] = useState<Side>("left")
+  const [switching, setSwitching] = useState(false)
+
+  const [dropUndone, setDropUndone] = useState(false)
+  const activeDrop = roundDrop && !dropUndone ? roundDrop : undefined
+  function undoDrop() {
+    if (roundDrop?.undo?.weight != null) setWeight(roundDrop.undo.weight)
+    if (roundDrop?.undo?.level) setLevel(roundDrop.undo.level)
+    setDropUndone(true)
+  }
+  // The suggestion note describes a specific proposed change — once the
+  // athlete picks something else, showing it would misdescribe what's
+  // actually selected, so it disappears (the suggested chip/value stays
+  // marked separately so they can still see and return to it).
+  const stillMatchesSuggestion = isLevelMode ? level?.exerciseId === startLevel?.exerciseId : weight === startWeight
+  const activeSuggestionNote = stillMatchesSuggestion ? suggestionNote : undefined
+
+  // The displayed/logged identity — once in level mode, this exercise IS
+  // whichever level is selected, not the container it was authored under.
+  const displayName = isLevelMode && level ? level.name : exercise.name
+  const loadLabel = !isLevelMode && weight > 0 ? `${weight} ${weightUnit}` : undefined
+  const logSides: Side[] = sides ? ["left", "right"] : ["left"]
+  const complete = logSides.every((s) => amounts[s] != null)
+
+  function handleSave() {
+    if (!complete) return
+    const rpe = effort ? String(effortToRpe(effort, exercise.focus)) : undefined
+    const w = !isLevelMode && weight > 0 ? String(weight) : undefined
+    const base = {
+      exerciseIndex: 0,
+      exerciseName: displayName,
+      weightUnit,
+      // "" = an id-less fallback step; log it as no id so name matching works.
+      levelId: isLevelMode ? level?.exerciseId || undefined : undefined,
+      effort: effort ?? undefined,
+      adjustedFrom: adjustedFromFor(activeDrop, weight, level),
+      ...(setting ? { atHardestSetting: hardest } : {}),
+    }
+    onDone(sides
+      // Both sides share the load and the effort (readRound takes the weaker
+      // side's reps and the harder side's RPE, so this judges the same).
+      ? { ...base, repsLeft: String(amounts.left), repsRight: String(amounts.right), weightLeft: w, weightRight: w, rpeLeft: rpe, rpeRight: rpe }
+      : { ...base, repsCompleted: String(amounts.left), weight: w, rpe })
+  }
+
+  // Timer + Log: the exercise as one tappable row (→ back to the brief).
+  const header = (
+    <View style={{ marginTop: 16 }}>
+      <ExerciseRow exercise={exercise} name={displayName} load={loadLabel} onPress={() => setStep("brief")} />
+    </View>
+  )
+
+  // ── Brief ──
+  if (step === "brief") {
+    return (
+      <ExerciseScreen
+        scrollKey="brief"
+        footer={<PillButton title={isTimed ? "Start timer" : "Log reps"} icon={isTimed ? "timer-outline" : "arrow-forward"} onPress={() => setStep(isTimed ? "timer" : "log")} />}
+      >
+        <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
+        <ExerciseHeader name={displayName} exercise={exercise} />
+        <FocusCue exercise={exercise} />
+        {!!activeDrop && <RoundDropBanner drop={activeDrop} onUndo={undoDrop} onPickEasier={onPickEasier} />}
+        {!!swapNote && !!onUndoSwap && <SwapBanner note={swapNote} onUndo={onUndoSwap} />}
+        <LoadControl
+          weight={weight} setWeight={setWeight} weightUnit={weightUnit} onWeightUnitChange={onWeightUnitChange} weightStep={weightStep}
+          levelChain={levelChain} level={level} setLevel={setLevel}
+          suggestedLevelId={initialLevel?.exerciseId}
+          suggestionNote={activeSuggestionNote}
+          suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
+        />
+        {!!setting && <SettingCard setting={setting} hardest={hardest} onChange={setHardest} />}
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Timer (timed only) ──
+  if (step === "timer") {
+    const side = timerSide
+    const holdDone = amounts[side] != null
+    const toRight = sides && side === "left"
+    function switchToRight() {
+      setTimerSide("right")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
+      if (showSwitchCard) {
+        setSwitching(true)
+        onSwitchCardShown()
+      }
+    }
+    // Skip the timer: steppers on Log, starting at the target's low end.
+    function enterManually() {
+      const start = target?.low ?? timerTarget
+      setAmounts((prev) => ({ left: prev.left ?? start, right: sides ? prev.right ?? start : null }))
+      setStep("log")
+    }
+    return (
+      <ExerciseScreen
+        background={sides ? <SideGlow side={side} /> : undefined}
+        overlay={switching ? <SwitchSidesCard side={side} onDone={() => setSwitching(false)} /> : undefined}
+        scrollKey={`timer-${side}`}
+        footer={<PillButton
+          title={!holdDone ? "Finish the hold first" : toRight ? "Switch to right side" : "Log it"}
+          icon="arrow-forward"
+          onPress={toRight ? switchToRight : () => setStep("log")}
+          disabled={!holdDone}
+        />}
+      >
+        {header}
+        <View style={styles.inputSection}>
+          {sides
+            ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+            : <Text style={styles.sectionLabel}>Hold timer</Text>}
+          <TimedAmountControl key={side} target={timerTarget} onChange={setAmount(side)} />
+          <Pressable onPress={enterManually} hitSlop={6}>
+            <Text style={styles.linkText}>Enter seconds instead</Text>
+          </Pressable>
+        </View>
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Log ──
+  const lockedTitle = sides ? "Pick both sides first" : isTimed ? "Log the seconds first" : "Pick your reps first"
+  return (
+    <ExerciseScreen
+      scrollKey="log"
+      footer={<PillButton title={complete ? "Done" : lockedTitle} icon="checkmark" onPress={handleSave} disabled={!complete} />}
+    >
+      {header}
+      {logSides.map((s) => (
+        <View key={s} style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>
+            {sides ? (s === "left" ? "Left side" : "Right side") : isTimed ? "Seconds held" : "How many reps?"}
+          </Text>
+          {isTimed
+            ? <Stepper value={amounts[s] ?? target?.low ?? timerTarget} onChange={setAmount(s)} suffix=" s" />
+            : <AmountInput target={target} value={amounts[s]} onChange={setAmount(s)} />}
+        </View>
+      ))}
+      {!isLevelMode && (
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>How did it feel? (optional)</Text>
+          <EffortChips value={effort} onChange={setEffort} />
+        </View>
+      )}
+    </ExerciseScreen>
+  )
+}
+
+// The exercise's adjustable setting on the brief: the coach's hints and the
+// athlete's own call on whether they're at the hardest one. Progression
+// only moves past the setting once that switch is on (scNext.planNext).
+function SettingCard({ setting, hardest, onChange }: { setting: ExerciseSetting; hardest: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={styles.settingCard}>
+      <Text style={styles.sectionLabel}>Exercise setup</Text>
+      {!!setting.harder && (
+        <Text style={styles.settingHint}><Text style={styles.settingHintLabel}>Harder  </Text>{setting.harder}</Text>
+      )}
+      {!!setting.easier && (
+        <Text style={styles.settingHint}><Text style={styles.settingHintLabel}>Easier  </Text>{setting.easier}</Text>
+      )}
+      <Pressable style={styles.settingSwitchRow} onPress={() => onChange(!hardest)}>
+        <Text style={styles.settingSwitchText}>{"I'm on the hardest setup"}</Text>
+        <Switch
+          value={hardest}
+          onValueChange={onChange}
+          trackColor={{ false: C.surfaceHigh, true: C.green }}
+          thumbColor={C.textPrimary}
+        />
+      </Pressable>
+    </View>
+  )
+}
+
+// The brief's "what this focus means right now" line, under the target.
+function FocusCue({ exercise }: { exercise: Exercise }) {
+  if (exercise.type === "7/3s" || exercise.movementType === "mobility" || !exercise.focus) return null
+  return (
+    <Text style={[styles.focusCue, { borderLeftColor: FOCUS_COLOR[exercise.focus] }]}>
+      {FOCUS_CUE[exercise.focus]}
+    </Text>
+  )
+}
+
+// ─── Mobility Exercise UI ─────────────────────────────────────────────────────
+
+// Mobility doesn't progress: no weight, RPE, level or suggestions — the
+// athlete does the target and taps Done. Timed ones keep the hold timer.
+function MobilityExerciseUI({ exercise, onDone }: {
+  exercise: RepExercise | BothSidesExercise
+  onDone: (log: Omit<ExerciseLog, "round">) => void
+}) {
+  const isTimed = exercise.unit === "seconds"
+  const [seconds, setSeconds] = useState<number>(targetNumber(exercise.reps))
 
   function handleSave() {
     onDone({
       exerciseIndex: 0,
       exerciseName: exercise.name,
-      repsCompleted: String(amount),
-      weight: weight > 0 ? String(weight) : undefined,
-      weightUnit,
-      rpe: rpe || undefined,
+      repsCompleted: isTimed ? String(seconds) : exercise.reps || undefined,
     })
   }
 
   return (
-    <View style={styles.exerciseCard}>
-      <View style={styles.cardTop}>
-        <View style={styles.targetRepsBox}>
-          <View style={styles.nameRow}>
-            <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
-            <Text style={styles.exerciseName}>{exercise.name}</Text>
-          </View>
-          <View style={styles.targetRow}>
-            <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-            <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)}</Text>
-          </View>
+    <ExerciseScreen footer={<PillButton title="Done" icon="checkmark" onPress={handleSave} />}>
+      <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
+      <ExerciseHeader name={exercise.name} exercise={exercise} />
+      {isTimed && (
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Hold timer</Text>
+          <TimedAmountControl target={targetNumber(exercise.reps)} onChange={setSeconds} />
         </View>
-
-        <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-        {isTimed
-          ? <TimedAmountControl target={targetNumber(exercise.reps)} onChange={setAmount} />
-          : <Stepper value={amount} onChange={setAmount} />}
-      </View>
-
-      <View style={styles.cardBottom}>
-        <ExerciseDetail
-          open={showDetail} onToggle={() => setShowDetail((v) => !v)}
-          weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
-          rpe={rpe} setRpe={setRpe}
-        />
-        <CustomButton title="Done" onPress={handleSave} />
-      </View>
-    </View>
-  )
-}
-
-// ─── Both Sides Exercise UI ───────────────────────────────────────────────────
-
-interface BothSidesExerciseUIProps {
-  exercise: BothSidesExercise
-  weightUnit: WeightUnit
-  initialWeight?: string
-  initialRpe?: string
-  onDone: (log: Omit<ExerciseLog, "round">) => void
-}
-
-type Side = "left" | "right"
-
-function BothSidesExerciseUI({ exercise, weightUnit, initialWeight, initialRpe, onDone }: BothSidesExerciseUIProps) {
-  const isTimed = exercise.unit === "seconds"
-  // Prefill the target; for timed exercises the timer refines it.
-  const initialAmount = targetNumber(exercise.reps)
-  const startWeight = parseFloat(initialWeight ?? "") || 0
-  const weightStep = 0.5
-
-  const [side, setSide] = useState<Side>("left")
-  const [repsLeft, setRepsLeft] = useState(initialAmount)
-  const [weightLeft, setWeightLeft] = useState(startWeight)
-  const [rpeLeft, setRpeLeft] = useState(initialRpe ?? "")
-  const [repsRight, setRepsRight] = useState(initialAmount)
-  const [weightRight, setWeightRight] = useState(startWeight)
-  const [rpeRight, setRpeRight] = useState(initialRpe ?? "")
-  const [showDetail, setShowDetail] = useState(startWeight > 0 || !!initialRpe)
-
-  function handleLeftDone() {
-    // Carry the left side's entries over as the right side's starting point.
-    setRepsRight(repsLeft)
-    setWeightRight(weightLeft)
-    setSide("right")
-  }
-
-  function handleRightDone() {
-    onDone({
-      exerciseIndex: 0,
-      exerciseName: exercise.name,
-      repsLeft: String(repsLeft),
-      repsRight: String(repsRight),
-      weightLeft: weightLeft > 0 ? String(weightLeft) : undefined,
-      weightRight: weightRight > 0 ? String(weightRight) : undefined,
-      weightUnit,
-      rpeLeft: rpeLeft || undefined,
-      rpeRight: rpeRight || undefined,
-    })
-  }
-
-  const amount = side === "left" ? repsLeft : repsRight
-  const setAmount = side === "left" ? setRepsLeft : setRepsRight
-  const weight = side === "left" ? weightLeft : weightRight
-  const setWeight = side === "left" ? setWeightLeft : setWeightRight
-
-  return (
-    <View style={styles.exerciseCard}>
-      <View style={styles.cardTop}>
-        <View style={styles.targetRepsBox}>
-          <View style={styles.nameRow}>
-            <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
-            <Text style={styles.exerciseName}>{exercise.name}</Text>
-            <View style={styles.sideChip}>
-              <Text style={styles.sideChipText}>{side === "left" ? "LEFT" : "RIGHT"}</Text>
-            </View>
-          </View>
-          <View style={styles.targetRow}>
-            <Text style={styles.targetRepsNumber}>{exercise.reps}</Text>
-            <Text style={styles.targetRepsUnit}>{unitNoun(exercise.unit)} each side</Text>
-          </View>
-        </View>
-
-        <Text style={styles.miniLabel}>{isTimed ? "Seconds completed" : "Reps completed"}</Text>
-        {isTimed
-          ? <TimedAmountControl key={side} target={targetNumber(exercise.reps)} onChange={setAmount} />
-          : <Stepper value={amount} onChange={setAmount} />}
-      </View>
-
-      <View style={styles.cardBottom}>
-        <ExerciseDetail
-          open={showDetail} onToggle={() => setShowDetail((v) => !v)}
-          weight={weight} setWeight={setWeight} weightUnit={weightUnit} weightStep={weightStep}
-          rpe={side === "left" ? rpeLeft : rpeRight}
-          setRpe={side === "left" ? setRpeLeft : setRpeRight}
-          rpeLabel={side === "left" ? "RPE — Left" : "RPE — Right"}
-        />
-
-        {side === "left" ? (
-          <CustomButton title="Done — switch to right side" onPress={handleLeftDone} />
-        ) : (
-          <CustomButton title="Done" onPress={handleRightDone} />
-        )}
-      </View>
-    </View>
+      )}
+    </ExerciseScreen>
   )
 }
 
@@ -897,7 +1857,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
   const [seriesDone, setSeriesDone] = useState(0)
   const [innerPhase, setInnerPhase] = useState<SevenThreesPhase>("ready")
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
-  const [rpe, setRpe] = useState("")
+  const [effort, setEffort] = useState<Effort | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hangSoundRef = useRef<Audio.Sound | null>(null)
   const restSoundRef = useRef<Audio.Sound | null>(null)
@@ -932,23 +1892,54 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
     }
   }
 
-  function startTimer(duration: number, onDone: () => void) {
-    if (timerRef.current !== null) clearInterval(timerRef.current)
-    const end = Date.now() + duration * 1000
-    setTimeRemaining(duration)
+  // The running countdown: when it ends and what runs next. Kept in refs so
+  // pause can stash the time left and resume can pick the same step back up.
+  const endRef = useRef(0)
+  const stepDoneRef = useRef<() => void>(() => {})
+  const pausedMsRef = useRef(0)
+  const [paused, setPaused] = useState(false)
 
+  function tick() {
+    if (timerRef.current !== null) clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      const remaining = Math.ceil((end - Date.now()) / 1000)
+      const remaining = Math.ceil((endRef.current - Date.now()) / 1000)
       if (remaining <= 0) {
         clearInterval(timerRef.current!)
         timerRef.current = null
         setTimeRemaining(0)
-        onDone()
+        stepDoneRef.current()
       } else {
         setTimeRemaining(remaining)
       }
     }, 100)
   }
+
+  function startTimer(duration: number, onDone: () => void) {
+    endRef.current = Date.now() + duration * 1000
+    stepDoneRef.current = onDone
+    setTimeRemaining(duration)
+    tick()
+  }
+
+  function pause() {
+    if (timerRef.current !== null) clearInterval(timerRef.current)
+    timerRef.current = null
+    pausedMsRef.current = Math.max(0, endRef.current - Date.now())
+    setPaused(true)
+  }
+
+  function resume() {
+    endRef.current = Date.now() + pausedMsRef.current
+    setPaused(false)
+    tick()
+  }
+
+  const pauseButton = (
+    <Pressable style={styles.pauseBtn} onPress={paused ? resume : pause} hitSlop={8}>
+      <Ionicons name={paused ? "play" : "pause"} size={20} color={C.textPrimary} />
+      <Text style={styles.pauseBtnText}>{paused ? "Resume" : "Pause"}</Text>
+    </Pressable>
+  )
 
   function handleStart() {
     setSeriesDone(0)
@@ -984,7 +1975,8 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
       exerciseName: exercise.name,
       edge: exercise.edge,
       seriesDone,
-      rpe: rpe || undefined,
+      rpe: effort ? String(effortToRpe(effort)) : undefined,
+      effort: effort ?? undefined,
     })
   }
 
@@ -995,87 +1987,85 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
 
   if (innerPhase === "ready") {
     return (
-      <View style={styles.exerciseCard}>
-        <View style={styles.nameRow}>
-          <ExerciseInfo photoUri={exercise.photoUri} notes={exercise.notes} />
-          <Text style={styles.exerciseName}>7/3s</Text>
-        </View>
-        <Text style={styles.exerciseTarget}>
-          {exercise.series} series · {exercise.edge}
-        </Text>
-        <Text style={styles.sevenThreesExplainer}>
-          7s hang → 3s rest, repeated {exercise.series}×
-        </Text>
-        <CustomButton title="Start" onPress={handleStart} />
-      </View>
+      <ExerciseScreen footer={<PillButton title="Start" icon="play" onPress={handleStart} />}>
+        <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
+        <ExerciseHeader name={exercise.name || "7/3s"} exercise={exercise} />
+      </ExerciseScreen>
     )
   }
 
   if (innerPhase === "prepare") {
     return (
-      <View style={styles.exerciseCard}>
-        <Text style={styles.exerciseName}>Get ready</Text>
-        <Text style={styles.exerciseTarget}>{exercise.edge}</Text>
+      <ExerciseScreen>
+        <View style={styles.exerciseCard}>
+          <Text style={styles.exerciseName}>Get ready</Text>
+          <Text style={styles.exerciseTarget}>{exercise.edge}</Text>
 
-        <AnimatedCircularProgress
-          style={styles.circularProgress}
-          size={200}
-          width={10}
-          fill={((timeRemaining ?? 0) / 5) * 100}
-          tintColor={C.textMuted}
-          backgroundColor={C.surface}
-        >
-          {() => (
-            <>
-              <Text style={styles.hangRestLabel}>PREPARE</Text>
-              <Text style={styles.timerText}>{timeRemaining}s</Text>
-            </>
-          )}
-        </AnimatedCircularProgress>
-      </View>
+          <AnimatedCircularProgress
+            style={styles.circularProgress}
+            size={200}
+            width={10}
+            fill={((timeRemaining ?? 0) / 5) * 100}
+            tintColor={C.textMuted}
+            backgroundColor={C.surface}
+          >
+            {() => (
+              <>
+                <Text style={styles.hangRestLabel}>{paused ? "PAUSED" : "PREPARE"}</Text>
+                <Text style={styles.timerText}>{timeRemaining}s</Text>
+              </>
+            )}
+          </AnimatedCircularProgress>
+          {pauseButton}
+        </View>
+      </ExerciseScreen>
     )
   }
 
   if (innerPhase === "hanging" || innerPhase === "resting") {
     return (
-      <View style={styles.exerciseCard}>
-        <Text style={styles.exerciseName}>7/3s · {exercise.edge}</Text>
-        <Text style={styles.seriesCounter}>
-          Series {seriesDone + 1} of {exercise.series}
-        </Text>
+      <ExerciseScreen>
+        <View style={styles.exerciseCard}>
+          <Text style={styles.exerciseName}>7/3s · {exercise.edge}</Text>
+          <Text style={styles.seriesCounter}>
+            Series {seriesDone + 1} of {exercise.series}
+          </Text>
 
-        <AnimatedCircularProgress
-          style={styles.circularProgress}
-          size={200}
-          width={10}
-          fill={fillPercent}
-          tintColor={innerPhase === "hanging" ? C.green : C.textMuted}
-          backgroundColor={C.surface}
-        >
-          {() => (
-            <>
-              <Text style={styles.hangRestLabel}>
-                {innerPhase === "hanging" ? "HANG" : "REST"}
-              </Text>
-              <Text style={styles.timerText}>{timeRemaining}s</Text>
-            </>
-          )}
-        </AnimatedCircularProgress>
-      </View>
+          <AnimatedCircularProgress
+            style={styles.circularProgress}
+            size={200}
+            width={10}
+            fill={fillPercent}
+            tintColor={innerPhase === "hanging" ? C.green : C.textMuted}
+            backgroundColor={C.surface}
+          >
+            {() => (
+              <>
+                <Text style={styles.hangRestLabel}>
+                  {paused ? "PAUSED" : innerPhase === "hanging" ? "HANG" : "REST"}
+                </Text>
+                <Text style={styles.timerText}>{timeRemaining}s</Text>
+              </>
+            )}
+          </AnimatedCircularProgress>
+          {pauseButton}
+        </View>
+      </ExerciseScreen>
     )
   }
 
   if (innerPhase === "done") {
     return (
-      <View style={styles.exerciseCard}>
-        <Text style={styles.exerciseName}>7/3s complete</Text>
-        <Text style={styles.exerciseTarget}>
-          {seriesDone} / {exercise.series} series · {exercise.edge}
-        </Text>
-
-        <RPEChips value={rpe} onChange={setRpe} />
-        <CustomButton title="Done" onPress={handleFinish} />
-      </View>
+      <ExerciseScreen footer={<PillButton title="Done" icon="checkmark" onPress={handleFinish} />}>
+        <View style={[styles.introHead, { marginTop: 8 }]}>
+          <Text style={styles.introTitle}>7/3s complete</Text>
+          <Text style={styles.introMeta}>{seriesDone} of {exercise.series} series · {exercise.edge}</Text>
+        </View>
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>How did it feel? (optional)</Text>
+          <EffortChips value={effort} onChange={setEffort} />
+        </View>
+      </ExerciseScreen>
     )
   }
 
@@ -1091,39 +2081,111 @@ const styles = StyleSheet.create({
   hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, height: 240 },
   heroImg: { width: "100%", height: "100%" },
   heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 110 },
-  circuitContainer: { paddingHorizontal: 30, paddingVertical: 20, flexGrow: 1 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 12, color: C.textPrimary },
-  description: { fontSize: 16, color: C.textSecondary, lineHeight: 24 },
-  topBarRight: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
-  overviewCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, marginBottom: 16 },
-  overviewLabel: { fontSize: 13, color: C.textSecondary, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
-  overviewRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  overviewDot: { fontSize: 18, marginRight: 8, color: C.textMuted },
-  overviewExercise: { fontSize: 15, fontWeight: "500", flex: 1, color: C.textPrimary },
+  description: { fontSize: 15, color: C.textSecondary, lineHeight: 22 },
 
-  unitRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", marginBottom: 20 },
-  unitLabel: { fontSize: 14, color: C.textSecondary },
-  unitToggle: { flexDirection: "row", gap: 8 },
-  unitChip: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border },
+  // Shared type scale / layout with Home & Plan (LatestWorkoutCard)
+  screenContent: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 24, gap: 16 },
+  screenFooter: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, backgroundColor: C.bg },
+  pillBtn: {
+    height: 52, borderRadius: 16, backgroundColor: C.green,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+  },
+  pillBtnSecondary: { backgroundColor: C.surfaceHigh },
+  switchCard: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: C.bg, zIndex: 10,
+    justifyContent: "center", paddingHorizontal: 28,
+  },
+  sideGlow: { ...StyleSheet.absoluteFillObject },
+  switchCardKicker: { fontSize: 13, fontWeight: "700", color: C.side, textTransform: "uppercase", letterSpacing: 0.8 },
+  switchCardTitle: { fontSize: 44, fontWeight: "800", color: C.textPrimary, letterSpacing: -1 },
+  pillBtnText: { fontSize: 16, fontWeight: "800" },
+  progressTrack: { height: 3, backgroundColor: C.surface },
+  progressFill: { height: 3, backgroundColor: C.green, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
+
+  introHead: { gap: 4 },
+  introTitle: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
+  introMeta: { fontSize: 13, color: C.textSecondary },
+  exList: { gap: 10 },
+  exRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 10,
+  },
+  exRowThumb: { width: 52, height: 52, borderRadius: 10, backgroundColor: C.surface },
+  exRowIcon: { alignItems: "center", justifyContent: "center", backgroundColor: "rgba(111,207,151,0.12)" },
+  exRowName: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  exRowDetail: { flexShrink: 1, fontSize: 12.5, color: C.textSecondary },
+  exRowLoad: { fontSize: 13, fontWeight: "700", color: C.textPrimary, marginTop: 2 },
+  focusCue: { fontSize: 15, lineHeight: 21, color: C.textSecondary, borderLeftWidth: 3, paddingLeft: 12 },
+  timerSideTitle: { fontSize: 28, fontWeight: "800", color: C.side, letterSpacing: -0.5 },
+
+  exHeader: { gap: 4, marginTop: -36 },
+  exKicker: { fontSize: 12, fontWeight: "700", color: C.green, textTransform: "uppercase", letterSpacing: 0.8 },
+  exNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  exName: { flexShrink: 1, fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
+  exTargetRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  exFocusDot: { width: 8, height: 8, borderRadius: 4 },
+  exFocusLabel: { fontSize: 15, fontWeight: "700" },
+  exTargetSep: { fontSize: 15, color: C.textMuted },
+  exTargetAmount: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  inputSection: { gap: 10 },
+  sectionLabel: { fontSize: 12, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+
+  roundRaiseBanner: { backgroundColor: "rgba(111,207,151,0.12)" },
+  roundDropBanner: { gap: 10, width: "100%", backgroundColor: "rgba(254,215,102,0.12)", borderRadius: 14, padding: 12 },
+  roundDropTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  roundDropPick: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 44, borderRadius: 14, backgroundColor: C.yellow },
+  roundDropPickText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  swapBanner: { backgroundColor: "rgba(111,207,151,0.10)", borderColor: C.green },
+  pickerBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" },
+  pickerSheet: { maxHeight: "85%", backgroundColor: C.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 16, paddingTop: 16 },
+  pickerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pickerTitle: { fontSize: 22, fontWeight: "800", color: C.textPrimary },
+  pickerHint: { fontSize: 14, color: C.textSecondary, marginTop: 6, marginBottom: 8 },
+  pickerSection: { fontSize: 12, fontWeight: "800", color: C.green, letterSpacing: 1, textTransform: "uppercase", marginTop: 14, marginBottom: 8 },
+  pickerRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.surface, borderRadius: 16, padding: 10, marginBottom: 8 },
+  pickerName: { flex: 1, fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  roundDropText: { flex: 1, fontSize: 14, fontWeight: "600", color: C.textPrimary, lineHeight: 19 },
+  roundDropUndo: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: C.surfaceHigh },
+  roundDropUndoText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+  restDrop: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(254,215,102,0.12)", borderRadius: 14, padding: 12 },
+  restDropName: { fontSize: 13, fontWeight: "700", color: C.yellow },
+  restDropText: { fontSize: 13, color: C.textSecondary },
+  nextTimeCard: { width: "100%", backgroundColor: C.surface, borderRadius: 22, borderWidth: 1, borderColor: C.border, padding: 20, gap: 12 },
+  nextTimeTitle: { fontSize: 12, fontWeight: "800", color: C.green, letterSpacing: 1, textTransform: "uppercase" },
+  nextTimeRow: { gap: 2 },
+  nextTimeName: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  nextTimeNote: { fontSize: 14, color: C.textSecondary },
+  prefillLoading: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, height: 52 },
+  prefillLoadingText: { fontSize: 14, color: C.textMuted },
+  weightLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  unitToggle: { flexDirection: "row", gap: 6 },
+  unitChip: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: C.surfaceHigh },
   unitChipSelected: { backgroundColor: C.green, borderColor: C.green },
-  unitChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  unitChipText: { fontSize: 12, fontWeight: "600", color: C.textSecondary },
   unitChipTextSelected: { color: C.bg },
 
-  exerciseCard: { flex: 1, width: "100%", justifyContent: "space-between" },
-  cardTop: { gap: 12 },
-  exercisePhotoThumbWrap: { width: 44, height: 44 },
-  exercisePhotoThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: C.surfaceHigh },
-  exercisePhotoExpandBadge: {
-    position: "absolute", bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
-    backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center",
-  },
-  exerciseInfoIconWrap: {
-    width: 44, height: 44, borderRadius: 10, backgroundColor: C.surfaceHigh,
+  exerciseCard: { flex: 1, width: "100%", justifyContent: "center", gap: 8, paddingVertical: 16 },
+  // Full-bleed: the negative margin cancels screenContent's side padding.
+  exercisePhotoBanner: { marginHorizontal: -20, aspectRatio: 4 / 3, overflow: "hidden", backgroundColor: C.surface },
+  exercisePhotoFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 90 },
+  exercisePhotoBannerImage: { width: "100%", height: "100%" },
+  exercisePhotoBannerLoading: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
     alignItems: "center", justifyContent: "center",
+  },
+  exercisePhotoProgressText: { fontSize: 11, fontWeight: "700", color: C.textPrimary },
+  exercisePhotoExpandBadge: {
+    position: "absolute", bottom: 8, right: 8, width: 26, height: 26, borderRadius: 13,
+    backgroundColor: C.green, alignItems: "center", justifyContent: "center",
+  },
+  exercisePhotoExpandBadgeHero: { top: 12, right: 12, bottom: undefined },
+  exerciseInfoIconWrap: {
+    width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center",
   },
   exercisePhotoModalBackdrop: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.9)", alignItems: "center", justifyContent: "center",
   },
+  exercisePhotoFullBackdrop: { flex: 1, backgroundColor: "#000" },
   exercisePhotoCloseBtn: {
     position: "absolute", top: 50, right: 20, width: 40, height: 40, borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center",
@@ -1136,41 +2198,27 @@ const styles = StyleSheet.create({
   exerciseInfoSheetImage: { width: "100%", height: 220, backgroundColor: C.surfaceHigh },
   exerciseInfoNotesContent: { padding: 20 },
   exerciseInfoNotesText: { fontSize: 15, color: C.textPrimary, lineHeight: 22 },
-  cardBottom: { gap: 12 },
-  exerciseName: { fontSize: 20, fontWeight: "700", textAlign: "center", color: C.textPrimary },
+  exerciseName: { fontSize: 22, fontWeight: "800", textAlign: "center", color: C.textPrimary },
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
 
-  targetRepsBox: {
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: C.surface,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 4,
-  },
-  targetRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 8 },
-  targetRepsNumber: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
-  targetRepsUnit: { fontSize: 12, color: C.textSecondary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
-
-  nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
-  sideChip: { backgroundColor: C.green, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  sideChipText: { fontSize: 11, fontWeight: "800", color: C.bg, letterSpacing: 0.5 },
-
   circularProgress: { alignSelf: "center" },
-  sevenThreesExplainer: { fontSize: 14, color: C.textMuted, marginBottom: 8, textAlign: "center" },
+  pauseBtn: {
+    alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, marginTop: 20,
+    paddingHorizontal: 22, height: 48, borderRadius: 16, backgroundColor: C.surfaceHigh,
+  },
+  pauseBtnText: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   seriesCounter: { fontSize: 16, color: C.textSecondary, marginBottom: 12, textAlign: "center" },
   hangRestLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 1, color: C.textSecondary, textAlign: "center" },
   timerText: { fontSize: 42, fontWeight: "700", textAlign: "center", color: C.textPrimary },
 
   input: { width: "100%", borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.textPrimary, backgroundColor: C.surfaceHigh },
 
-  miniLabel: { fontSize: 12, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: -4 },
+  miniLabel: { fontSize: 12, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
 
   // − value + stepper
   stepperRow: {
     flexDirection: "row", alignItems: "center", width: "100%",
-    backgroundColor: C.surfaceHigh, borderRadius: 12, overflow: "hidden",
+    backgroundColor: C.surfaceHigh, borderRadius: 14, overflow: "hidden",
   },
   stepperBtn: { width: 60, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   stepperBtnText: { fontSize: 28, fontWeight: "400", color: C.green },
@@ -1185,22 +2233,24 @@ const styles = StyleSheet.create({
   },
   stepperSuffix: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
 
-  // Rest-between-rounds timer (mirrors the project-bouldering rest screen)
-  restContainer: { flex: 1, backgroundColor: C.bg, paddingTop: 16, paddingBottom: 48, paddingHorizontal: 24 },
-  restHeader: { alignItems: "center", gap: 4 },
-  restRoundLabel: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
-  restSub: { fontSize: 14, color: C.textMuted },
-  restCircle: { flex: 1, alignItems: "center", justifyContent: "center" },
-  restTimerText: { fontSize: 72, fontWeight: "700", color: C.textPrimary, textAlign: "center" },
-  restFooter: { alignItems: "center", width: "100%" },
-  skipBtn: {
-    borderRadius: 20, borderWidth: 1, borderColor: C.border,
-    paddingHorizontal: 28, paddingVertical: 10,
-  },
-  skipBtnText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
+  // Rest between rounds
+  restContainer: { flexGrow: 1, paddingTop: 20, paddingHorizontal: 20, paddingBottom: 12, gap: 12 },
+  restCircle: { alignItems: "center", justifyContent: "center", paddingVertical: 12 },
+  restTimerText: { fontSize: 64, fontWeight: "800", color: C.textPrimary, textAlign: "center", fontVariant: ["tabular-nums"] },
 
   // Timed amount control — stepper box with the hold button on its right
-  timedControl: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 10 },
+  timerCard: { width: "100%", backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 12, gap: 12 },
+  timerLengthRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  timerAdjustBtn: { width: 64, height: 40, borderRadius: 12, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
+  timerAdjustText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
+  timerLengthValue: { fontSize: 32, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  timerLengthCaption: { fontSize: 11, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+  timerStartBtn: {
+    height: 48, borderRadius: 14, backgroundColor: "rgba(111,207,151,0.12)",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+  },
+  timerStartText: { fontSize: 15, fontWeight: "800", color: C.green },
+  timedAgainBtn: { height: 40 },
   timedActive: { width: "100%", alignItems: "center", gap: 8, paddingVertical: 8 },
   timedPhaseLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1.5, color: C.textSecondary },
   timedBig: { fontSize: 60, fontWeight: "800", fontVariant: ["tabular-nums"], lineHeight: 66 },
@@ -1208,30 +2258,50 @@ const styles = StyleSheet.create({
   timedStopBtn: { alignSelf: "stretch" },
   holdTimerBtn: {
     paddingHorizontal: 18, borderRadius: 14,
-    borderWidth: 1.5, borderColor: C.green,
+    backgroundColor: "rgba(111,207,151,0.12)",
     alignItems: "center", justifyContent: "center",
   },
-  holdTimerBtnStop: { backgroundColor: C.red, borderColor: C.red },
+  holdTimerBtnStop: { backgroundColor: C.red },
   holdTimerBtnText: { fontSize: 14, fontWeight: "800", color: C.green, textAlign: "center" },
 
   // Collapsible weight/RPE toggle
-  detailToggle: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 6,
-  },
+  detailToggle: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6 },
   detailCaret: { fontSize: 12, color: C.textSecondary, width: 12, textAlign: "center" },
-  detailToggleText: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  detailToggleText: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.6 },
 
-  rpeLabel: { fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
-  rpeRow: { flexDirection: "row", gap: 8, width: "100%", marginBottom: 8 },
-  rpeChip: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: C.border, alignItems: "center" },
-  rpeChipSelected: { backgroundColor: C.green, borderColor: C.green },
-  rpeChipText: { fontSize: 15, fontWeight: "500", color: C.textSecondary },
-  rpeChipTextSelected: { color: C.bg },
+  chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, width: "100%" },
+  repChip: { minWidth: 52, height: 52, paddingHorizontal: 14, borderRadius: 16, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
+  repChipWide: { minWidth: 76 },
+  effortChip: { flex: 1 },
+  repChipSelected: { backgroundColor: C.green },
+  repChipText: { fontSize: 18, fontWeight: "700", color: C.textPrimary },
+  repChipTextSelected: { color: C.bg },
+  linkText: { fontSize: 14, fontWeight: "700", color: C.green },
+  settingCard: { backgroundColor: C.surface, borderRadius: 16, padding: 14, gap: 8, width: "100%" },
+  settingHint: { fontSize: 15, color: C.textPrimary, lineHeight: 20 },
+  settingHintLabel: { fontWeight: "800", color: C.textMuted },
+  settingSwitchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  settingSwitchText: { fontSize: 15, fontWeight: "700", color: C.textPrimary, flex: 1 },
+  weightLine: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 16, paddingHorizontal: 14, height: 52 },
+  weightLineValue: { flex: 1, fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  suggestionBanner: {
+    backgroundColor: "rgba(111,207,151,0.12)", borderRadius: 14,
+    paddingVertical: 10, paddingHorizontal: 12, width: "100%",
+  },
+  suggestionBannerText: { fontSize: 12.5, fontWeight: "600", color: C.green, lineHeight: 17 },
+  suggestionBannerDetail: { fontSize: 12, color: C.textSecondary, lineHeight: 16, marginTop: 4 },
+  levelPickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, width: "100%" },
+  levelChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, backgroundColor: C.surfaceHigh, alignItems: "center" },
+  levelChipSelected: { backgroundColor: C.green },
+  levelChipText: { fontSize: 14, fontWeight: "500", color: C.textSecondary },
+  levelChipTextSelected: { color: C.bg, fontWeight: "700" },
+  levelChipSuggested: { fontSize: 9.5, fontWeight: "700", color: C.green, letterSpacing: 0.4, marginTop: 2, textTransform: "uppercase" },
+  levelChipSuggestedSelected: { color: C.bg },
+  levelEmptyHint: { fontSize: 12.5, color: C.textMuted, fontStyle: "italic" },
 
   reviewContainer: { padding: 20, gap: 16 },
-  reviewRound: { backgroundColor: C.surface, borderRadius: 14, padding: 16, gap: 10 },
-  reviewRoundTitle: { fontSize: 14, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, color: C.textSecondary, marginBottom: 4 },
+  reviewRound: { backgroundColor: C.surface, borderRadius: 22, borderWidth: 1, borderColor: C.border, padding: 20, gap: 12 },
+  reviewRoundTitle: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, color: C.textMuted },
   reviewRow: { gap: 2 },
   reviewExerciseName: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
   reviewDetail: { fontSize: 14, color: C.textSecondary },

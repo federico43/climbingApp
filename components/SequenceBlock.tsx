@@ -1,14 +1,20 @@
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
-import { PlacedHold } from "@/components/SprayWallBuilder"
+import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { useBlockTimer } from "@/utils/blockTimer"
-import { getSprayRoute, getSprayWall } from "@/services/BoulderGraphService"
+import {
+  getSessions, getSprayRoute, getSprayRoutes, getSprayWall, saveSprayRoute,
+  SprayRouteRow, SprayWallRow,
+} from "@/services/BoulderGraphService"
+import { RoutePickerModal } from "@/components/workoutBlocks"
+import { ConsumeAuth } from "@/components/auth-context"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useRef, useState } from "react"
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
@@ -19,16 +25,20 @@ import {
   parseVariations,
   variationHolds,
   availableVariations,
-  stepVariation,
   VARIATION_LABEL,
   VARIATION_KEYS,
   type RouteVariations,
   type VariationKey,
 } from "@/utils/sequenceVariations"
+import { findBlockRuns, type BlockRun } from "@/utils/blockHistory"
+import {
+  isEarlyFall, pickRoute, routesVisibleTo, suggestNextSequence,
+  type RouteInfo, type SequenceSuggestion,
+} from "@/utils/progression/sequence"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
-type SequencePhase = "intro" | "active" | "recording" | "rest1" | "calibrate" | "review"
+type SequencePhase = "choose_route" | "intro" | "active" | "recording" | "rest1" | "review"
 type Outcome = "sent" | "fell"
 
 interface Props {
@@ -53,13 +63,40 @@ export function SequenceBlock({
   const targetAttempts: number = block.targetAttempts ?? 5
   const restTime: number       = block.restTime ?? 120
   const blockTitle: string     = block.blockName || "Sequence"
-  const attemptsDone           = attempts.length
+  const { User } = ConsumeAuth()
+
+  // The route id in effect for this run. Normally just the coach-assigned
+  // block.routeId, but when the block was authored with no fixed route
+  // (athleteChoosesRoute), it starts empty and is filled in once the athlete
+  // picks or builds a sequence — or, on resume, recovered from whichever
+  // route earlier attempts were logged against.
+  // On resume, the route of the *last* logged attempt — the athlete may have
+  // been moved to an easier route mid-block (see dropALevel).
+  const [effectiveRouteId, setEffectiveRouteId] = useState<string>(
+    () => [...attempts].reverse().find((a) => a.routeId)?.routeId || block.routeId || ""
+  )
+  const needsRouteChoice = !!block.athleteChoosesRoute && !effectiveRouteId
+
+  // Attempts on the route currently being climbed. Moving to an easier route
+  // mid-block restarts the count, so the attempt target, dots and RPE timing
+  // all work off the trailing run of attempts logged on this route — the
+  // block's full attempt list (shown in review) still keeps every route.
+  const routeStart = (() => {
+    let i = attempts.length
+    while (i > 0 && (attempts[i - 1].routeId ?? "") === effectiveRouteId) i--
+    return i
+  })()
+  const routeAttempts = attempts.slice(routeStart)
+  const attemptsDone  = routeAttempts.length
 
   // Revisiting a block that already met its target lands on the review state
   // (not the logging UI), so attempts are preserved and can't be over-logged.
-  const [phase, setPhase]               = useState<SequencePhase>(() =>
-    attemptsDone >= targetAttempts ? "review" : "intro"
-  )
+  // A block with no route chosen yet opens on the picker instead of the intro.
+  const [phase, setPhase]               = useState<SequencePhase>(() => {
+    if (attemptsDone >= targetAttempts) return "review"
+    if (needsRouteChoice) return "choose_route"
+    return "intro"
+  })
   const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null)
   const blockTimer = useBlockTimer()
   const [outcome, setOutcome]           = useState<Outcome | null>(null)
@@ -70,9 +107,9 @@ export function SequenceBlock({
   // Route variations + which one we're on. The block was authored with a
   // snapshot of routeHolds (the original) at design time, but the route may
   // have been edited since — we re-fetch by routeId on mount for the current
-  // variations. We start on the coach-chosen variation (default Original);
-  // the first-attempt calibration and the manual switcher move between the
-  // available variations from there.
+  // variations. We start on the coach-chosen variation (default Original) —
+  // or the suggested one, see below; the in-session early-fall step-down and
+  // the manual switcher move between the available variations from there.
   const [variations, setVariations] = useState<RouteVariations>(() => {
     try { return { original: JSON.parse(block.routeHolds ?? "[]") } } catch { return { original: [] } }
   })
@@ -82,11 +119,22 @@ export function SequenceBlock({
   const holds: PlacedHold[] = variationHolds(variations, activeVariation)
   const availableVars = availableVariations(variations)
 
-  // The athlete only sees / can change variations AFTER the first attempt's
-  // initial selection (calibration). On resume (attempts already logged), the
-  // selection was already made.
-  const [calibrated, setCalibrated] = useState<boolean>(() => attemptsDone > 0)
+  // In-session step-down (spec §3.2b), replacing the old blind "how did that
+  // feel?" calibration: a fall in the first third of the sequence on the
+  // first attempt drops to Easier; the same on the first Easier attempt moves
+  // to a route one level down and restarts the attempts. "off" once the first
+  // attempt went fine, and on resume (not reconstructed from the log).
+  const [earlyCheck, setEarlyCheck] = useState<"first" | "first_on_easier" | "off">(() => attempts.length > 0 ? "off" : "first")
   const [varMenuOpen, setVarMenuOpen] = useState(false)
+
+  // Between-session suggestion (spec §3.2a): the athlete's history on this
+  // block + the routes they can see. Loaded once; the suggested route and
+  // starting variation are preloaded, with a banner that stays until the
+  // athlete chooses the authored route instead. Not applied on resume.
+  const [allRoutes, setAllRoutes] = useState<Map<string, RouteInfo>>(new Map())
+  const [runs, setRuns] = useState<BlockRun[]>([])
+  const [suggestion, setSuggestion] = useState<SequenceSuggestion | null>(null)
+  const [suggestionReady, setSuggestionReady] = useState(attempts.length > 0)
 
   const [routeName, setRouteName] = useState<string>(block.routeName ?? "")
   const [refreshing, setRefreshing] = useState(false)
@@ -140,6 +188,50 @@ export function SequenceBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    const fresh = attempts.length === 0
+    Promise.all([getSessions(), getSprayRoutes()])
+      .then(([sessions, routeRows]) => {
+        if (cancelled) return
+        const routes = routesVisibleTo(routeRows, User?.$id)
+        const history = findBlockRuns(sessions, { type: "sequence", blockName: block.blockName, libraryBlockId: block.libraryBlockId })
+        setAllRoutes(routes)
+        setRuns(history)
+        if (!fresh) return
+        const sug = suggestNextSequence(history, routes)
+        if (!sug) return
+        setSuggestion(sug)
+        if (sug.route) {
+          setEffectiveRouteId(sug.route.id)
+          setRouteName(sug.route.name)
+          setActiveVariation(sug.startVariation)
+          if (block.athleteChoosesRoute) setPhase("intro")
+        }
+      })
+      .catch(console.error)
+      .finally(() => { if (!cancelled) setSuggestionReady(true) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Override: the athlete chooses their own sequence in the route picker.
+  // There's no "use the planned sequence" — the coach already approved or
+  // adjusted the suggestion in the editor. The banner goes once they pick;
+  // closing the picker brings the suggestion back.
+  const [declined, setDeclined] = useState<SequenceSuggestion | null>(null)
+  function declineSuggestion() {
+    setDeclined(suggestion)
+    setSuggestion(null)
+    setPhase("choose_route")
+  }
+  function closePicker() {
+    if (!declined) { goToPreviousBlock?.(); return }
+    setSuggestion(declined)
+    setDeclined(null)
+    setPhase("intro")
+  }
+
   // Change the variation later — requires confirmation since it affects the
   // rest of the sets.
   function requestChangeVariation(key: VariationKey) {
@@ -166,22 +258,64 @@ export function SequenceBlock({
   }
 
   async function refreshRoute() {
-    if (!block.routeId || refreshing) return
+    if (!effectiveRouteId || refreshing) return
     setRefreshing(true)
     try {
-      await applyRouteRow(await getSprayRoute(block.routeId))
+      await applyRouteRow(await getSprayRoute(effectiveRouteId))
     } catch { /* keep current */ }
     finally { setRefreshing(false) }
   }
 
   useEffect(() => {
-    if (!block.routeId) return
+    if (!effectiveRouteId) return
     let cancelled = false
-    getSprayRoute(block.routeId)
+    getSprayRoute(effectiveRouteId)
       .then((row) => { if (!cancelled) applyRouteRow(row) })
       .catch(() => {/* keep snapshot on failure */})
     return () => { cancelled = true }
-  }, [block.routeId])
+  }, [effectiveRouteId])
+
+  // Athlete-picked (or freshly built) sequence, for blocks authored with no
+  // fixed route. Sets the id first — the effect above then fetches its
+  // current holds/wall the same way a coach-assigned route would be.
+  function chooseRoute(route: SprayRouteRow, wall?: SprayWallRow | null) {
+    setEffectiveRouteId(route.$id)
+    setRouteName(route.name)
+    if (wall?.imageUri) setWallImageSource({ uri: wall.imageUri })
+    if (wall?.width && wall?.height) setWallSize({ w: wall.width, h: wall.height })
+    setActiveVariation("original")
+    setPhase("intro")
+  }
+
+  const [creatingRoute, setCreatingRoute] = useState<{ wall: SprayWallRow | null } | null>(null)
+  const [savingRoute, setSavingRoute] = useState(false)
+  // Saving closes two nested native <Modal>s at once (the builder, then the
+  // picker underneath it) — races on iOS the same way the coach-side builder
+  // does, so there too we defer the selection to onDismiss.
+  const pendingRouteRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
+
+  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
+    if (!name.trim()) { Alert.alert("Name required", "Give the sequence a name before saving."); return }
+    const holdsToSave = data.variations.original ?? []
+    const extras = { level: data.level, type: data.type, variations: data.variations, athleteId: User?.$id }
+    setSavingRoute(true)
+    try {
+      const wall = creatingRoute?.wall ?? null
+      const created = await saveSprayRoute(name.trim(), holdsToSave, wall?.$id, extras)
+      if (Platform.OS === "ios") {
+        pendingRouteRef.current = { route: created, wall }
+        setCreatingRoute(null)
+      } else {
+        chooseRoute(created, wall)
+        setCreatingRoute(null)
+      }
+    } catch (e) {
+      Alert.alert("Error", "Could not save the sequence. Try again.")
+      console.error(e)
+    } finally {
+      setSavingRoute(false)
+    }
+  }
 
   // Move slots, counting "match" holds as two (they show two move numbers).
   const moveSlots = holds.filter((h) => h.type === "move").reduce((s, h) => s + (h.match ? 2 : 1), 0)
@@ -204,36 +338,104 @@ export function SequenceBlock({
     setPhase("rest1")
   }
 
+  // Second half of the in-session step-down: a route of the same type one
+  // level down on the same wall, with the attempts starting over. Returns
+  // whether it moved.
+  function dropALevel(): boolean {
+    const current = allRoutes.get(effectiveRouteId)
+    const lower = current?.level != null && current.level > 1
+      ? pickRoute(allRoutes, current, current.level - 1, runs)
+      : null
+    if (!lower) {
+      setEarlyCheck("off")
+      Alert.alert("Keep going", "There's no easier saved sequence to move to — carry on with this one.")
+      return false
+    }
+    setEffectiveRouteId(lower.id)
+    setRouteName(lower.name)
+    setActiveVariation("original")
+    setEarlyCheck("first")
+    Alert.alert("Easier sequence", `Moving to ${lower.name} (level ${lower.level}). Your attempts start over.`)
+    return true
+  }
+
   function handleSaveAttempt() {
     const success = outcome === "sent"
-    const isFirst = attemptsDone === 0
     const isLast  = attemptsDone + 1 >= targetAttempts
     logAttempt({
       success,
       video: pendingVideoUri ?? undefined,
       rpe: rpe ? Number(rpe) : undefined,
       highPoint: outcome === "fell" ? highPoint : undefined,
-      routeId: block.routeId,
+      routeId: effectiveRouteId,
       variation: activeVariation,
     })
     setPendingVideoUri(null)
-    // After the very first attempt, calibrate difficulty — but only when there
-    // are multiple variations AND more attempts to apply it to.
-    const showCalibrate = isFirst && availableVars.length > 1 && targetAttempts > 1
-    if (!showCalibrate) setCalibrated(true)
+
+    let movedRoute = false
+    if (earlyCheck !== "off") {
+      const fellEarly = !success && isEarlyFall(highPoint, maxMove)
+      if (!fellEarly) setEarlyCheck("off")
+      else if (earlyCheck === "first" && activeVariation !== "easy" && availableVars.includes("easy")) {
+        setActiveVariation("easy")
+        setEarlyCheck("first_on_easier")
+        Alert.alert("Easier variation", "You came off in the first third — switching to the Easier variation.")
+      } else {
+        movedRoute = dropALevel()
+      }
+    }
+
     // On the last set there's no next attempt, so skip the rest and go straight
-    // to review. Otherwise return to the active screen, which shows the running
-    // rest timer as a pill until it expires.
-    setPhase(showCalibrate ? "calibrate" : isLast ? "review" : "active")
+    // to review (unless the attempts just restarted on an easier route).
+    // Otherwise return to the active screen, which shows the running rest
+    // timer as a pill until it expires.
+    setPhase(isLast && !movedRoute ? "review" : "active")
   }
 
-  // Initial selection after the first attempt, made blind (no preview of the
-  // other variations): too hard → easier, too easy → harder, felt right → keep.
-  function calibrate(feel: "hard" | "right" | "easy") {
-    if (feel === "hard") setActiveVariation((v) => stepVariation(variations, v, -1))
-    else if (feel === "easy") setActiveVariation((v) => stepVariation(variations, v, +1))
-    setCalibrated(true)
-    setPhase("active")
+  // ── 0. Choose route — only for blocks authored with no fixed sequence ────────
+
+  // Hold the picker until the suggestion has loaded — it may pick the route.
+  if (phase === "choose_route" && !suggestionReady) {
+    return (
+      <View style={[shared_styles.screen, { justifyContent: "center" }]}>
+        <ActivityIndicator color={C.green} />
+      </View>
+    )
+  }
+
+  if (phase === "choose_route") {
+    return (
+      <>
+        <RoutePickerModal
+          onSelect={(route, wall) => { setDeclined(null); chooseRoute(route, wall) }}
+          onClose={closePicker}
+          onCreateNew={(wall) => setCreatingRoute({ wall: wall ?? null })}
+        />
+        <Modal
+          visible={creatingRoute !== null}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setCreatingRoute(null)}
+          onDismiss={() => {
+            const pending = pendingRouteRef.current
+            if (!pending) return
+            pendingRouteRef.current = null
+            chooseRoute(pending.route, pending.wall)
+          }}
+        >
+          {creatingRoute && (
+            <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={["top"]}>
+              <SprayWallBuilder
+                imageSource={creatingRoute.wall?.imageUri ? { uri: creatingRoute.wall.imageUri } : WALL_IMAGE}
+                onBack={() => setCreatingRoute(null)}
+                onSave={saveNewRoute}
+                saving={savingRoute}
+              />
+            </SafeAreaView>
+          )}
+        </Modal>
+      </>
+    )
   }
 
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
@@ -256,6 +458,27 @@ export function SequenceBlock({
 
           {!!block.description && (
             <Text style={styles.infoCardDesc}>{block.description}</Text>
+          )}
+
+          {/* Progression suggestion — stays until the athlete chooses the
+              authored route instead (same persistent pattern as S&C). */}
+          {!!suggestion && (
+            <View style={styles.suggestionBanner}>
+              <Text style={styles.suggestionBannerLast}>{suggestion.lastTime}</Text>
+              <Text style={styles.suggestionBannerText}>{suggestion.note}</Text>
+              {!!suggestion.route && (
+                <>
+                  <Text style={styles.suggestionRoute}>
+                    {suggestion.route.name}
+                    {suggestion.route.level != null ? ` · level ${suggestion.route.level}` : ""}
+                    {suggestion.startVariation !== "original" ? ` · start ${VARIATION_LABEL[suggestion.startVariation]}` : ""}
+                  </Text>
+                  <Pressable onPress={declineSuggestion} hitSlop={8}>
+                    <Text style={styles.suggestionDecline}>Choose my own sequence</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
           )}
 
           {/* Stats card */}
@@ -284,8 +507,15 @@ export function SequenceBlock({
 
         {/* Fixed start button */}
         <View style={styles.introFooter}>
-          <Pressable style={styles.startBtn} onPress={() => { blockTimer.start(); setPhase("active") }}>
-            <Text style={styles.startBtnText}>Start</Text>
+          {/* Wait for the suggestion so the route can't change after Start. */}
+          <Pressable
+            style={[styles.startBtn, !suggestionReady && { opacity: 0.5 }]}
+            disabled={!suggestionReady}
+            onPress={() => { blockTimer.start(); setPhase("active") }}
+          >
+            {suggestionReady
+              ? <Text style={styles.startBtnText}>Start</Text>
+              : <ActivityIndicator color={C.bg} />}
           </Pressable>
         </View>
       </View>
@@ -324,8 +554,8 @@ export function SequenceBlock({
           {Array.from({ length: targetAttempts }).map((_, i) => {
             const done = i < attemptsDone
             const isCurrent = i === attemptsDone
-            const sent = done && attempts[i]?.success
-            const fell = done && !attempts[i]?.success
+            const sent = done && routeAttempts[i]?.success
+            const fell = done && !routeAttempts[i]?.success
             return (
               <View
                 key={i}
@@ -360,7 +590,7 @@ export function SequenceBlock({
         </View>
         <View style={{ flex: 1 }}>
           <SprayWallViewer imageSource={wallImageSource} holds={holds} style={{ flex: 1 }} freeGesture naturalSize={wallSize} />
-          {!!block.routeId && (
+          {!!effectiveRouteId && (
             <Pressable style={styles.reloadBtn} onPress={refreshRoute} hitSlop={8}>
               <Ionicons
                 name={refreshing ? "sync" : "refresh"}
@@ -370,8 +600,9 @@ export function SequenceBlock({
             </Pressable>
           )}
         </View>
-        {/* Variation dropdown — only after the initial selection is made. */}
-        {calibrated && availableVars.length > 1 && (
+        {/* Variation dropdown — only once the first attempt (and its
+            early-fall check) is done. */}
+        {attemptsDone > 0 && availableVars.length > 1 && (
           <View style={styles.varDropdownWrap}>
             <Pressable style={styles.varPill} onPress={() => setVarMenuOpen((o) => !o)}>
               <Text style={styles.varPillText}>Variation: {VARIATION_LABEL[activeVariation]}</Text>
@@ -425,44 +656,6 @@ export function SequenceBlock({
         }}
         onClose={() => setPhase("active")}
       />
-    )
-  }
-
-  // ── 3b. Calibrate — initial selection after the first attempt (made blind) ────
-
-  if (phase === "calibrate") {
-    const canEasier = stepVariation(variations, activeVariation, -1) !== activeVariation
-    const canHarder = stepVariation(variations, activeVariation, +1) !== activeVariation
-    return (
-      <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
-        <View style={styles.calibrateWrap}>
-          <Text style={styles.calibrateTitle}>How did that feel?</Text>
-          <Text style={styles.calibrateSub}>This sets your variation for the rest of the sets.</Text>
-
-          <Pressable
-            style={[styles.calibrateBtn, !canEasier && styles.calibrateBtnDisabled]}
-            onPress={() => calibrate("hard")}
-            disabled={!canEasier}
-          >
-            <Text style={styles.calibrateBtnText}>Too hard</Text>
-            <Text style={styles.calibrateBtnSub}>{canEasier ? "easier variation" : "already easiest"}</Text>
-          </Pressable>
-
-          <Pressable style={styles.calibrateBtn} onPress={() => calibrate("right")}>
-            <Text style={styles.calibrateBtnText}>Felt right</Text>
-            <Text style={styles.calibrateBtnSub}>keep this one</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.calibrateBtn, !canHarder && styles.calibrateBtnDisabled]}
-            onPress={() => calibrate("easy")}
-            disabled={!canHarder}
-          >
-            <Text style={styles.calibrateBtnText}>Too easy</Text>
-            <Text style={styles.calibrateBtnSub}>{canHarder ? "harder variation" : "already hardest"}</Text>
-          </Pressable>
-        </View>
-      </View>
     )
   }
 
@@ -594,11 +787,18 @@ export function SequenceBlock({
         <TopBar title="Review" />
         <ScrollView contentContainerStyle={styles.reviewContent}>
           <Text style={shared_styles.title}>
-            {attemptsDone} attempt{attemptsDone !== 1 ? "s" : ""}
+            {attempts.length} attempt{attempts.length !== 1 ? "s" : ""}
           </Text>
 
           {attempts.map((a, i) => (
-            <View key={i} style={styles.reviewRow}>
+            <React.Fragment key={i}>
+            {/* Marks where the athlete was moved to an easier route mid-block. */}
+            {i > 0 && (a.routeId ?? "") !== (attempts[i - 1].routeId ?? "") && (
+              <Text style={styles.reviewRouteChange}>
+                Moved to {allRoutes.get(a.routeId ?? "")?.name ?? "an easier sequence"}
+              </Text>
+            )}
+            <View style={styles.reviewRow}>
               <View style={styles.reviewRowLeft}>
                 <Text style={styles.reviewAttemptNum}>#{i + 1}</Text>
                 <View>
@@ -626,6 +826,7 @@ export function SequenceBlock({
                 )}
               </View>
             </View>
+            </React.Fragment>
           ))}
 
           <CustomButton title="Continue" onPress={goToNextBlock} />
@@ -656,6 +857,15 @@ const styles = StyleSheet.create({
   statNum: { fontSize: 26, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
   statLabel: { fontSize: 12, color: C.textSecondary },
   statDivider: { width: 1, backgroundColor: C.border, marginVertical: 4 },
+  reviewRouteChange: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 6 },
+  suggestionBanner: {
+    backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 6,
+  },
+  suggestionBannerLast: { fontSize: 12.5, color: C.textSecondary, lineHeight: 17 },
+  suggestionBannerText: { fontSize: 12.5, fontWeight: "600", color: C.green, lineHeight: 17 },
+  suggestionRoute: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  suggestionDecline: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary, textDecorationLine: "underline" },
   previewWrapper: { gap: 8 },
   routeLabel: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
   previewWall: { height: 300, borderRadius: 14, overflow: "hidden" },
@@ -757,16 +967,6 @@ const styles = StyleSheet.create({
   varMenuCheck: { fontSize: 14, color: C.green, fontWeight: "800" },
 
   // Calibration screen (blind selection)
-  calibrateWrap: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
-  calibrateTitle: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
-  calibrateSub: { fontSize: 14, color: C.textSecondary, textAlign: "center", marginBottom: 12 },
-  calibrateBtn: {
-    backgroundColor: C.surface, borderRadius: 16, paddingVertical: 18,
-    borderWidth: 1, borderColor: C.border, alignItems: "center", gap: 2,
-  },
-  calibrateBtnDisabled: { opacity: 0.4 },
-  calibrateBtnText: { fontSize: 17, fontWeight: "800", color: C.textPrimary },
-  calibrateBtnSub: { fontSize: 13, color: C.textSecondary },
 
   // ── Rest 1
   pillTimer: {

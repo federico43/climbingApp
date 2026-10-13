@@ -17,4 +17,5 @@ export const C = {
   greenDeep: "#4FAE82",     // secondary green
   red:       "#DB504A",     // failure · urgency · delete · no send
   yellow:    "#FED766",     // success · score · achievement · finish holds
+  side:      "#A78BFA",     // which side is being worked (both-sides S&C) — only that
 } as const

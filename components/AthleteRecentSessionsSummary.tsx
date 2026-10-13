@@ -6,8 +6,8 @@ import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 
 // Collapsible "what did they do last time" panel for the workout builder —
-// so a coach can see the athlete's last two training days (S&C sets/RPE
-// included) without leaving the screen to go dig through their history.
+// so a coach can see the athlete's last two training days (S&C average
+// reps per exercise included) without leaving the screen to go dig through their history.
 // Grouped by calendar day, not by session row, since an athlete can log
 // more than one session on the same day.
 
@@ -36,23 +36,33 @@ function timeLabelOf(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
 }
 
-// One readable line per logged set, covering the three S&C exercise shapes
-// (plain reps, left/right, and 7/3s series) — mirrors the fields written by
-// StrengthConditioningBlock's handleExerciseDone.
-function scLine(sc: any): string {
-  const name = sc.exerciseName ?? "Exercise"
-  if (sc.repsCompleted != null) {
-    return `${name}: ${sc.repsCompleted} reps${sc.rpe ? ` · RPE ${sc.rpe}` : ""}`
+function avg(nums: number[]): string {
+  const n = nums.reduce((a, b) => a + b, 0) / nums.length
+  return String(Math.round(n * 10) / 10)
+}
+
+// One line per exercise — its average reps across the sets logged in the
+// block — rather than every set. Covers the three S&C exercise shapes
+// (plain reps, left/right, and 7/3s series) written by
+// StrengthConditioningBlock's handleExerciseDone. Exercises keep the order
+// they were first logged in.
+function scSummaryLines(scSets: any[]): string[] {
+  const byExercise = new Map<string, any[]>()
+  for (const sc of scSets) {
+    const name = sc.exerciseName ?? "Exercise"
+    byExercise.set(name, [...(byExercise.get(name) ?? []), sc])
   }
-  if (sc.repsLeft != null) {
-    const l = `L ${sc.repsLeft}${sc.rpeLeft ? ` (RPE ${sc.rpeLeft})` : ""}`
-    const r = `R ${sc.repsRight}${sc.rpeRight ? ` (RPE ${sc.rpeRight})` : ""}`
-    return `${name}: ${l} · ${r}`
-  }
-  if (sc.seriesDone != null) {
-    return `${name}: ${sc.seriesDone} series${sc.rpe ? ` · RPE ${sc.rpe}` : ""}`
-  }
-  return name
+  return [...byExercise.entries()].map(([name, sets]) => {
+    const reps = sets.filter((x) => x.repsCompleted != null).map((x) => Number(x.repsCompleted))
+    if (reps.length) return `${name}: avg ${avg(reps)} reps`
+    const sided = sets.filter((x) => x.repsLeft != null)
+    if (sided.length) {
+      return `${name}: avg L ${avg(sided.map((x) => Number(x.repsLeft)))} · R ${avg(sided.map((x) => Number(x.repsRight ?? 0)))}`
+    }
+    const series = sets.filter((x) => x.seriesDone != null).map((x) => Number(x.seriesDone))
+    if (series.length) return `${name}: avg ${avg(series)} series`
+    return name
+  })
 }
 
 interface SummaryBlock {
@@ -83,15 +93,18 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
   try { protocol = JSON.parse(session.protocol) } catch {}
 
   const blocks: SummaryBlock[] = protocol.map((block: any, blockIndex: number) => {
-    const blockAttempts = attempts.filter((a: any) => a.blockIndex === blockIndex)
+    // A coached block's Done marker isn't an attempt (§12) — only the coach's
+    // sequences, which carry a routeId, are.
+    const blockAttempts = attempts.filter((a: any) => a.blockIndex === blockIndex && !(a.coached && !a.routeId))
     const isSC = block.type === "strength_conditioning"
+    const name = block.blockName ?? formatBlockType(block.type ?? "")
     return {
       blockIndex,
-      blockName: block.blockName ?? formatBlockType(block.type ?? ""),
+      blockName: block.coached ? `${name} · coached` : name,
       blockType: block.type ?? "",
       color: adaptationColor(block),
       isSC,
-      scLines: isSC ? blockAttempts.filter((a: any) => a.scData).map((a: any) => scLine(a.scData)) : [],
+      scLines: isSC ? scSummaryLines(blockAttempts.filter((a: any) => a.scData).map((a: any) => a.scData)) : [],
       sends: blockAttempts.filter((a: any) => a.success).length,
       total: blockAttempts.length,
     }

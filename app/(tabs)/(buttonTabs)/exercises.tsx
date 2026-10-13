@@ -1,7 +1,8 @@
+import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ExerciseForm } from "@/components/ExerciseForm"
-import { amountLabel } from "@/utils/exerciseUnit"
+import { ExerciseLibraryCard } from "@/components/ExerciseLibraryCard"
 import { Ionicons } from "@expo/vector-icons"
 import {
   deleteExercise,
@@ -10,11 +11,10 @@ import {
 } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
 import { useRouter } from "expo-router"
-import React, { useCallback, useState } from "react"
+import React, { useCallback, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -35,6 +35,19 @@ const TYPE_LABELS: Record<ExerciseType, string> = {
   "7/3s": "7/3s",
 }
 
+// Cards wrap into a grid like the workout builder's blocks.
+const CARD_GAP = 12
+// Narrower than the builder's so cards come out roughly square.
+const CARD_MIN_WIDTH = 230
+const CARD_MAX_COLUMNS = 6
+
+// Before a card has been measured: header + photo (4:3) + wrapped notes.
+function estimateHeight(ex: ExerciseRow, width: number): number {
+  const photo = ex.photoUri ? (width * 3) / 4 : 0
+  const notesLines = ex.notes ? Math.ceil((ex.notes.length * 7) / Math.max(1, width - 28)) : 0
+  return 64 + photo + notesLines * 19
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExercisesScreen() {
@@ -47,6 +60,10 @@ export default function ExercisesScreen() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingExercise, setEditingExercise] = useState<ExerciseRow | null>(null)
   const [search, setSearch] = useState("")
+  const [gridWidth, setGridWidth] = useState(0)
+  const [cardHeights, setCardHeights] = useState<Record<string, number>>({})
+  const [editingNotes, setEditingNotes] = useState(false)
+  const frozenColsRef = useRef<Partial<Record<ExerciseType, string[][]>>>({})
 
   useFocusEffect(
     useCallback(() => {
@@ -74,6 +91,7 @@ export default function ExercisesScreen() {
         onPress: async () => {
           try {
             await deleteExercise(ex.$id)
+            invalidateExerciseLibrary()
             setExercises((prev) => prev.filter((e) => e.$id !== ex.$id))
           } catch (e: any) {
             Alert.alert("Error", e?.message ?? "Could not delete exercise.")
@@ -83,16 +101,52 @@ export default function ExercisesScreen() {
     ])
   }
 
-  // Filter by search, then group by type. `exercises` is already kept sorted
-  // alphabetically (server query on load, re-sorted after create/edit), so
-  // each group comes out alphabetical for free.
+  // Filter by search, then group by type, longest description first.
+  // `exercises` is already kept sorted alphabetically (server query on load,
+  // re-sorted after create/edit) and the sort is stable, so ties — e.g. all
+  // the ones without a description — stay alphabetical.
   const query = search.trim().toLowerCase()
   const filtered = query ? exercises.filter((ex) => ex.name.toLowerCase().includes(query)) : exercises
   const grouped: Record<ExerciseType, ExerciseRow[]> = { reps: [], both_sides: [], "7/3s": [] }
   for (const ex of filtered) {
     if (grouped[ex.type]) grouped[ex.type].push(ex)
   }
+  for (const list of Object.values(grouped)) {
+    list.sort((a, b) => (b.notes?.trim().length ?? 0) - (a.notes?.trim().length ?? 0))
+  }
   const hasResults = filtered.length > 0
+
+  // Same column math as the workout builder's card grid.
+  const columns = gridWidth > 0
+    ? Math.max(1, Math.min(CARD_MAX_COLUMNS, Math.floor((gridWidth + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP))))
+    : 1
+  const cardWidth = gridWidth > 0 ? (gridWidth - CARD_GAP * (columns - 1)) / columns : undefined
+
+  // Masonry: each card (in the order above) goes to the currently
+  // shortest column, so a long description only makes its own card taller
+  // instead of stretching its whole row. Uses each card's measured height,
+  // or a rough estimate until it has rendered once.
+  // While a description is being typed the layout is frozen (last columns,
+  // by id) — re-sorting/re-flowing would move the card and drop focus.
+  function masonry(type: ExerciseType, list: ExerciseRow[]): ExerciseRow[][] {
+    const frozen = frozenColsRef.current[type]
+    if (editingNotes && frozen && frozen.length === columns) {
+      const byId = new Map(list.map((ex) => [ex.$id, ex]))
+      return frozen.map((ids) => ids.flatMap((id) => byId.get(id) ?? []))
+    }
+    const cols: ExerciseRow[][] = Array.from({ length: columns }, () => [])
+    const heights = new Array(columns).fill(0)
+    for (const ex of list) {
+      const i = heights.indexOf(Math.min(...heights))
+      cols[i].push(ex)
+      heights[i] += (cardHeights[ex.$id] ?? estimateHeight(ex, cardWidth ?? CARD_MIN_WIDTH)) + CARD_GAP
+    }
+    frozenColsRef.current[type] = cols.map((c) => c.map((ex) => ex.$id))
+    return cols
+  }
+  function recordHeight(id: string, h: number) {
+    setCardHeights((prev) => (Math.abs((prev[id] ?? 0) - h) < 1 ? prev : { ...prev, [id]: h }))
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -150,47 +204,37 @@ export default function ExercisesScreen() {
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-              {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
-                const list = grouped[type]
-                if (!list.length) return null
-                return (
-                  <View key={type} style={styles.section}>
-                    <Text style={styles.sectionHeader}>{TYPE_LABELS[type]}</Text>
-                    {list.map((ex) => (
-                      <Pressable
-                        key={ex.$id}
-                        style={({ pressed }) => [styles.row, isCoach && pressed && styles.rowPressed]}
-                        onPress={isCoach ? () => setEditingExercise(ex) : undefined}
-                      >
-                        {ex.photoUri ? (
-                          <Image source={{ uri: ex.photoUri }} style={styles.rowThumb} />
-                        ) : null}
-                        <View style={styles.rowInfo}>
-                          <View style={styles.rowNameLine}>
-                            <Text style={styles.rowName} numberOfLines={1}>{ex.name}</Text>
-                            {ex.notes ? (
-                              <Ionicons name="document-text-outline" size={13} color={C.textMuted} style={styles.rowNotesIcon} />
-                            ) : null}
+              <View style={styles.sections} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
+                {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
+                  const list = grouped[type]
+                  if (!list.length) return null
+                  return (
+                    <View key={type} style={styles.section}>
+                      <Text style={styles.sectionHeader}>{TYPE_LABELS[type]}</Text>
+                      <View style={styles.grid}>
+                        {masonry(type, list).map((col, i) => (
+                          <View key={i} style={[styles.column, { width: cardWidth }]}>
+                            {col.map((ex) => (
+                              <View
+                                key={ex.$id}
+                                onLayout={(e) => recordHeight(ex.$id, e.nativeEvent.layout.height)}
+                              >
+                                <ExerciseLibraryCard
+                                  exercise={ex}
+                                  onPress={isCoach ? () => setEditingExercise(ex) : undefined}
+                                  onDelete={isCoach ? () => handleDelete(ex) : undefined}
+                                  onEditingChange={setEditingNotes}
+                                  onSaved={(saved) => setExercises((prev) => prev.map((e) => (e.$id === saved.$id ? saved : e)))}
+                                />
+                              </View>
+                            ))}
                           </View>
-                          <Text style={styles.rowMeta}>
-                            {ex.defaultReps ? amountLabel(ex.defaultReps, ex.unit) : ""}
-                            {ex.defaultEdge ? `${ex.defaultEdge} edge` : ""}
-                            {ex.defaultSeries ? ` · ${ex.defaultSeries} series` : ""}
-                          </Text>
-                        </View>
-                        {isCoach && (
-                          <>
-                            <Ionicons name="chevron-forward" size={16} color={C.textMuted} style={styles.rowChevron} />
-                            <Pressable onPress={() => handleDelete(ex)} style={styles.deleteBtn} hitSlop={8}>
-                              <Text style={styles.deleteBtnText}>✕</Text>
-                            </Pressable>
-                          </>
-                        )}
-                      </Pressable>
-                    ))}
-                  </View>
-                )
-              })}
+                        ))}
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
             </ScrollView>
           )}
         </>
@@ -292,24 +336,9 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     paddingHorizontal: 4,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  rowPressed: { backgroundColor: C.surfaceHigh },
-  rowThumb: { width: 40, height: 40, borderRadius: 8, backgroundColor: C.surfaceHigh, marginRight: 12 },
-  rowInfo: { flex: 1 },
-  rowNameLine: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rowName: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flexShrink: 1 },
-  rowNotesIcon: { flexShrink: 0 },
-  rowMeta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
-  rowChevron: { marginRight: 4 },
-  deleteBtn: { padding: 6 },
-  deleteBtnText: { fontSize: 15, color: C.textMuted },
+  sections: { gap: 20 },
+  grid: { flexDirection: "row", alignItems: "flex-start", gap: CARD_GAP },
+  column: { gap: CARD_GAP },
   // Modal
   modalHeader: {
     flexDirection: "row",

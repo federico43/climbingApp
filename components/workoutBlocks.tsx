@@ -12,6 +12,7 @@ import {
   VARIATION_LABEL,
   parseVariations,
   availableVariations,
+  variationHolds,
 } from "@/utils/sequenceVariations"
 import {
   Adaptation,
@@ -20,6 +21,12 @@ import {
   ADAPTATION_LABEL,
   resolveAdaptation,
 } from "@/utils/adaptations"
+import { MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
+import { Focus, FOCUSES, FOCUS_LABEL, FOCUS_REP_RANGE, LevelStep } from "@/utils/scProgression"
+import { authoredGrades, fitGrades, suggestNextFourByFour, type FourByFourSuggestion } from "@/utils/progression/fourByFour"
+import { INTERVALS_KIND_LABEL, intervalsDescription, suggestNextIntervals, type IntervalsKind, type IntervalsSuggestion } from "@/utils/progression/intervals"
+import { INTERVALS_RULES, type ColourRange, type ConstraintRotation, type WarmupPillar } from "@/utils/progression/profiles"
+import { COLOUR_RANGE_LABEL, defaultRotation, rotationFor, WARMUP_PILLAR_LABEL } from "@/utils/progression/constraintWarmup"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 import {
@@ -32,8 +39,12 @@ import {
   deleteProtocol,
   ExerciseRow,
   getAthletes,
+  getSessionsByUserId,
+  getUsers,
+  listBlocksByType,
   getSprayRoute,
   getSprayRoutes,
+  getSprayWall,
   getSprayWalls,
   SprayWallRow,
   listBlocks,
@@ -42,14 +53,23 @@ import {
   ProtocolRow,
   saveBlockToLibrary,
   saveSprayRoute,
+  SessionRow,
   upsertBlockTemplate,
   SprayRouteRow,
   updateBlock,
   updateProtocol,
 } from "@/services/BoulderGraphService"
+import { findLastScSession, findScSessions } from "@/utils/scHistory"
+import { planNextForFocus, type NextFlags } from "@/utils/scNext"
+import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
+import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, type ChainMember } from "@/utils/levelChain"
+import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
+import { findBlockRuns } from "@/utils/blockHistory"
+import { routesVisibleTo, suggestNextSequence, type SequenceSuggestion } from "@/utils/progression/sequence"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator, Alert,
+  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -63,7 +83,10 @@ import {
   View,
 } from "react-native"
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
+import ReAnimated, { LinearTransition, runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { LinearGradient } from "expo-linear-gradient"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +102,18 @@ interface BaseBlock {
   // Optional time constraint for the block, in minutes (0 / undefined = none).
   // Shown as a countdown while the block runs.
   timeLimit?: number
+  // The library row ($id) this block was cloned from, if any. Rides along in
+  // the session's protocol JSON so progression history can find "the same
+  // block" across sessions without depending on its name (renames would
+  // break a name match) — see utils/blockHistory.ts. Never saved into a
+  // library row's own data (see withoutLibraryRef).
+  libraryBlockId?: string
+  // Run by the coach in person, not the app (docs/training-plan-implementation.md
+  // §12): set by the coach in the builder or by the athlete mid-workout
+  // ("Coach is here"). The workout shows it as a title + Done (sequence
+  // blocks: + the coach's sequences); progression skips it (except
+  // sequences — utils/blockHistory.ts).
+  coached?: boolean
 }
 
 interface ProjectBoulderingBlock extends BaseBlock {
@@ -89,13 +124,29 @@ interface ProjectBoulderingBlock extends BaseBlock {
 interface ConstraintWarmupBlock extends BaseBlock {
   type: "constraint_warmup"
   description: string; level: string; targetAttempts: number
+  // Warm-up rotation settings (utils/progression/constraintWarmup.ts):
+  // which pillars this constraint warms up for and which colours it may be
+  // done on. Unset → the default table by name. Kept in sync with the
+  // library block, which is what the rotation reads.
+  rotation?: ConstraintRotation
 }
 
-interface Exercise {
+export interface Exercise {
   id: string; type: "reps" | "both_sides" | "7/3s"; name: string; exerciseId?: string; unit?: "reps" | "seconds"; reps?: string; edge?: string; series?: number; photoUri?: string; notes?: string
+  // Copied from the library entry when added (see exerciseFromLibrary) — an
+  // intrinsic property of the exercise, not something re-picked per block.
+  movementType?: string   // MovementType, see utils/movementTypes.ts
+  loadMode?: "weight" | "level"
+  levels?: LevelStep[]    // ordered easiest → hardest; only used when loadMode is "level"
+  loadStep?: number       // weight mode: smallest jump (kg); the live library's value wins at workout time
+  settingHarder?: string  // adjustable-setting hints (bench height, lean…); the live library's wins
+  settingEasier?: string
+  // Programmed fresh each time this exercise is placed in a block — the same
+  // exercise can be max force this cycle and hypertrophy next cycle.
+  focus?: Focus
 }
 
-interface StrengthConditioningBlock extends BaseBlock {
+export interface StrengthConditioningBlock extends BaseBlock {
   type: "strength_conditioning"
   description: string; rounds: number; restBetweenRounds: number; exercises: Exercise[]
 }
@@ -123,6 +174,11 @@ interface SequenceBlock extends BaseBlock {
   // base climb first, then calibrate) — the coach can override this to have
   // the athlete start on Easy or Hard instead.
   startingVariation?: VariationKey
+  // When true, no route is fixed at authoring time — the athlete picks or
+  // builds their own sequence the moment they reach this block. routeId etc.
+  // stay empty on the authored block; startingVariation doesn't apply since
+  // the coach doesn't know in advance which route's variations it'd refer to.
+  athleteChoosesRoute?: boolean
 }
 
 interface FreeSessionBlock extends BaseBlock {
@@ -152,6 +208,11 @@ interface FourByFourBlock extends BaseBlock {
   sets: number            // number of sets (the first "4")
   bouldersPerSet: number  // boulders per set (the second "4")
   restTime: number        // rest between sets (seconds)
+  // One colour per boulder slot (length bouldersPerSet), easiest → hardest
+  // as the progression raises them first → last. Optional: unset means the
+  // first session starts at the athlete's flash level − 1 (or the athlete
+  // picks one colour when no flash level is set). See utils/progression/fourByFour.ts.
+  boulderGrades?: string[]
 }
 
 interface IntervalsBlock extends BaseBlock {
@@ -160,6 +221,9 @@ interface IntervalsBlock extends BaseBlock {
   series: number     // number of work/rest rounds
   workTime: number   // work duration per round (seconds)
   restTime: number   // rest duration between rounds (seconds)
+  // Which progression rule applies (utils/progression/intervals.ts). Unset →
+  // no suggestion until the coach picks one.
+  kind?: IntervalsKind
 }
 
 export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock
@@ -168,7 +232,7 @@ export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthCon
 
 function generateId() { return Math.random().toString(36).slice(2) }
 
-function makeDefaultBlock(type: BlockType, name: string = ""): Block {
+export function makeDefaultBlock(type: BlockType, name: string = ""): Block {
   switch (type) {
     case "project_bouldering":
       return { id: generateId(), type, blockName: name, description: "", targetAttempts: 10, restTime: 120 }
@@ -213,7 +277,15 @@ export function injectLocalIds(blocks: any[]): Block[] {
 
 export function blockFromLibraryRow(row: BlockRow): Block {
   const data = JSON.parse(row.data)
-  return { ...data, id: generateId(), blockName: row.name }
+  return { ...data, id: generateId(), blockName: row.name, libraryBlockId: row.$id }
+}
+
+// A block's data as it should be stored on a library row: no local id, and no
+// libraryBlockId (a template doesn't point at itself, and a block saved as a
+// new template mustn't keep pointing at the template it was cloned from).
+function withoutLibraryRef(block: Block) {
+  const { id, libraryBlockId, ...data } = block
+  return data
 }
 
 export const BLOCK_LABELS: Record<BlockType, string> = {
@@ -245,7 +317,7 @@ const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   exploration_session: "Log sends freely by grade",
   sequence: "Specific route on the spray wall",
   free_session: "Open-ended climbing time",
-  four_by_four: "Sets of boulders for endurance",
+  four_by_four: "Sets of boulders for power endurance",
   intervals: "Timed work / rest rounds",
 }
 
@@ -351,8 +423,7 @@ export function BlockPickerModal({
     if (!editingRow || !editingBlock) return
     setSavingEdit(true)
     try {
-      const { id, ...data } = editingBlock
-      const updated = await updateBlock(editingRow.$id, { name: editingBlock.blockName, type: editingBlock.type, data })
+      const updated = await updateBlock(editingRow.$id, { name: editingBlock.blockName, type: editingBlock.type, data: withoutLibraryRef(editingBlock) })
       setLibraryBlocks((prev) => prev.map((b) => (b.$id === updated.$id ? updated : b)))
       setEditingRow(null)
       setEditingBlock(null)
@@ -365,9 +436,12 @@ export function BlockPickerModal({
 
   async function handleSaveNew(block: Block, saveToLibrary: boolean) {
     if (saveToLibrary) {
-      const { id, ...data } = block
-      await saveBlockToLibrary({ name: block.blockName, type: block.type, data })
+      const row = await saveBlockToLibrary({ name: block.blockName, type: block.type, data: withoutLibraryRef(block) })
       loadLibrary() // so the new template shows in the library tab
+      // Link the copy going into this workout to its new template, same as
+      // picking it from the library would.
+      onAdd({ ...block, libraryBlockId: row.$id })
+      return
     }
     onAdd(block)
   }
@@ -508,7 +582,17 @@ export function BlockPickerModal({
               <Text style={styles.pickerPrompt}>Choose a block type</Text>
               <View style={styles.blockTypeGrid}>
                 {(["project_bouldering", "constraint_warmup", "strength_conditioning", "exploration_session", "sequence", "four_by_four", "intervals", "free_session"] as BlockType[]).map((type) => (
-                  <Pressable key={type} style={styles.blockTypeCard} onPress={() => setNewBlockType(type)}>
+                  <Pressable
+                    key={type}
+                    style={styles.blockTypeCard}
+                    onPress={() => {
+                      // S&C skips the create-then-add form — it drops straight
+                      // into the protocol (auto-expanded there) since its fields
+                      // are the same ones the block editor already shows.
+                      if (type === "strength_conditioning") onAdd(makeDefaultBlock(type))
+                      else setNewBlockType(type)
+                    }}
+                  >
                     <View style={styles.blockTypeIconWrap}>
                       <Ionicons name={BLOCK_ICONS[type]} size={22} color={C.green} />
                     </View>
@@ -705,7 +789,7 @@ function NewBlockForm({ type, onBack, onSave, allowSaveToLibrary = true }: {
 
 // ─── Block Editor Row ─────────────────────────────────────────────────────────
 
-export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown, standalone }: {
+export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate, onMoveUp, onMoveDown, standalone, card }: {
   block: Block; isExpanded: boolean; isActive: boolean
   onToggleExpand: () => void; onDrag: () => void; onUpdate: (b: Block) => void; onDelete: () => void
   onSaveAsTemplate?: () => void
@@ -717,7 +801,21 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
   // chevron bar (nothing to reorder or collapse), and swaps the bare "✕" for a
   // labeled, still-confirmed delete action so it can't be hit by accident.
   standalone?: boolean
+  // Protocol builder: dress the row like the library's "Edit block" modal.
+  // With `standalone` it's a card for the wide grid (drag lives on the grid
+  // cell); without, a list row with its own drag handle for narrow screens.
+  // Both collapse via onToggleExpand.
+  card?: boolean
 }) {
+  if (card) {
+    return (
+      <BlockEditorCard
+        block={block} isExpanded={isExpanded} isActive={isActive} inGrid={!!standalone}
+        onToggleExpand={onToggleExpand} onDrag={onDrag} onUpdate={onUpdate} onDelete={onDelete}
+        onSaveAsTemplate={onSaveAsTemplate}
+      />
+    )
+  }
   const reorderButtons = onMoveUp !== undefined || onMoveDown !== undefined
   const showFields = standalone || isExpanded
   const editingBorder = !standalone && isExpanded
@@ -773,13 +871,17 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
               <BlockNumerics block={block} onUpdate={onUpdate} />
             </View>
             <TimeLimitToggle block={block} onUpdate={onUpdate} />
-            <Text style={styles.fieldLabel}>
-              Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
-            </Text>
-            <AdaptationPicker
-              value={resolveAdaptation(block)}
-              onChange={(v) => onUpdate({ ...block, adaptation: v })}
-            />
+            {block.type !== "strength_conditioning" && (
+              <>
+                <Text style={styles.fieldLabel}>
+                  Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
+                </Text>
+                <AdaptationPicker
+                  value={resolveAdaptation(block)}
+                  onChange={(v) => onUpdate({ ...block, adaptation: v })}
+                />
+              </>
+            )}
             <TypeSpecificFields block={block} onUpdate={onUpdate} />
             {onSaveAsTemplate && (
               <Pressable style={styles.saveTemplateBtn} onPress={onSaveAsTemplate}>
@@ -792,6 +894,81 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
             </Pressable>
           </View>
         )
+      )}
+    </View>
+  )
+}
+
+// What identifies a block in the builder's card/row header. S&C blocks have
+// no meaningful name of their own there — they're defined by their exercises.
+function builderBlockTitle(block: Block): string {
+  if (block.type === "strength_conditioning") {
+    return block.exercises.length
+      ? block.exercises.map((e) => e.name || "Unnamed").join("\n")
+      : "No exercises yet"
+  }
+  return block.blockName || "Untitled block"
+}
+
+// An S&C title lists every exercise, one per line, so it isn't clipped to one
+// line like a block name — the card grows taller to show them all.
+function builderTitleLines(block: Block): number | undefined {
+  return block.type === "strength_conditioning" ? undefined : 1
+}
+
+function BlockEditorCard({ block, isExpanded, isActive, inGrid, onToggleExpand, onDrag, onUpdate, onDelete, onSaveAsTemplate }: {
+  block: Block; isExpanded: boolean; isActive: boolean; inGrid: boolean
+  onToggleExpand: () => void; onDrag: () => void; onUpdate: (b: Block) => void; onDelete: () => void
+  onSaveAsTemplate?: () => void
+}) {
+  return (
+    <View style={[styles.blockCard, !inGrid && styles.blockCardListItem, isActive && styles.blockRowActive]}>
+      {inGrid ? (
+        // Drag/number live on the grid cell; the card itself is the modal's content.
+        <View style={styles.blockCardHeaderClearGrip}>
+          <StandaloneHeader
+            block={block} onSaveAsTemplate={onSaveAsTemplate} onDelete={onDelete}
+            expanded={isExpanded} onToggleExpand={onToggleExpand}
+            onRename={(v) => onUpdate({ ...block, blockName: v })}
+          />
+        </View>
+      ) : (
+        <Pressable style={styles.blockCardListHeader} onPress={onToggleExpand}>
+          <Pressable onLongPress={onDrag} style={styles.dragHandle}>
+            <DragGripIcon />
+          </Pressable>
+          <View style={[styles.standaloneDot, { backgroundColor: ADAPTATION_COLOR[resolveAdaptation(block)] }]} />
+          <View style={styles.blockCardListTitles}>
+            <Text style={styles.blockCardListType}>{BLOCK_LABELS[block.type]}</Text>
+            <Text style={styles.blockCardListName} numberOfLines={builderTitleLines(block)}>{builderBlockTitle(block)}</Text>
+          </View>
+          <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={18} color={isExpanded ? C.green : C.textSecondary} />
+        </Pressable>
+      )}
+      {isExpanded && (
+        <>
+          {!inGrid && <View style={styles.blockCardDivider} />}
+          {inGrid ? (
+            <CompactFieldsContext.Provider value={true}>
+              <StandaloneBlockFields block={block} onUpdate={onUpdate} />
+            </CompactFieldsContext.Provider>
+          ) : (
+            <StandaloneBlockFields block={block} onUpdate={onUpdate} hideName={block.type === "strength_conditioning"} />
+          )}
+          {!inGrid && (
+            <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+              {onSaveAsTemplate && (
+                <Pressable style={styles.saveTemplateBtn} onPress={onSaveAsTemplate}>
+                  <Text style={styles.saveTemplateBtnText}>Save as template</Text>
+                </Pressable>
+              )}
+              <Pressable style={[styles.blockDeleteFooterBtn, { marginTop: 0 }]} onPress={onDelete}>
+                <Ionicons name="trash-outline" size={14} color={C.red} />
+                <Text style={styles.blockDeleteFooterBtnText}>Delete block</Text>
+              </Pressable>
+            </View>
+          )}
+        </>
       )}
     </View>
   )
@@ -820,22 +997,73 @@ function TypeSpecificFields({ block, onUpdate }: { block: Block; onUpdate: (b: B
 
 // Dot + type label + "···" actions, replacing the list row's drag handle and
 // bare "✕" — neither means anything when there's only one block on screen.
-function StandaloneHeader({ block, onSaveAsTemplate, onDelete }: {
+// With `onToggleExpand` (protocol-builder grid cards) the title becomes a
+// collapse toggle and, while collapsed, also shows the block's name.
+// With `onRename` (grid cards) it's the dense version: small type label with
+// the block name under it — editable in place while expanded, replacing the
+// fields' separate "Block name" input.
+function StandaloneHeader({ block, onSaveAsTemplate, onDelete, expanded = true, onToggleExpand, onRename }: {
   block: Block; onSaveAsTemplate?: () => void; onDelete: () => void
+  expanded?: boolean; onToggleExpand?: () => void; onRename?: (name: string) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const color = ADAPTATION_COLOR[resolveAdaptation(block)]
+  const dense = !!onRename
+  const fitWidth = useContext(CardFitWidthContext)
+  const scNames = block.type === "strength_conditioning" && block.exercises.length
+    ? block.exercises.map((e) => e.name || "Unnamed")
+    : null
+  // Room the title has vs. what its longest exercise name needs unwrapped —
+  // the difference is how much wider the grid cell has to get.
+  const [titleW, setTitleW] = useState(0)
+  const [namesW, setNamesW] = useState(0)
+  useEffect(() => {
+    if (fitWidth && scNames && !expanded && titleW > 0 && namesW > 0) fitWidth(Math.ceil(namesW - titleW))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titleW, namesW, expanded, !!scNames])
+  const nameStyle = dense ? styles.blockCardListName : styles.standaloneHeaderName
   return (
     <>
-      <View style={styles.standaloneHeaderRow}>
-        <View style={styles.standaloneHeaderLeft}>
+      <View style={[styles.standaloneHeaderRow, dense && styles.standaloneHeaderRowCompact]}>
+        <Pressable style={[styles.standaloneHeaderLeft, { flex: 1 }]} onPress={onToggleExpand} disabled={!onToggleExpand}>
           <View style={[styles.standaloneDot, { backgroundColor: color }]} />
-          <Text style={styles.standaloneHeaderTitle}>{BLOCK_LABELS[block.type]}</Text>
-        </View>
+          <View style={{ flex: 1 }} onLayout={(e) => setTitleW(e.nativeEvent.layout.width)}>
+            <Text style={dense ? styles.blockCardListType : styles.standaloneHeaderTitle}>{BLOCK_LABELS[block.type]}</Text>
+            {!expanded && (scNames ? (
+              <>
+                {scNames.map((n, i) => <Text key={i} style={nameStyle} numberOfLines={1}>{n}</Text>)}
+                {/* Invisible, unconstrained copy — measures the names' natural width. */}
+                {fitWidth && (
+                  <View style={styles.titleMeasureWrap} pointerEvents="none">
+                    <View style={{ alignSelf: "flex-start" }} onLayout={(e) => setNamesW(e.nativeEvent.layout.width)}>
+                      {scNames.map((n, i) => <Text key={i} style={nameStyle}>{n}</Text>)}
+                    </View>
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={nameStyle} numberOfLines={1}>{builderBlockTitle(block)}</Text>
+            ))}
+          </View>
+          {onToggleExpand && (
+            <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={expanded ? C.green : C.textSecondary} />
+          )}
+        </Pressable>
         <Pressable onPress={() => setMenuOpen(true)} hitSlop={10} style={styles.standaloneMenuBtn}>
           <Ionicons name="ellipsis-horizontal" size={18} color={C.textSecondary} />
         </Pressable>
       </View>
+      {/* Outside the toggle Pressable — on web a click in a nested input
+          would also collapse the card. */}
+      {dense && expanded && block.type !== "strength_conditioning" && (
+        <TextInput
+          style={styles.standaloneHeaderNameInput}
+          value={block.blockName}
+          onChangeText={onRename}
+          placeholder="Block name"
+          placeholderTextColor={C.textMuted}
+        />
+      )}
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <Pressable style={styles.actionSheetBackdrop} onPress={() => setMenuOpen(false)}>
           <View style={styles.actionSheet}>
@@ -864,29 +1092,53 @@ function StandaloneHeader({ block, onSaveAsTemplate, onDelete }: {
   )
 }
 
-function StandaloneBlockFields({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+function StandaloneBlockFields({ block, onUpdate, hideName }: { block: Block; onUpdate: (b: Block) => void; hideName?: boolean }) {
+  const compact = useContext(CompactFieldsContext)
+  if (compact) {
+    // Name lives in the card header; time limit rides along with the numerics.
+    return (
+      <View style={styles.standaloneFieldsCompact}>
+        <BlockNumerics block={block} onUpdate={onUpdate} standalone />
+        {block.type !== "strength_conditioning" && (
+          <AdaptationPicker
+            value={resolveAdaptation(block)}
+            onChange={(v) => onUpdate({ ...block, adaptation: v })}
+          />
+        )}
+        <TypeSpecificFields block={block} onUpdate={onUpdate} />
+      </View>
+    )
+  }
   return (
     <View style={styles.standaloneFields}>
-      <Text style={styles.fieldLabel}>Block name</Text>
-      <TextInput
-        style={styles.fieldInput}
-        value={block.blockName}
-        onChangeText={(v) => onUpdate({ ...block, blockName: v })}
-        placeholderTextColor="#aaa"
-        placeholder="Block name"
-      />
+      {!hideName && (
+        <>
+          <Text style={styles.fieldLabel}>Block name</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={block.blockName}
+            onChangeText={(v) => onUpdate({ ...block, blockName: v })}
+            placeholderTextColor="#aaa"
+            placeholder="Block name"
+          />
+        </>
+      )}
 
       <BlockNumerics block={block} onUpdate={onUpdate} standalone />
 
       <TimeLimitToggle block={block} onUpdate={onUpdate} />
 
-      <Text style={styles.fieldLabel}>
-        Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
-      </Text>
-      <AdaptationPicker
-        value={resolveAdaptation(block)}
-        onChange={(v) => onUpdate({ ...block, adaptation: v })}
-      />
+      {block.type !== "strength_conditioning" && (
+        <>
+          <Text style={styles.fieldLabel}>
+            Adaptation <Text style={styles.fieldLabelHint}>· one</Text>
+          </Text>
+          <AdaptationPicker
+            value={resolveAdaptation(block)}
+            onChange={(v) => onUpdate({ ...block, adaptation: v })}
+          />
+        </>
+      )}
 
       <TypeSpecificFields block={block} onUpdate={onUpdate} />
     </View>
@@ -906,6 +1158,31 @@ function AdaptationPicker({
   value: Adaptation
   onChange: (v: Adaptation) => void
 }) {
+  const compact = useContext(CompactFieldsContext)
+  const [open, setOpen] = useState(false)
+  if (compact) {
+    // One pill for the current pick; the full set only while choosing.
+    const color = ADAPTATION_COLOR[value]
+    return (
+      <View style={{ gap: 6 }}>
+        <Pressable style={[styles.adaptationPill, { borderColor: color, backgroundColor: color + "22" }]} onPress={() => setOpen((o) => !o)}>
+          <View style={[styles.adaptationDot, { backgroundColor: color }]} />
+          <Text style={[styles.adaptationPillText, { color }]}>{ADAPTATION_LABEL[value]}</Text>
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={13} color={color} />
+        </Pressable>
+        {open && (
+          <View style={styles.adaptationRow}>
+            {PICKABLE_ADAPTATIONS.filter((a) => a !== value).map((a) => (
+              <Pressable key={a} style={styles.adaptationChip} onPress={() => { onChange(a); setOpen(false) }}>
+                <View style={[styles.adaptationDot, { backgroundColor: ADAPTATION_COLOR[a] }]} />
+                <Text style={styles.adaptationChipText}>{ADAPTATION_LABEL[a]}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    )
+  }
   return (
     <View style={styles.adaptationRowStandalone}>
       {PICKABLE_ADAPTATIONS.map((a) => {
@@ -939,6 +1216,40 @@ function GradePicker({
   value: string
   onChange: (v: string) => void
 }) {
+  const compact = useContext(CompactFieldsContext)
+  const [open, setOpen] = useState(false)
+  if (compact) {
+    // Same as the compact AdaptationPicker: one pill for the current grade,
+    // the full set only while choosing.
+    const current = BoulderLevelOptions.find((g) => g.value === value)
+    return (
+      <View style={{ gap: 6 }}>
+        <Pressable
+          style={[
+            styles.adaptationPill,
+            current ? { backgroundColor: current.color, borderColor: current.color } : { borderColor: C.border, backgroundColor: C.bg },
+          ]}
+          onPress={() => setOpen((o) => !o)}
+        >
+          {current && <View style={[styles.gradeDot, { backgroundColor: current.on }]} />}
+          <Text style={[styles.adaptationPillText, { color: current ? current.on : C.textSecondary }]}>
+            {current ? current.label : "Pick a grade"}
+          </Text>
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={13} color={current ? current.on : C.textSecondary} />
+        </Pressable>
+        {open && (
+          <View style={styles.adaptationRow}>
+            {BoulderLevelOptions.filter((g) => g.value !== value).map((g) => (
+              <Pressable key={g.value} style={styles.adaptationChip} onPress={() => { onChange(g.value); setOpen(false) }}>
+                <View style={[styles.gradeDot, { backgroundColor: g.color }]} />
+                <Text style={styles.adaptationChipText}>{g.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    )
+  }
   return (
     <View style={styles.adaptationRow}>
       {BoulderLevelOptions.map((g) => {
@@ -979,17 +1290,50 @@ function DragGripIcon() {
 }
 
 function FieldLabel({ label }: { label: string }) {
-  return <Text style={styles.fieldLabel}>{label}</Text>
+  const compact = useContext(CompactFieldsContext)
+  return <Text style={[styles.fieldLabel, compact && styles.fieldLabelCompact]}>{label}</Text>
 }
+
+// Collapsed description preview: ~3 lines of 14px text.
+const FIELD_PREVIEW_LINE_HEIGHT = 19
+const FIELD_PREVIEW_TEXT_HEIGHT = FIELD_PREVIEW_LINE_HEIGHT * 3
 
 function FieldInput({ value, onChange, placeholder, numeric, multiline }: {
   value: string; onChange: (v: string) => void; placeholder?: string; numeric?: boolean; multiline?: boolean
 }) {
+  const compact = useContext(CompactFieldsContext)
+  // Compact: long text shows as a short preview until tapped, fading out
+  // at the bottom when it runs past the preview's height.
+  const [editing, setEditing] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  if (compact && multiline && !editing) {
+    return (
+      <Pressable style={[styles.fieldInput, styles.fieldInputCompact, styles.fieldPreview]} onPress={() => setEditing(true)}>
+        {/* Not clamped with numberOfLines — its full height is what tells us
+            whether it overflows the preview box. */}
+        <Text
+          style={value ? styles.fieldPreviewText : styles.fieldPreviewPlaceholder}
+          onLayout={(e) => setOverflows(e.nativeEvent.layout.height > FIELD_PREVIEW_TEXT_HEIGHT + 1)}
+        >
+          {value || placeholder || "Add a description…"}
+        </Text>
+        {overflows && (
+          <LinearGradient
+            pointerEvents="none"
+            colors={[C.bg + "00", C.bg]}
+            style={styles.fieldPreviewFade}
+          />
+        )}
+      </Pressable>
+    )
+  }
   return (
     <TextInput
-      style={[styles.fieldInput, multiline && styles.fieldInputMultiline]}
+      style={[styles.fieldInput, multiline && styles.fieldInputMultiline, compact && styles.fieldInputCompact]}
       value={value} onChangeText={onChange} placeholder={placeholder}
       placeholderTextColor="#aaa" keyboardType={numeric ? "numeric" : "default"} multiline={multiline}
+      autoFocus={compact && multiline}
+      onBlur={() => setEditing(false)}
     />
   )
 }
@@ -1053,6 +1397,8 @@ function RestField({ label, value, onChange }: {
 function StepperField({ label, value, onChange, min = 0, step = 1 }: {
   label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
 }) {
+  const compact = useContext(CompactFieldsContext)
+  if (compact) return <CompactStepper label={label} display={String(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
     <View style={styles.stepperField}>
       <FieldLabel label={label} />
@@ -1073,6 +1419,8 @@ function StepperField({ label, value, onChange, min = 0, step = 1 }: {
 function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
   label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
 }) {
+  const compact = useContext(CompactFieldsContext)
+  if (compact) return <CompactStepper label={label} display={formatDuration(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
     <View style={styles.stepperField}>
       <FieldLabel label={label} />
@@ -1089,9 +1437,49 @@ function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
   )
 }
 
+// Dense stepper for grid cards: "Label  −  value  +" in one 34px pill.
+function CompactStepper({ label, display, onMinus, onPlus }: {
+  label: string; display: string; onMinus: () => void; onPlus: () => void
+}) {
+  return (
+    <View style={styles.compactStepper}>
+      <Text style={styles.compactStepperLabel} numberOfLines={1}>{label}</Text>
+      <Pressable onPress={onMinus} style={styles.compactStepperBtn} hitSlop={6}>
+        <Text style={styles.compactStepperBtnText}>−</Text>
+      </Pressable>
+      <Text style={styles.compactStepperValue} numberOfLines={1}>{display}</Text>
+      <Pressable onPress={onPlus} style={styles.compactStepperBtn} hitSlop={6}>
+        <Text style={styles.compactStepperBtnText}>+</Text>
+      </Pressable>
+    </View>
+  )
+}
+
+// Grid cards' time limit: a chip when off, a ⏱ stepper when on (stepping
+// below 1 minute turns it back off).
+function TimeLimitChip({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const mins = block.timeLimit ?? 0
+  if (mins <= 0) {
+    return (
+      <Pressable style={styles.compactStepper} onPress={() => onUpdate({ ...block, timeLimit: 10 })}>
+        <Text style={styles.compactStepperLabel}>⏱ No limit</Text>
+        <Ionicons name="add" size={14} color={C.textSecondary} />
+      </Pressable>
+    )
+  }
+  return (
+    <CompactStepper
+      label="⏱" display={`${mins}m`}
+      onMinus={() => onUpdate({ ...block, timeLimit: Math.max(0, mins - 1) })}
+      onPlus={() => onUpdate({ ...block, timeLimit: mins + 1 })}
+    />
+  )
+}
+
 // The short numeric fields for a block, rendered as a compact row so they can
 // sit beside the Block name input. Returns null for types with no numerics.
 function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate: (b: Block) => void; standalone?: boolean }) {
+  const compact = useContext(CompactFieldsContext)
   function update(fields: any) { onUpdate({ ...block, ...fields } as Block) }
   const Field = standalone ? StepperField : NumField
   const Rest = standalone ? StepperRestField : RestField
@@ -1129,7 +1517,15 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
         <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
       ); break
     default:
-      return null
+      if (!compact) return null
+  }
+  if (compact) {
+    return (
+      <View style={styles.numericsRowCompact}>
+        {fields}
+        <TimeLimitChip block={block} onUpdate={onUpdate} />
+      </View>
+    )
   }
   return <View style={standalone ? styles.numericsRowStandalone : styles.numericsRow}>{fields}</View>
 }
@@ -1188,30 +1584,263 @@ function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBouldering
   )
 }
 
+// A 4×4 block's boulder slots as numbered colour circles. With `onSelect`,
+// tapping a slot selects it (the editor then recolours the selected slot).
+function BoulderSlots({ grades, selected, onSelect }: {
+  grades: (string | null)[]
+  selected?: number
+  onSelect?: (i: number) => void
+}) {
+  return (
+    <View style={styles.boulderSlotRow}>
+      {grades.map((g, i) => {
+        const opt = BoulderLevelOptions.find((o) => o.value === g)
+        return (
+          <Pressable
+            key={i}
+            disabled={!onSelect}
+            onPress={() => onSelect?.(i)}
+            style={[
+              styles.boulderSlot,
+              opt ? { backgroundColor: opt.color, borderColor: opt.color } : styles.boulderSlotEmpty,
+              selected === i && styles.boulderSlotSelected,
+            ]}
+          >
+            <Text style={[styles.boulderSlotText, { color: opt ? opt.on : C.textMuted }]}>{i + 1}</Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
 function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<FourByFourBlock>) { onUpdate({ ...block, ...fields }) }
+  const n = block.bouldersPerSet ?? 4
+  const grades = authoredGrades(block)
+  const [slot, setSlot] = useState(0)
+
+  // Recolour the selected slot. With no colours set yet, the first pick
+  // colours every slot, so the coach only has to adjust the ones that differ.
+  function pickColour(colour: string) {
+    update({ boulderGrades: grades ? grades.map((g, i) => (i === slot ? colour : g)) : fitGrades([colour], n)! })
+  }
+
+  // When authoring for a specific athlete, show what the progression rule
+  // suggests for them next (the same suggestion FourByFourBlock.tsx shows
+  // the athlete — utils/progression/fourByFour.ts), with a one-tap way to use it.
+  const athleteId = useContext(AuthoringAthleteContext)
+  const [suggestion, setSuggestion] = useState<FourByFourSuggestion | null>(null)
+  useEffect(() => {
+    setSuggestion(null)
+    if (!athleteId) return
+    let cancelled = false
+    Promise.all([getSessionsByUserId(athleteId), getUsers(athleteId)])
+      .then(([sessions, user]) => {
+        if (cancelled) return
+        const runs = findBlockRuns(sessions, { type: "four_by_four", blockName: block.blockName, libraryBlockId: block.libraryBlockId })
+        // Judged against the block as saved, not the colours being edited —
+        // otherwise the first-session suggestion would vanish mid-edit.
+        setSuggestion(suggestNextFourByFour(runs, { bouldersPerSet: n, flashLevel: (user as any)?.flashLevel, authored: null }))
+      })
+      .catch(console.error)
+    return () => { cancelled = true }
+  }, [athleteId, block.blockName, block.libraryBlockId, n])
+  const suggestionApplied = !!suggestion && !!grades && suggestion.grades.join() === grades.join()
+
   return (
     <>
+      {!!suggestion && (
+        <View style={styles.progressionFlag}>
+          <Text style={styles.progressionFlagTitle}>Progression for this athlete</Text>
+          <Text style={styles.progressionFlagLast}>{suggestion.lastTime}</Text>
+          <Text style={styles.progressionFlagText}>{suggestion.note}</Text>
+          <BoulderSlots grades={suggestion.grades} />
+          {suggestionApplied ? (
+            <Text style={styles.progressionFlagText}>✓ Using it</Text>
+          ) : (
+            <Pressable onPress={() => update({ boulderGrades: suggestion.grades })} hitSlop={6}>
+              <Text style={styles.progressionFlagAction}>Use these colours</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <Text style={styles.fieldLabel}>
+        Boulder colours{" "}
+        <Text style={styles.fieldLabelHint}>· blank = one below the athlete&apos;s flash level</Text>
+      </Text>
+      <BoulderSlots grades={grades ?? Array(n).fill(null)} selected={grades ? slot : undefined} onSelect={setSlot} />
+      <GradePicker value={grades?.[slot] ?? ""} onChange={pickColour} />
+      {!!grades && (
+        <Pressable onPress={() => update({ boulderGrades: undefined })} hitSlop={6}>
+          <Text style={styles.boulderSlotClear}>Clear colours</Text>
+        </Pressable>
+      )}
     </>
   )
 }
 
 function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<IntervalsBlock>) { onUpdate({ ...block, ...fields }) }
+
+  // When authoring for a specific athlete, show what the progression rule
+  // suggests for them next (the same suggestion IntervalsBlock.tsx shows the
+  // athlete — utils/progression/intervals.ts), with a one-tap way to use it.
+  const athleteId = useContext(AuthoringAthleteContext)
+  const [suggestion, setSuggestion] = useState<IntervalsSuggestion | null>(null)
+  useEffect(() => {
+    setSuggestion(null)
+    if (!athleteId || !block.kind) return
+    let cancelled = false
+    getSessionsByUserId(athleteId)
+      .then((sessions) => {
+        if (cancelled) return
+        const runs = findBlockRuns(sessions, { type: "intervals", blockName: block.blockName, libraryBlockId: block.libraryBlockId })
+        setSuggestion(suggestNextIntervals(runs, block.kind))
+      })
+      .catch(console.error)
+    return () => { cancelled = true }
+  }, [athleteId, block.blockName, block.libraryBlockId, block.kind])
+
   return (
     <>
-      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      {!!suggestion && (
+        <View style={styles.progressionFlag}>
+          <Text style={styles.progressionFlagTitle}>Progression for this athlete</Text>
+          <Text style={styles.progressionFlagLast}>{suggestion.lastTime}</Text>
+          <Text style={styles.progressionFlagText}>{suggestion.note}</Text>
+          {block.workTime === suggestion.workTime && block.series === suggestion.series ? (
+            <Text style={styles.progressionFlagText}>✓ Using it</Text>
+          ) : (
+            <Pressable onPress={() => update({ workTime: suggestion.workTime, series: suggestion.series })} hitSlop={6}>
+              <Text style={styles.progressionFlagAction}>Use {suggestion.series} × {suggestion.workTime} s</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+      <Text style={styles.fieldLabel}>
+        Kind{" "}
+        <Text style={styles.fieldLabelHint}>· sets the progression rule</Text>
+      </Text>
+      <View style={styles.adaptationRow}>
+        {(Object.keys(INTERVALS_KIND_LABEL) as IntervalsKind[]).map((k) => {
+          const selected = block.kind === k
+          return (
+            <Pressable
+              key={k}
+              onPress={() => update(
+                selected ? { kind: undefined }
+                // Warm-up intervals are always 4 rounds (coach's rule).
+                : k === "warmup" ? { kind: k, series: INTERVALS_RULES.warmupSeries }
+                : { kind: k }
+              )}
+              style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+            >
+              <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+                {INTERVALS_KIND_LABEL[k]}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+      <FieldLabel label="Description" />
+      <Text style={styles.generatedDesc}>{intervalsDescription(block)}</Text>
+      <Text style={styles.fieldLabel}>
+        Notes{" "}
+        <Text style={styles.fieldLabelHint}>· optional, shown under the description</Text>
+      </Text>
+      <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
     </>
   )
 }
 
 function ConstraintWarmupFields({ block, onUpdate }: { block: ConstraintWarmupBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<ConstraintWarmupBlock>) { onUpdate({ ...block, ...fields }) }
+  const rotation = rotationFor(block)
+  const isDefault = !block.rotation
+  const hasDefault = !!defaultRotation(block.blockName)
+  const [savingRotation, setSavingRotation] = useState(false)
+
+  // Rotation settings apply to the constraint everywhere, so they're written
+  // straight to its library block (what the rotation reads) as well as this
+  // copy — the coach can tune them from any editor.
+  async function setRotation(next: ConstraintRotation | undefined) {
+    update({ rotation: next })
+    if (!block.libraryBlockId) return
+    setSavingRotation(true)
+    try {
+      const row = (await listBlocksByType("constraint_warmup")).find((r) => r.$id === block.libraryBlockId)
+      if (!row) return
+      let data: any = {}
+      try { data = JSON.parse(row.data || "{}") } catch { /* overwrite below */ }
+      if (next) data.rotation = next
+      else delete data.rotation
+      await updateBlock(row.$id, { name: row.name, type: row.type, data })
+    } catch (e: any) {
+      Alert.alert("Couldn't save", e?.message ?? "The rotation settings weren't saved to the library block.")
+    } finally {
+      setSavingRotation(false)
+    }
+  }
+  function togglePillar(p: WarmupPillar) {
+    const cur = rotation?.pillars ?? []
+    const pillars = cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]
+    // No pillars left = out of the rotation (kept as own settings so a
+    // constraint with a default can be taken out too).
+    setRotation({ pillars, colours: rotation?.colours ?? block.rotation?.colours ?? "below_flash" })
+  }
+  function setColours(c: ColourRange) {
+    if (!rotation) return
+    setRotation({ pillars: rotation.pillars, colours: c })
+  }
+
   return (
     <>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
       <FieldLabel label="Grade" /><GradePicker value={block.level} onChange={(v) => update({ level: v })} />
+
+      <Text style={styles.fieldLabel}>
+        Warm-up rotation{" "}
+        <Text style={styles.fieldLabelHint}>
+          · {!rotation ? "not in the rotation — pick a pillar to add it"
+            : isDefault ? "default settings" : "your settings"}
+          {savingRotation ? " · saving…" : ""}
+        </Text>
+      </Text>
+      <View style={styles.adaptationRow}>
+        {(Object.keys(WARMUP_PILLAR_LABEL) as WarmupPillar[]).map((p) => {
+          const on = !!rotation?.pillars.includes(p)
+          return (
+            <Pressable key={p} onPress={() => togglePillar(p)} style={[styles.adaptationChip, on && { backgroundColor: C.green, borderColor: C.green }]}>
+              <Text style={[styles.adaptationChipText, on && { color: C.bg, fontWeight: "700" }]}>{WARMUP_PILLAR_LABEL[p]}</Text>
+            </Pressable>
+          )
+        })}
+      </View>
+      {!!rotation && (
+        <>
+          <Text style={styles.fieldLabel}>Colours <Text style={styles.fieldLabelHint}>· relative to the athlete&apos;s flash level</Text></Text>
+          <View style={styles.adaptationRow}>
+            {(Object.keys(COLOUR_RANGE_LABEL) as ColourRange[]).map((c) => {
+              const on = rotation.colours === c
+              return (
+                <Pressable key={c} onPress={() => setColours(c)} style={[styles.adaptationChip, on && { backgroundColor: C.green, borderColor: C.green }]}>
+                  <Text style={[styles.adaptationChipText, on && { color: C.bg, fontWeight: "700" }]}>{COLOUR_RANGE_LABEL[c]}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </>
+      )}
+      {!isDefault && hasDefault && (
+        <Pressable onPress={() => setRotation(undefined)} hitSlop={6}>
+          <Text style={styles.boulderSlotClear}>Back to default</Text>
+        </Pressable>
+      )}
+      {!block.libraryBlockId && (
+        <Text style={styles.fieldLabelHint}>Only constraints saved in the library are used by the rotation.</Text>
+      )}
     </>
   )
 }
@@ -1225,15 +1854,23 @@ const SC_TYPES: { type: "reps" | "both_sides" | "7/3s"; label: string }[] = [
 // When present, an ancestor (the workout builder) hosts the exercise library
 // as an overlay over the protocol-detail pane. S&C fields then show a trigger
 // button instead of an inline library.
+// True inside the protocol builder's grid cards — fields render in their
+// dense variant (inline-labelled steppers, collapsed descriptions, smaller
+// labels) so a card stays close to exercise-card size.
+const CompactFieldsContext = createContext(false)
+
 export type SCLibraryController = { open: (blockId: string) => void }
 export const SCLibraryContext = createContext<SCLibraryController | null>(null)
 
+// When present, the coach is authoring for a specific athlete — lets
+// StrengthConditioningFields flag when that athlete has already progressed
+// past a level-mode exercise being authored, without prop-drilling athleteId
+// through every intermediate editor layer (same reasoning as SCLibraryContext).
+export const AuthoringAthleteContext = createContext<string | null>(null)
+
 // Build a block Exercise from a library row, applying its defaults.
 export function exerciseFromLibrary(ex: ExerciseRow): Exercise {
-  const base = { id: generateId(), type: ex.type, name: ex.name, exerciseId: ex.$id, unit: ex.unit ?? "reps", photoUri: ex.photoUri, notes: ex.notes }
-  return ex.type === "7/3s"
-    ? { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
-    : { ...base, reps: ex.defaultReps ?? (ex.unit === "seconds" ? "20-30" : "4-6") }
+  return { id: generateId(), ...exerciseDraftFromLibrary(ex) }
 }
 
 // Exercise library: grouped by type, items as wrapping chips sized to their
@@ -1348,6 +1985,267 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
   )
 }
 
+// ─── Exercise card grid (wide screens) ─────────────────────────────────────────
+// Renders the block's exercises as reorderable, numbered cards that wrap into
+// a grid instead of one long vertical stack. Reordering is a long-press drag
+// on the grip handle: the dragged card is lifted out of flow and follows the
+// finger while its siblings slide into place (Reanimated's layout transition
+// handles that automatically); the array is reordered live as it crosses into
+// a neighboring card's bounds, so what you see while dragging is already the
+// real order.
+// Lets a grid card ask its cell to grow by `extra` px (negative shrinks back
+// toward the column width) so content that shouldn't wrap fits. Null outside
+// the card grid.
+const CardFitWidthContext = createContext<((extra: number) => void) | null>(null)
+
+const EXERCISE_CARD_GAP = 12
+const EXERCISE_CARD_MIN_WIDTH = 260
+const EXERCISE_CARD_MAX_COLUMNS = 3
+// Narrowest card grid that still fits the full column count.
+export const CARD_GRID_FULL_COLUMNS_WIDTH = EXERCISE_CARD_MAX_COLUMNS * EXERCISE_CARD_MIN_WIDTH + (EXERCISE_CARD_MAX_COLUMNS - 1) * EXERCISE_CARD_GAP
+
+// Generic over the item type so the protocol builder can lay its blocks out
+// the same way (see BlockCard).
+// With `onResize`, each card also gets a handle on its right edge: drag to
+// set that card's width (`widths`, by id), double-click/tap to reset it to
+// the auto column width.
+const CARD_RESIZE_MIN_WIDTH = 220
+
+// Column count + stretched card width for a grid `gridWidth` wide.
+function gridColumns(gridWidth: number) {
+  const columns = Math.max(1, Math.min(EXERCISE_CARD_MAX_COLUMNS, Math.floor((gridWidth + EXERCISE_CARD_GAP) / (EXERCISE_CARD_MIN_WIDTH + EXERCISE_CARD_GAP))))
+  return { columns, cardWidth: (gridWidth - EXERCISE_CARD_GAP * (columns - 1)) / columns }
+}
+
+// Each card's rendered width: a dragged width or the column width, widened to
+// what its content asked for, capped at the grid.
+function gridCellWidth(gridWidth: number, cardWidth: number, custom?: number, fit?: number) {
+  const base = custom != null ? Math.min(custom, gridWidth) : cardWidth
+  return fit != null && fit > base ? Math.min(fit, gridWidth) : base
+}
+
+// Width the grid needs to show its cards exactly as they'd wrap in
+// `available` px — the widest row. Cards widened past the column width (long
+// S&C names) break rows early and leave a gap at their ends; hugging the
+// widest row drops the part of that gap shared by every row. A single row is
+// just a partial row, so it keeps the full width.
+function huggedGridWidth(available: number, ids: string[], widths: Record<string, number> | undefined, fits: Record<string, number>) {
+  const { cardWidth } = gridColumns(available)
+  let rows = 0
+  let rowUsed = 0
+  let widest = 0
+  for (const id of ids) {
+    const w = gridCellWidth(available, cardWidth, widths?.[id], fits[id])
+    if (rows === 0 || rowUsed + EXERCISE_CARD_GAP + w > available + 0.5) { rows++; rowUsed = w }
+    else rowUsed += EXERCISE_CARD_GAP + w
+    widest = Math.max(widest, rowUsed)
+  }
+  return rows > 1 ? Math.ceil(widest) : available
+}
+
+export function ReorderableCardGrid<T extends { id: string }>({ items: exercises, renderCard, onReorder, widths, onResize, fitWithin }: {
+  items: T[]
+  renderCard: (item: T) => React.ReactNode
+  onReorder: (next: T[]) => void
+  widths?: Record<string, number>
+  onResize?: (id: string, width: number | null) => void
+  // Host-sized grid (protocol builder): lay out for `available` px but take
+  // only the width the wrapped rows use (see huggedGridWidth), reported via
+  // `onWidth` so the host can hand the leftover to something else. Columns
+  // stay uniform — content that wants a wider card (long S&C names) instead
+  // raises `onNeed`, the grid width at which every column fits it, for the
+  // host to make room; short of that, the content truncates.
+  fitWithin?: { available: number; onWidth: (w: number) => void; onNeed: (w: number) => void }
+}) {
+  const [measuredWidth, setMeasuredWidth] = useState(0)
+  // Width each card asked for to fit content that shouldn't wrap.
+  const [fits, setFits] = useState<Record<string, number>>({})
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  // Card being resized + its width when the drag began.
+  const [resizingId, setResizingId] = useState<string | null>(null)
+  // Frozen mid-drag/resize so the grid doesn't reflow under the pointer.
+  const fitWidthRef = useRef(0)
+  // Columns and caps come from the full width; the grid itself may be narrower.
+  const layoutWidth = fitWithin ? fitWithin.available : measuredWidth
+  // Fits widen individual cards only in a self-sized grid.
+  const cardFits = fitWithin ? {} : fits
+  if (fitWithin && layoutWidth > 0 && !draggingId && !resizingId) {
+    fitWidthRef.current = huggedGridWidth(layoutWidth, exercises.map((e) => e.id), widths, cardFits)
+  }
+  const gridWidth = fitWithin ? fitWidthRef.current : measuredWidth
+  const onFitWidth = fitWithin?.onWidth
+  useEffect(() => { if (onFitWidth && gridWidth > 0) onFitWidth(gridWidth) }, [onFitWidth, gridWidth])
+  const widestFit = Math.max(EXERCISE_CARD_MIN_WIDTH, ...exercises.map((e) => fits[e.id] ?? 0))
+  const neededWidth = EXERCISE_CARD_MAX_COLUMNS * widestFit + (EXERCISE_CARD_MAX_COLUMNS - 1) * EXERCISE_CARD_GAP
+  const onNeed = fitWithin?.onNeed
+  useEffect(() => { onNeed?.(neededWidth) }, [onNeed, neededWidth])
+  const cardWidth = layoutWidth > 0 ? gridColumns(layoutWidth).cardWidth : undefined
+
+  // Each card's last-known rect relative to this grid, kept fresh by its own
+  // onLayout — read during a drag to find which neighbor the pointer is over,
+  // and to know where to pin the dragged card once it's lifted out of flow.
+  const rectsRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({})
+  // The live order, mirrored outside React state so drag math (called many
+  // times per second) always reads the latest order without waiting on a
+  // re-render.
+  const orderRef = useRef(exercises)
+  useEffect(() => { orderRef.current = exercises }, [exercises])
+  const resizeStartWidthRef = useRef(0)
+
+  function handleResizeStart(id: string) {
+    resizeStartWidthRef.current = rectsRef.current[id]?.width ?? cardWidth ?? CARD_RESIZE_MIN_WIDTH
+    setResizingId(id)
+  }
+  function handleResizeMove(id: string, dx: number) {
+    const max = layoutWidth > 0 ? layoutWidth : Infinity
+    onResize?.(id, Math.round(Math.min(max, Math.max(CARD_RESIZE_MIN_WIDTH, resizeStartWidthRef.current + dx))))
+  }
+
+  function handleDragMove(id: string, dx: number, dy: number) {
+    const start = rectsRef.current[id]
+    if (!start) return
+    const px = start.x + start.width / 2 + dx
+    const py = start.y + start.height / 2 + dy
+    const cur = orderRef.current
+    const from = cur.findIndex((e) => e.id === id)
+    if (from === -1) return
+    for (const other of cur) {
+      if (other.id === id) continue
+      const r = rectsRef.current[other.id]
+      if (!r) continue
+      if (px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height) {
+        const to = cur.findIndex((e) => e.id === other.id)
+        if (to === -1 || to === from) return
+        const next = cur.slice()
+        const [moved] = next.splice(from, 1)
+        next.splice(to, 0, moved)
+        orderRef.current = next
+        onReorder(next)
+        return
+      }
+    }
+  }
+
+  return (
+    <View
+      style={[styles.exGrid, fitWithin && gridWidth > 0 && { width: gridWidth }]}
+      onLayout={fitWithin ? undefined : (e) => setMeasuredWidth(e.nativeEvent.layout.width)}
+    >
+      {exercises.map((ex, index) => (
+        <ExerciseGridCell
+          key={ex.id}
+          index={index}
+          width={cardWidth == null ? undefined : gridCellWidth(layoutWidth, cardWidth, widths?.[ex.id], cardFits[ex.id])}
+          onFit={(w) => setFits((prev) => (prev[ex.id] === w ? prev : { ...prev, [ex.id]: w }))}
+          isDragging={draggingId === ex.id}
+          animateLayout={!resizingId}
+          resize={onResize ? {
+            onStart: () => handleResizeStart(ex.id),
+            onMove: (dx) => handleResizeMove(ex.id, dx),
+            onEnd: () => setResizingId(null),
+            onReset: () => onResize(ex.id, null),
+          } : undefined}
+          origin={draggingId === ex.id ? rectsRef.current[ex.id] : undefined}
+          onLayout={(rect) => { rectsRef.current[ex.id] = rect }}
+          onDragStart={() => setDraggingId(ex.id)}
+          onDragMove={(dx, dy) => handleDragMove(ex.id, dx, dy)}
+          onDragEnd={() => setDraggingId(null)}
+        >
+          {renderCard(ex)}
+        </ExerciseGridCell>
+      ))}
+    </View>
+  )
+}
+
+function ExerciseGridCell({ index, width, onFit, isDragging, animateLayout, resize, origin, onLayout, onDragStart, onDragMove, onDragEnd, children }: {
+  index: number
+  width?: number
+  onFit: (width: number) => void
+  isDragging: boolean
+  // Off while any card is being resized — animating every width step lags
+  // behind the pointer.
+  animateLayout: boolean
+  resize?: { onStart: () => void; onMove: (dx: number) => void; onEnd: () => void; onReset: () => void }
+  origin?: { x: number; y: number; width: number; height: number }
+  onLayout: (rect: { x: number; y: number; width: number; height: number }) => void
+  onDragStart: () => void
+  onDragMove: (dx: number, dy: number) => void
+  onDragEnd: () => void
+  children: React.ReactNode
+}) {
+  const translateX = useSharedValue(0)
+  const translateY = useSharedValue(0)
+
+  // Turns the content's "need `extra` px more" (see CardFitWidthContext) into
+  // an absolute width for the grid to apply.
+  const renderedWidthRef = useRef(0)
+  const onFitRef = useRef(onFit)
+  onFitRef.current = onFit
+  const requestFit = useCallback((extra: number) => {
+    if (Math.abs(extra) <= 1 || renderedWidthRef.current === 0) return
+    onFitRef.current(Math.round(renderedWidthRef.current + extra))
+  }, [])
+
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(220)
+    .onStart(() => {
+      translateX.value = 0
+      translateY.value = 0
+      runOnJS(onDragStart)()
+    })
+    .onUpdate((e) => {
+      translateX.value = e.translationX
+      translateY.value = e.translationY
+      runOnJS(onDragMove)(e.translationX, e.translationY)
+    })
+    .onEnd(() => {
+      translateX.value = 0
+      translateY.value = 0
+      runOnJS(onDragEnd)()
+    })
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
+  }))
+
+  // Right-edge resize: drag sets the width, a double tap resets it.
+  const resizeGesture = resize ? Gesture.Race(
+    Gesture.Pan()
+      .onStart(() => { runOnJS(resize.onStart)() })
+      .onUpdate((e) => { runOnJS(resize.onMove)(e.translationX) })
+      .onEnd(() => { runOnJS(resize.onEnd)() }),
+    Gesture.Tap().numberOfTaps(2).onEnd(() => { runOnJS(resize.onReset)() }),
+  ) : null
+
+  return (
+    <ReAnimated.View
+      layout={isDragging || !animateLayout ? undefined : LinearTransition.duration(220)}
+      onLayout={(e) => { renderedWidthRef.current = e.nativeEvent.layout.width; onLayout(e.nativeEvent.layout) }}
+      style={[
+        styles.exGridCell,
+        isDragging && origin
+          ? { position: "absolute", left: origin.x, top: origin.y, width: origin.width, zIndex: 50, elevation: 12 }
+          : { width },
+        animatedStyle,
+      ]}
+    >
+      <View style={styles.exCardNumberBadge}><Text style={styles.exCardNumberText}>{index + 1}</Text></View>
+      <GestureDetector gesture={pan}>
+        <View style={styles.exCardGripHandle}><DragGripIcon /></View>
+      </GestureDetector>
+      <CardFitWidthContext.Provider value={requestFit}>{children}</CardFitWidthContext.Provider>
+      {resizeGesture && (
+        <GestureDetector gesture={resizeGesture}>
+          <View style={[styles.cardResizeHandle, Platform.OS === "web" && ({ cursor: "col-resize" } as any)]}>
+            <View style={styles.cardResizeGrip} />
+          </View>
+        </GestureDetector>
+      )}
+    </ReAnimated.View>
+  )
+}
+
 function StrengthConditioningFields({ block, onUpdate }: { block: StrengthConditioningBlock; onUpdate: (b: Block) => void }) {
   // If a builder hosts the library as an overlay, just trigger it; otherwise
   // fall back to an inline library beside the cards.
@@ -1359,23 +2257,112 @@ function StrengthConditioningFields({ block, onUpdate }: { block: StrengthCondit
   function update(fields: Partial<StrengthConditioningBlock>) { onUpdate({ ...block, ...fields }) }
   function addFromLibrary(ex: ExerciseRow) { update({ exercises: [...block.exercises, exerciseFromLibrary(ex)] }) }
 
+  // When authoring for a specific athlete, fetch their history once so a
+  // level-mode exercise can flag when they've already progressed past what's
+  // being authored here — otherwise the coach might keep programming a step
+  // the athlete outgrew sessions ago.
+  const athleteId = useContext(AuthoringAthleteContext)
+  const [athleteSessions, setAthleteSessions] = useState<SessionRow[] | null>(null)
+  const [library, setLibrary] = useState<(ChainMember & { loadStep?: number | null; settingHarder?: string; settingEasier?: string })[] | null>(null)
+  useEffect(() => {
+    if (!athleteId) { setAthleteSessions(null); return }
+    let cancelled = false
+    getSessionsByUserId(athleteId).then((rows) => { if (!cancelled) setAthleteSessions(rows) }).catch(() => setAthleteSessions([]))
+    // The live library, so the flag sees the full chain (easier levels too)
+    // rather than this block's copy of the harder ones only.
+    getExerciseLibrary().then((rows) => { if (!cancelled) setLibrary(rows) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [athleteId])
+
+  // What this athlete's history says about the exercise being authored:
+  // what their next session would start on (the same rule their workout
+  // prefill uses, at this exercise's focus), the deload / stalled warnings,
+  // and for a ladder, where they actually are on it — ahead of the step
+  // being authored, behind it, or "tried a harder one and stepped back".
+  function athleteProgressFor(ex: Exercise): AthleteProgress | null {
+    if (!athleteSessions || ex.type === "7/3s" || ex.movementType === "mobility") return null
+    const resolved = resolveExerciseChain(ex, library) ?? undefined
+    const ids = resolved ? chainIds(resolved, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
+    const history = findScSessions(athleteSessions, ids, ex.name, { limit: 10 })
+    const row = library ? findLibraryRow(ex, library) : undefined
+    const loadStep = row?.loadStep ?? ex.loadStep ?? undefined
+    const harder = row?.settingHarder || ex.settingHarder || undefined
+    const easier = row?.settingEasier || ex.settingEasier || undefined
+    const setting = harder || easier ? { harder, easier } : undefined
+    const plan = planNextForFocus({ focus: ex.focus, reps: ex.reps, unit: ex.unit, setting }, resolved, loadStep, "kg", history, "last time")
+    const out: AthleteProgress = { ...(plan.note ? { next: plan.note } : {}), flags: plan.flags }
+
+    if (resolved) {
+      const session = findLastScSession(athleteSessions, ids, ex.name)
+      const finalIdx = session ? chainIndexOf(resolved, session.finalExerciseId) : -1
+      if (session && finalIdx >= 0 && finalIdx !== resolved.prescribedIdx) {
+        out.level = resolved.chain[finalIdx].name
+        out.position = finalIdx > resolved.prescribedIdx ? "ahead" : "behind"
+      } else if (session) {
+        // Ended on the authored step (or an unmatched old log) — find the
+        // hardest level above it reached anywhere else in that session.
+        let deepestIdx = resolved.prescribedIdx
+        for (const id of session.loggedExerciseIds) deepestIdx = Math.max(deepestIdx, chainIndexOf(resolved, id))
+        if (deepestIdx > resolved.prescribedIdx) { out.level = resolved.chain[deepestIdx].name; out.position = "steppedBack" }
+      }
+    }
+    return out.next || out.level || out.flags?.deload || out.flags?.stalled ? out : null
+  }
+
   const renderCard = (ex: Exercise) => (
     <ExerciseEditorRow
       key={ex.id} exercise={ex}
+      athleteProgress={athleteProgressFor(ex)}
       onUpdate={(updated) => update({ exercises: block.exercises.map((e) => (e.id === updated.id ? updated : e)) })}
       onDelete={() => update({ exercises: block.exercises.filter((e) => e.id !== ex.id) })}
     />
   )
 
+  // Circuit exercises are meant to hit different movement patterns — flag it
+  // (not block it) when two picks in this block share one, since a coach may
+  // deliberately superset the same pattern sometimes.
+  const movementCollisions = (() => {
+    const seen = new Map<string, string[]>()
+    for (const ex of block.exercises) {
+      if (!ex.movementType) continue
+      seen.set(ex.movementType, [...(seen.get(ex.movementType) ?? []), ex.name || "Unnamed"])
+    }
+    return [...seen.entries()].filter(([, names]) => names.length > 1)
+  })()
+
+  // Wide screens get a reorderable, numbered card grid; narrow screens keep
+  // the plain vertical stack (no room for a grid, and no mouse to drag with).
+  function renderExerciseList() {
+    if (wide) {
+      return (
+        <ReorderableCardGrid
+          items={block.exercises}
+          renderCard={renderCard}
+          onReorder={(next) => update({ exercises: next })}
+        />
+      )
+    }
+    return <>{block.exercises.map(renderCard)}</>
+  }
+
   return (
     <View onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Exercises</Text>
+      {movementCollisions.length > 0 && (
+        <View style={styles.movementWarning}>
+          {movementCollisions.map(([mt, names]) => (
+            <Text key={mt} style={styles.movementWarningText}>
+              {names.join(" + ")} both hit {MOVEMENT_TYPE_LABEL[mt as MovementType] ?? mt} — consider pairing different patterns
+            </Text>
+          ))}
+        </View>
+      )}
       {lib ? (
         <View style={styles.scCardsStack}>
           {block.exercises.length === 0
             ? <Text style={styles.scEmptyHint}>No exercises yet — add from the library.</Text>
-            : block.exercises.map(renderCard)}
+            : renderExerciseList()}
           <Pressable style={styles.scAddBtn} onPress={() => lib.open(block.id)}>
             <Ionicons name="add" size={18} color={C.green} />
             <Text style={styles.scAddBtnText}>Add exercise</Text>
@@ -1387,7 +2374,7 @@ function StrengthConditioningFields({ block, onUpdate }: { block: StrengthCondit
           <View style={wide ? styles.scCards : styles.scCardsStack}>
             {block.exercises.length === 0
               ? <Text style={styles.scEmptyHint}>Tap an exercise to add it here.</Text>
-              : block.exercises.map(renderCard)}
+              : renderExerciseList()}
           </View>
         </View>
       )}
@@ -1406,16 +2393,82 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
 }
 
 
-function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercise; onUpdate: (e: Exercise) => void; onDelete: () => void }) {
+interface AthleteProgress {
+  level?: string
+  position?: "ahead" | "behind" | "steppedBack"
+  next?: string        // what their next session would start on
+  flags?: NextFlags
+}
+
+function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
+  exercise: Exercise; athleteProgress?: AthleteProgress | null
+  onUpdate: (e: Exercise) => void; onDelete: () => void
+}) {
   function update(fields: Partial<Exercise>) { onUpdate({ ...exercise, ...fields }) }
   const typeLabel = exercise.type === "reps" ? "Reps" : exercise.type === "both_sides" ? "Both sides" : "7/3s"
+
+  // Self-heals exercises authored before this field became focus-derived
+  // (or edited outside this row) — a stale manually-typed reps target, like
+  // the bugged "1 rep" case, gets replaced the next time this row renders.
+  useEffect(() => {
+    const isRepCounted = (exercise.type === "reps" || exercise.type === "both_sides") && exercise.unit !== "seconds"
+    if (!isRepCounted || !exercise.focus) return
+    const range = FOCUS_REP_RANGE[exercise.focus]
+    const expected = `${range.low}-${range.high}`
+    if (exercise.reps !== expected) update({ reps: expected })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercise.focus, exercise.type, exercise.unit])
+
+  const movementType = exercise.movementType as MovementType | undefined
+  const isMobility = movementType === "mobility"
 
   return (
     <View style={styles.exerciseRow}>
       <View style={styles.exerciseRowHeader}>
-        <Text style={styles.exerciseTypeTag}>{typeLabel}</Text>
+        <View style={styles.exerciseRowTags}>
+          <Text style={styles.exerciseTypeTag}>{typeLabel}</Text>
+          {movementType && (
+            <View style={[styles.movementTag, { backgroundColor: MOVEMENT_TYPE_COLOR[movementType] + "22", borderColor: MOVEMENT_TYPE_COLOR[movementType] }]}>
+              <Text style={[styles.movementTagText, { color: MOVEMENT_TYPE_COLOR[movementType] }]}>{MOVEMENT_TYPE_LABEL[movementType]}</Text>
+            </View>
+          )}
+          {exercise.loadMode === "level" && <Text style={styles.exerciseTypeTag}>Level progression</Text>}
+        </View>
         <Pressable onPress={onDelete} hitSlop={6}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
       </View>
+
+      {!!athleteProgress && (
+        <View style={styles.athleteProgressBanner}>
+          {!!athleteProgress.level && (
+          <Text style={styles.athleteProgressText}>
+            {athleteProgress.position === "steppedBack" ? (
+              <>
+                Athlete tried <Text style={styles.athleteProgressTextBold}>{athleteProgress.level}</Text> but stepped back to this level
+              </>
+            ) : athleteProgress.position === "behind" ? (
+              <>
+                Athlete is still on the easier <Text style={styles.athleteProgressTextBold}>{athleteProgress.level}</Text> on this exercise
+              </>
+            ) : (
+              <>
+                Athlete has already progressed to <Text style={styles.athleteProgressTextBold}>{athleteProgress.level}</Text> on this exercise
+              </>
+            )}
+          </Text>
+          )}
+          {!!athleteProgress.next && (
+            <Text style={styles.athleteProgressText}>
+              <Text style={styles.athleteProgressTextBold}>Next session: </Text>{athleteProgress.next}
+            </Text>
+          )}
+          {!!athleteProgress.flags?.deload && (
+            <Text style={[styles.athleteProgressText, { color: C.red }]}>{"Down two sessions in a row — consider backing off (the athlete isn't told)."}</Text>
+          )}
+          {!!athleteProgress.flags?.stalled && (
+            <Text style={[styles.athleteProgressText, { color: C.yellow }]}>Same load three sessions running — consider a different exercise or rep target.</Text>
+          )}
+        </View>
+      )}
 
       {exercise.photoUri && (
         <Image source={{ uri: exercise.photoUri }} style={styles.exercisePhotoThumb} />
@@ -1427,11 +2480,60 @@ function ExerciseEditorRow({ exercise, onUpdate, onDelete }: { exercise: Exercis
       <FieldLabel label="Exercise name" />
       <FieldInput value={exercise.name} onChange={(v) => update({ name: v })} placeholder="Exercise name" />
 
+      {/* Mobility has no focus or progression — just a target. */}
+      {!isMobility && <FieldLabel label="Focus" />}
+      {!isMobility && <View style={styles.adaptationRow}>
+        {FOCUSES.map((f) => {
+          const selected = exercise.focus === f
+          return (
+            <Pressable
+              key={f}
+              onPress={() => {
+                const nextFocus = selected ? undefined : f
+                // A rep-counted (non-timed) target is entirely a function of
+                // focus now — 8-12 for hypertrophy, 3-6 for max
+                // force/explosiveness — not something a coach types per
+                // exercise, so it's regenerated whenever focus changes.
+                const isRepCounted = (exercise.type === "reps" || exercise.type === "both_sides") && exercise.unit !== "seconds"
+                const range = nextFocus ? FOCUS_REP_RANGE[nextFocus] : undefined
+                update({
+                  focus: nextFocus,
+                  reps: isRepCounted ? (range ? `${range.low}-${range.high}` : undefined) : exercise.reps,
+                })
+              }}
+              style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+            >
+              <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+                {FOCUS_LABEL[f]}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>}
+
       {(exercise.type === "reps" || exercise.type === "both_sides") && (
-        <>
-          <FieldLabel label={exercise.unit === "seconds" ? "Seconds" : "Reps"} />
-          <FieldInput value={exercise.reps ?? ""} onChange={(v) => update({ reps: v })} placeholder={exercise.unit === "seconds" ? "20-30" : "4-6"} />
-        </>
+        isMobility && exercise.unit !== "seconds" ? (
+          <>
+            <FieldLabel label="Target reps" />
+            <FieldInput value={exercise.reps ?? ""} onChange={(v) => update({ reps: v })} placeholder="10" />
+          </>
+        ) : exercise.unit === "seconds" ? (
+          <>
+            <FieldLabel label="Seconds" />
+            <FieldInput value={exercise.reps ?? ""} onChange={(v) => update({ reps: v })} placeholder="20-30" />
+          </>
+        ) : (
+          <>
+            <FieldLabel label="Target reps" />
+            {exercise.focus ? (
+              <Text style={styles.repRangeText}>
+                {FOCUS_REP_RANGE[exercise.focus].low}–{FOCUS_REP_RANGE[exercise.focus].high} reps · set by {FOCUS_LABEL[exercise.focus]}
+              </Text>
+            ) : (
+              <Text style={styles.repRangeHint}>Pick a focus above to set the target range</Text>
+            )}
+          </>
+        )
       )}
       {exercise.type === "7/3s" && (
         <>
@@ -1450,16 +2552,6 @@ const ROUTE_FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
 function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<SequenceBlock>) { onUpdate({ ...block, ...fields }) }
   const [showRoutePicker, setShowRoutePicker] = useState(false)
-  // Creating a new route happens in a nested modal (the spray-wall builder),
-  // not a screen push — so it works inside the workout-builder modal.
-  const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
-  const [savingRoute, setSavingRoute] = useState(false)
-  // Saving closes two nested native <Modal>s at once (the builder, then —
-  // via selectRoute — the picker sheet underneath it). On iOS that races the
-  // two UIKit dismiss animations and can strand a blank white view that
-  // nothing can dismiss (same failure as the route-preview modal below), so
-  // there we close only the builder and defer selectRoute to its onDismiss.
-  const pendingRouteSelectRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
   // Which variations the selected route actually has — drives the "Starting
   // difficulty" picker below. Re-fetched whenever the route changes (covers
   // both a fresh pick and re-opening an already-configured block).
@@ -1485,38 +2577,110 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
     setShowRoutePicker(false)
   }
 
-  // Present the builder on top of the (still-open) route picker — closing the
-  // picker first and presenting simultaneously races on iOS. selectRoute() closes
-  // the picker on a successful save; backing out just drops back to it.
-  function handleCreateNew(wall?: SprayWallRow) {
-    setCreating({ wall: wall ?? null })
+  // When authoring for a specific athlete, show what the progression rule
+  // suggests for them next (the same suggestion SequenceBlock.tsx shows the
+  // athlete — utils/progression/sequence.ts), with a one-tap way to use it.
+  const athleteId = useContext(AuthoringAthleteContext)
+  const [suggestion, setSuggestion] = useState<SequenceSuggestion | null>(null)
+  useEffect(() => {
+    setSuggestion(null)
+    if (!athleteId) return
+    let cancelled = false
+    Promise.all([getSessionsByUserId(athleteId), getSprayRoutes()])
+      .then(([sessions, routeRows]) => {
+        if (cancelled) return
+        const runs = findBlockRuns(sessions, { type: "sequence", blockName: block.blockName, libraryBlockId: block.libraryBlockId })
+        setSuggestion(suggestNextSequence(runs, routesVisibleTo(routeRows, athleteId)))
+      })
+      .catch(console.error)
+    return () => { cancelled = true }
+  }, [athleteId, block.blockName, block.libraryBlockId])
+
+  // The suggested route's row + wall, loaded on demand — for the full-screen
+  // preview (so the coach can check the moves before using it) and for
+  // applying it to the block.
+  type LoadedRoute = { row: SprayRouteRow; wall: SprayWallRow | null }
+  async function loadRoute(routeId: string): Promise<LoadedRoute> {
+    const row = await getSprayRoute(routeId)
+    const wall = row.wallId ? await getSprayWall(row.wallId).catch(() => null) : null
+    return { row, wall }
   }
 
-  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
-    if (!name.trim()) { Alert.alert("Name required", "Give the route a name before saving."); return }
-    const holds = data.variations.original ?? []
-    const extras = { level: data.level, type: data.type, variations: data.variations }
-    setSavingRoute(true)
+  const [applyingSuggestion, setApplyingSuggestion] = useState(false)
+  async function applySuggestion(sug: SequenceSuggestion, loaded?: LoadedRoute) {
+    if (!sug.route) return
+    setApplyingSuggestion(true)
     try {
-      const wall = creating?.wall ?? null
-      const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
-      if (Platform.OS === "ios") {
-        pendingRouteSelectRef.current = { route: created, wall }
-        setCreating(null)
-      } else {
-        selectRoute(created, wall)
-        setCreating(null)
-      }
+      const { row, wall } = loaded ?? await loadRoute(sug.route.id)
+      setAvailableVars(availableVariations(parseVariations(row)))
+      onUpdate({
+        ...block,
+        routeId: row.$id, routeName: row.name, routeHolds: row.holds,
+        startingVariation: sug.startVariation,
+        ...(wall?.imageUri ? { wallImageUri: wall.imageUri } : {}),
+        ...(wall?.width && wall?.height ? { wallWidth: wall.width, wallHeight: wall.height } : {}),
+      })
     } catch (e) {
-      Alert.alert("Error", "Could not save the route. Try again.")
       console.error(e)
+      Alert.alert("Error", "Couldn't load the suggested sequence.")
     } finally {
-      setSavingRoute(false)
+      setApplyingSuggestion(false)
     }
   }
 
+  const [preview, setPreview] = useState<LoadedRoute | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  async function openPreview(sug: SequenceSuggestion) {
+    if (!sug.route) return
+    setLoadingPreview(true)
+    try {
+      setPreview(await loadRoute(sug.route.id))
+    } catch (e) {
+      console.error(e)
+      Alert.alert("Error", "Couldn't load the suggested sequence.")
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+  const suggestionApplied = !!suggestion?.route
+    && block.routeId === suggestion.route.id
+    && (block.startingVariation ?? "original") === suggestion.startVariation
+
   return (
     <>
+      {!!suggestion && (
+        <View style={styles.progressionFlag}>
+          <Text style={styles.progressionFlagTitle}>Progression for this athlete</Text>
+          <Text style={styles.progressionFlagLast}>{suggestion.lastTime}</Text>
+          <Text style={styles.progressionFlagText}>{suggestion.note}</Text>
+          {!!suggestion.route && (
+            <Text style={styles.progressionFlagRoute}>
+              {suggestion.route.name}
+              {suggestion.route.level != null ? ` · level ${suggestion.route.level}` : ""}
+              {suggestion.startVariation !== "original" ? ` · start ${VARIATION_LABEL[suggestion.startVariation]}` : ""}
+            </Text>
+          )}
+          {!!suggestion.route && (
+            <View style={styles.progressionFlagActions}>
+              <Pressable onPress={() => openPreview(suggestion)} disabled={loadingPreview} hitSlop={6}>
+                <Text style={styles.progressionFlagAction}>{loadingPreview ? "Loading…" : "Preview"}</Text>
+              </Pressable>
+              {!block.athleteChoosesRoute && (
+                suggestionApplied ? (
+                  <Text style={styles.progressionFlagText}>✓ Using it</Text>
+                ) : (
+                  <Pressable onPress={() => applySuggestion(suggestion)} disabled={applyingSuggestion} hitSlop={6}>
+                    <Text style={styles.progressionFlagAction}>{applyingSuggestion ? "Loading…" : "Use this sequence"}</Text>
+                  </Pressable>
+                )
+              )}
+            </View>
+          )}
+          {block.athleteChoosesRoute && (
+            <Text style={styles.progressionFlagText}>The athlete will be offered this when they reach the block.</Text>
+          )}
+        </View>
+      )}
       <FieldLabel label="Description" />
       <FieldInput
         value={block.description}
@@ -1524,64 +2688,107 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
         multiline
         placeholder="What should athletes know before starting?"
       />
-      <FieldLabel label="Sequence route" />
-      <Pressable style={styles.exercisePickerButton} onPress={() => setShowRoutePicker(true)}>
-        <Text style={block.routeName ? styles.exercisePickerName : styles.exercisePickerPlaceholder}>
-          {block.routeName || "Select route →"}
+      <View style={styles.switchRow}>
+        <Text style={[styles.fieldLabel, { flex: 1, marginRight: 12 }]}>
+          Let athlete choose the sequence{" "}
+          <Text style={styles.fieldLabelHint}>· picked when they reach this block</Text>
         </Text>
-      </Pressable>
+        <Switch
+          value={!!block.athleteChoosesRoute}
+          onValueChange={(v) => update(
+            v
+              ? {
+                  athleteChoosesRoute: true,
+                  routeId: "", routeName: "", routeHolds: "",
+                  wallImageUri: undefined, wallWidth: undefined, wallHeight: undefined,
+                  startingVariation: undefined,
+                }
+              : { athleteChoosesRoute: false }
+          )}
+        />
+      </View>
 
-      {availableVars.length > 1 && (
+      {!block.athleteChoosesRoute && (
         <>
-          <FieldLabel label="Starting difficulty" />
-          <View style={styles.adaptationRow}>
-            {availableVars.map((k) => {
-              const selected = (block.startingVariation ?? "original") === k
-              return (
-                <Pressable
-                  key={k}
-                  onPress={() => update({ startingVariation: k })}
-                  style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
-                >
-                  <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
-                    {VARIATION_LABEL[k]}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
+          <FieldLabel label="Sequence route" />
+          <Pressable style={styles.exercisePickerButton} onPress={() => setShowRoutePicker(true)}>
+            <Text style={block.routeName ? styles.exercisePickerName : styles.exercisePickerPlaceholder}>
+              {block.routeName || "Select route →"}
+            </Text>
+          </Pressable>
+
+          {availableVars.length > 1 && (
+            <>
+              <FieldLabel label="Starting difficulty" />
+              <View style={styles.adaptationRow}>
+                {availableVars.map((k) => {
+                  const selected = (block.startingVariation ?? "original") === k
+                  return (
+                    <Pressable
+                      key={k}
+                      onPress={() => update({ startingVariation: k })}
+                      style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+                    >
+                      <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+                        {VARIATION_LABEL[k]}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            </>
+          )}
         </>
       )}
 
-      <Modal visible={showRoutePicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoutePicker(false)}>
-        <RoutePickerModal
-          onSelect={selectRoute}
-          onClose={() => setShowRoutePicker(false)}
-          onCreateNew={handleCreateNew}
-        />
-      </Modal>
+      <RoutePickerSheet
+        visible={showRoutePicker}
+        onClose={() => setShowRoutePicker(false)}
+        onSelect={selectRoute}
+      />
 
-      {/* Create a new route inline (nested modal — no screen push) */}
+      {/* Full-screen preview of the suggested sequence, on the variation the
+          athlete would start on — pinch/pan to check the moves. */}
       <Modal
-        visible={creating !== null}
-        animationType="slide"
+        visible={preview !== null}
+        animationType="fade"
         presentationStyle="fullScreen"
-        onRequestClose={() => setCreating(null)}
-        onDismiss={() => {
-          const pending = pendingRouteSelectRef.current
-          if (!pending) return
-          pendingRouteSelectRef.current = null
-          selectRoute(pending.route, pending.wall)
-        }}
+        onRequestClose={() => setPreview(null)}
       >
-        {creating && (
-          <SafeAreaView style={styles.routeBuilderSafe} edges={["top"]}>
-            <SprayWallBuilder
-              imageSource={creating.wall?.imageUri ? { uri: creating.wall.imageUri } : ROUTE_FALLBACK_IMAGE}
-              onBack={() => setCreating(null)}
-              onSave={saveNewRoute}
-              saving={savingRoute}
+        {preview && suggestion && (
+          <SafeAreaView style={styles.routePreviewSafe}>
+            <View style={styles.modalHeader}>
+              <Pressable onPress={() => setPreview(null)} style={styles.iconBackBtn} hitSlop={10}>
+                <Ionicons name="close" size={22} color={C.textSecondary} />
+              </Pressable>
+              <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]} numberOfLines={1}>
+                {preview.row.name}
+                {preview.row.level != null ? ` · level ${preview.row.level}` : ""}
+                {suggestion.startVariation !== "original" ? ` · ${VARIATION_LABEL[suggestion.startVariation]}` : ""}
+              </Text>
+              <View style={styles.iconBackBtn} />
+            </View>
+            <SprayWallViewer
+              imageSource={preview.wall?.imageUri ? { uri: preview.wall.imageUri } : WALL_IMAGE}
+              holds={variationHolds(parseVariations(preview.row), suggestion.startVariation)}
+              style={{ flex: 1 }}
+              freeGesture
+              previewWidth={1200}
+              naturalSize={preview.wall?.width && preview.wall?.height ? { w: preview.wall.width, h: preview.wall.height } : null}
             />
+            <Text style={styles.routePreviewHint}>Pinch or double-tap to zoom</Text>
+            {!block.athleteChoosesRoute && !suggestionApplied && (
+              <View style={styles.routePreviewFooter}>
+                <CustomButton
+                  title="Use this sequence"
+                  onPress={() => {
+                    const loaded = preview
+                    setPreview(null)
+                    applySuggestion(suggestion, loaded)
+                  }}
+                />
+              </View>
+            )}
           </SafeAreaView>
         )}
       </Modal>
@@ -1595,9 +2802,6 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
 function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<FreeSessionBlock>) { onUpdate({ ...block, ...fields } as FreeSessionBlock) }
   const [showRoutePicker, setShowRoutePicker] = useState(false)
-  const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
-  const [savingRoute, setSavingRoute] = useState(false)
-  const pendingRouteSelectRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
 
   function selectRoute(route: SprayRouteRow, wall?: SprayWallRow | null) {
     update({
@@ -1606,33 +2810,6 @@ function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpd
       ...(wall?.width && wall?.height ? { wallWidth: wall.width, wallHeight: wall.height } : {}),
     })
     setShowRoutePicker(false)
-  }
-
-  function handleCreateNew(wall?: SprayWallRow) {
-    setCreating({ wall: wall ?? null })
-  }
-
-  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
-    if (!name.trim()) { Alert.alert("Name required", "Give the route a name before saving."); return }
-    const holds = data.variations.original ?? []
-    const extras = { level: data.level, type: data.type, variations: data.variations }
-    setSavingRoute(true)
-    try {
-      const wall = creating?.wall ?? null
-      const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
-      if (Platform.OS === "ios") {
-        pendingRouteSelectRef.current = { route: created, wall }
-        setCreating(null)
-      } else {
-        selectRoute(created, wall)
-        setCreating(null)
-      }
-    } catch (e) {
-      Alert.alert("Error", "Could not save the route. Try again.")
-      console.error(e)
-    } finally {
-      setSavingRoute(false)
-    }
   }
 
   function clearRoute() {
@@ -1683,15 +2860,65 @@ function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpd
         )}
       </View>
 
-      <Modal visible={showRoutePicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRoutePicker(false)}>
-        <RoutePickerModal
-          onSelect={selectRoute}
-          onClose={() => setShowRoutePicker(false)}
-          onCreateNew={handleCreateNew}
-        />
-      </Modal>
+      <RoutePickerSheet
+        visible={showRoutePicker}
+        onClose={() => setShowRoutePicker(false)}
+        onSelect={selectRoute}
+      />
+    </>
+  )
+}
 
-      {/* Create a new route inline (nested modal — no screen push) */}
+// Route picker sheet + inline "Create new route" builder, for block editors
+// that live inside other modals (the workout builder, the library editor).
+// The builder Modal is rendered INSIDE the picker's Modal on purpose: a
+// native modal presents from the view controller that owns it, and the
+// picker sheet's parent is already busy presenting the picker — a sibling
+// builder Modal there was silently never shown on iOS.
+function RoutePickerSheet({ visible, onClose, onSelect }: {
+  visible: boolean
+  onClose: () => void
+  onSelect: (route: SprayRouteRow, wall: SprayWallRow | null) => void
+}) {
+  const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
+  const [savingRoute, setSavingRoute] = useState(false)
+  // Saving closes two nested native <Modal>s (the builder, then — via
+  // onSelect — this sheet). On iOS doing both in one tick races the UIKit
+  // dismiss animations and can strand a blank view, so there we close only
+  // the builder and select from its onDismiss.
+  const pendingRouteSelectRef = useRef<{ route: SprayRouteRow; wall: SprayWallRow | null } | null>(null)
+
+  async function saveNewRoute(name: string, data: { variations: RouteVariations; level: number; type: string }) {
+    if (!name.trim()) { Alert.alert("Name required", "Give the route a name before saving."); return }
+    const holds = data.variations.original ?? []
+    const extras = { level: data.level, type: data.type, variations: data.variations }
+    setSavingRoute(true)
+    try {
+      const wall = creating?.wall ?? null
+      const created = await saveSprayRoute(name.trim(), holds, wall?.$id, extras)
+      if (Platform.OS === "ios") {
+        pendingRouteSelectRef.current = { route: created, wall }
+        setCreating(null)
+      } else {
+        setCreating(null)
+        onSelect(created, wall)
+      }
+    } catch (e) {
+      Alert.alert("Error", "Could not save the route. Try again.")
+      console.error(e)
+    } finally {
+      setSavingRoute(false)
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <RoutePickerModal
+        onSelect={(route, wall) => onSelect(route, wall ?? null)}
+        onClose={onClose}
+        onCreateNew={(wall) => setCreating({ wall: wall ?? null })}
+      />
+
       <Modal
         visible={creating !== null}
         animationType="slide"
@@ -1701,7 +2928,7 @@ function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpd
           const pending = pendingRouteSelectRef.current
           if (!pending) return
           pendingRouteSelectRef.current = null
-          selectRoute(pending.route, pending.wall)
+          onSelect(pending.route, pending.wall)
         }}
       >
         {creating && (
@@ -1715,13 +2942,13 @@ function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpd
           </SafeAreaView>
         )}
       </Modal>
-    </>
+    </Modal>
   )
 }
 
 // ─── Route Picker Modal ───────────────────────────────────────────────────────
 
-function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
+export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   onSelect: (route: SprayRouteRow, wall?: SprayWallRow) => void
   onClose: () => void
   onCreateNew: (wall?: SprayWallRow) => void
@@ -1742,6 +2969,9 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   // doesn't have that race, so it can select immediately.
   const pendingSelectRef = useRef<{ route: SprayRouteRow; wall?: SprayWallRow } | null>(null)
   const [filters, setFilters] = useState<RouteFilters>(EMPTY_ROUTE_FILTERS)
+  // Same iOS race for the wall chooser: closing it and presenting the route
+  // builder in one tick drops the builder, so start it from onDismiss.
+  const pendingCreateWallRef = useRef<SprayWallRow | null>(null)
 
   // A new route must live on a wall: use the only wall, prompt to choose when
   // there are several, or proceed wall-less if none exist yet.
@@ -1768,8 +2998,15 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
     return m
   }, [routes])
   const wallsById = useMemo(() => new Map(walls.map((w) => [w.$id, w])), [walls])
-  function routeImageSource(route: SprayRouteRow) {
-    const uri = route.wallId ? wallsById.get(route.wallId)?.imageUri : undefined
+  // List cards pass thumb=true to prefer the wall's small pre-resized preview
+  // (generated once at wall-upload time — see makeAndUploadPreview in
+  // sprayWall.tsx) over the full-resolution photo, so a long list of routes
+  // isn't loading dozens of full wall photos at once. Falls back to the full
+  // photo for walls uploaded before previews existed, and always for the
+  // full-screen preview modal, which wants full resolution.
+  function routeImageSource(route: SprayRouteRow, thumb = false) {
+    const wall = route.wallId ? wallsById.get(route.wallId) : undefined
+    const uri = (thumb ? wall?.previewUri : undefined) ?? wall?.imageUri
     return uri ? { uri } : WALL_IMAGE
   }
   const filteredRoutes = useMemo(() => applyRouteFilters(routes, filters), [routes, filters])
@@ -1805,18 +3042,32 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
       ) : filteredRoutes.length === 0 ? (
         <Text style={styles.emptyState}>No routes match your filters.</Text>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-          {filteredRoutes.map((route) => {
+        // FlatList, not ScrollView+map: a coach's wall can have dozens of saved
+        // routes, and each card's SprayWallViewer kicks off an image load. A
+        // ScrollView mounts every card immediately, firing all those loads (and,
+        // for routes on a wall with no stored width/height, a full-resolution
+        // Image.getSize() each) at once — enough concurrent decodes to spike
+        // memory and freeze/kill the app before the list ever finishes loading.
+        // FlatList only mounts cards near the viewport, so images load in
+        // waves as you scroll instead of all at once.
+        <FlatList
+          data={filteredRoutes}
+          keyExtractor={(route) => route.$id}
+          contentContainerStyle={{ padding: 16, gap: 12 }}
+          windowSize={5}
+          maxToRenderPerBatch={6}
+          initialNumToRender={6}
+          removeClippedSubviews={Platform.OS === "android"}
+          renderItem={({ item: route }) => {
             const holds = holdsByRoute.get(route.$id) ?? []
             return (
               <Pressable
-                key={route.$id}
                 style={styles.routePickerCard}
                 onPress={() => onSelect(route, wallsById.get(route.wallId ?? ""))}
               >
                 <View style={styles.routePickerThumb}>
                   <SprayWallViewer
-                    imageSource={routeImageSource(route)}
+                    imageSource={routeImageSource(route, true)}
                     holds={holds}
                     style={{ flex: 1 }}
                     interactive={false}
@@ -1841,8 +3092,8 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                 <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
               </Pressable>
             )
-          })}
-        </ScrollView>
+          }}
+        />
       )}
 
       {/* Full-screen route preview — pinch/pan to inspect the moves before picking */}
@@ -1900,7 +3151,18 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
       </Modal>
 
       {/* Wall chooser — a new route must live on a wall */}
-      <Modal visible={wallPickerVisible} transparent animationType="fade" onRequestClose={() => setWallPickerVisible(false)}>
+      <Modal
+        visible={wallPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWallPickerVisible(false)}
+        onDismiss={() => {
+          const wall = pendingCreateWallRef.current
+          if (!wall) return
+          pendingCreateWallRef.current = null
+          onCreateNew(wall)
+        }}
+      >
         <Pressable style={styles.aiOverlay} onPress={() => setWallPickerVisible(false)}>
           <Pressable style={styles.aiCard} onPress={() => {}}>
             <Text style={styles.aiTitle}>Add route to which wall?</Text>
@@ -1910,7 +3172,15 @@ function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
                 <Pressable
                   key={wall.$id}
                   style={styles.wallPickRow}
-                  onPress={() => { setWallPickerVisible(false); onCreateNew(wall) }}
+                  onPress={() => {
+                    if (Platform.OS === "ios") {
+                      pendingCreateWallRef.current = wall
+                      setWallPickerVisible(false)
+                    } else {
+                      setWallPickerVisible(false)
+                      onCreateNew(wall)
+                    }
+                  }}
                 >
                   <Text style={styles.wallPickName} numberOfLines={1}>{wall.name}</Text>
                   <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
@@ -1932,6 +3202,26 @@ const EXERCISE_TYPE_LABEL: Record<"reps" | "both_sides" | "7/3s", string> = {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  progressionFlag: {
+    backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 4, marginBottom: 12,
+  },
+  progressionFlagTitle: { fontSize: 11, fontWeight: "700", color: C.green, textTransform: "uppercase", letterSpacing: 0.6 },
+  progressionFlagLast: { fontSize: 12.5, color: C.textSecondary, lineHeight: 17 },
+  progressionFlagText: { fontSize: 12.5, fontWeight: "600", color: C.green, lineHeight: 17 },
+  progressionFlagActions: { flexDirection: "row", alignItems: "center", gap: 18 },
+  generatedDesc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
+  boulderSlotRow: { flexDirection: "row", gap: 8, marginVertical: 4 },
+  boulderSlot: {
+    width: 34, height: 34, borderRadius: 17, borderWidth: 2,
+    alignItems: "center", justifyContent: "center",
+  },
+  boulderSlotEmpty: { borderColor: C.border, borderStyle: "dashed", backgroundColor: "transparent" },
+  boulderSlotSelected: { borderColor: C.textPrimary },
+  boulderSlotText: { fontSize: 13, fontWeight: "800" },
+  boulderSlotClear: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary, textDecorationLine: "underline", marginTop: 4 },
+  progressionFlagRoute: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  progressionFlagAction: { fontSize: 13, fontWeight: "700", color: C.green, textDecorationLine: "underline", marginTop: 2 },
   safeContainer: { flex: 1, backgroundColor: C.bg },
   routeBuilderSafe: { flex: 1, backgroundColor: "#0a0a0a" },
 
@@ -2005,10 +3295,11 @@ const styles = StyleSheet.create({
   libraryGrid: {
     flexDirection: "row", flexWrap: "wrap", gap: 10,
   },
-  // No fixed width/column count — each card hugs its name, so short names get
-  // small boxes and long ones get bigger boxes (wrapping past maxWidth).
+  // No fixed width/column count — each card starts at its name's width, then
+  // the cards in a row stretch to fill it, so a card alone on its row (narrow
+  // pane) spans the full width.
   libraryCard: {
-    minWidth: 130, maxWidth: 260,
+    minWidth: 130, flexGrow: 1,
     backgroundColor: C.surface,
     borderRadius: 12,
     borderWidth: 1, borderColor: C.border,
@@ -2041,6 +3332,19 @@ const styles = StyleSheet.create({
     textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8, paddingHorizontal: 4,
   },
   libraryAddText: { fontSize: 14, fontWeight: "600", color: C.green },
+  // Protocol builder: a block rendered with the "Edit block" modal's look —
+  // standalone header + fields — as a card (wide grid) or list row (narrow).
+  blockCard: {
+    backgroundColor: C.surfaceHigh, borderRadius: 16,
+    borderWidth: 1, borderColor: C.border, overflow: "hidden",
+  },
+  blockCardListItem: { marginBottom: 10 },
+  blockCardHeaderClearGrip: { paddingRight: 22 }, // the grid's grip handle sits on this corner
+  blockCardListHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 14 },
+  blockCardListTitles: { flex: 1, gap: 2 },
+  blockCardListType: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  blockCardListName: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  blockCardDivider: { height: 1, backgroundColor: C.border, marginHorizontal: 16, marginBottom: 6 },
   editorHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
   editorTitle: { fontSize: 16, fontWeight: "600", color: C.textPrimary },
   cancelText: { fontSize: 15, color: C.textSecondary },
@@ -2184,6 +3488,8 @@ const styles = StyleSheet.create({
   },
   saveTemplateBtnText: { color: C.green, fontSize: 13, fontWeight: "700" },
   fieldLabel: { fontSize: 12, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 10, marginBottom: 6 },
+  repRangeText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  repRangeHint: { fontSize: 13, color: C.textMuted, fontStyle: "italic" },
   fieldLabelHint: { textTransform: "none", letterSpacing: 0, color: C.textMuted },
   // Inset well (page-bg color, not the card's surfaceHigh) so inputs read as
   // distinct wells instead of blending into the block row behind them.
@@ -2202,6 +3508,35 @@ const styles = StyleSheet.create({
   standaloneHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
   standaloneDot: { width: 10, height: 10, borderRadius: 5 },
   standaloneHeaderTitle: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  standaloneHeaderRowCompact: { paddingHorizontal: 12, paddingVertical: 10 },
+  standaloneHeaderNameInput: {
+    fontSize: 16, fontWeight: "700", color: C.textPrimary,
+    marginTop: -6, marginBottom: 6, marginLeft: 32, marginRight: 12, // under the type label, past the dot
+    paddingVertical: 2, paddingHorizontal: 0,
+  },
+  standaloneFieldsCompact: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
+  fieldLabelCompact: { fontSize: 11, marginTop: 4, marginBottom: 4 },
+  fieldInputCompact: { borderRadius: 10, paddingVertical: 7, paddingHorizontal: 9, fontSize: 14, minHeight: 0 },
+  fieldPreview: { maxHeight: FIELD_PREVIEW_TEXT_HEIGHT + 14, overflow: "hidden" }, // + vertical padding
+  fieldPreviewFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 32, borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
+  fieldPreviewText: { fontSize: 14, lineHeight: FIELD_PREVIEW_LINE_HEIGHT, color: C.textPrimary },
+  fieldPreviewPlaceholder: { fontSize: 14, color: C.textMuted },
+  numericsRowCompact: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  compactStepper: {
+    flexDirection: "row", alignItems: "center", gap: 2, height: 34,
+    backgroundColor: C.bg, borderRadius: 17, borderWidth: 1, borderColor: C.border,
+    paddingLeft: 10, paddingRight: 4,
+  },
+  compactStepperLabel: { fontSize: 12, fontWeight: "600", color: C.textSecondary, marginRight: 2 },
+  compactStepperBtn: { width: 24, height: 28, alignItems: "center", justifyContent: "center" },
+  compactStepperBtnText: { fontSize: 17, fontWeight: "600", color: C.textSecondary },
+  compactStepperValue: { minWidth: 22, textAlign: "center", fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  adaptationPill: {
+    flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start",
+    borderRadius: 14, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  adaptationPillText: { fontSize: 12, fontWeight: "700" },
+  standaloneHeaderName: { fontSize: 14, fontWeight: "600", color: C.textSecondary, marginTop: 2 },
   standaloneMenuBtn: {
     width: 32, height: 32, borderRadius: 16,
     alignItems: "center", justifyContent: "center",
@@ -2232,7 +3567,9 @@ const styles = StyleSheet.create({
   },
   adaptationChipTextStandalone: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
-  stepperField: { flex: 1 },
+  // minWidth + the row's wrap: in an exercise-card-sized block card three
+  // steppers can't share a line, so the third drops to the next one.
+  stepperField: { flex: 1, minWidth: 130 },
   stepperControl: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: C.bg, borderRadius: 24,
@@ -2242,7 +3579,7 @@ const styles = StyleSheet.create({
   stepperBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   stepperBtnText: { fontSize: 22, fontWeight: "600", color: C.textSecondary },
   stepperValue: { flex: 1, textAlign: "center", fontSize: 18, fontWeight: "700", color: C.textPrimary },
-  numericsRowStandalone: { flexDirection: "row", gap: 12 },
+  numericsRowStandalone: { flexDirection: "row", flexWrap: "wrap", columnGap: 12 },
 
   timeLimitToggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   timeLimitToggleLabel: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
@@ -2265,8 +3602,10 @@ const styles = StyleSheet.create({
   blockTypeGrid: {
     flexDirection: "row", flexWrap: "wrap", gap: 12,
   },
+  // Two per row while both fit at minWidth; below that, one per row at full
+  // width (a fixed 48% left half the narrow pane empty).
   blockTypeCard: {
-    width: "48%",
+    flexBasis: "40%", flexGrow: 1, minWidth: 130,
     backgroundColor: C.surface,
     borderRadius: 14,
     borderWidth: 1, borderColor: C.border,
@@ -2321,11 +3660,23 @@ const styles = StyleSheet.create({
   exerciseTypeRow: { flexDirection: "row", gap: 8, marginTop: 8 },
   addExerciseButton: { flex: 1, borderWidth: 1, borderColor: C.border, borderStyle: "dashed", borderRadius: 10, padding: 10, alignItems: "center" },
   addExerciseText: { fontSize: 13, color: C.textMuted },
-  exerciseRow: { backgroundColor: C.surfaceHigh, borderRadius: 10, padding: 12, gap: 6, marginTop: 6 },
-  exercisePhotoThumb: { width: "100%", height: 110, borderRadius: 8, backgroundColor: C.surface },
+  exerciseRow: {
+    backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 12, gap: 6, marginTop: 6,
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  exercisePhotoThumb: { width: "100%", aspectRatio: 16 / 9, borderRadius: 8, backgroundColor: C.surface },
   exerciseNotesPreview: { fontSize: 12, color: C.textSecondary, fontStyle: "italic" },
   exerciseRowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  exerciseRowTags: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1 },
   exerciseTypeTag: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted },
+  movementTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, borderWidth: 1 },
+  movementTagText: { fontSize: 11, fontWeight: "700" },
+  movementWarning: { backgroundColor: "#4A3A20", borderRadius: 10, padding: 10, marginBottom: 10, gap: 4 },
+  movementWarningText: { fontSize: 12, color: "#E0B45D", lineHeight: 16 },
+  athleteProgressBanner: { backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green, borderRadius: 8, padding: 8, marginBottom: 10, gap: 4 },
+  athleteProgressText: { fontSize: 12, color: C.green, lineHeight: 16 },
+  athleteProgressTextBold: { fontWeight: "700" },
 
   // S&C exercise selection: library pane + selected cards
   scSplit: { flexDirection: "row", gap: 14, alignItems: "flex-start", marginTop: 6 },
@@ -2339,6 +3690,29 @@ const styles = StyleSheet.create({
     paddingVertical: 12, marginTop: 4,
   },
   scAddBtnText: { fontSize: 14, fontWeight: "700", color: C.green },
+  // Wide-screen exercise card grid — numbered, reorderable cards that wrap
+  // instead of stacking in one long column.
+  exGrid: { flexDirection: "row", flexWrap: "wrap", gap: EXERCISE_CARD_GAP, marginTop: 6 },
+  exGridCell: { position: "relative" },
+  // Zero-height clip so the measuring copy lays out at full natural width
+  // without showing or taking space.
+  titleMeasureWrap: { position: "absolute", left: 0, top: 0, width: 2000, height: 0, overflow: "hidden", opacity: 0 },
+  exCardNumberBadge: {
+    position: "absolute", top: -8, left: -8, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: C.green, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: C.surface, zIndex: 6,
+  },
+  exCardNumberText: { fontSize: 11, fontWeight: "800", color: C.bg },
+  // Sits in the gap to the card's right; the grip only hints where to grab.
+  cardResizeHandle: {
+    position: "absolute", top: 0, bottom: 0, right: -EXERCISE_CARD_GAP + 1, width: EXERCISE_CARD_GAP,
+    alignItems: "center", justifyContent: "center", zIndex: 5,
+  },
+  cardResizeGrip: { width: 3, height: 36, borderRadius: 2, backgroundColor: C.border },
+  exCardGripHandle: {
+    position: "absolute", top: -10, right: -6, zIndex: 6, padding: 5, borderRadius: 8,
+    backgroundColor: C.surfaceHigh, borderWidth: 1, borderColor: C.border,
+  },
   // Library reads as its own raised pane card, like the protocol-detail pane.
   libPane: {
     backgroundColor: C.surfaceHigh, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 14,

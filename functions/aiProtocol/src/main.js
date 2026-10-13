@@ -10,6 +10,7 @@ const ENDPOINT = process.env.APPWRITE_FUNCTION_API_ENDPOINT || "https://nyc.clou
 const PROJECT = process.env.APPWRITE_FUNCTION_PROJECT_ID || "689e515d000c2e1af428"
 const DATABASE_ID = process.env.DATABASE_ID || "68bd9dd7003c15f7147e"
 const USERS_TABLE = process.env.USERS_TABLE || "users"
+const PROTOCOLS_TABLE = process.env.PROTOCOLS_TABLE || "protocol"
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
@@ -26,6 +27,67 @@ async function appwriteFetch(path, log) {
     return null
   }
 }
+
+// A write through the server API key (needs a key with write scope on the
+// database). Same two REST shapes as reads. Returns the row, or null.
+async function appwriteWrite(method, tablePath, docPath, data, log) {
+  const apiKey = process.env.APPWRITE_API_KEY
+  if (!apiKey) return null
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey, "Content-Type": "application/json" }
+  for (const path of [tablePath, docPath]) {
+    try {
+      const r = await fetch(`${ENDPOINT}${path}`, { method, headers, body: JSON.stringify({ data }) })
+      if (r.ok) return await r.json()
+      log?.(`Appwrite ${method} ${path} → ${r.status} ${await r.text().catch(() => "")}`)
+    } catch (e) {
+      log?.(`Appwrite ${method} ${path} failed: ${e?.message ?? e}`)
+    }
+  }
+  return null
+}
+
+async function getProtocolRow(id, log) {
+  const rid = encodeURIComponent(id)
+  return (
+    (await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${PROTOCOLS_TABLE}/rows/${rid}`, log)) ??
+    (await appwriteFetch(`/databases/${DATABASE_ID}/collections/${PROTOCOLS_TABLE}/documents/${rid}`, log))
+  )
+}
+
+async function updateProtocolRow(id, data, log) {
+  const rid = encodeURIComponent(id)
+  return appwriteWrite(
+    "PATCH",
+    `/tablesdb/${DATABASE_ID}/tables/${PROTOCOLS_TABLE}/rows/${rid}`,
+    `/databases/${DATABASE_ID}/collections/${PROTOCOLS_TABLE}/documents/${rid}`,
+    data, log,
+  )
+}
+
+// Best-effort Expo push to the given tokens. Returns how many were sent.
+async function sendPush(messages, log, error) {
+  const valid = messages.filter((m) => typeof m.to === "string" && m.to)
+  if (valid.length === 0) return 0
+  try {
+    const r = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(valid),
+    })
+    if (!r.ok) {
+      error?.(`Expo push send failed: ${r.status} ${await r.text().catch(() => "")}`)
+      return 0
+    }
+    log?.(`Pushed ${valid.length} message(s)`)
+    return valid.length
+  } catch (e) {
+    error?.(`Expo push send failed: ${e?.message ?? e}`)
+    return 0
+  }
+}
+
+const clip = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "")
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Reads a user's row through the server API key (so the client can't spoof a
 // role or read another user's row). Tries both REST shapes: the newer
@@ -119,6 +181,72 @@ export default async ({ req, res, log, error }) => {
       error(`Expo push send failed: ${e?.message ?? e}`)
       return res.json({ error: "Could not send notification." }, 502)
     }
+  }
+
+  // ── Action: coach made homework (or moved its deadline) → push the athlete ───
+  // body: { homeworkId, dueLabel, extended? }. Only a coach; the row must exist.
+  if (body.action === "homeworkAssigned") {
+    if (!(await isCoach(userId, log))) return res.json({ error: "Coaches only." }, 403)
+    const hw = typeof body.homeworkId === "string" ? await getProtocolRow(body.homeworkId, log) : null
+    if (!hw || hw.planPart !== "homework" || !hw.athleteId) return res.json({ error: "No such homework." }, 404)
+    const athlete = await getUserRow(hw.athleteId, log)
+    const due = DAY_RE.test(hw.dueBy ?? "") ? ` Pick a day before ${clip(body.dueLabel, 40) || hw.dueBy}.` : ""
+    const extended = body.extended === true
+    const sent = await sendPush([{
+      to: athlete?.pushToken,
+      sound: "default",
+      title: extended ? "More time for your homework" : "You've got homework",
+      body: extended
+        ? `${clip(hw.name, 80) || "Your homework"} is now due ${clip(body.dueLabel, 40) || hw.dueBy}. Pick a day.`
+        : `${clip(hw.name, 80) || "New homework"} from your coach.${due}`,
+      data: { type: "homework_assigned", homeworkId: hw.$id },
+    }], log, error)
+    return res.json({ ok: true, notified: sent }, 200)
+  }
+
+  // ── Action: athlete schedules / can't attend their homework ──────────────────
+  // body: { homeworkId, scheduledFor: ISO, day: "YYYY-MM-DD" (local), whenLabel }
+  //    or { homeworkId, cantAttend: true, note }
+  // Written here with the server key so athletes don't need write access to
+  // the coach's workout rows; then the coach(es) get a push.
+  if (body.action === "homeworkUpdate") {
+    const hw = typeof body.homeworkId === "string" ? await getProtocolRow(body.homeworkId, log) : null
+    if (!hw || hw.planPart !== "homework") return res.json({ error: "No such homework." }, 404)
+    if (hw.athleteId !== userId) return res.json({ error: "Not your homework." }, 403)
+
+    let data
+    let pushBody
+    const caller = await getUserRow(userId, log)
+    const name = caller?.username || "Your athlete"
+    const what = clip(hw.name, 80) || "their homework"
+    if (body.cantAttend === true) {
+      const note = clip(body.note, 300)
+      data = { homeworkStatus: "cant_attend", homeworkNote: note || null, scheduledFor: null }
+      pushBody = `${name} can't do ${what}${note ? `: "${note}"` : "."}`
+    } else {
+      const when = typeof body.scheduledFor === "string" ? new Date(body.scheduledFor) : null
+      if (!when || isNaN(when.getTime()) || !DAY_RE.test(body.day ?? "")) {
+        return res.json({ error: "Pick a day and time." }, 400)
+      }
+      if (DAY_RE.test(hw.dueBy ?? "") && body.day > hw.dueBy) {
+        return res.json({ error: "That's after the deadline." }, 400)
+      }
+      data = { scheduledFor: when.toISOString(), homeworkStatus: null, homeworkNote: null }
+      pushBody = `${name} scheduled ${what} for ${clip(body.whenLabel, 40) || body.day}.`
+    }
+
+    const updated = await updateProtocolRow(hw.$id, data, log)
+    if (!updated) return res.json({ error: "Could not save. (Does the function's API key have write access?)" }, 502)
+
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    await sendPush(coaches.map((c) => ({
+      to: c.pushToken,
+      sound: "default",
+      title: body.cantAttend === true ? "Homework: can't attend" : "Homework scheduled",
+      body: pushBody,
+      data: { type: "homework_update", athleteId: userId, homeworkId: hw.$id },
+    })), log, error)
+    return res.json({ ok: true, row: updated }, 200)
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY

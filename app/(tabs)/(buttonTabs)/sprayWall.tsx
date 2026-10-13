@@ -4,6 +4,7 @@ import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } 
 import {
   createSprayWall,
   deleteSprayRoute,
+  deleteSprayRoutesForWall,
   deleteSprayWall,
   deleteStorageFile,
   getSprayRoutes,
@@ -11,11 +12,14 @@ import {
   saveSprayRoute,
   SprayRouteRow,
   SprayWallRow,
+  updateSprayWall,
   uploadPhoto,
 } from "@/services/BoulderGraphService"
 import { groupByDate } from "@/utils/dateGroups"
 import { ROUTE_TYPE_LABEL } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
+import * as FileSystem from "expo-file-system/legacy"
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator"
 import * as ImagePicker from "expo-image-picker"
 import { useFocusEffect } from "@react-navigation/native"
 import { useRouter } from "expo-router"
@@ -39,6 +43,29 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 const FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
 
+// Matches the size route-picker/list cards actually render at (see
+// previewWidth on SprayWallViewer in workoutBlocks.tsx's RoutePickerModal).
+// Shrinking here, once, at upload time is what lets those lists load a small
+// file per card instead of everyone who ever opens the list downloading and
+// decoding the full-resolution wall photo.
+const WALL_PREVIEW_WIDTH = 600
+
+// Best-effort: a wall still saves fine without a preview (routeImageSource
+// falls back to the full photo), so a resize failure shouldn't block adding
+// the wall.
+async function makeAndUploadPreview(localUri: string): Promise<string | undefined> {
+  try {
+    const context = ImageManipulator.manipulate(localUri)
+    context.resize({ width: WALL_PREVIEW_WIDTH })
+    const image = await context.renderAsync()
+    const result = await image.saveAsync({ compress: 0.6, format: SaveFormat.JPEG })
+    return await uploadPhoto(result.uri)
+  } catch (e) {
+    console.error("Could not build wall preview", e)
+    return undefined
+  }
+}
+
 export default function SprayWallScreen() {
   const router = useRouter()
   const [walls, setWalls] = useState<SprayWallRow[]>([])
@@ -46,6 +73,9 @@ export default function SprayWallScreen() {
   const [routes, setRoutes] = useState<SprayRouteRow[]>([])
   const [loading, setLoading] = useState(true)
   const [addingWall, setAddingWall] = useState(false)
+  // Set while generating a preview for a wall that predates previewUri
+  // (see backfillWallPreview) — lets the chip show a spinner instead of its name.
+  const [backfillingWallId, setBackfillingWallId] = useState<string | null>(null)
   // Wall name prompt state
   const [nameModalVisible, setNameModalVisible] = useState(false)
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null)
@@ -107,8 +137,11 @@ export default function SprayWallScreen() {
     setNameModalVisible(false)
     setAddingWall(true)
     try {
-      const cloudUri = await uploadPhoto(pendingImageUri)
-      const wall = await createSprayWall(wallNameInput.trim(), cloudUri, pendingImageSize?.w, pendingImageSize?.h)
+      const [cloudUri, previewUri] = await Promise.all([
+        uploadPhoto(pendingImageUri),
+        makeAndUploadPreview(pendingImageUri),
+      ])
+      const wall = await createSprayWall(wallNameInput.trim(), cloudUri, pendingImageSize?.w, pendingImageSize?.h, previewUri)
       setWalls((prev) => [...prev, wall])
       setSelectedWallId(wall.$id)
     } catch (e: any) {
@@ -120,28 +153,53 @@ export default function SprayWallScreen() {
     }
   }
 
+  // One-off maintenance for walls uploaded before previewUri existed: downloads
+  // the full photo once, shrinks it the same way a fresh upload would, and
+  // saves it back on the wall row so its routes get the same fast thumbnails.
+  async function backfillWallPreview(wall: SprayWallRow) {
+    setBackfillingWallId(wall.$id)
+    try {
+      const dest = `${FileSystem.cacheDirectory}wall-backfill-${wall.$id}.jpg`
+      await FileSystem.downloadAsync(wall.imageUri, dest)
+      const previewUri = await makeAndUploadPreview(dest)
+      if (!previewUri) throw new Error("Could not generate a preview from this photo.")
+      const updated = await updateSprayWall(wall.$id, { previewUri })
+      setWalls((prev) => prev.map((w) => (w.$id === wall.$id ? updated : w)))
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not generate preview.")
+    } finally {
+      setBackfillingWallId(null)
+    }
+  }
+
   function handleLongPressWall(wall: SprayWallRow) {
+    const options: any[] = [{ text: "Cancel", style: "cancel" }]
+    if (!wall.previewUri) {
+      options.push({ text: "Generate preview", onPress: () => backfillWallPreview(wall) })
+    }
+    options.push({
+      text: "Delete wall",
+      style: "destructive",
+      onPress: async () => {
+        try {
+          await deleteSprayRoutesForWall(wall.$id)
+          await deleteSprayWall(wall.$id)
+          // remove cloud file (best-effort)
+          deleteStorageFile(wall.imageUri).catch(() => {})
+          setWalls((prev) => prev.filter((w) => w.$id !== wall.$id))
+          setRoutes((prev) => prev.filter((r) => r.wallId !== wall.$id))
+          if (selectedWallId === wall.$id) setSelectedWallId(null)
+        } catch {
+          Alert.alert("Error", "Could not delete the wall.")
+        }
+      },
+    })
     Alert.alert(
-      `Delete "${wall.name}"?`,
-      "This will not delete the routes on this wall. They will still appear under All.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete wall",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteSprayWall(wall.$id)
-              // remove cloud file (best-effort)
-              deleteStorageFile(wall.imageUri).catch(() => {})
-              setWalls((prev) => prev.filter((w) => w.$id !== wall.$id))
-              if (selectedWallId === wall.$id) setSelectedWallId(null)
-            } catch {
-              Alert.alert("Error", "Could not delete the wall.")
-            }
-          },
-        },
-      ]
+      wall.name,
+      wall.previewUri
+        ? "This will also delete all routes on this wall. This can't be undone."
+        : "This wall predates fast route-list previews — you can generate one, or delete the wall (this also deletes all its routes and can't be undone).",
+      options
     )
   }
 
@@ -281,13 +339,18 @@ export default function SprayWallScreen() {
             onPress={() => setSelectedWallId(wall.$id)}
             onLongPress={() => handleLongPressWall(wall)}
             delayLongPress={500}
+            disabled={backfillingWallId === wall.$id}
           >
-            <Text
-              style={[styles.wallChipText, selectedWallId === wall.$id && styles.wallChipTextActive]}
-              numberOfLines={1}
-            >
-              {wall.name}
-            </Text>
+            {backfillingWallId === wall.$id ? (
+              <ActivityIndicator size="small" color={C.green} />
+            ) : (
+              <Text
+                style={[styles.wallChipText, selectedWallId === wall.$id && styles.wallChipTextActive]}
+                numberOfLines={1}
+              >
+                {wall.name}
+              </Text>
+            )}
           </Pressable>
         ))}
 

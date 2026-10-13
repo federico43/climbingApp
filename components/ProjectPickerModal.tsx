@@ -9,7 +9,7 @@ import {
 } from "@/services/BoulderGraphService"
 import * as ImagePicker from "expo-image-picker"
 import { Image as CachedImage } from "expo-image"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -26,17 +26,11 @@ import {
   View,
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { BoulderLevelOptions } from "@/utils/boulderColours"
 
-// Boulder grades. `color` is the swatch shown in pickers/pills; `on` is the
-// foreground color to use when a grade is the selected (filled) state.
-export const BoulderLevelOptions = [
-  { label: "Orange", value: "orange", color: "#E8833A", on: "#3A2300" },
-  { label: "Blue", value: "blue", color: "#4F8EF7", on: "#fff" },
-  { label: "Green", value: "green", color: "#3FB950", on: "#06210C" },
-  { label: "Yellow", value: "yellow", color: "#E3B341", on: "#3A2E00" },
-  { label: "Red", value: "red", color: "#E5484D", on: "#fff" },
-  { label: "Black", value: "black", color: "#111111", on: "#fff" },
-]
+// Boulder grades (`color` = swatch, `on` = foreground when selected). Moved to utils/boulderColours.ts (pure, shared with the progression rules);
+// re-exported so existing imports keep working.
+export { BoulderLevelOptions }
 
 const LOCATIONS: { label: string; value: ProjectLocation }[] = [
   { label: "Slab", value: "slab" },
@@ -91,6 +85,22 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
     }
   }, [visible])
 
+  // Picking a project (created or chosen from the list) closes this native
+  // Modal. On iOS, dismissing a Modal and updating the presenting screen's
+  // state in the same tick can leave that screen's touches dead afterward —
+  // the same race SequenceBlock's route picker works around. Defer the
+  // actual selection until the Modal has fully finished dismissing.
+  const pendingSelectionRef = useRef<ProjectRow | null>(null)
+  function selectAndClose(project: ProjectRow) {
+    if (Platform.OS === "ios") {
+      pendingSelectionRef.current = project
+      onClose()
+    } else {
+      onSelect(project)
+      onClose()
+    }
+  }
+
   async function openChoose() {
     setMode("choose")
     setLoadingProjects(true)
@@ -135,8 +145,7 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
         location,
         ...(imageUri ? { imageUri } : {}),
       })
-      onSelect(project)
-      onClose()
+      selectAndClose(project)
     } catch (e) {
       console.error(e)
     } finally {
@@ -151,7 +160,16 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
   }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onDismiss={() => {
+        const pending = pendingSelectionRef.current
+        pendingSelectionRef.current = null
+        if (pending) onSelect(pending)
+      }}
+    >
       <SafeAreaProvider>
         <ProjectPickerContent
           mode={mode}
@@ -162,7 +180,7 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
           loadingProjects={loadingProjects}
           projects={projects}
           openChoose={openChoose}
-          onSelect={onSelect}
+          onSelect={selectAndClose}
           showCamera={showCamera}
           setShowCamera={setShowCamera}
           imageUri={imageUri}
@@ -184,7 +202,34 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
   )
 }
 
-function ProjectPickerContent(props: any) {
+interface ProjectPickerContentProps {
+  mode: Mode
+  setMode: (mode: Mode) => void
+  initialMode: Mode
+  onClose: () => void
+  titleMap: Record<Mode, string>
+  loadingProjects: boolean
+  projects: ProjectRow[]
+  openChoose: () => void
+  onSelect: (project: ProjectRow) => void
+  showCamera: boolean
+  setShowCamera: (v: boolean) => void
+  imageUri: string | null
+  setImageUri: (uri: string | null) => void
+  handlePickImage: () => void
+  name: string
+  setName: (v: string) => void
+  grade: string
+  setGrade: (v: string) => void
+  weeks: string
+  setWeeks: (v: string) => void
+  location: ProjectLocation
+  setLocation: (v: ProjectLocation) => void
+  creating: boolean
+  handleCreate: () => void
+}
+
+function ProjectPickerContent(props: ProjectPickerContentProps) {
   const {
     mode, setMode, initialMode, onClose, titleMap,
     loadingProjects, projects, openChoose, onSelect,
@@ -233,7 +278,7 @@ function ProjectPickerContent(props: any) {
                   <Pressable
                     key={p.$id}
                     style={({ pressed }) => [s.projectRow, pressed && { opacity: 0.6 }]}
-                    onPress={() => { onSelect(p); onClose() }}
+                    onPress={() => onSelect(p)}
                   >
                     {p.imageUri ? (
                       <CachedImage source={{ uri: p.imageUri }} style={s.projectThumb} contentFit="cover" cachePolicy="memory-disk" transition={150} />

@@ -1,0 +1,14 @@
+{
+  "name": "exercise-content",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-off scripts: export exercises missing a description/photo, then upload the reviewed content to Appwrite + R2.",
+  "scripts": {
+    "export": "node export-missing.mjs",
+    "upload": "node upload.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.0"
+  }
+}

@@ -1,5 +1,7 @@
+import { useHoldUpdates } from "@/utils/updateHold"
 import { useWorkout } from "@/hooks/WorkoutHook"
-import { saveSession } from "@/services/BoulderGraphService"
+import { saveSession, SessionLink } from "@/services/BoulderGraphService"
+import { notifyCoachOfWorkoutCompletion } from "@/services/notifications"
 import { serializeSession } from "@/utils/workoutSession"
 import {
   clearPersistedWorkout,
@@ -24,7 +26,12 @@ interface WorkoutContextValue {
   workoutMinimized: boolean
   modalVisible: boolean
   // Actions
-  openWorkout: (protocol: any[], name: string) => void
+  // `link` = the coach / library workout it was started from, saved on the
+  // session (plan progress). Omit for sequences, single blocks, coach tests.
+  openWorkout: (protocol: any[], name: string, link?: SessionLink) => void
+  // "Coach is here" / "On my own" mid-workout — this session's copy of the
+  // block only, never the saved workout (docs/training-plan-implementation.md §12a).
+  setBlockCoached: (index: number, coached: boolean) => void
   closeModal: () => void
   endWorkout: () => void
   minimize: () => void
@@ -41,13 +48,17 @@ const WorkoutContext = createContext<WorkoutContextValue | undefined>(undefined)
 export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const [protocol, setProtocol] = useState<any[]>([])
   const [protocolName, setProtocolName] = useState("")
+  const [link, setLink] = useState<SessionLink | null>(null)
   const [workoutActive, setWorkoutActive] = useState(false)
   const [workoutMinimized, setWorkoutMinimized] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // No OTA-update reloads mid-workout (see utils/updateHold.ts).
+  useHoldUpdates(workoutActive)
+
   // Hook lives here so state survives modal close/reopen during minimize.
-  const workout = useWorkout(protocol)
+  const workout = useWorkout(protocol, link)
 
   // Keep the screen awake for the entire duration of an active workout —
   // including when it's minimized (rest timers, etc. keep running).
@@ -80,14 +91,15 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       // on every relaunch until the first attempt was logged.
       if (ageMs > STALE_MS) {
         if ((saved.attempts?.length ?? 0) > 0) {
-          await saveSession(
-            serializeSession(
+          await saveSession({
+            ...serializeSession(
               saved.protocol ?? [],
               saved.attempts,
               saved.blockDurations ?? {},
               new Set(saved.skippedBlocks ?? []),
             ),
-          )
+            ...saved.link,
+          })
         }
         await clearPersistedWorkout()
         return
@@ -96,6 +108,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       // Resume: restore the live state and reopen minimized so it's unobtrusive.
       setProtocol(saved.protocol ?? [])
       setProtocolName(saved.protocolName ?? "")
+      setLink(saved.link ?? null)
       workout.restoreWorkout({
         currentBlockIndex: saved.currentBlockIndex ?? 0,
         attempts: saved.attempts,
@@ -118,6 +131,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     savePersistedWorkout({
       protocol,
       protocolName,
+      link,
       attempts: workout.attempts,
       blockDurations: workout.blockDurations,
       skippedBlocks: Array.from(workout.skippedBlocks),
@@ -133,18 +147,28 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     workout.currentBlockIndex,
     protocol,
     protocolName,
+    link,
   ])
 
-  // A completed workout already saved itself (in the hook) — drop the snapshot.
+  // A completed workout already saved itself (in the hook) — drop the snapshot
+  // and let the coach know (fire-and-forget, best-effort).
   useEffect(() => {
-    if (workout.status === "completed") clearPersistedWorkout()
+    if (workout.status === "completed") {
+      clearPersistedWorkout()
+      notifyCoachOfWorkoutCompletion(protocolName)
+    }
   }, [workout.status])
 
-  const openWorkout = useCallback((p: any[], name: string) => {
+  const openWorkout = useCallback((p: any[], name: string, l?: SessionLink) => {
     setProtocol(p)
     setProtocolName(name)
+    setLink(l ?? null)
     setModalVisible(true)
     setWorkoutMinimized(false)
+  }, [])
+
+  const setBlockCoached = useCallback((index: number, coached: boolean) => {
+    setProtocol((p) => p.map((b, i) => (i === index ? { ...b, coached: coached || undefined } : b)))
   }, [])
 
   const closeModal = useCallback(() => {
@@ -172,6 +196,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     workoutMinimized,
     modalVisible,
     openWorkout,
+    setBlockCoached,
     closeModal,
     endWorkout,
     minimize,

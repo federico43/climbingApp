@@ -45,6 +45,7 @@ export function WorkOutState({
   onMinimize,
   autoStart = false,
   workout,
+  onSetCoached,
 }: {
   protocol: any[]
   protocolName: string
@@ -54,6 +55,9 @@ export function WorkOutState({
   onMinimize?: () => void
   autoStart?: boolean
   workout: ReturnType<typeof useWorkout>
+  // Switches the current block between guided and coached (§12a). Omitted →
+  // no switch.
+  onSetCoached?: (index: number, coached: boolean) => void
 }) {
   const {
     currentBlock,
@@ -304,7 +308,24 @@ export function WorkOutState({
           />
         </View>
       </View>
-      <BlockEntry key={currentBlockIndex}>
+      {/* Coach is here / On my own — only before anything's logged on the block. */}
+      {onSetCoached && currentBlock && !attempts.some((a) => a.blockIndex === currentBlockIndex) && (
+        <Pressable
+          style={[styles.coachSwitch, currentBlock.coached && styles.coachSwitchOn]}
+          onPress={() => onSetCoached(currentBlockIndex, !currentBlock.coached)}
+          hitSlop={6}
+        >
+          <Ionicons
+            name={currentBlock.coached ? "person" : "person-outline"}
+            size={13}
+            color={currentBlock.coached ? C.bg : C.textSecondary}
+          />
+          <Text style={[styles.coachSwitchText, currentBlock.coached && { color: C.bg }]}>
+            {currentBlock.coached ? "Coach is here · switch to on my own" : "Coach is here?"}
+          </Text>
+        </Pressable>
+      )}
+      <BlockEntry key={`${currentBlockIndex}-${currentBlock?.coached ? "c" : "g"}`}>
         <BlockTimerContext.Provider value={blockTimer}>
           <BlockRenderer
             block={currentBlock}
@@ -455,6 +476,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  coachSwitch: {
+    flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
+    marginHorizontal: 20, marginTop: 8, marginBottom: 2,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    borderWidth: 1, borderColor: C.border,
+  },
+  coachSwitchOn: { backgroundColor: C.green, borderColor: C.green },
+  coachSwitchText: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
   skipBtn: {
     flexDirection: "row",
     alignItems: "center",

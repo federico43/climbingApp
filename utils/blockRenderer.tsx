@@ -4,6 +4,7 @@ import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
 import { FourByFourBlock } from "@/components/FourByFourBlock"
 import { IntervalsBlock } from "@/components/IntervalsBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
+import { CoachedBlock } from "@/components/CoachedBlock"
 import { BoulderLevelOptions, ProjectPickerModal } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
@@ -68,6 +69,21 @@ export function BlockRenderer({
 
   const blockAttempts = attempts.filter((a) => a.blockIndex === currentBlockIndex)
   const onPrevBlock = currentBlockIndex > 0 ? goToPreviousBlock : undefined
+
+  // Run by the coach in person: title + Done (+ the coach's sequences),
+  // whatever the block's type (docs/training-plan-implementation.md §12b).
+  if (block.coached) {
+    return (
+      <CoachedBlock
+        key={currentBlockIndex}
+        block={block as any}
+        attempts={blockAttempts}
+        logAttempt={logAttempt}
+        goToNextBlock={goToNextBlock}
+        goToPreviousBlock={onPrevBlock}
+      />
+    )
+  }
 
   switch (block.type) {
     case "project_bouldering":

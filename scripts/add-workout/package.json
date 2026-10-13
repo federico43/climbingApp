@@ -1,0 +1,14 @@
+{
+  "name": "add-workout",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "add-workout.js",
+  "description": "One-off script: writes a new workout (protocol row) directly into Appwrite, optionally assigning it to an athlete.",
+  "scripts": {
+    "add-workout": "node add-workout.js"
+  },
+  "dependencies": {
+    "node-appwrite": "^27.1.0"
+  }
+}

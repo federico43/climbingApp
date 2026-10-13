@@ -12,6 +12,10 @@ import {
   useWindowDimensions,
 } from "react-native"
 import { LineChart } from "react-native-gifted-charts"
+import { ScProgressionCard } from "@/components/ScProgressionCard"
+import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
+import { coachExerciseView, type CoachExerciseView } from "@/utils/scCoach"
+import { loadWeightUnit } from "@/utils/weightUnit"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
@@ -199,6 +203,7 @@ export default function ExerciseProgressScreen() {
   const router = useRouter()
   const { width } = useWindowDimensions()
   const [dataPoints, setDataPoints] = useState<DayPoint[]>([])
+  const [progression, setProgression] = useState<CoachExerciseView | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [name, athleteId])
@@ -210,6 +215,9 @@ export default function ExerciseProgressScreen() {
         ? await getSessionsByUserId(athleteId)
         : await getSessions()
       setDataPoints(buildProgressData(sessions, name ?? ""))
+      // Library for the exercise's ladder + weight jump; offline → by name.
+      const [library, unit] = await Promise.all([getExerciseLibrary().catch(() => null), loadWeightUnit()])
+      setProgression(coachExerciseView(sessions, name ?? "", library, unit))
     } catch (e) {
       console.error(e)
     } finally {
@@ -260,6 +268,8 @@ export default function ExerciseProgressScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
+          {progression && <ScProgressionCard view={progression} />}
+
           {/* Single-day summary shown when there's only one training day */}
           {!hasMultipleDays && latest && (
             <View style={styles.summaryCard}>

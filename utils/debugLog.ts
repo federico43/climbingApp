@@ -39,6 +39,18 @@ export function installDebugLogCapture() {
   console.log = (...args: any[]) => { push("log", args); origLog(...args) }
   console.warn = (...args: any[]) => { push("warn", args); origWarn(...args) }
   console.error = (...args: any[]) => { push("error", args); origError(...args) }
+
+  // Console wrapping only catches explicit console.* calls — a thrown error
+  // that nothing catches never goes through console.* and would otherwise
+  // vanish silently on a device with no attached debugger. RN's own
+  // unhandled-promise-rejection tracking already routes through
+  // console.warn, so the console wrap above catches those too.
+  const g = globalThis as any
+  const prevHandler = g.ErrorUtils?.getGlobalHandler?.()
+  g.ErrorUtils?.setGlobalHandler?.((err: Error, isFatal?: boolean) => {
+    push("error", [`Uncaught ${isFatal ? "fatal " : ""}error: ${err?.message}`, err?.stack])
+    prevHandler?.(err, isFatal)
+  })
 }
 
 export function getDebugLogs(): LogEntry[] {

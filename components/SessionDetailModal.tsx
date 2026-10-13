@@ -4,7 +4,7 @@ import { deleteSession, getSprayRoute, getSprayWall, SessionRow, updateSession }
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { parseVariations, variationHolds, type RouteVariations, type VariationKey } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import {
   Alert,
   Modal,
@@ -120,7 +120,76 @@ interface Props {
   onUpdated: (session: SessionRow) => void
 }
 
+// ─── Coached block view ───────────────────────────────────────────────────────
+
+// A block the coach ran in person (docs/training-plan-implementation.md §12):
+// nothing logged but Done — except sequences, where the athlete saved each
+// sequence the coach set with its sends.
+function CoachedBlockView({ blockType, attempts }: { blockType: string; attempts: any[] }) {
+  const routes = useMemo(() => {
+    const order: string[] = []
+    const by = new Map<string, { tries: number; sends: number }>()
+    for (const a of attempts) {
+      if (!a.routeId) continue
+      if (!by.has(a.routeId)) { order.push(a.routeId); by.set(a.routeId, { tries: 0, sends: 0 }) }
+      const r = by.get(a.routeId)!
+      r.tries++
+      if (a.success) r.sends++
+    }
+    return order.map((id) => ({ id, ...by.get(id)! }))
+  }, [attempts])
+  const [info, setInfo] = useState<Record<string, { name: string; level?: number }>>({})
+  useEffect(() => {
+    for (const r of routes) {
+      getSprayRoute(r.id)
+        .then((row) => setInfo((p) => ({ ...p, [r.id]: { name: row.name, level: row.level ?? undefined } })))
+        .catch(() => {})
+    }
+  }, [routes])
+
+  if (blockType !== "sequence" || routes.length === 0) {
+    return <Text style={styles.blockStats}>Run by the coach</Text>
+  }
+  return (
+    <View style={styles.attemptList}>
+      {routes.map((r, i) => (
+        <View key={r.id} style={styles.coachedSeqRow}>
+          <Ionicons name="footsteps" size={13} color={C.green} />
+          <Text style={styles.routeName} numberOfLines={1}>
+            {info[r.id]?.name ?? `Sequence ${i + 1}`}
+            {info[r.id]?.level != null ? `  ·  level ${info[r.id]!.level}` : ""}
+          </Text>
+          <Text style={styles.coachedSeqSends}>{r.sends}/{r.tries} sent</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 // ─── S&C block view ───────────────────────────────────────────────────────────
+
+// Exercises authored as loadMode "level" carry the container (what was
+// actually prescribed) plus its harder-than chain. Find which prescribed
+// exercise a logged round belongs to — same family-match reasoning as
+// scHistory.ts's findLastScLog, just scoped to this one block's own
+// exercises instead of searching session history.
+function findPrescribedFor(sc: any, exercises: any[]): any | null {
+  return (
+    exercises.find((ex) => {
+      if (ex.loadMode !== "level" || !ex.levels?.length) return false
+      const candidateIds = [ex.exerciseId, ...ex.levels.map((l: any) => l.exerciseId)].filter(Boolean)
+      if (candidateIds.length && sc.exerciseId) return candidateIds.includes(sc.exerciseId)
+      return sc.exerciseName === ex.name
+    }) ?? null
+  )
+}
+
+// True when a round was logged under a level other than the prescribed
+// container — i.e. the athlete actually progressed during this training,
+// not just what the coach originally programmed.
+function isProgression(sc: any, prescribed: any | null): boolean {
+  return !!prescribed && !!sc.exerciseId && sc.exerciseId !== prescribed.exerciseId
+}
 
 function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
   const exercises: any[] = block.exercises ?? []
@@ -135,8 +204,26 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
   }
   const loggedRounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
 
+  // Distinct container→level jumps logged anywhere in this block, so the
+  // coach can spot "progression happened this training" without reading
+  // every round — the per-round badge below covers the "on which round, to
+  // what" detail.
+  const progressions = new Set<string>()
+  for (const roundNum of loggedRounds) {
+    for (const sc of byRound[roundNum]) {
+      const prescribed = findPrescribedFor(sc, exercises)
+      if (isProgression(sc, prescribed)) progressions.add(`${prescribed.name} → ${sc.exerciseName}`)
+    }
+  }
+
   return (
     <View style={{ gap: 10 }}>
+      {progressions.size > 0 && (
+        <View style={styles.progressionBanner}>
+          <Ionicons name="trending-up" size={13} color={C.green} />
+          <Text style={styles.progressionBannerText}>{[...progressions].join("  ·  ")}</Text>
+        </View>
+      )}
       {/* Prescribed exercises */}
       {exercises.length > 0 && (
         <View style={styles.scExerciseList}>
@@ -161,9 +248,20 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
           {loggedRounds.map((roundNum) => (
             <View key={roundNum} style={styles.scRound}>
               <Text style={styles.scRoundLabel}>Round {roundNum}</Text>
-              {byRound[roundNum].map((sc, i) => (
+              {byRound[roundNum].map((sc, i) => {
+                const prescribed = findPrescribedFor(sc, exercises)
+                const progressed = isProgression(sc, prescribed)
+                return (
                 <View key={i} style={styles.scLogRow}>
-                  <Text style={styles.scLogName}>{sc.exerciseName}</Text>
+                  <View style={styles.scLogNameRow}>
+                    <Text style={styles.scLogName}>{sc.exerciseName}</Text>
+                    {progressed && (
+                      <View style={styles.levelUpBadge}>
+                        <Ionicons name="trending-up" size={10} color={C.green} />
+                        <Text style={styles.levelUpBadgeText}>from {prescribed.name}</Text>
+                      </View>
+                    )}
+                  </View>
                   {sc.repsCompleted != null ? (
                     <View style={styles.scLogFields}>
                       <Text style={styles.scLogDetail}>{sc.repsCompleted} reps</Text>
@@ -189,7 +287,8 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
                   )}
                   {!!sc.notes && <Text style={styles.scLogNotes}>"{sc.notes}"</Text>}
                 </View>
-              ))}
+                )
+              })}
             </View>
           ))}
         </View>
@@ -630,6 +729,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                     const blockAttempts = rawAttempts.filter((a) => a.blockIndex === block.blockIndex)
                     const sends = blockAttempts.filter((a) => a.success).length
                     const total = blockAttempts.length
+                    const coached = !!block.block?.coached
 
                     return (
                       <View key={block.blockIndex} style={styles.blockCard}>
@@ -638,20 +738,27 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                             <Text style={styles.typePillText}>{formatBlockType(block.blockType)}</Text>
                           </View>
                           <Text style={styles.blockName} numberOfLines={1}>{block.blockName}</Text>
+                          {coached && (
+                            <View style={styles.coachedPill}>
+                              <Text style={styles.coachedPillText}>Coached</Text>
+                            </View>
+                          )}
                           {block.duration > 0 && (
                             <Text style={styles.blockDuration}>{formatDuration(block.duration)}</Text>
                           )}
                         </View>
-                        {block.blockType === "sequence" && !!block.block?.routeName && (
+                        {!coached && block.blockType === "sequence" && !!block.block?.routeName && (
                           <View style={styles.routeRow}>
                             <Ionicons name="footsteps" size={13} color={C.green} />
                             <Text style={styles.routeName} numberOfLines={1}>{block.block.routeName}</Text>
                           </View>
                         )}
-                        {block.blockType === "sequence" && (
+                        {!coached && block.blockType === "sequence" && (
                           <SequenceBlockView block={block.block} attempts={blockAttempts} />
                         )}
-                        {block.blockType === "strength_conditioning" ? (
+                        {coached ? (
+                          <CoachedBlockView blockType={block.blockType} attempts={blockAttempts} />
+                        ) : block.blockType === "strength_conditioning" ? (
                           <ScBlockView block={block.block} attempts={blockAttempts} />
                         ) : block.blockType === "free_session" ? (
                           <FreeSessionBlockView block={block.block} attempts={blockAttempts} />
@@ -816,6 +923,10 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  coachedPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: C.green + "22" },
+  coachedPillText: { fontSize: 11, fontWeight: "800", color: C.green },
+  coachedSeqRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  coachedSeqSends: { marginLeft: "auto", fontSize: 13, fontWeight: "800", color: C.green },
   safe: { flex: 1, backgroundColor: C.bg },
 
   header: {
@@ -933,6 +1044,12 @@ const styles = StyleSheet.create({
   },
 
   // ── S&C view ──
+  progressionBanner: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: C.green + "1a", borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 7,
+  },
+  progressionBannerText: { fontSize: 12, fontWeight: "700", color: C.green, flex: 1 },
   scExerciseList: { gap: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   scExerciseRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 3 },
   scExerciseName: { fontSize: 13, fontWeight: "600", color: C.textPrimary, flex: 1, marginRight: 8 },
@@ -941,7 +1058,14 @@ const styles = StyleSheet.create({
   scRound: { gap: 4 },
   scRoundLabel: { fontSize: 11, fontWeight: "700", color: C.textMuted, textTransform: "uppercase" as const, letterSpacing: 0.5 },
   scLogRow: { gap: 2, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: C.border },
+  scLogNameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   scLogName: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
+  levelUpBadge: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: C.green + "22", borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  levelUpBadgeText: { fontSize: 10, fontWeight: "700", color: C.green },
   scLogFields: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   scLogDetail: { fontSize: 12, color: C.textSecondary },
   scLogNotes: { fontSize: 12, color: C.textMuted, fontStyle: "italic" as const },

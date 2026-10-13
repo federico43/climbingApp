@@ -1,6 +1,8 @@
+import { useHoldUpdates } from "@/utils/updateHold"
 import { C } from "@/utils/theme"
 import { ExerciseRow, ProtocolRow, createProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import {
+  AuthoringAthleteContext,
   Block,
   BlockEditorRow,
   BlockPickerModal,
@@ -45,6 +47,8 @@ export function AthleteCustomizeWorkout({
   onClose: () => void
   onSaved?: () => void
 }) {
+  // A reload here would lose unsaved work — see utils/updateHold.ts.
+  useHoldUpdates()
   const editing = !!protocol
   const [name, setName] = useState(protocol?.name ?? seedName ?? "")
   const [blocks, setBlocks] = useState<Block[]>(() => {
@@ -110,9 +114,18 @@ export function AthleteCustomizeWorkout({
   }
 
   return (
+   <AuthoringAthleteContext.Provider value={athleteId}>
    <SCLibraryContext.Provider value={libraryController}>
     <View style={s.root}>
-      <View style={[s.shell, { marginTop: insets.top + 14, marginBottom: insets.bottom + 24 }]}>
+      <View style={[s.shell, {
+        marginTop: insets.top + (wide ? 14 : 0),
+        marginBottom: insets.bottom + (wide ? 24 : 0),
+        marginHorizontal: wide ? 24 : 0,
+        borderRadius: wide ? 24 : 0,
+        borderWidth: wide ? 1 : 0,
+        shadowOpacity: wide ? 0.45 : 0,
+        elevation: wide ? 12 : 0,
+      }]}>
         <View style={s.header}>
           <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
           <View style={s.titleWrap}>
@@ -159,7 +172,9 @@ export function AthleteCustomizeWorkout({
             </Pressable>
           )}
 
-          {libraryBlockId && (
+          {/* On wide screens the library takes over the right pane instead
+              (below), since that space is already dedicated to picking things. */}
+          {!wide && libraryBlockId && (
             <View style={s.libOverlay}>
               <ExerciseLibraryPane
                 variant="overlay"
@@ -172,9 +187,17 @@ export function AthleteCustomizeWorkout({
 
         {wide && (
           <View style={s.rightPane}>
-            <SCLibraryContext.Provider value={null}>
-              <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
-            </SCLibraryContext.Provider>
+            {libraryBlockId ? (
+              <ExerciseLibraryPane
+                variant="overlay"
+                onClose={() => setLibraryBlockId(null)}
+                onAdd={(ex) => addExerciseToBlock(libraryBlockId, ex)}
+              />
+            ) : (
+              <SCLibraryContext.Provider value={null}>
+                <BlockPickerModal onAdd={addBlock} onClose={() => {}} embedded />
+              </SCLibraryContext.Provider>
+            )}
           </View>
         )}
         </View>
@@ -189,6 +212,7 @@ export function AthleteCustomizeWorkout({
       )}
     </View>
    </SCLibraryContext.Provider>
+   </AuthoringAthleteContext.Provider>
   )
 }
 
@@ -216,7 +240,7 @@ const s = StyleSheet.create({
 
   panes: { flex: 1, flexDirection: "row" },
   leftPane: { flex: 1 },
-  rightPane: { width: 340, borderLeftWidth: 1, borderLeftColor: C.border },
+  rightPane: { width: 420, borderLeftWidth: 1, borderLeftColor: C.border },
 
   libOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: C.surface, zIndex: 30 },
 

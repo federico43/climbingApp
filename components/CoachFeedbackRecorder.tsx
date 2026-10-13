@@ -1,3 +1,4 @@
+import { useHoldUpdates } from "@/utils/updateHold"
 import { C } from "@/utils/theme"
 import { DebugLogOverlay } from "@/components/DebugLogOverlay"
 import { DrawingCanvas } from "@/components/DrawingCanvas"
@@ -81,6 +82,8 @@ interface Props {
 // athlete's replay needs to reconstruct the session (see
 // hooks/useFeedbackReplay.ts). No flattened video is ever produced.
 export function CoachFeedbackRecorder({ player, video, positionMs, durationMs, onClose, onSent }: Props) {
+  // A reload here would lose unsaved work — see utils/updateHold.ts.
+  useHoldUpdates()
   const [recPhase, setRecPhase] = useState<RecPhase>("ready")
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("control")
   const [strokes, setStrokes] = useState<Stroke[]>([])

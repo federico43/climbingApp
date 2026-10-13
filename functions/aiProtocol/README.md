@@ -67,6 +67,19 @@ Behavior:
 - Called with `async: true` (queued on Appwrite) — the client never waits on
   or depends on the result.
 
+## Homework actions
+
+- `{ "action": "homeworkAssigned", "homeworkId", "dueLabel" }` — coach only.
+  Pushes the homework's athlete "You've got homework".
+- `{ "action": "homeworkUpdate", "homeworkId", "scheduledFor", "day", "whenLabel" }`
+  or `{ "action": "homeworkUpdate", "homeworkId", "cantAttend": true, "note" }` —
+  only the homework's own athlete. Writes `scheduledFor` / `homeworkStatus` /
+  `homeworkNote` on the `protocol` row with the server key, then pushes every
+  coach.
+
+These **write**, so `APPWRITE_API_KEY` needs write access to the database
+(not just `databases.read`). `PROTOCOLS_TABLE` defaults to `protocol`.
+
 ## Notes
 
 - **Model**: defaults to `claude-opus-4-8` (`MODEL` in `src/main.js`). Switch to

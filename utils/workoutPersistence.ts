@@ -3,6 +3,7 @@
 // runs; read once on launch to recover an interrupted session; cleared when a
 // workout completes or is cancelled.
 
+import type { SessionLink } from "@/services/BoulderGraphService"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 
 const KEY = "active-workout-v1"
@@ -10,6 +11,7 @@ const KEY = "active-workout-v1"
 export interface PersistedWorkout {
   protocol: any[]
   protocolName: string
+  link?: SessionLink | null   // which workout it came from (absent on older snapshots)
   attempts: any[]
   blockDurations: Record<number, number>
   skippedBlocks: number[]

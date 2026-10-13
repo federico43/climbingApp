@@ -1,3 +1,4 @@
+import { useHoldUpdates } from "@/utils/updateHold"
 import { C } from "@/utils/theme"
 import { getDisplayRadius, pixelsToFractionRadius } from "@/utils/holdRadius"
 import { useImageSize } from "@/utils/useImageSize"
@@ -129,11 +130,16 @@ interface Props {
   initialLevel?: number
   initialType?: string
   saving?: boolean
+  // Just the Original — no Easier / Harder tabs (a coach's sequence logged
+  // mid-workout, §12b of docs/training-plan-implementation.md).
+  originalOnly?: boolean
   onBack?: () => void
   onSave?: (name: string, data: { variations: RouteVariations; level: number; type: string }) => void
 }
 
-export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, onBack, onSave }: Props) {
+export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, originalOnly = false, onBack, onSave }: Props) {
+  // A reload here would lose unsaved work — see utils/updateHold.ts.
+  useHoldUpdates()
   const insets = useSafeAreaInsets()
   // The three variations of this route; `holds` always mirrors the active one.
   const initialVars: RouteVariations = initialVariations ?? { original: initialHolds }
@@ -284,10 +290,16 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
       const newScale = Math.max(1, Math.min(6, pinchStartScale.value * e.scale))
       const cx = containerWS.value / 2
       const cy = containerHS.value / 2
+      // A Mac trackpad pinch (iPad app on Mac) arrives with zero touches, so
+      // gesture-handler's focal point — an average over the touches — is
+      // 0/0 = NaN, which poisoned tx/ty and the zoom never showed. Zoom
+      // around the center of the view in that case.
+      const fx = Number.isFinite(e.focalX) ? e.focalX : cx
+      const fy = Number.isFinite(e.focalY) ? e.focalY : cy
       // Keep the focal point (midpoint between the two fingers) fixed on screen:
       // newTx = focalX - cx - (focalX - startTx - cx) / startScale * newScale
-      tx.value = e.focalX - cx - (e.focalX - pinchStartTx.value - cx) / pinchStartScale.value * newScale
-      ty.value = e.focalY - cy - (e.focalY - pinchStartTy.value - cy) / pinchStartScale.value * newScale
+      tx.value = fx - cx - (fx - pinchStartTx.value - cx) / pinchStartScale.value * newScale
+      ty.value = fy - cy - (fy - pinchStartTy.value - cy) / pinchStartScale.value * newScale
       scale.value = newScale
     })
     .onEnd(() => {
@@ -297,8 +309,11 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
     })
 
   // Two-finger pan — moves the image. Runs on UI thread (only touches shared values).
+  // Trackpad two-finger scroll (Mac / iPad with a trackpad) pans too — it
+  // carries no touches, so minPointers alone would never let it through.
   const imagePan = Gesture.Pan()
     .minPointers(2)
+    .enableTrackpadTwoFingerGesture(true)
     .onBegin(() => {
       savedTx.value = tx.value
       savedTy.value = ty.value
@@ -632,7 +647,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
       {/* Meta bar — variations / level / type */}
       <View style={styles.metaBar}>
         <View style={styles.varTabs}>
-          {VARIATION_KEYS.map((k) => {
+          {VARIATION_KEYS.filter((k) => !originalOnly || k === "original").map((k) => {
             const isActive = activeVariation === k
             const hasHolds = isActive ? holds.length > 0 : (variations[k]?.length ?? 0) > 0
             return (
@@ -922,7 +937,9 @@ const styles = StyleSheet.create({
   },
   stepTxt: { fontSize: 18, fontWeight: "700", color: "#fff" },
   levelVal: { fontSize: 16, fontWeight: "800", color: "#fff", minWidth: 20, textAlign: "center" },
-  typeCtrl: { flexDirection: "row", gap: 6 },
+  // Wraps to a second line on narrow screens — four types don't fit beside
+  // the level stepper on a phone.
+  typeCtrl: { flex: 1, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 6, marginLeft: 12 },
   typePill: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: "#1c1c1c",
   },

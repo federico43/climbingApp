@@ -69,9 +69,9 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
   // Refs
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const seekFlashTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const seekFlashTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const progressBarWidthRef = useRef(0)
   const lastTapRef = useRef<{ time: number; side: "left" | "right" } | null>(null)
 

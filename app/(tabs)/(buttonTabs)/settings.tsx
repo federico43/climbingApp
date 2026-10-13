@@ -1,16 +1,25 @@
 import { C } from "@/utils/theme"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
-import { ConsumeAuth } from "@/components/auth-context"
+import { useAuth } from "@/components/auth-context"
 import { DailyCheckInModal } from "@/components/DailyCheckInModal"
+import { VersionFooter } from "@/components/VersionFooter"
+import { Ionicons } from "@expo/vector-icons"
 import { CheckinRow, getCheckinForToday } from "@/services/BoulderGraphService"
 import { useRouter } from "expo-router"
 import { useEffect, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+const TRAINING_ROWS = [
+  { label: "My workouts", route: "/(tabs)/(buttonTabs)/my-workouts" },
+  { label: "My sequences", route: "/(tabs)/(buttonTabs)/my-sequences" },
+  { label: "Past workouts", route: "/(tabs)/(buttonTabs)/past-workouts" },
+  { label: "Projects", route: "/(tabs)/(buttonTabs)/past-projects" },
+]
+
 export default function SettingsScreen() {
-  const { User, signOut, role } = ConsumeAuth()
+  const { User, signOut, role } = useAuth()
   const router = useRouter()
 
   const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
@@ -26,8 +35,13 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
       <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Account & preferences</Text>
+        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
+        </Pressable>
+        <View>
+          <Text style={styles.title}>Settings</Text>
+          <Text style={styles.subtitle}>Account & preferences</Text>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -62,10 +76,49 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Training */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Training</Text>
+          <View style={styles.card}>
+            {TRAINING_ROWS.map((r, i) => (
+              <Pressable
+                key={r.route}
+                style={({ pressed }) => [
+                  styles.row,
+                  i === TRAINING_ROWS.length - 1 && styles.rowLast,
+                  pressed && { opacity: 0.6 },
+                ]}
+                onPress={() => router.push(r.route as any)}
+              >
+                <Text style={styles.rowLabel}>{r.label}</Text>
+                <Text style={styles.rowValue}>›</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Media */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Media</Text>
+          <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.row, styles.rowLast, pressed && { opacity: 0.6 }]}
+              onPress={() => router.push("/(tabs)/(buttonTabs)/library" as any)}
+            >
+              <Text style={styles.rowLabel}>Videos</Text>
+              <Text style={styles.rowValue}>›</Text>
+            </Pressable>
+          </View>
+        </View>
+
         {/* About / debug */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>About</Text>
           <View style={styles.card}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Version</Text>
+              <VersionFooter />
+            </View>
             <Pressable
               style={({ pressed }) => [styles.row, styles.rowLast, pressed && { opacity: 0.6 }]}
               onPress={() => router.push("/OnBoarding")}
@@ -109,10 +162,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
 
   header: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 20,
-    gap: 2,
+    gap: 12,
+  },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center",
   },
   title: {
     fontSize: 28,

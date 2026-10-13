@@ -1,6 +1,8 @@
 import { account, tablesDB, storage, functions } from "@/components/AppWrite"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
+import type { Focus, LevelStep } from "@/utils/scProgression"
+import type { PlanFocus, ScPattern } from "@/utils/planRotation"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -131,6 +133,11 @@ export interface AppUser {
   username: string
   assignedProtocolId: string | null
   assignedAt?: string | null   // YYYY-MM-DD the coach assigned the protocol
+  pushToken?: string | null    // this device's Expo push token, see services/notifications.ts
+  // Hardest gym colour (BoulderLevelOptions value) the athlete reliably
+  // flashes — set by the coach. Constraint warmups pick their colour range
+  // relative to it (see docs/progression-spec.md §3.5).
+  flashLevel?: string | null
   [key: string]: any
 }
 
@@ -145,6 +152,20 @@ export interface ProtocolRow {
   // the library (shown separately on Home, freely editable/deletable by them);
   // anything else (incl. missing, for pre-existing rows) means the coach assigned it.
   source?: "coach" | "library" | null
+  // Set when the workout was built from a training plan: which plan, and its
+  // position in the plan's rotation (utils/planRotation.ts). planPart "sc" =
+  // the plan workout's S&C, split off into a workout of its own — it shares
+  // its climbing workout's planIndex and doesn't advance the rotation.
+  // planPart "homework" = block(s) the coach split off for the athlete to do
+  // on a day of their own (utils/homework.ts); planId / planIndex only when
+  // it came from a plan workout. Never advances the rotation either.
+  planId?: string | null
+  planIndex?: number | null
+  planPart?: "sc" | "homework" | null
+  dueBy?: string | null          // homework: "YYYY-MM-DD", last day to do it
+  scheduledFor?: string | null   // homework: ISO date-time the athlete picked
+  homeworkStatus?: "cant_attend" | null
+  homeworkNote?: string | null   // homework: the athlete's "can't attend" message
 }
 
 export interface BlockRow {
@@ -214,6 +235,30 @@ export interface SessionRow {
   // JSON stringified Record<blockIndex, seconds>. Optional in the schema —
   // older sessions may not have it.
   blockDurations?: string
+  // The workout this session was started from (SessionLink). Only on
+  // sessions saved since 2026-10-04 — older ones are matched by date.
+  protocolId?: string | null
+  planId?: string | null
+  planIndex?: number | null
+}
+
+// Which workout a session came from, so plan progress can count what the
+// athlete actually did (not just what the coach built). A split-off S&C or
+// homework workout shares its climbing workout's planIndex, so its sessions
+// don't carry the plan link — a deleted one must never count as the slot.
+// Tell them apart through protocolId → planPart.
+export interface SessionLink {
+  protocolId: string
+  planId?: string
+  planIndex?: number
+}
+
+export function sessionLinkFor(p: ProtocolRow): SessionLink {
+  return {
+    protocolId: p.$id,
+    ...(p.planId && !p.planPart ? { planId: p.planId } : {}),
+    ...(p.planIndex && !p.planPart ? { planIndex: p.planIndex } : {}),
+  }
 }
 
 // `forUserId` lets a coach log a session on behalf of an athlete — omit it
@@ -221,29 +266,29 @@ export interface SessionRow {
 export async function saveSession(data: any, forUserId?: string) {
   try {
     const userId = forUserId ?? (await account.get()).$id
-    const payload = { ...data, userId }
-    try {
-      return await tablesDB.createRow({
-        databaseId: DATABASE_ID,
-        tableId: SESSION_TABLE,
-        rowId: ID.unique(),
-        data: payload,
-      })
-    } catch (e: any) {
-      // If the schema doesn't include `blockDurations` yet, retry without it
-      // so the session still saves. The user can add the column in Appwrite
-      // whenever and future sessions will include durations.
-      if (payload.blockDurations !== undefined) {
-        const { blockDurations: _bd, ...rest } = payload
+    const full = { ...data, userId }
+    // Optional columns the schema may not have yet — on failure, retry
+    // without the link columns, then without blockDurations too, so the
+    // session still saves. Add the columns in Appwrite whenever.
+    const { protocolId: _pid, planId: _plid, planIndex: _pidx, ...noLink } = full
+    const { blockDurations: _bd, ...bare } = noLink
+    const payloads = [full]
+    if (Object.keys(noLink).length < Object.keys(full).length) payloads.push(noLink)
+    if (noLink.blockDurations !== undefined) payloads.push(bare)
+    let lastError: unknown
+    for (const payload of payloads) {
+      try {
         return await tablesDB.createRow({
           databaseId: DATABASE_ID,
           tableId: SESSION_TABLE,
           rowId: ID.unique(),
-          data: rest,
+          data: payload,
         })
+      } catch (e) {
+        lastError = e
       }
-      throw e
     }
+    throw lastError
   } catch (error) { console.error("Failed to save session", error) }
 }
 
@@ -306,6 +351,129 @@ export async function saveCheckin(restRating: number, ate: boolean): Promise<Che
   } catch (error) {
     console.error("Failed to save check-in", error)
   }
+}
+
+// ─── Training plans ───────────────────────────────────────────────────────────
+// One active training plan per athlete: a 6-week window, a focus (shapes the
+// warm-ups) and, optionally, S&C — 4 movement patterns with up to 2 library
+// exercises each (docs/training-plan.md §9). The workouts a plan generates
+// follow a fixed rotation (utils/planRotation.ts); each one saved from the
+// plan carries planId/planIndex on its protocol row.
+
+export const TRAINING_PLANS_TABLE = "training_plans"
+// Table must exist in Appwrite with columns: athleteId (string), name
+// (string), windowStart (string, "YYYY-MM-DD"), windowEnd (string,
+// "YYYY-MM-DD"), status (string: "active" | "archived"), focus (string,
+// PlanFocus), hasSc (boolean), hasMobility (boolean), scPatterns (string,
+// JSON ScPattern[]). movementTypeFocus (JSON string) is the pre-v2 S&C focus
+// — still read for old plans, no longer written.
+
+export interface TrainingPlanRow {
+  $id: string
+  $createdAt: string
+  athleteId: string
+  name: string
+  windowStart: string
+  windowEnd: string
+  status: "active" | "archived"
+  focus: PlanFocus | null   // null on plans made before v2
+  hasSc: boolean
+  hasMobility: boolean
+  scPatterns: ScPattern[]
+  movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
+}
+
+function parseJsonArray(raw: unknown): any[] {
+  if (Array.isArray(raw)) return raw
+  try {
+    const parsed = JSON.parse(raw as string)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function toTrainingPlan(row: any): TrainingPlanRow {
+  return {
+    ...row,
+    focus: row.focus ?? null,
+    hasSc: !!row.hasSc,
+    hasMobility: !!row.hasMobility,
+    scPatterns: parseJsonArray(row.scPatterns),
+    movementTypeFocus: parseJsonArray(row.movementTypeFocus),
+  }
+}
+
+export async function getActiveTrainingPlan(athleteId: string): Promise<TrainingPlanRow | null> {
+  const rows = await listAllRows<any>(TRAINING_PLANS_TABLE, [
+    Query.equal("athleteId", athleteId),
+    Query.equal("status", "active"),
+    Query.orderDesc("$createdAt"),
+  ])
+  return rows[0] ? toTrainingPlan(rows[0]) : null
+}
+
+// Full history (active + archived), newest first.
+export async function listTrainingPlans(athleteId: string): Promise<TrainingPlanRow[]> {
+  const rows = await listAllRows<any>(TRAINING_PLANS_TABLE, [
+    Query.equal("athleteId", athleteId),
+    Query.orderDesc("$createdAt"),
+  ])
+  return rows.map(toTrainingPlan)
+}
+
+export interface TrainingPlanInput {
+  name: string
+  windowStart: string
+  windowEnd: string
+  focus: PlanFocus
+  hasSc: boolean
+  hasMobility: boolean
+  scPatterns: ScPattern[]
+}
+
+function planData(input: Partial<TrainingPlanInput>): Record<string, any> {
+  const data: Record<string, any> = { ...input }
+  if (input.scPatterns) data.scPatterns = JSON.stringify(input.scPatterns)
+  return data
+}
+
+// Starts a new plan: a training plan is a fresh period, not an edit of the
+// old one, so every other active plan is archived — after the new one
+// exists, so a failure never leaves the athlete without a plan.
+export async function createTrainingPlan(athleteId: string, input: TrainingPlanInput): Promise<TrainingPlanRow> {
+  const response = await tablesDB.createRow({
+    databaseId: DATABASE_ID,
+    tableId: TRAINING_PLANS_TABLE,
+    rowId: ID.unique(),
+    data: { athleteId, ...planData(input), status: "active" },
+  })
+  const plan = toTrainingPlan(response)
+  const active = await listAllRows<any>(TRAINING_PLANS_TABLE, [
+    Query.equal("athleteId", athleteId),
+    Query.equal("status", "active"),
+  ])
+  await Promise.all(
+    active
+      .filter((row) => row.$id !== plan.$id)
+      .map((row) => tablesDB.updateRow({
+        databaseId: DATABASE_ID, tableId: TRAINING_PLANS_TABLE, rowId: row.$id, data: { status: "archived" },
+      })),
+  )
+  return plan
+}
+
+// Edits the current plan in place. Only workouts not built yet follow the
+// change — already-saved workouts keep their blocks.
+export async function updateTrainingPlan(plan: TrainingPlanRow, input: Partial<TrainingPlanInput>): Promise<TrainingPlanRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: TRAINING_PLANS_TABLE, rowId: plan.$id, data: planData(input),
+  })
+  return toTrainingPlan(response)
+}
+
+export async function deleteTrainingPlan(plan: TrainingPlanRow): Promise<void> {
+  await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: TRAINING_PLANS_TABLE, rowId: plan.$id })
 }
 
 export interface ProjectSessionSummary {
@@ -380,6 +548,13 @@ export async function updateSession(id: string, data: { attempts?: string; proto
 
 export async function setUserRole(userId: string, role: UserRole) {
   return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { role } })
+}
+
+// Throws when the `flashLevel` column doesn't exist on `users` yet (it's
+// added by hand in the Appwrite console) so the coach UI can say so, rather
+// than silently dropping the value like savePushToken does.
+export async function setFlashLevel(userId: string, flashLevel: string | null) {
+  return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { flashLevel } })
 }
 
 export async function deleteAthlete(userId: string): Promise<void> {
@@ -469,15 +644,48 @@ export async function listLibraryWorkouts(): Promise<ProtocolRow[]> {
 }
 
 export async function createProtocol(
-  input: { name: string; blocks: any[]; athleteId?: string; source?: "coach" | "library" },
+  input: {
+    name: string; blocks: any[]; athleteId?: string; source?: "coach" | "library"
+    planId?: string; planIndex?: number; planPart?: "sc" | "homework"; dueBy?: string
+  },
 ): Promise<ProtocolRow> {
   const data: Record<string, any> = { name: input.name, blocks: JSON.stringify(input.blocks) }
   if (input.athleteId) data.athleteId = input.athleteId
   if (input.source) data.source = input.source
+  if (input.planId) {
+    data.planId = input.planId
+    data.planIndex = input.planIndex
+  }
+  if (input.planPart) data.planPart = input.planPart
+  if (input.dueBy) data.dueBy = input.dueBy
   const response = await tablesDB.createRow({
     databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data,
   })
   return response as unknown as ProtocolRow
+}
+
+// Workouts built from a training plan (incl. split-off S&C ones), oldest first.
+export async function listPlanWorkouts(planId: string): Promise<ProtocolRow[]> {
+  return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [Query.equal("planId", planId), Query.orderAsc("$createdAt")])
+}
+
+// Coach: move a homework's deadline. Clears a "can't attend" so the athlete
+// picks a day again.
+export async function setHomeworkDeadline(id: string, dueBy: string): Promise<ProtocolRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: id,
+    data: { dueBy, homeworkStatus: null, homeworkNote: null },
+  })
+  return response as unknown as ProtocolRow
+}
+
+// An athlete's homework (planPart "homework"), newest first.
+export async function listAthleteHomework(athleteId: string): Promise<ProtocolRow[]> {
+  return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [
+    Query.equal("athleteId", athleteId),
+    Query.equal("planPart", "homework"),
+    Query.orderDesc("$createdAt"),
+  ])
 }
 
 // An athlete's templates: protocols tagged with their id. Lazily migrates the
@@ -621,11 +829,67 @@ export interface ExerciseRow {
   defaultSeries?: number
   photoUri?: string  // cloud URL (from uploadPhoto) showing how to perform the exercise
   notes?: string     // coach's notes on correct form / cues
+  movementType?: string    // MovementType, see utils/movementTypes.ts
+  // How this exercise progresses: a numeric weight, or a step through an
+  // ordered `levels` list (e.g. calisthenics: knee push-up → push-up →
+  // archer push-up). Defaults to "weight" when unset.
+  loadMode?: "weight" | "level"
+  // Ordered easiest → hardest; only used when loadMode is "level". Each step
+  // references another library exercise (id + a name snapshot) rather than a
+  // free-typed label — see LevelStep in utils/scProgression.ts. Appwrite has
+  // no array-of-object attribute, so this is JSON text on the wire; parsed
+  // back into LevelStep[] by every function below before it reaches callers.
+  levels?: LevelStep[]
+  // Weight mode: the smallest jump this exercise's load can make (e.g. 2 for
+  // kettlebells, 2.5 for a barbell), in kg. Unset → 1 kg / 2.5 lb. See
+  // nextWeight in utils/scProgression.ts. Float column.
+  loadStep?: number | null
+  // An adjustable setting the app doesn't measure (bench height, lean, box,
+  // band — athletes judge those differently): the coach's hint for making
+  // it harder / easier, shown to the athlete, who says when they're on the
+  // hardest setting. See docs/sc-modifications-plan.md §2.1. String columns.
+  settingHarder?: string
+  settingEasier?: string
+  // Which S&C focuses this exercise can be programmed for (Focus, see
+  // utils/scProgression.ts) — e.g. box jumps only explosiveness. Unset/empty
+  // = all three. JSON text on the wire, like `levels`. Not used for mobility.
+  focuses?: Focus[]
+  // Mobility only: default hold (seconds) for an exercise done by reps
+  // (`unit: "reps"`, defaultReps) that can also be held statically. Held =
+  // passive mobility, used between strength exercises (docs/training-plan.md
+  // §7.3).
+  defaultHold?: string
+}
+
+function parseLevels(raw: unknown): LevelStep[] | undefined {
+  if (raw == null) return undefined
+  if (Array.isArray(raw)) return raw as LevelStep[]  // already parsed (e.g. optimistic local merge)
+  try {
+    const parsed = JSON.parse(raw as string)
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parseFocuses(raw: unknown): Focus[] | undefined {
+  if (raw == null || raw === "") return undefined
+  if (Array.isArray(raw)) return raw as Focus[]
+  try {
+    const parsed = JSON.parse(raw as string)
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function withParsedLevels<T extends { levels?: any; focuses?: any }>(row: T): T {
+  return { ...row, levels: parseLevels(row.levels), focuses: parseFocuses(row.focuses) }
 }
 
 export async function listExercises(): Promise<ExerciseRow[]> {
   const rows = await listAllRows<ExerciseRow>(EXERCISES_TABLE, [Query.orderAsc("name")])
-  return rows.map((row) => hideAppwriteHostedPhoto(row, "photoUri"))
+  return rows.map((row) => withParsedLevels(hideAppwriteHostedPhoto(row, "photoUri")))
 }
 
 type ExerciseInput = {
@@ -637,49 +901,94 @@ type ExerciseInput = {
   defaultSeries?: number
   photoUri?: string
   notes?: string
+  movementType?: string
+  loadMode?: "weight" | "level"
+  levels?: LevelStep[]
+  loadStep?: number | null
+  settingHarder?: string
+  settingEasier?: string
+  focuses?: Focus[]
+  defaultHold?: string
+}
+
+// Fields whose Appwrite columns may not exist yet on an older-provisioned
+// `exercises` table. Stripped out and retried on failure so the app keeps
+// working until the columns are added — see createExercise/updateExercise.
+const OPTIONAL_EXERCISE_FIELDS = ["unit", "photoUri", "notes", "movementType", "loadMode", "levels", "loadStep", "settingHarder", "settingEasier", "focuses", "defaultHold"] as const
+
+function stripOptionalFields(input: ExerciseInput): { rest: Partial<ExerciseInput>; stripped: Partial<ExerciseInput> } {
+  const rest: any = { ...input }
+  const stripped: any = {}
+  for (const key of OPTIONAL_EXERCISE_FIELDS) {
+    if (rest[key] !== undefined) { stripped[key] = rest[key]; delete rest[key] }
+  }
+  return { rest, stripped }
+}
+
+function allOptionalFieldsUnset(input: ExerciseInput): boolean {
+  return OPTIONAL_EXERCISE_FIELDS.every((key) => (input as any)[key] === undefined)
+}
+
+// Appwrite names the column it doesn't know ('Unknown attribute: "x"').
+// Dropping just that one keeps the rest of the save — before, a single
+// missing column made the retry drop every optional field (photo, notes,
+// ladder, focuses…) and the form looked saved while those were lost.
+function unknownOptionalField(e: unknown, input: Partial<ExerciseInput>): keyof ExerciseInput | null {
+  const m = String((e as any)?.message ?? "").match(/Unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i)
+  const key = m?.[1] as keyof ExerciseInput | undefined
+  return key && (OPTIONAL_EXERCISE_FIELDS as readonly string[]).includes(key) && (input as any)[key] !== undefined ? key : null
+}
+
+// Write with `write`, dropping optional columns Appwrite says don't exist
+// yet, one at a time. Falls back to dropping every optional field only when
+// the error doesn't name one. Dropped values are merged back into the
+// returned row so the caller (and blocks built from it) still have them.
+async function writeExercise(input: ExerciseInput, write: (data: Partial<ExerciseInput>) => Promise<unknown>): Promise<ExerciseRow> {
+  let data: Partial<ExerciseInput> = { ...input }
+  const dropped: Partial<ExerciseInput> = {}
+  for (let attempt = 0; attempt <= OPTIONAL_EXERCISE_FIELDS.length; attempt++) {
+    try {
+      const response = await write(data)
+      return withParsedLevels({ ...(response as unknown as ExerciseRow), ...dropped })
+    } catch (e) {
+      const key = unknownOptionalField(e, data)
+      if (key) {
+        ;(dropped as any)[key] = (data as any)[key]
+        const { [key]: _omit, ...restData } = data as any
+        data = restData
+        continue
+      }
+      if (allOptionalFieldsUnset(data as ExerciseInput)) throw e
+      const { rest, stripped } = stripOptionalFields(data as ExerciseInput)
+      const response = await write(rest)
+      return withParsedLevels({ ...(response as unknown as ExerciseRow), ...dropped, ...stripped })
+    }
+  }
+  throw new Error("Could not save the exercise")
+}
+
+// Appwrite has no array-of-object attribute, so `levels` and `focuses`
+// travel as JSON text.
+function toWire(input: Partial<ExerciseInput>): any {
+  const out: any = { ...input }
+  if (input.levels !== undefined) out.levels = JSON.stringify(input.levels)
+  if (input.focuses !== undefined) out.focuses = JSON.stringify(input.focuses)
+  return out
 }
 
 export async function createExercise(input: ExerciseInput): Promise<ExerciseRow> {
-  try {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID,
-      tableId: EXERCISES_TABLE,
-      rowId: ID.unique(),
-      data: input,
-    })
-    return response as unknown as ExerciseRow
-  } catch (e) {
-    // The `unit` / `photoUri` / `notes` columns may not exist yet — retry
-    // without them so the app keeps working until the columns are added in
-    // Appwrite. We still merge them back into the returned object so the
-    // caller (and the block it's added to, which stores exercises as JSON)
-    // remembers them even though the library row didn't persist them.
-    if (input.unit === undefined && input.photoUri === undefined && input.notes === undefined) throw e
-    const { unit, photoUri, notes, ...rest } = input
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID,
-      tableId: EXERCISES_TABLE,
-      rowId: ID.unique(),
-      data: rest,
-    })
-    return { ...(response as unknown as ExerciseRow), unit, photoUri, notes }
-  }
+  // Some optional columns may not exist yet in Appwrite — writeExercise
+  // drops just those and keeps the rest (see unknownOptionalField).
+  const rowId = ID.unique()
+  return writeExercise(input, (data) => tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId, data: toWire(data),
+  }))
 }
 
 export async function updateExercise(id: string, input: ExerciseInput): Promise<ExerciseRow> {
-  try {
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id, data: input,
-    })
-    return response as unknown as ExerciseRow
-  } catch (e) {
-    if (input.unit === undefined && input.photoUri === undefined && input.notes === undefined) throw e
-    const { unit, photoUri, notes, ...rest } = input
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id, data: rest,
-    })
-    return { ...(response as unknown as ExerciseRow), unit, photoUri, notes }
-  }
+  return writeExercise(input, (data) => tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: EXERCISES_TABLE, rowId: id, data: toWire(data),
+  }))
 }
 
 export async function deleteExercise(id: string): Promise<void> {
@@ -696,6 +1005,11 @@ export interface SprayWallRow {
   imageUri: string   // local file:// path to the wall photo
   width?: number     // natural photo dimensions, so the viewer knows the aspect
   height?: number    // ratio from the first frame (no measuring needed)
+  // Small pre-resized copy (~500px wide), generated once at upload time —
+  // route-picker/list thumbnails load this instead of the full-resolution
+  // original, which is what used to spike memory when many routes rendered
+  // at once. Falls back to imageUri for walls uploaded before this existed.
+  previewUri?: string
 }
 
 export async function getSprayWall(id: string): Promise<SprayWallRow | null> {
@@ -715,10 +1029,11 @@ export async function getSprayWalls(): Promise<SprayWallRow[]> {
   return listAllRows<SprayWallRow>(SPRAY_WALLS_TABLE, [Query.orderAsc("$createdAt")])
 }
 
-export async function createSprayWall(name: string, imageUri: string, width?: number, height?: number): Promise<SprayWallRow> {
+export async function createSprayWall(name: string, imageUri: string, width?: number, height?: number, previewUri?: string): Promise<SprayWallRow> {
   const data: any = { name, imageUri }
   if (width) data.width = width
   if (height) data.height = height
+  if (previewUri) data.previewUri = previewUri
   try {
     const response = await tablesDB.createRow({
       databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: ID.unique(), data,
@@ -737,6 +1052,18 @@ export async function deleteSprayWall(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: id })
 }
 
+// Used to backfill previewUri (and, in principle, width/height) on walls that
+// predate those columns — see backfillWallPreview in sprayWall.tsx.
+export async function updateSprayWall(
+  id: string,
+  fields: Partial<Pick<SprayWallRow, "previewUri" | "width" | "height">>
+): Promise<SprayWallRow> {
+  const response = await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: SPRAY_WALLS_TABLE, rowId: id, data: fields,
+  })
+  return response as unknown as SprayWallRow
+}
+
 export interface SprayRouteRow {
   $id: string
   $createdAt: string
@@ -744,7 +1071,7 @@ export interface SprayRouteRow {
   holds: string      // JSON stringified PlacedHold[] — mirrors the original variation
   wallId?: string    // optional — routes without wallId show under "All"
   level?: number     // absolute difficulty 1–8
-  type?: string      // route type: "base" | "max_bouldering" | …
+  type?: string      // route type: see ROUTE_TYPES in utils/sequenceVariations.ts
   variations?: string // JSON { easy?, original, hard? } of PlacedHold[]
   athleteId?: string // owner athlete — a self-built sequence belongs to one athlete.
                       // Missing/undefined → a coach/shared route (visible in Spray Wall).
@@ -853,6 +1180,12 @@ export async function updateSprayRoute(id: string, name: string, holds: any[], e
 
 export async function deleteSprayRoute(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id })
+}
+
+// Deletes every route tagged with this wall — used when the wall itself is deleted.
+export async function deleteSprayRoutesForWall(wallId: string): Promise<void> {
+  const routes = await getSprayRoutes(wallId)
+  await Promise.all(routes.map((r) => deleteSprayRoute(r.$id)))
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────

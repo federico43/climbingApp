@@ -1,3 +1,4 @@
+import { useHoldUpdates } from "@/utils/updateHold"
 import { C } from "@/utils/theme"
 import { Block, BlockEditorRow, BlockPickerModal, stripLocalIds } from "@/components/workoutBlocks"
 import { saveSession } from "@/services/BoulderGraphService"
@@ -76,6 +77,8 @@ function totalMinutes(blocks: Block[]): number {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LogPastSessionScreen() {
+  // A reload here would lose unsaved work — see utils/updateHold.ts.
+  useHoldUpdates()
   const router = useRouter()
   const { athleteId, athleteName } = useLocalSearchParams<{ athleteId?: string; athleteName?: string }>()
   const [blocks, setBlocks] = useState<Block[]>([])

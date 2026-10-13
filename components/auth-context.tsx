@@ -2,6 +2,7 @@ import { createContext, PropsWithChildren, use, useContext, useEffect, useState 
 import {account} from '@/components/AppWrite'
 import { ID, Models } from 'appwrite'
 import { logRecord, getUsers} from '@/services/BoulderGraphService'
+import { registerForPushNotificationsAsync, savePushToken } from '@/services/notifications'
 import { useRouter } from 'expo-router'
 //how do you use use context 
 //create the information structure. has to be a type object. Obviously.
@@ -33,6 +34,14 @@ export default function Auth_context({children}:PropsWithChildren) {
         getUser();
     }, [])
 
+    // Fire-and-forget: ask for notification permission and save this device's
+    // Expo push token on the user's row. Never blocks sign-in/session-restore.
+    const registerPushToken = (userId: string) => {
+        registerForPushNotificationsAsync().then((token) => {
+            if (token) savePushToken(userId, token)
+        })
+    }
+
     const getUser = async () => {
     try {
         const session = await account.get()
@@ -43,6 +52,7 @@ export default function Auth_context({children}:PropsWithChildren) {
         setRole(userInfo.role ?? null)
         setAssignedProtocolId(userInfo.assignedProtocolId ?? null)
         }
+        registerPushToken(session.$id)
     } catch (error) {
         console.log(error)
         setUser(null)
@@ -93,6 +103,7 @@ export default function Auth_context({children}:PropsWithChildren) {
             const session = await account.get()
             setUser(session)
             setError(null)
+            registerPushToken(session.$id)
             return true
         }catch (error){
             if(error instanceof Error){
@@ -139,5 +150,12 @@ export function ConsumeAuth(){
     if(authState === undefined){
         throw new Error("error example")
     } return authState
+}
+
+// Same as ConsumeAuth, but named as a hook so the React Compiler treats it as
+// one — it caches plain `ConsumeAuth()` calls, skipping useContext on later
+// renders ("change in the order of Hooks").
+export function useAuth(){
+    return ConsumeAuth()
 }
 

@@ -129,6 +129,9 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
     return (
       <View style={shared_styles.screen}>
         <TopBar title={block.blockName} />
+        {!!block.description && (
+          <Text style={styles.runningDescription}>{block.description}</Text>
+        )}
         {hasRoute && (
           <View style={styles.wallWrap}>
             <SprayWallViewer
@@ -224,6 +227,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: C.textPrimary,
     textAlignVertical: "top",
+  },
+
+  // Running — description
+  runningDescription: {
+    fontSize: 14,
+    color: C.textMuted,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
 
   // Attached-sequence viewer (running)

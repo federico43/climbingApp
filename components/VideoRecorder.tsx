@@ -1,6 +1,9 @@
+import { useHoldUpdates } from "@/utils/updateHold"
+import { DebugLogOverlay } from '@/components/DebugLogOverlay';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -34,6 +37,8 @@ function classifyLens(name: string): { id: string; label: string } | null {
 }
 
 export default function VideoRecorder({ onFinish, onClose }: any) {
+  // A reload here would lose unsaved work — see utils/updateHold.ts.
+  useHoldUpdates()
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [micPermission, requestMicPermission] = useMicrophonePermissions()
   const cameraRef = useRef<any>(null);
@@ -44,6 +49,11 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   const [elapsed, setElapsed] = useState(0)
   const [availableLenses, setAvailableLenses] = useState<string[]>([])
   const [selectedLens, setSelectedLens] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    console.log("VideoRecorder: component mounted")
+    return () => console.log("VideoRecorder: component unmounted")
+  }, [])
 
   // Lens set differs between front/back cameras — drop the previous pick
   // whenever the active camera changes so we don't apply a stale lens id.
@@ -81,14 +91,17 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   // playing in another app (e.g. Spotify) — default iOS/Android behavior
   // otherwise stops other audio the moment recording starts.
   useEffect(() => {
+    console.log("VideoRecorder: mounted, setting audio mode")
     Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
       interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-      interruptionModeAndroid: InterruptionModeAndroid.MixWithOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
       shouldDuckAndroid: true,
     })
+      .then(() => console.log("VideoRecorder: audio mode set"))
+      .catch((err) => console.error("VideoRecorder: setAudioModeAsync failed:", err))
   }, [])
 
   // ── Recording timer ─────────────────────────────────────────────────────────
@@ -137,7 +150,17 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
     opacity: recDotOpacity.value,
   }))
 
-  if (!cameraPermission || !micPermission) return <View />
+  useEffect(() => {
+    if (!cameraPermission || !micPermission) return
+    if (!cameraPermission.granted || !micPermission.granted) {
+      console.warn("VideoRecorder: missing permission", {
+        camera: cameraPermission.status,
+        mic: micPermission.status,
+      })
+    }
+  }, [cameraPermission, micPermission])
+
+  if (!cameraPermission || !micPermission) return <View style={{ flex: 1, backgroundColor: "black" }}><DebugLogOverlay /></View>
 
   if (!cameraPermission.granted || !micPermission.granted) {
     return (
@@ -149,29 +172,39 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         </Text>
         <TouchableOpacity
           onPress={async () => {
-            await requestCameraPermission()
-            await requestMicPermission()
+            const cam = await requestCameraPermission()
+            const mic = await requestMicPermission()
+            console.log("VideoRecorder: permission request result", { cam: cam.status, mic: mic.status })
           }}
           style={styles.permBtn}
         >
           <Text style={styles.permBtnText}>Grant permissions</Text>
         </TouchableOpacity>
+        <DebugLogOverlay />
       </View>
     )
   }
 
   const startRecording = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current) {
+      console.error("startRecording: cameraRef not ready yet")
+      return;
+    }
     try {
       setIsRecording(true);
+      const freeBytes = await FileSystem.getFreeDiskStorageAsync().catch(() => null)
+      console.log("startRecording: calling recordAsync, free disk space:", freeBytes)
+      // `quality` is not a recordAsync option (CameraRecordingOptions has no
+      // such field — it silently did nothing); video quality is controlled
+      // via the CameraView `videoQuality` prop below instead.
       const video = await cameraRef.current.recordAsync({
         maxDuration: 120,
-        quality: "720p",
       });
+      console.log("startRecording: recordAsync resolved", video?.uri)
       // Don't commit yet — show the preview so the user can review.
       setPreviewUri(video.uri);
     } catch (err) {
-      console.log(err);
+      console.error("startRecording failed:", err);
     } finally {
       setIsRecording(false);
       setIsSaving(false);
@@ -183,7 +216,11 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
       // Immediately swap the camera for a "Saving…" view so the camera
       // surface releases cleanly without leaving a frozen black frame.
       setIsSaving(true)
-      cameraRef.current.stopRecording();
+      try {
+        cameraRef.current.stopRecording();
+      } catch (err) {
+        console.error("stopRecording failed:", err)
+      }
     }
   };
 
@@ -218,6 +255,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
             <Text style={[styles.previewBtnText, { color: "#111" }]}>Use video</Text>
           </Pressable>
         </View>
+        <DebugLogOverlay />
       </View>
     )
   }
@@ -228,6 +266,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
     return (
       <View style={[styles.savingWrap, { backgroundColor: "rgba(0,0,0,0.92)" }]}>
         <Text style={styles.savingText}>Saving video…</Text>
+        <DebugLogOverlay />
       </View>
     )
   }
@@ -239,8 +278,11 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         style={{ width: "100%", height: "100%" }}
         facing={facing}
         mode="video"
+        videoQuality="720p"
         selectedLens={Platform.OS === "ios" ? selectedLens : undefined}
         onAvailableLensesChanged={(e) => setAvailableLenses(e.lenses)}
+        onCameraReady={() => console.log("VideoRecorder: camera ready")}
+        onMountError={(e) => console.error("VideoRecorder: camera mount error:", e.message)}
       />
 
       {/* Recording indicator chip at top */}
@@ -295,6 +337,8 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
           <Animated.View style={[styles.inner, innerStyle]} />
         </Animated.View>
       </Pressable>
+
+      <DebugLogOverlay />
     </View>
   )
 }

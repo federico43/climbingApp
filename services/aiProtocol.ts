@@ -49,7 +49,7 @@ const BLOCK_TYPES: AiBlockType[] = [
 ]
 const ADAPTATIONS = [
   "technique", "strength", "power", "power_endurance",
-  "endurance", "conditioning", "mobility", "general", "test",
+  "conditioning", "general", "test",
 ]
 const GRADES = ["orange", "blue", "green", "yellow", "red", "black"]
 
