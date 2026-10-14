@@ -19,8 +19,6 @@ import { LinearGradient } from "expo-linear-gradient"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
-
-const SEQUENCE_HERO = require("@/assets/images/sequenceBlockPicture.jpeg")
 import {
   parseVariations,
   variationHolds,
@@ -35,6 +33,8 @@ import {
   isEarlyFall, pickRoute, routesVisibleTo, suggestNextSequence,
   type RouteInfo, type SequenceSuggestion,
 } from "@/utils/progression/sequence"
+
+const SEQUENCE_HERO = require("@/assets/images/sequenceBlockPicture.jpeg")
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -174,7 +174,7 @@ export function SequenceBlock({
     } else {
       restProgress.value = withTiming(target, { duration: 1000, easing: Easing.linear })
     }
-  }, [restTimeRemaining, restTime, attemptsDone])
+  }, [restTimeRemaining, restTime, attemptsDone, restProgress])
 
   const restBarFillStyle = useAnimatedStyle(() => ({
     width: `${restProgress.value * 100}%`,
@@ -730,7 +730,7 @@ export function SequenceBlock({
             <View />
             <Pressable
               style={[styles.rest1NextBtn, !outcome && styles.rest1NextBtnDisabled]}
-              onPress={() => { if (!outcome) return; askRpe ? setRest1Step("rpe") : handleSaveAttempt() }}
+              onPress={() => { if (!outcome) return; if (askRpe) setRest1Step("rpe"); else handleSaveAttempt() }}
             >
               <Text style={[styles.rest1NextBtnText, !outcome && styles.rest1NextBtnTextDisabled]}>{askRpe ? "Next" : "Save"}</Text>
             </Pressable>

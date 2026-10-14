@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, use, useContext, useEffect, useState } from 'react'
+import { createContext, PropsWithChildren, useContext, useEffect, useState } from 'react'
 import {account} from '@/components/AppWrite'
 import { ID, Models } from 'appwrite'
 import { logRecord, getUsers} from '@/services/BoulderGraphService'
@@ -32,6 +32,7 @@ export default function Auth_context({children}:PropsWithChildren) {
     const [assignedProtocolId, setAssignedProtocolId] = useState<string | null>(null)
     useEffect(() => {
         getUser();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- load the session once on mount
     }, [])
 
     // Fire-and-forget: ask for notification permission and save this device's
@@ -61,16 +62,6 @@ export default function Auth_context({children}:PropsWithChildren) {
     }
     }
     
-    const getUserName = async (id:string) => {
-        try {const userInformation = await getUsers(id)
-            if(userInformation)
-            return userInformation.username
-        }
-        catch(error){
-            console.log(error)
-        }
-    }
-
 
     const  signUpFunction = async (email: string, password: string, username:string ) => {
     setError(null)

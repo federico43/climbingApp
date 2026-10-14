@@ -27,18 +27,10 @@ import { authoredGrades, fitGrades, suggestNextFourByFour, type FourByFourSugges
 import { INTERVALS_KIND_LABEL, intervalsDescription, suggestNextIntervals, type IntervalsKind, type IntervalsSuggestion } from "@/utils/progression/intervals"
 import { INTERVALS_RULES, type ColourRange, type ConstraintRotation, type WarmupPillar } from "@/utils/progression/profiles"
 import { COLOUR_RANGE_LABEL, defaultRotation, rotationFor, WARMUP_PILLAR_LABEL } from "@/utils/progression/constraintWarmup"
-
-const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 import {
-  AppUser,
-  assignProtocol,
-  unassignProtocol,
   BlockRow,
-  createProtocol,
   deleteBlock,
-  deleteProtocol,
   ExerciseRow,
-  getAthletes,
   getSessionsByUserId,
   getUsers,
   listBlocksByType,
@@ -49,15 +41,11 @@ import {
   SprayWallRow,
   listBlocks,
   listExercises,
-  listProtocols,
-  ProtocolRow,
   saveBlockToLibrary,
   saveSprayRoute,
   SessionRow,
-  upsertBlockTemplate,
   SprayRouteRow,
   updateBlock,
-  updateProtocol,
 } from "@/services/BoulderGraphService"
 import { findLastScSession, findScSessions } from "@/utils/scHistory"
 import { planNextForFocus, type NextFlags } from "@/utils/scNext"
@@ -71,7 +59,6 @@ import {
   ActivityIndicator, Alert,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -79,14 +66,14 @@ import {
   StyleSheet,
   Switch,
   Text, TextInput,
-  useWindowDimensions,
   View,
 } from "react-native"
-import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import ReAnimated, { LinearTransition, runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
+
+const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -23,7 +23,7 @@ function BlockEntry({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     opacity.value = withTiming(1, { duration: 240 })
     translateX.value = withSpring(0, { damping: 20, stiffness: 260 })
-  }, [])
+  }, [opacity, translateX])
 
   const animStyle = useAnimatedStyle(() => ({
     flex: 1,
@@ -139,6 +139,7 @@ export function WorkOutState({
       onWorkoutStart()
       startWorkout()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auto-start is decided once, on mount
   }, [])
 
   if (status === "idle") {

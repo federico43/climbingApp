@@ -53,7 +53,7 @@ import {
 } from "@/utils/workoutSummary"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "@react-navigation/native"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Pressable,
@@ -116,29 +116,20 @@ export default function PlanScreen() {
   const [library, setLibrary] = useState<BlockRow[]>([])
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
   const activePlan = useActivePlan()
+  // Read through a ref so load() doesn't change (and re-fire) whenever the context re-renders.
+  const activePlanRef = useRef(activePlan)
+  activePlanRef.current = activePlan
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(false)
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      load()
-    }, [User])
-  )
-
-  // Reload after a workout ends (refreshKey bumps from the provider)
-  useEffect(() => {
-    if (User && workoutCtx.refreshKey > 0) load()
-  }, [workoutCtx.refreshKey])
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const active = await getActiveTrainingPlan(User!.$id)
       setPlan(active)
       setError(false)
       // Keep the tab layout (Home shown or not) in step with what we found.
-      if (!!active !== !!activePlan.plan) activePlan.refresh()
+      if (!!active !== !!activePlanRef.current.plan) activePlanRef.current.refresh()
       if (!active) return
       const [planWorkouts, sessionRows, blocks, templateRows] = await Promise.all([
         listPlanWorkouts(active.$id),
@@ -159,7 +150,20 @@ export default function PlanScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [User])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!User) return
+      load()
+    }, [User, load])
+  )
+
+  // Reload after a workout ends (refreshKey bumps from the provider)
+  useEffect(() => {
+    if (User && workoutCtx.refreshKey > 0) load()
+  }, [User, load, workoutCtx.refreshKey])
+
 
   return (
     <ScreenGradient>
@@ -345,7 +349,7 @@ function PlanBody({
 
       {/* ── Focus ─────────────────────────────────────────────────────────── */}
       <View style={styles.card}>
-        <Text style={styles.kicker}>This week's focus</Text>
+        <Text style={styles.kicker}>This week&apos;s focus</Text>
         <Text style={[styles.focusName, { color: focusColor }]}>
           {plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
         </Text>

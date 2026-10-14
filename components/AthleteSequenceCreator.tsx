@@ -75,6 +75,7 @@ export function CreateSequenceModal({ visible, athleteId, editing = null, onClos
         Alert.alert("Error", "Could not load spray walls.", [{ text: "OK", onPress: onClose }])
       })
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the modal opens or the edited route changes; onClose is often an inline arrow
   }, [visible, editing])
 
   async function handleSave(name: string, data: { variations: RouteVariations; level: number; type: string }) {

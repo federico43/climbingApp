@@ -104,7 +104,7 @@ export function AthleteWorkoutBuilder({
     })
   }
   function toggleCard(id: string) {
-    setOpenCards((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setOpenCards((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
   const [saving, setSaving] = useState(false)
   const [splitSc, setSplitSc] = useState(false)
@@ -187,7 +187,7 @@ export function AthleteWorkoutBuilder({
     if (b.type === "strength_conditioning" && b.exercises.length === 0) setLibraryBlockId(b.id)
   }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
-  function deleteBlock(id: string) {
+  const deleteBlock = useCallback((id: string) => {
     const b = blocks.find((x) => x.id === id)
     Alert.alert("Delete block", `Remove "${b?.blockName || "this block"}" from the workout?`, [
       { text: "Cancel", style: "cancel" },
@@ -197,7 +197,7 @@ export function AthleteWorkoutBuilder({
         setHomeworkIds((prev) => { const n = new Set(prev); n.delete(id); return n })
       } },
     ])
-  }
+  }, [blocks])
 
   // Narrow: drag-to-reorder list via the grip (long-press starts the drag).
   const renderBlock = useCallback(({ item, drag, isActive }: RenderItemParams<Block>) => (
@@ -211,7 +211,7 @@ export function AthleteWorkoutBuilder({
       onUpdate={updateBlock}
       onDelete={() => deleteBlock(item.id)}
     />
-  ), [expandedId, blocks])
+  ), [expandedId, deleteBlock])
 
   // Hosts the exercise library for S&C blocks (signalled via context).
   const libraryController = useMemo(() => ({ open: setLibraryBlockId }), [])
@@ -547,7 +547,7 @@ export function AthleteWorkoutBuilder({
                     key={b.id}
                     style={[s.copyPill, sel && s.copyPillSel]}
                     onPress={() => setHomeworkIds((prev) => {
-                      const n = new Set(prev); n.has(b.id) ? n.delete(b.id) : n.add(b.id); return n
+                      const n = new Set(prev); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n
                     })}
                   >
                     <Text style={[s.copyPillText, sel && s.copyPillTextSel]}>{blockLabel(b)}</Text>
@@ -621,7 +621,7 @@ export function AthleteWorkoutBuilder({
                     key={a.$id}
                     style={[s.copyPill, sel && s.copyPillSel]}
                     onPress={() => setCopyTargets((prev) => {
-                      const n = new Set(prev); n.has(a.$id) ? n.delete(a.$id) : n.add(a.$id); return n
+                      const n = new Set(prev); if (n.has(a.$id)) n.delete(a.$id); else n.add(a.$id); return n
                     })}
                   >
                     <Text style={[s.copyPillText, sel && s.copyPillTextSel]}>{a.username ?? a.$id}</Text>

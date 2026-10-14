@@ -30,7 +30,7 @@ export function ScreenEntry({ children, style }: Props) {
         opacity.value = 0
         translateY.value = 10
       }
-    }, [])
+    }, [opacity, translateY])
   )
 
   const animStyle = useAnimatedStyle(() => ({

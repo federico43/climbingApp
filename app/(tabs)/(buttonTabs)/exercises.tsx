@@ -171,7 +171,7 @@ export default function ExercisesScreen() {
           <Text style={styles.emptyIcon}>🏋️</Text>
           <Text style={styles.emptyTitle}>No exercises yet</Text>
           {isCoach && (
-            <Text style={styles.emptyText}>Tap "+ New" to add exercises to the library.</Text>
+            <Text style={styles.emptyText}>Tap &quot;+ New&quot; to add exercises to the library.</Text>
           )}
         </View>
       ) : (

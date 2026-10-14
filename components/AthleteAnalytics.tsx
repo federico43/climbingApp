@@ -144,7 +144,7 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
     setFlashLevelState(athlete.flashLevel ?? null)
     getUsers(athlete.$id).then((row: any) => { if (!cancelled && row) setFlashLevelState(row.flashLevel ?? null) })
     return () => { cancelled = true }
-  }, [athlete.$id])
+  }, [athlete.$id, athlete.flashLevel])
 
   async function pickFlashLevel(value: string) {
     const prev = flashLevel
@@ -299,7 +299,7 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
       {/* Today's readiness check-in */}
       {todayCheckin && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's readiness</Text>
+          <Text style={styles.sectionTitle}>Today&apos;s readiness</Text>
           <View style={styles.checkinRow}>
             <Text style={styles.checkinStat}>Rest {todayCheckin.restRating}/5</Text>
             <Text style={styles.checkinStat}>Ate: {todayCheckin.ate ? "Yes" : "Not yet"}</Text>

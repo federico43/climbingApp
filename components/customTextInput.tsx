@@ -1,5 +1,4 @@
 import { C } from "@/utils/theme";
-import { spacing } from '@/theme/spacing';
 import { StyleSheet, Text, View, TextInput, TextInputProps } from "react-native";
 
 const styles = StyleSheet.create({

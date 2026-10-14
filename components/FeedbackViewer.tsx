@@ -66,7 +66,7 @@ export function FeedbackViewer({ feedback, video, title, onClose }: Props) {
       "[feedback] viewer loaded timeline (", feedback.timeline.length, "events):",
       JSON.stringify(feedback.timeline)
     )
-  }, [feedback.$id])
+  }, [feedback.$id, feedback.timeline])
 
   useEffect(() => {
     if (!feedback.viewed) {
@@ -74,7 +74,7 @@ export function FeedbackViewer({ feedback, video, title, onClose }: Props) {
         console.warn("[feedback] markFeedbackViewed failed:", e?.message ?? e)
       )
     }
-  }, [feedback.$id])
+  }, [feedback.$id, feedback.viewed])
 
   // DrawingCanvas needs the reference clip's actual displayed aspect ratio.
   // videoTrack.size reports raw encoded dimensions, which don't account for
