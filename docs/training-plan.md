@@ -156,6 +156,15 @@ Library blocks are found by **name + block type** (constants in
 time if avoidable; colours ramp `[flash − 2, flash − 1, flash]` within each
 constraint's range; attempts 3 → 2 → 1). **No flash level → all on orange.**
 
+**Colour exclusions** (`CONSTRAINT_COLOUR_EXCLUSIONS` in `profiles.ts`,
+since 2026-10-14): a constraint can be barred from some colours whatever its
+range says — today only **Feet on air: never on orange**. If the ramp puts
+it on an excluded colour (e.g. flash blue or green, or no flash level), the
+next constraint in line from the same group takes its place, else the least
+recently used one from another group; with none left the warm-up has one
+constraint fewer. Applies to plan workouts and the builder's suggestion
+card.
+
 Focus → constraints (`DEFAULT_CONSTRAINT_ROTATION` in `profiles.ts`; a
 constraint's own settings saved in the block editor override it — none do
 today):

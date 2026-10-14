@@ -330,6 +330,9 @@ Example: flash = green → below flash = orange, blue.
 - Colour ramp = `[flash − 2, flash − 1, flash]`, each slot clamped to that
   constraint's own range (floor orange); lower-ceiling constraints go in
   earlier slots. Attempts 3 → 2 → 1.
+- Colour exclusions (`CONSTRAINT_COLOUR_EXCLUSIONS`, 2026-10-14): Feet on
+  air is never done on orange. A constraint landing on an excluded colour is
+  replaced — same group first, then another group, else dropped.
 - Output = 3 **separate** `constraint_warmup` blocks.
 - **No flash level → no suggestion at all.**
 - **The day's main pillar is decided by the training-plan algorithm** (the

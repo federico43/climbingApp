@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  afterWarmup, allowedColours, constraintKey, rotationFor, suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage,
+  afterWarmup, allowedColours, colourAllowedFor, constraintKey, excludedColours, rotationFor, suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage,
 } from "@/utils/progression/constraintWarmup"
 
 // The coach's library, as BlockRows (one with its own edited settings).
@@ -106,11 +106,57 @@ assert.equal(w.length, 2)
 assert.equal(suggestWarmup(candidates.filter((c) => c.id === "fm"), "power", usage, "yellow"), null)
 
 // ── strength / power endurance day (one group) ──
-w = suggestWarmup(candidates, "strength_power_endurance", noHistory, "green")!
+w = suggestWarmup(candidates, "strength_power_endurance", noHistory, "yellow")!
 assert.deepEqual(w.map((p) => p.id).sort(), ["fa", "hh", "sl"])
+// (on flash green Feet on air would open on orange — see the exclusions below)
 
 // ── fear management: Falling Practice + the two shared with power ──
 w = suggestWarmup(candidates, "fear_management", noHistory, "green")!
 assert.deepEqual(w.map((p) => p.id).sort(), ["dh", "fp", "oh"])
+
+// ── colour exclusions: Feet on air never on orange (CONSTRAINT_COLOUR_EXCLUSIONS) ──
+assert.deepEqual(excludedColours("Feet on air"), ["orange"])
+assert.deepEqual(excludedColours("FEET ON AIR!"), ["orange"])   // matched by key, like the rotation table
+assert.equal(colourAllowedFor("Feet on air", "blue"), true)
+assert.equal(colourAllowedFor("Sloth", "orange"), true)
+const noFaOnOrange = (picks: { name: string; colour: string }[]) =>
+  assert.ok(!picks.some((p) => p.name === "Feet on air" && p.colour === "orange"), picks.map((p) => `${p.name}:${p.colour}`).join())
+// flash blue: the ramp is orange, orange, blue — Feet on air would be first (by name) on orange.
+// The strength group has no other constraint left, so one from another group comes in.
+w = suggestWarmup(candidates, "strength_power_endurance", noHistory, "blue")!
+noFaOnOrange(w)
+assert.equal(w.length, 3)
+assert.ok(!w.some((p) => p.id === "fa"))
+assert.ok(w.some((p) => p.id === "hh") && w.some((p) => p.id === "sl"))
+// the stand-in is the least recently used of the other groups, by name: Double Hands
+assert.ok(w.some((p) => p.id === "dh"), w.map((p) => p.id).join())
+// a 4th strength constraint (coach's own settings) → it replaces Feet on air before any other group
+const withFourth = [...candidates, ...warmupCandidates([row("tb", "Tension board", { rotation: { pillars: ["strength_power_endurance"], colours: "up_to_flash" } })] as any)]
+w = suggestWarmup(withFourth, "strength_power_endurance", noHistory, "blue")!
+assert.deepEqual(w.map((p) => p.id).sort(), ["hh", "sl", "tb"])
+// no flash level → everything on orange → Feet on air replaced too
+w = suggestWarmup(candidates, "strength_power_endurance", noHistory, null)!
+noFaOnOrange(w)
+assert.equal(w.length, 3)
+// flash green: ramp orange, blue, green — Feet on air (first) lands on orange → replaced
+w = suggestWarmup(candidates, "strength_power_endurance", noHistory, "green")!
+noFaOnOrange(w)
+// flash yellow: ramp blue, green, yellow — Feet on air stays
+w = suggestWarmup(candidates, "strength_power_endurance", noHistory, "yellow")!
+assert.deepEqual(w.map((p) => p.id).sort(), ["fa", "hh", "sl"])
+assert.notEqual(w.find((p) => p.id === "fa")!.colour, "orange")
+// Feet on air used last time, fresh ones first: it's the reused one → last slot (blue on flash blue) → kept
+const faLast = { last: new Set(["fa"]), recency: new Map([["fa", 0]]) }
+w = suggestWarmup(candidates, "strength_power_endurance", faLast, "blue")!
+assert.deepEqual(w.map((p) => p.id).sort(), ["fa", "hh", "sl"])
+assert.equal(w.find((p) => p.id === "fa")!.colour, "blue")
+// nothing else anywhere → the warm-up is one shorter (never Feet on air on orange)
+w = suggestWarmup(candidates.filter((c) => c.id === "fa"), "strength_power_endurance", noHistory, "blue")!
+assert.equal(w, null)
+w = suggestWarmup(candidates.filter((c) => ["fa", "hh"].includes(c.id)), "strength_power_endurance", noHistory, null)!
+assert.deepEqual(w.map((p) => p.id), ["hh"])
+// other groups are unaffected
+w = suggestWarmup(candidates, "power", noHistory, "blue")!
+assert.deepEqual(w.map((p) => p.id).sort(), ["dh", "gh", "oh"])
 
 console.log("all constraint-warmup tests passed")
