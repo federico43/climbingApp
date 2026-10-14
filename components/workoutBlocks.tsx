@@ -24,6 +24,7 @@ import {
 import { MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
 import { Focus, FOCUSES, FOCUS_LABEL, FOCUS_REP_RANGE, LevelStep } from "@/utils/scProgression"
 import { authoredGrades, fitGrades, suggestNextFourByFour, type FourByFourSuggestion } from "@/utils/progression/fourByFour"
+import { normalizeProjectBlock, PROJECT_DEFAULT_REST_S, PROJECT_DEFAULT_TIME_MIN, PROJECT_MAX_TIME_MIN, PROJECT_MIN_TIME_MIN } from "@/utils/progression/projectBouldering"
 import { INTERVALS_KIND_LABEL, intervalsDescription, suggestNextIntervals, type IntervalsKind, type IntervalsSuggestion } from "@/utils/progression/intervals"
 import { INTERVALS_RULES, type ColourRange, type ConstraintRotation, type WarmupPillar } from "@/utils/progression/profiles"
 import { COLOUR_RANGE_LABEL, defaultRotation, rotationFor, WARMUP_PILLAR_LABEL } from "@/utils/progression/constraintWarmup"
@@ -116,9 +117,18 @@ interface BaseBlock {
   coached?: boolean
 }
 
+// v2 (docs/project-bouldering-v2.md): one grade worked under a time cap
+// (timeLimit, always on), attempts counted with fall reasons. Stored v1
+// blocks (no grade, targetAttempts) are read through normalizeProjectBlock.
 interface ProjectBoulderingBlock extends BaseBlock {
   type: "project_bouldering"
-  description: string; targetAttempts: number; restTime: number
+  description: string; restTime: number
+  // Boulder colour (utils/boulderColours.ts); "" = the athlete picks it.
+  grade?: string
+  // The random "film your next attempt for the coach" prompt. Unset = on.
+  reviewPrompts?: boolean
+  // v1 only: the attempt cap. Kept on old blocks, ignored by the runtime.
+  targetAttempts?: number
 }
 
 interface ConstraintWarmupBlock extends BaseBlock {
@@ -235,7 +245,7 @@ function generateId() { return Math.random().toString(36).slice(2) }
 export function makeDefaultBlock(type: BlockType, name: string = ""): Block {
   switch (type) {
     case "project_bouldering":
-      return { id: generateId(), type, blockName: name, description: "", targetAttempts: 10, restTime: 120 }
+      return { id: generateId(), type, blockName: name, description: "", grade: "", timeLimit: PROJECT_DEFAULT_TIME_MIN, restTime: PROJECT_DEFAULT_REST_S, reviewPrompts: true }
     case "constraint_warmup":
       return { id: generateId(), type, blockName: name, description: "", level: "", targetAttempts: 1 }
     case "strength_conditioning":
@@ -311,7 +321,7 @@ export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
 }
 
 const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
-  project_bouldering: "Work a single project with rest timers",
+  project_bouldering: "Work one grade against the clock, counting attempts",
   constraint_warmup: "Climb with a movement constraint",
   strength_conditioning: "Rounds of exercises",
   exploration_session: "Log sends freely by grade",
@@ -1485,11 +1495,18 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
   const Rest = standalone ? StepperRestField : RestField
   let fields: React.ReactNode = null
   switch (block.type) {
-    case "project_bouldering":
+    case "project_bouldering": {
+      // The time cap is this block's limit (no attempt target), so it lives
+      // here instead of the optional Time limit toggle.
+      const pb = normalizeProjectBlock(block)
+      const setMinutes = (n: number) => update({ timeLimit: Math.min(PROJECT_MAX_TIME_MIN, Math.max(PROJECT_MIN_TIME_MIN, n)) })
       fields = (<>
-        <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
-        <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
+        {standalone || compact
+          ? <StepperField label={compact ? "⏱ min" : "Time (min)"} value={pb.timeLimit} onChange={setMinutes} min={PROJECT_MIN_TIME_MIN} step={5} />
+          : <NumField label="Time (min)" value={pb.timeLimit} onChange={setMinutes} />}
+        <Rest label="Rest" value={pb.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
+    }
     case "four_by_four":
       fields = (<>
         <Field label="Sets" value={block.sets} onChange={(n) => update({ sets: n })} min={1} />
@@ -1523,7 +1540,7 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
     return (
       <View style={styles.numericsRowCompact}>
         {fields}
-        <TimeLimitChip block={block} onUpdate={onUpdate} />
+        {block.type !== "project_bouldering" && <TimeLimitChip block={block} onUpdate={onUpdate} />}
       </View>
     )
   }
@@ -1532,6 +1549,7 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
 
 // Universal time-constraint field — every block can optionally cap its duration.
 function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  if (block.type === "project_bouldering") return null  // always timed — set in BlockNumerics
   return (
     <View style={styles.timeLimitRow}>
       <FieldLabel label="Time limit (min · 0 = none)" />
@@ -1548,6 +1566,7 @@ function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block
 // Standalone editor's Time limit row: an Off/On switch, with a minutes
 // stepper that only appears once it's on.
 function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  if (block.type === "project_bouldering") return null  // always timed — set in BlockNumerics
   const enabled = (block.timeLimit ?? 0) > 0
   return (
     <View style={{ gap: 10 }}>
@@ -1577,9 +1596,31 @@ function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Bloc
 
 function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBoulderingBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<ProjectBoulderingBlock>) { onUpdate({ ...block, ...fields }) }
+  const pb = normalizeProjectBlock(block)
   return (
     <>
+      <Text style={styles.fieldLabel}>
+        Grade <Text style={styles.fieldLabelHint}>· {pb.grade ? "the colour the athlete works" : "none — the athlete picks it"}</Text>
+      </Text>
+      <GradePicker value={pb.grade} onChange={(v) => update({ grade: v })} />
+      {!!pb.grade && (
+        <Pressable onPress={() => update({ grade: "" })} hitSlop={6}>
+          <Text style={styles.boulderSlotClear}>Let the athlete pick</Text>
+        </Pressable>
+      )}
       <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <View style={styles.timeLimitToggleRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.timeLimitToggleLabel}>Ask for review clips</Text>
+          <Text style={styles.fieldLabelHint}>Now and then, asks the athlete to film an attempt for you</Text>
+        </View>
+        <Switch
+          value={pb.reviewPrompts}
+          onValueChange={(v) => update({ reviewPrompts: v })}
+          trackColor={{ true: C.green, false: C.surfaceHigh }}
+          thumbColor={C.textPrimary}
+        />
+      </View>
     </>
   )
 }

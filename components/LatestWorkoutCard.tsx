@@ -4,6 +4,7 @@ import { Block, BLOCK_ICONS, BLOCK_LABELS } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { ProtocolRow, sessionLinkFor } from "@/services/BoulderGraphService"
 import { PLAN_FOCUS_LABEL, PLAN_WORKOUTS, builtMainType } from "@/utils/planRotation"
+import { projectDetail } from "@/utils/workoutSummary"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
@@ -45,6 +46,7 @@ function blockDetail(b: Block): string {
   const attempts = (n?: number) => (n ? `${n} attempt${n !== 1 ? "s" : ""}` : "")
   switch (b.type) {
     case "project_bouldering":
+      return projectDetail(b)
     case "constraint_warmup":
     case "sequence":
       return attempts(b.targetAttempts)
