@@ -1,4 +1,5 @@
 import { C } from "@/utils/theme"
+import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -316,7 +317,8 @@ function blockPreviews(p: ProtocolRow): { name: string; timeLimit?: number }[] {
   try {
     return (JSON.parse(p.blocks ?? "[]") as any[]).map((b) => ({
       name: (b?.blockName ?? "").toString().trim() || BLOCK_TYPE_LABEL[b?.type] || b?.type || "Block",
-      timeLimit: typeof b?.timeLimit === "number" && b.timeLimit > 0 ? b.timeLimit : undefined,
+      timeLimit: b?.type === "project_bouldering" ? normalizeProjectBlock(b).timeLimit  // always timed (v2)
+        : typeof b?.timeLimit === "number" && b.timeLimit > 0 ? b.timeLimit : undefined,
     }))
   } catch { return [] }
 }

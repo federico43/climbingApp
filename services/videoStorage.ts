@@ -115,6 +115,17 @@ export async function getVideosByUserId(userId: string): Promise<VideoRow[]> {
   return response.rows as unknown as VideoRow[]
 }
 
+// One clip by row id (e.g. the videoId a project attempt links to); null
+// when it doesn't exist — the upload may have failed or not finished yet.
+export async function getVideoById(id: string): Promise<VideoRow | null> {
+  try {
+    const row = await tablesDB.getRow({ databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: id })
+    return row as unknown as VideoRow
+  } catch {
+    return null
+  }
+}
+
 // Athlete's own clips.
 export async function getMyVideos(): Promise<VideoRow[]> {
   const user = await account.get()
