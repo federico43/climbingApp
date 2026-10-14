@@ -281,11 +281,12 @@ mobility exercise a hold (a "Both" exercise added by hand arrived as reps),
 and a hold typed as "30s" on a reps exercise got no timer. Now:
 - `isTimedExercise` (`utils/exerciseUnit.ts`): unit seconds, or mobility
   whose target is written in seconds ("30s", "20-30 sec", "30 seg"…).
-- Timed mobility runs **Brief → Timer** like `LoggedExerciseUI`: "Start
-  timer", 5 s get-ready + beeps (same `TimedAmountControl`), both-sides
-  left → right with the side glow / switch card, then **Done** logs the
-  seconds held (both sides: `repsLeft` / `repsRight`). "Done without timer"
-  logs the target. Round 2+ opens on the timer.
+- Timed mobility keeps **one screen** (user, 2026-10-14): photo, details
+  and the hold timer under them — 5 s get-ready + beeps (same
+  `TimedAmountControl` as other timed exercises). Both-sides: left hold,
+  then "Switch to right side" (glow / switch card) on the same screen.
+  **Done** logs the seconds held (both sides: `repsLeft` / `repsRight`), or
+  the target when the timer wasn't used.
 - Block editor: mobility exercises get **Done as: Reps | Hold (timer)**.
 
 ## 4. Open questions

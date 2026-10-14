@@ -634,7 +634,6 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           <MobilityExerciseUI
             key={roundKey}
             exercise={exercise}
-            startOnBrief={startOnBrief}
             showSwitchCard={!switchCardSeen}
             onSwitchCardShown={() => setSwitchCardSeen(true)}
             onChangeExercise={changeExercise}
@@ -1998,13 +1997,14 @@ function FocusCue({ exercise }: { exercise: Exercise }) {
 // ─── Mobility Exercise UI ─────────────────────────────────────────────────────
 
 // Mobility doesn't progress: no weight, RPE, level or suggestions — the
-// athlete does the target and taps Done. Timed ones (isTimedExercise) run
-// like every other timed S&C exercise: Brief → Timer (5 s get-ready, beeps
-// on the last 3 s and at the end; both-sides left → right), then Done logs
-// the seconds held. "Done without timer" logs the target.
-function MobilityExerciseUI({ exercise, startOnBrief, showSwitchCard, onSwitchCardShown, onChangeExercise, swapNote, onUndoSwap, onDone }: {
+// athlete does the target and taps Done. Timed ones (isTimedExercise) keep
+// everything on one screen: photo, details and the hold timer under them
+// (5 s get-ready, beeps on the last 3 s and at the end — the same
+// TimedAmountControl as other timed exercises). Both-sides holds run left →
+// right on the same screen. Done logs the seconds held, or the target when
+// the timer wasn't used.
+function MobilityExerciseUI({ exercise, showSwitchCard, onSwitchCardShown, onChangeExercise, swapNote, onUndoSwap, onDone }: {
   exercise: RepExercise | BothSidesExercise
-  startOnBrief: boolean
   showSwitchCard: boolean
   onSwitchCardShown: () => void
   onChangeExercise?: () => void
@@ -2015,7 +2015,6 @@ function MobilityExerciseUI({ exercise, startOnBrief, showSwitchCard, onSwitchCa
   const isTimed = isTimedExercise(exercise)
   const sides = exercise.type === "both_sides"
   const target = targetNumber(exercise.reps)
-  const [step, setStep] = useState<"brief" | "timer">(isTimed && !startOnBrief ? "timer" : "brief")
   const [held, setHeld] = useState<Record<Side, number | null>>({ left: null, right: null })
   const [timerSide, setTimerSide] = useState<Side>("left")
   const [switching, setSwitching] = useState(false)
@@ -2027,26 +2026,9 @@ function MobilityExerciseUI({ exercise, startOnBrief, showSwitchCard, onSwitchCa
     onDone(sides ? { ...base, repsLeft: secs("left"), repsRight: secs("right") } : { ...base, repsCompleted: secs("left") })
   }
 
-  if (step === "brief") {
-    return (
-      <ExerciseScreen
-        scrollKey="brief"
-        footer={isTimed
-          ? <PillButton title="Start timer" icon="timer-outline" onPress={() => setStep("timer")} />
-          : <PillButton title="Done" icon="checkmark" onPress={handleSave} />}
-      >
-        <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
-        <ExerciseHeader name={exercise.name} exercise={exercise} />
-        {!!swapNote && !!onUndoSwap && <SwapBanner note={swapNote} onUndo={onUndoSwap} />}
-        {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
-      </ExerciseScreen>
-    )
-  }
-
-  // ── Timer ──
   const side = timerSide
-  const holdDone = held[side] != null
-  const toRight = sides && side === "left"
+  // Both sides: once the left hold is done, the button moves to the right side.
+  const toRight = isTimed && sides && side === "left" && held.left != null
   function switchToRight() {
     setTimerSide("right")
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
@@ -2057,28 +2039,24 @@ function MobilityExerciseUI({ exercise, startOnBrief, showSwitchCard, onSwitchCa
   }
   return (
     <ExerciseScreen
-      background={sides ? <SideGlow side={side} /> : undefined}
+      background={isTimed && sides && side === "right" ? <SideGlow side={side} /> : undefined}
       overlay={switching ? <SwitchSidesCard side={side} onDone={() => setSwitching(false)} /> : undefined}
-      scrollKey={`timer-${side}`}
-      footer={<PillButton
-        title={!holdDone ? "Finish the hold first" : toRight ? "Switch to right side" : "Done"}
-        icon={toRight ? "arrow-forward" : "checkmark"}
-        onPress={toRight ? switchToRight : handleSave}
-        disabled={!holdDone}
-      />}
+      footer={toRight
+        ? <PillButton title="Switch to right side" icon="arrow-forward" onPress={switchToRight} />
+        : <PillButton title="Done" icon="checkmark" onPress={handleSave} />}
     >
-      <View style={{ marginTop: 16 }}>
-        <ExerciseRow exercise={exercise} onPress={() => setStep("brief")} />
-      </View>
-      <View style={styles.inputSection}>
-        {sides
-          ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
-          : <Text style={styles.sectionLabel}>Hold timer</Text>}
-        <TimedAmountControl key={side} target={target} onChange={(v) => setHeld((prev) => ({ ...prev, [side]: v }))} />
-        <Pressable onPress={handleSave} hitSlop={6}>
-          <Text style={styles.linkText}>Done without timer</Text>
-        </Pressable>
-      </View>
+      <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
+      <ExerciseHeader name={exercise.name} exercise={exercise} />
+      {!!swapNote && !!onUndoSwap && <SwapBanner note={swapNote} onUndo={onUndoSwap} />}
+      {isTimed && (
+        <View style={styles.inputSection}>
+          {sides
+            ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+            : <Text style={styles.sectionLabel}>Hold timer</Text>}
+          <TimedAmountControl key={side} target={target} onChange={(v) => setHeld((prev) => ({ ...prev, [side]: v }))} />
+        </View>
+      )}
+      {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
     </ExerciseScreen>
   )
 }
