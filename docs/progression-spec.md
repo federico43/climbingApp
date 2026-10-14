@@ -183,6 +183,13 @@ by the live rule: the coach chose "last boulder" for the drop and "start next
 time on the colours finished on", so there's no swap left to undo.
 
 
+**Athlete screen (2026-10-14):** the set is the only thing logged. The
+active screen reads "Set 2 of 4" with a progress bar, lists the set's
+boulders as a plain reference list (not buttons), and has one button,
+"Set done (all 4 boulders)" → rest + tops. Until the athlete logs their
+first set on the device, a line explains "One set = all 4 boulders, back
+to back. Log it once…" (AsyncStorage `fourByFour.introSeen`).
+
 **Confirmed 2026-10-02:**
 - **Starting colours** = the athlete's **flash level − 1** on every slot
   (floor orange) for the first session on a block.
