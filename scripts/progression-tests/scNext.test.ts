@@ -70,7 +70,11 @@ const swapped: any = {
   $id: "s4", $createdAt: "2026-10-04T10:00:00Z", userId: "a", protocol: "[]",
   attempts: JSON.stringify([{ type: "strength_conditioning", blockIndex: 0, scData: { exerciseId: "split", exerciseName: "Split Squat", round: 2, repsCompleted: "12", swappedFrom: { exerciseId: "kb", exerciseName: "KB squat" } } }]),
 }
-assert.deepEqual(findScSwaps([swapped, ...sessions], ["kb"], "KB squat"), [{ date: "2026-10-04T10:00:00Z", to: "Split Squat" }])
+// (logged before swapReason existed → an easier swap)
+assert.deepEqual(findScSwaps([swapped, ...sessions], ["kb"], "KB squat"), [{ date: "2026-10-04T10:00:00Z", to: "Split Squat", reason: "easier" }])
+// The athlete's own "Change exercise" is a choice swap
+const chosen: any = { ...swapped, attempts: swapped.attempts.replace('"swappedFrom"', '"swapReason":"choice","swappedFrom"') }
+assert.equal(findScSwaps([chosen], ["kb"], "KB squat")[0].reason, "choice")
 // The swapped round belongs to the picked exercise's history, not the original's
 assert.equal(findScSessions([swapped], ["kb"], "KB squat").length, 0)
 

@@ -1,5 +1,6 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import { convertWeight, type Focus, type WeightUnit, type WorkingSet } from "@/utils/scProgression"
+import { swapReasonOf, type SwapReason } from "@/utils/scSwap"
 
 // Reads S&C progression state out of an athlete's own session history.
 // Shared by StrengthConditioningBlock.tsx (prefilling the athlete's next
@@ -122,9 +123,11 @@ export function findScSessions(
   return out
 }
 
-// Rounds where the athlete swapped this exercise for an easier one
-// (RoundDrop.pickEasier) — newest first, one per session.
-export interface ScSwap { date: string; to: string }
+// Rounds where the athlete swapped this exercise for another one — newest
+// first, one per session. `reason` (utils/scSwap): "easier" = the app's
+// "Pick an easier exercise" (RoundDrop.pickEasier; every swap logged before
+// the reason existed), "choice" = the athlete's own "Change exercise".
+export interface ScSwap { date: string; to: string; reason: SwapReason }
 
 export function findScSwaps(sessions: SessionRow[], candidateIds: string[], exerciseName: string): ScSwap[] {
   const out: ScSwap[] = []
@@ -133,7 +136,7 @@ export function findScSwaps(sessions: SessionRow[], candidateIds: string[], exer
     try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
     const swap = attempts.find((a) => a?.type === "strength_conditioning" && a?.scData?.swappedFrom
       && scLogMatches(a.scData.swappedFrom, candidateIds, exerciseName))
-    if (swap) out.push({ date: s.$createdAt, to: swap.scData.exerciseName })
+    if (swap) out.push({ date: s.$createdAt, to: swap.scData.exerciseName, reason: swapReasonOf(swap.scData) ?? "easier" })
   }
   return out
 }

@@ -277,7 +277,8 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
       const badges: { label: string; color: string }[] = []
       if (view.flags.deload) badges.push({ label: "Down 2×", color: C.red })
       if (view.flags.stalled) badges.push({ label: "Stuck", color: C.yellow })
-      if (view.swaps.length) badges.push({ label: "Swapped", color: C.yellow })
+      if (view.swaps.some((sw) => sw.reason === "easier")) badges.push({ label: "Swapped", color: C.yellow })
+      if (view.swaps.some((sw) => sw.reason === "choice")) badges.push({ label: "Replaced", color: C.textSecondary })
       if (badges.length) out[name] = badges
     }
     return out
