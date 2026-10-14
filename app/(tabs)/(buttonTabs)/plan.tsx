@@ -347,7 +347,7 @@ function PlanBody({
 
       {/* ── Focus ─────────────────────────────────────────────────────────── */}
       <View style={styles.card}>
-        <Text style={styles.kicker}>This week's focus</Text>
+        <Text style={styles.kicker}>This week&apos;s focus</Text>
         <Text style={[styles.focusName, { color: focusColor }]}>
           {plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
         </Text>

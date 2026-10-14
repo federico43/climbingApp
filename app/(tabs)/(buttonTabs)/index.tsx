@@ -116,7 +116,7 @@ function HomeContent() {
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
                   <Ionicons name="barbell-outline" size={36} color={C.textMuted} />
                   <Text style={styles.emptyTitle}>No workout yet</Text>
-                  <Text style={styles.emptyText}>Your coach hasn't built a workout for you yet.</Text>
+                  <Text style={styles.emptyText}>Your coach hasn&apos;t built a workout for you yet.</Text>
                   <Pressable
                     onPress={() => router.push("/(tabs)/(buttonTabs)/workout-library" as any)}
                     hitSlop={8}

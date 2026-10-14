@@ -281,7 +281,7 @@ export default function LibraryScreen() {
           <Text style={styles.emptyIcon}>🎬</Text>
           <Text style={styles.emptyTitle}>No videos yet</Text>
           <Text style={styles.emptyText}>
-            Record your attempts during training — they'll appear here.
+            Record your attempts during training — they&apos;ll appear here.
           </Text>
           <Pressable style={styles.emptyAddButton} onPress={handlePickVideo}>
             <Ionicons name="add" size={18} color={C.bg} />

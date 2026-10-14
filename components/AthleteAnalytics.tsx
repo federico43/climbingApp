@@ -300,7 +300,7 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
       {/* Today's readiness check-in */}
       {todayCheckin && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's readiness</Text>
+          <Text style={styles.sectionTitle}>Today&apos;s readiness</Text>
           <View style={styles.checkinRow}>
             <Text style={styles.checkinStat}>Rest {todayCheckin.restRating}/5</Text>
             <Text style={styles.checkinStat}>Ate: {todayCheckin.ate ? "Yes" : "Not yet"}</Text>

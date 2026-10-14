@@ -293,7 +293,7 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
                   ) : (
                     <Text style={styles.scLogDetail}>—</Text>
                   )}
-                  {!!sc.notes && <Text style={styles.scLogNotes}>"{sc.notes}"</Text>}
+                  {!!sc.notes && <Text style={styles.scLogNotes}>&quot;{sc.notes}&quot;</Text>}
                 </View>
                 )
               })}

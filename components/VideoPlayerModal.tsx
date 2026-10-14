@@ -413,7 +413,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
       )}
       {phase === "watch" && loadStatus === "error" && (
         <View style={styles.loadOverlay} pointerEvents="none">
-          <Text style={styles.loadErrorText}>Couldn't load this video</Text>
+          <Text style={styles.loadErrorText}>Couldn&apos;t load this video</Text>
         </View>
       )}
 

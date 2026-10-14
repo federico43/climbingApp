@@ -784,7 +784,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                     )}
 
                     {l.notes ? (
-                      <Text style={styles.reviewNotes}>"{l.notes}"</Text>
+                      <Text style={styles.reviewNotes}>&quot;{l.notes}&quot;</Text>
                     ) : null}
                   </View>
                   )

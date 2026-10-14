@@ -141,7 +141,7 @@ export default function MySequencesScreen() {
               ))
             ) : (
               <View style={styles.empty}>
-                <Text style={styles.emptyText}>No sequences yet — tap "New" to build one</Text>
+                <Text style={styles.emptyText}>No sequences yet — tap &quot;New&quot; to build one</Text>
               </View>
             )}
           </ScrollView>

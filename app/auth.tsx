@@ -107,7 +107,7 @@ export default function AuthScreen() {
         ) : (
           <>
             <Text style={styles.hint}>
-              Enter the email address for your account and we'll send you a link to reset your password.
+              Enter the email address for your account and we&apos;ll send you a link to reset your password.
             </Text>
             {offlineBanner}
             <CustomTextInput placeHolder="email" onChangeText={setEmail} />
