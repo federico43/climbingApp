@@ -57,6 +57,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `hasSc`, `hasMobility` | boolean | |
 | `scPatterns` | string (JSON) | `[{ movementType, exerciseIds: [id1, id2?] }]` × 4, in pick order. Fingers has `[]` |
 | `movementTypeFocus` | string (JSON) | Pre-v2 only — read, never written |
+| `startType` | string, optional | Main type of workout 1: `strength` \| `power_endurance` \| `power`. Missing / null = strength. Only written when not strength (or to clear it) |
 
 **`protocol`** (workouts) — plan fields, set only on workouts built from a plan:
 
@@ -110,7 +111,7 @@ gives two different workouts.
 
 | What | Rule |
 | --- | --- |
-| Main type | Fixed cycle **Strength → Power endurance → Power**, starting with Strength (each 4 times in 12) |
+| Main type | Fixed cycle **Strength → Power endurance → Power** (each 4 times in 12). Starts with Strength unless the coach picks another **first workout** type in the plan screen (`startType`, since 2026-10-14) — e.g. Power endurance → Power → Strength → … |
 | Main block | Strength: Project Bouldering ↔ Max bouldering. Power endurance: Power endurance - 4x4 ↔ Base 1 (the `sequence` one). Power: Power boulders. Picked from what earlier workouts of the type **actually used** (see below). **Always twice in the workout** (same library block, back to back) |
 | Warm-up | Alternates: odd workouts **3 constraints** for the plan's focus, even workouts **1 on 1 off** |
 | Test | **Density test as homework** (since 2026-10-07) on workout 1 and on the first workout built in the plan's last week (week 6): the workout keeps its warm-up, the test is split off into a homework workout (§7.6) |

@@ -2,7 +2,7 @@ import { account, tablesDB, storage, functions } from "@/components/AppWrite"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import type { Focus, LevelStep } from "@/utils/scProgression"
-import type { PlanFocus, ScPattern } from "@/utils/planRotation"
+import { DEFAULT_START_TYPE, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -366,7 +366,10 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // "YYYY-MM-DD"), status (string: "active" | "archived"), focus (string,
 // PlanFocus), hasSc (boolean), hasMobility (boolean), scPatterns (string,
 // JSON ScPattern[]). movementTypeFocus (JSON string) is the pre-v2 S&C focus
-// — still read for old plans, no longer written.
+// — still read for old plans, no longer written. startType (string, MainType,
+// optional) is the main type of workout 1 — missing/null = strength; only
+// written when a plan starts with something else (or had one already), so
+// strength plans save even before the column exists.
 
 export interface TrainingPlanRow {
   $id: string
@@ -380,6 +383,7 @@ export interface TrainingPlanRow {
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  startType: MainType | null  // null = strength (the default cycle)
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
 }
 
@@ -400,6 +404,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasSc: !!row.hasSc,
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
+    startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
   }
 }
@@ -430,12 +435,30 @@ export interface TrainingPlanInput {
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  startType?: MainType | null
 }
 
-function planData(input: Partial<TrainingPlanInput>): Record<string, any> {
+// `previous`: the plan being edited, if any. startType is left out when it's
+// the default and the row never had one, so the column is only needed by
+// plans that use it.
+function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow): Record<string, any> {
   const data: Record<string, any> = { ...input }
   if (input.scPatterns) data.scPatterns = JSON.stringify(input.scPatterns)
+  if ("startType" in input) {
+    const start = input.startType && input.startType !== DEFAULT_START_TYPE ? input.startType : null
+    if (start || previous?.startType) data.startType = start
+    else delete data.startType
+  }
   return data
+}
+
+// Appwrite rejects a column it doesn't have; say which one to add instead
+// of silently starting the plan with strength.
+function planWriteError(e: unknown): unknown {
+  if (/Unknown attribute:?\s*"?startType/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Add the optional string column "startType" to the training_plans table in Appwrite to start a plan with something other than strength.')
+  }
+  return e
 }
 
 // Starts a new plan: a training plan is a fresh period, not an edit of the
@@ -447,7 +470,7 @@ export async function createTrainingPlan(athleteId: string, input: TrainingPlanI
     tableId: TRAINING_PLANS_TABLE,
     rowId: ID.unique(),
     data: { athleteId, ...planData(input), status: "active" },
-  })
+  }).catch((e) => { throw planWriteError(e) })
   const plan = toTrainingPlan(response)
   const active = await listAllRows<any>(TRAINING_PLANS_TABLE, [
     Query.equal("athleteId", athleteId),
@@ -467,8 +490,8 @@ export async function createTrainingPlan(athleteId: string, input: TrainingPlanI
 // change — already-saved workouts keep their blocks.
 export async function updateTrainingPlan(plan: TrainingPlanRow, input: Partial<TrainingPlanInput>): Promise<TrainingPlanRow> {
   const response = await tablesDB.updateRow({
-    databaseId: DATABASE_ID, tableId: TRAINING_PLANS_TABLE, rowId: plan.$id, data: planData(input),
-  })
+    databaseId: DATABASE_ID, tableId: TRAINING_PLANS_TABLE, rowId: plan.$id, data: planData(input, plan),
+  }).catch((e) => { throw planWriteError(e) })
   return toTrainingPlan(response)
 }
 

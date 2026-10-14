@@ -1,8 +1,8 @@
 import { C } from "@/utils/theme"
 import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
 import {
-  EXERCISES_PER_PATTERN, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_COUNT,
-  localDateStr, planEndFor, type PlanFocus, type ScPattern,
+  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_COUNT,
+  localDateStr, mainTypeFor, planEndFor, type MainType, type PlanFocus, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
 import { FOCUS_LABEL } from "@/utils/scProgression"
@@ -49,6 +49,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [windowStart, setWindowStart] = useState(localDateStr(new Date()))
   const [pickerOpen, setPickerOpen] = useState(false)
   const [focus, setFocus] = useState<PlanFocus | null>(null)
+  // Main type of workout 1; strength unless the coach picks another.
+  const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
   const [hasSc, setHasSc] = useState(false)
   const [hasMobility, setHasMobility] = useState(false)
   // In pick order — mp1…mp4.
@@ -64,6 +66,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setName(current.name ?? "")
       setWindowStart(current.windowStart)
       setFocus(current.focus)
+      setStartType(current.startType ?? DEFAULT_START_TYPE)
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
       setPatterns(current.scPatterns)
@@ -71,6 +74,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setName("")
       setWindowStart(localDateStr(new Date()))
       setFocus(null)
+      setStartType(DEFAULT_START_TYPE)
       setHasSc(false)
       setHasMobility(false)
       setPatterns([])
@@ -131,6 +135,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         windowStart,
         windowEnd,
         focus,
+        startType,
         hasSc,
         hasMobility: hasSc && hasMobility,
         scPatterns: hasSc ? patterns : [],
@@ -224,6 +229,22 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                 return (
                   <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => setFocus(f)}>
                     <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[f]}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+
+            <Text style={s.label}>First workout</Text>
+            <Text style={s.sub2}>
+              {MAIN_CYCLE.map((_, i) => PLAN_FOCUS_LABEL[mainTypeFor(i + 1, startType)]).join(" → ")} → …
+              {mode === "edit" ? " · only workouts not built yet follow a change" : ""}
+            </Text>
+            <View style={s.chipWrap}>
+              {MAIN_CYCLE.map((t) => {
+                const sel = startType === t
+                return (
+                  <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
+                    <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[t]}</Text>
                   </Pressable>
                 )
               })}
