@@ -1,24 +1,21 @@
 
 import { StyleSheet } from "react-native"
+import { C } from "@/utils/theme"
+
 export const colors = {
-        text:'#061E29', //deep blue
-        backGround:'#EBF4F6', //bluish white 
-        primary: "#7AB2B2", //teal
-        dark: "#25343F",
-        textInputBox: "#F3F4F4"// whitish white 
+  text: C.textPrimary,
+  backGround: C.bg,
+  primary: C.green,
+  dark: C.bg,
+  textInputBox: C.surfaceHigh,
 }
 
 export const MainStyles = StyleSheet.create({
-
-      ScreenTitle: {
-
-              fontSize: 28,
-              fontWeight: "700",
-              color: colors.text,
-              marginBottom: 8,
-              textAlign: "center"
-      }
-
-  
-
- })
+  ScreenTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: C.textPrimary,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+})

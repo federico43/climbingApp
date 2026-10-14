@@ -1,0 +1,15 @@
+{
+  "name": "migrate-photos-to-r2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "migrate.js",
+  "description": "One-off script: moves spray_walls/projects/exercises photo URLs from Appwrite Storage to Cloudflare R2 and updates the rows.",
+  "scripts": {
+    "migrate": "node migrate.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.0",
+    "node-appwrite": "^27.1.0"
+  }
+}

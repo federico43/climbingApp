@@ -1,0 +1,43 @@
+diff --git a/node_modules/expo-camera/ios/Current/CameraSessionManager.swift b/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
+index dc2a548..05c7cdb 100644
+--- a/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
++++ b/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
+@@ -37,6 +37,11 @@ class CameraSessionManager: NSObject {
+   init(delegate: CameraSessionManagerDelegate) {
+     self.delegate = delegate
+     super.init()
++    // Without this, AVCaptureSession silently overrides the app's audio
++    // session (and its .mixWithOthers option) whenever it starts running
++    // with a microphone input, killing any music/podcast already playing
++    // in another app the moment video recording begins.
++    session.automaticallyConfiguresApplicationAudioSession = false
+   }
+ 
+   func initializeCaptureSessionInput() {
+diff --git a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
+index 0cf1b56..9719507 100644
+--- a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
++++ b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
+@@ -51,6 +51,22 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+     let fileUrl = URL(fileURLWithPath: path)
+     videoRecordedPromise = promise
+ 
++    // `session.automaticallyConfiguresApplicationAudioSession = false` (see
++    // CameraSessionManager) means AVCaptureSession no longer activates the
++    // app's audio session for us — Apple's docs are explicit that when you
++    // opt out of that, activating the session becomes the app's job. Without
++    // this, AVCaptureMovieFileOutput has no active audio session to record
++    // into and its recording delegate immediately fires back with an error.
++    // .mixWithOthers keeps the "don't stop Spotify" behavior that
++    // automaticallyConfiguresApplicationAudioSession was disabled for.
++    do {
++      let audioSession = AVAudioSession.sharedInstance()
++      try audioSession.setCategory(.playAndRecord, options: [.mixWithOthers, .allowBluetooth, .defaultToSpeaker])
++      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
++    } catch {
++      log.info("\(#function): failed to activate audio session: \(error.localizedDescription)")
++    }
++
+     videoFileOutput.startRecording(to: fileUrl, recordingDelegate: self)
+   }
+ 

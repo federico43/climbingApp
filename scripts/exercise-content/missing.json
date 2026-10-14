@@ -1,0 +1,272 @@
+[
+  {
+    "id": "6a6a72b1000443ed6c0b",
+    "name": "Assisted Pistol Squat",
+    "type": "both_sides",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a8cbfc300341256cb6f",
+    "name": "Chest flys",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "push",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a388eb5000952b4605b",
+    "name": "chin-up isometric",
+    "type": "reps",
+    "unit": "seconds",
+    "movementType": "pull_vertical",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a6a35d000128bbea6cc",
+    "name": "Cosack Squat",
+    "type": "both_sides",
+    "unit": "reps",
+    "movementType": "mobility",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6ac1a82400128df96369",
+    "name": "Deep Squat",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "mobility",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a21ad490008af23c5a8",
+    "name": "Edge Lifts",
+    "type": "both_sides",
+    "unit": "seconds",
+    "movementType": "carry_grip",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a30a74500397ac9cc1f",
+    "name": "Elevated push-ups",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "push",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6ab1d9b70035e1212af7",
+    "name": "explosive Squats",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a8cbfcb00083d468c01",
+    "name": "Front lever",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a30a84a002dde10c6b8",
+    "name": "Hanging Knee Raises",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a30a7cf00033f613d69",
+    "name": "Inverted Row",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "pull_horizontal",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a56a3a900037c18fd4e",
+    "name": "Jumps into box",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a388eea0013e1e80849",
+    "name": "KettleBell Deadlift",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "hinge",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a30a7e1003a66dbb04f",
+    "name": "KettleBell Squat",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6aa7766d001978cd3645",
+    "name": "Negative pull-ups",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "pull_vertical",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a388d19000906d04e72",
+    "name": "One-Arm Inverted Row",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "pull_horizontal",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a33cbe7000e3f47abaf",
+    "name": "pancake",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "mobility",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a6b2b30003d06578453",
+    "name": "pinch lifts",
+    "type": "both_sides",
+    "unit": "seconds",
+    "movementType": "carry_grip",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a3161d000305340e80a",
+    "name": "Pistol Squat",
+    "type": "both_sides",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a6ff8490021815012ce",
+    "name": "planch twist",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a3e5be00028344a5817",
+    "name": "Pull Ups",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "pull_vertical",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a3165de001f0c1684ab",
+    "name": "Push-ups",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "push",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a42e80b003bca8ce19a",
+    "name": "repeaters",
+    "type": "7/3s",
+    "unit": null,
+    "movementType": "carry_grip",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a479eb4003b20602b40",
+    "name": "roller",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a30a767003851db1fec",
+    "name": "Split Squat",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a45681300318274932e",
+    "name": "squat isometric",
+    "type": "reps",
+    "unit": "seconds",
+    "movementType": "squat",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a9f08d300216e9ac0a9",
+    "name": "Starfish crunch",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": false,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a9024a100014fdaacc7",
+    "name": "Trx core",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "core",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a9204000031f3b54079",
+    "name": "Wrist flexion",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "wrist",
+    "missingNotes": true,
+    "missingPhoto": true
+  },
+  {
+    "id": "6a33cc4b002c7737e759",
+    "name": "wrist rotations",
+    "type": "reps",
+    "unit": "reps",
+    "movementType": "wrist",
+    "missingNotes": true,
+    "missingPhoto": true
+  }
+]

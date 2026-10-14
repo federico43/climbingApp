@@ -1,0 +1,32 @@
+{
+  "name": "Example workout",
+  "athleteUsernames": ["REPLACE_WITH_ATHLETE_USERNAME_1", "REPLACE_WITH_ATHLETE_USERNAME_2"],
+  "assign": true,
+  "blocks": [
+    {
+      "type": "four_by_four",
+      "blockName": "4x4 warmup",
+      "description": "4 sets of 4 boulders, easy grade",
+      "sets": 4,
+      "bouldersPerSet": 4,
+      "restTime": 240
+    },
+    {
+      "type": "strength_conditioning",
+      "blockName": "Strength block",
+      "description": "3 rounds",
+      "rounds": 3,
+      "restBetweenRounds": 180,
+      "exercises": [
+        {
+          "type": "reps",
+          "name": "Pull-ups",
+          "unit": "reps",
+          "reps": "5",
+          "series": 3,
+          "loadMode": "weight"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "video-presign",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/main.js",
+  "description": "Appwrite Function: mints a short-lived presigned PUT URL so the app can upload a video directly to Cloudflare R2, and returns the public playback URL.",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.0",
+    "@aws-sdk/s3-request-presigner": "^3.658.0"
+  }
+}
