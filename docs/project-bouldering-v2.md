@@ -1,6 +1,6 @@
 # Project bouldering v2 — por grado, con tiempo, intentos y razones de caída
 
-Estado: **spec (fase 1)**. Nada implementado todavía.
+Estado: **implementado (fase 2)**. Correcciones tras la revisión: sin chip de fuerza (5 chips) y **sin cambios de esquema en Appwrite**.
 Alcance: el bloque `project_bouldering` — editor del coach
 (`components/workoutBlocks.tsx`), runtime del atleta (`ProjectBlock` en
 `utils/blockRenderer.tsx`), resumen de fin de entreno
@@ -79,7 +79,7 @@ intro ──► [gradeSelect] ──► ready ⇄ rest ──► … ──► r
    - anillo de descanso (`startRestTimer(restTime)`), "Attempt N logged";
    - **toggle "Sent!"** destacado (verde) — marca el intento como encadenado y
      oculta los chips;
-   - **6 chips de razón de caída** (multi-selección, opcionales);
+   - **5 chips de razón de caída** (multi-selección, opcionales);
    - si toca, tarjeta del **prompt de grabación** (§6) con "Sure" / "Not now";
    - "Undo attempt" (borra el intento: pulsación accidental), "Skip rest".
    - Cada cambio de chip/toggle actualiza el último intento en el acto
@@ -150,23 +150,26 @@ Los campos nuevos (`grade`, `reviewPrompts`, `timeLimit` obligatorio) viven en e
 JSON del bloque: `protocols.protocol` / `blocks.data` / `workoutsession.protocol`.
 **Sin cambios de esquema.**
 
-### 5.3 Vídeos — tabla `videos` (único cambio en Appwrite)
+### 5.3 Vídeos — tabla `videos` (sin cambios de esquema)
 
-Hoy: `userId, url, key, blockType, projectId, projectName, grade, durationSec, imported`.
+El código usa la tabla con **ID** `videos` (`services/videoStorage.ts`,
+`VIDEOS_TABLE`) en la base de datos `68bd9dd7003c15f7147e`; la consola lista las
+tablas por *nombre*, así que puede aparecer con otro nombre — buscar por ID.
+Atributos que el código escribe: `userId, url, key, blockType, projectId,
+projectName, grade, durationSec, imported`.
 
-- **Nuevo atributo** `reviewRequested` — boolean, opcional, default `false`.
-  Marca los clips grabados por el prompt para que el coach los vea destacados
-  ("Review requested") en `AthleteVideos`.
+v2 **no añade atributos**:
 - Vínculo intento ↔ clip: el `rowId` se genera en el dispositivo
   (`ID.unique()`) antes de subir y se guarda en el intento como `videoId`; la
   subida en segundo plano crea la fila con ese mismo id. Así el vínculo existe
   aunque la subida termine después de guardar la sesión, y no hace falta
   atributo `sessionId`.
-- Metadatos del clip: `blockType: "project_bouldering"`, `grade`,
-  `projectName: "<blockName> · attempt N"` (reutiliza el título que ya pinta
-  `AthleteVideos`).
-- Robustez: si `createRow` falla por atributo desconocido (`reviewRequested` aún
-  no creado en la consola), se reintenta sin ese campo — el clip nunca se pierde.
+- Metadatos del clip: `blockType: "project_bouldering"`, `grade`, y
+  `projectName` como título: `"Review request · <blockName> · attempt N"` para
+  los clips del prompt, `"<blockName> · attempt N"` para los voluntarios.
+  `AthleteVideos` ya pinta `projectName` como título, así que el coach ve
+  "Review request" sin atributo nuevo. La marca fiable es `reviewClip` en el
+  intento (sesión).
 - Feedback del coach: **sin cambios** — `CoachFeedbackRecorder` (vía
   `VideoPlayerModal`) crea filas en `video_feedback` con `videoId`, y el atleta
   lo ve con `FeedbackViewer` como cualquier otro clip.
@@ -217,25 +220,25 @@ veces de media; con los topes nunca más de 2 por bloque ni 2 clips por entreno.
 Se evalúa al registrar el intento y la tarjeta aparece en la pantalla de rest.
 
 Si acepta ("Sure"): `recordNext = true` → en ready el botón grande es "Record
-attempt" → `VideoRecorder` → al terminar: `saveVideoLocally(..., { rowId,
-reviewRequested: true })`, se registra el intento con `videoId` y
+attempt" → `VideoRecorder` → al terminar: `saveVideoLocally(..., { rowId })` con
+título "Review request · …", se registra el intento con `videoId` y
 `reviewClip: true`, y entra en rest. "Don't record" cancela el pendiente.
 "Not now" solo consume el prompt.
 
-## 7. Chips finales de razón de caída
+## 7. Chips finales de razón de caída (5)
 
 | Clave | UI (en) | Intención (es) |
 | --- | --- | --- |
 | `beta` | Wrong beta | Mala beta / secuencia |
 | `execution` | Poor execution | Mala ejecución (precisión, timing, posición) |
-| `strength` | Not strong enough | Falta de fuerza / potencia |
 | `slip` | Slipped | Se resbaló pie o mano |
 | `fatigue` | Pumped / tired | Fatiga |
 | `commitment` | Didn't commit | Miedo / falta de compromiso |
 
-Ajuste respecto a la propuesta: "Se resbaló el pie" pasa a **"Slipped"** (pie o
-mano — los resbalones de mano por fricción/sudor son igual de comunes y no
-merecen chip propio). El resto igual. Más el toggle aparte **"Sent!"**
+Ajustes respecto a la propuesta: se quita "Falta de fuerza/potencia" (decisión
+del coach), y "Se resbaló el pie" pasa a **"Slipped"** (pie o mano — los
+resbalones de mano por fricción/sudor son igual de comunes y no merecen chip
+propio). Más el toggle aparte **"Sent!"**
 (encadenado): excluyente con los chips.
 
 ## 8. Retrocompatibilidad
@@ -276,7 +279,7 @@ merecen chip propio). El resto igual. Más el toggle aparte **"Sent!"**
   feedback con `CoachFeedbackRecorder`).
 - **`AthleteRecentSessionsSummary`** (dashboard del coach): línea de detalle
   para el bloque con grado, intentos, sent y la razón más frecuente.
-- **`AthleteVideos`**: badge "Review requested" en clips con `reviewRequested`.
+- **`AthleteVideos`**: el título "Review request · …" identifica los clips pedidos.
 
 ## 10. Tests (scripts/progression-tests/projectBouldering.test.ts)
 
@@ -287,8 +290,7 @@ merecen chip propio). El resto igual. Más el toggle aparte **"Sent!"**
 
 ## 11. Cambios a aplicar a mano en Appwrite
 
-1. Tabla `videos`: atributo boolean `reviewRequested`, opcional, default false.
-2. Redesplegar la función `aiProtocol` (knowledge pack actualizado).
+Ninguno de esquema: sesiones, protocolos, bloques y vídeos guardan lo nuevo
+dentro de JSON / atributos que ya existen. Solo:
 
-Nada más: sesiones, protocolos y bloques guardan el nuevo contenido dentro de
-sus JSON existentes.
+1. Redesplegar la función `aiProtocol` (knowledge pack actualizado).
