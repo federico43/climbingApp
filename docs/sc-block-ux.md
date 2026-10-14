@@ -274,6 +274,20 @@ weight / level). Rules (`utils/scSwap.ts`):
   progress card says the athlete replaced it (no ladder advice, unlike an
   easier swap); the analytics list badge reads "Replaced".
 
+### Mobility timer like the other timed exercises ✅ 2026-10-14
+Timed mobility had its countdown inline under the photo (easy to miss, one
+timer even for both-sides holds), the coach's block editor couldn't make a
+mobility exercise a hold (a "Both" exercise added by hand arrived as reps),
+and a hold typed as "30s" on a reps exercise got no timer. Now:
+- `isTimedExercise` (`utils/exerciseUnit.ts`): unit seconds, or mobility
+  whose target is written in seconds ("30s", "20-30 sec", "30 seg"…).
+- Timed mobility runs **Brief → Timer** like `LoggedExerciseUI`: "Start
+  timer", 5 s get-ready + beeps (same `TimedAmountControl`), both-sides
+  left → right with the side glow / switch card, then **Done** logs the
+  seconds held (both sides: `repsLeft` / `repsRight`). "Done without timer"
+  logs the target. Round 2+ opens on the timer.
+- Block editor: mobility exercises get **Done as: Reps | Hold (timer)**.
+
 ## 4. Open questions
 
 - **Q1** ✅ Effort = Easy / Solid / Max, mapped to RPE in the focus band.
