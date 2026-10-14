@@ -67,6 +67,7 @@ export function WorkOutState({
     restTimeRemaining,
     logAttempt,
     undoLastAttempt,
+    updateLastAttempt,
     startWorkout,
     startRestTimer,
     currentBlockIndex,
@@ -332,6 +333,7 @@ export function WorkOutState({
             attemptsDone={attemptsDone}
             logAttempt={logAttempt}
             undoLastAttempt={undoLastAttempt}
+            updateLastAttempt={updateLastAttempt}
             timeRemaining={timeRemaining}
             restTimeRemaining={restTimeRemaining}
             startRestTimer={startRestTimer}
@@ -349,7 +351,7 @@ export function WorkOutState({
 
 // Blocks that render their own time display (countdown or work/rest) — the host
 // chip would duplicate it, so skip them.
-const SELF_TIMED_BLOCKS = new Set(["exploration_session", "intervals", "free_session"])
+const SELF_TIMED_BLOCKS = new Set(["exploration_session", "intervals", "free_session", "project_bouldering"])
 
 // Per-block countdown for blocks that carry a time constraint. Remounts per
 // block (keyed by index), turns red and reads "Time's up" at zero — it never

@@ -14,7 +14,7 @@ function extOf(uri: string): string {
 export async function saveVideoLocally(
   uri: string,
   blockType?: string,
-  meta?: { projectId?: string; projectName?: string; grade?: string },
+  meta?: { projectId?: string; projectName?: string; grade?: string; rowId?: string },
   options?: {
     // Recorded clips are always .mov/.mp4 straight from the camera; an
     // imported clip keeps whatever container it already came in so it isn't

@@ -25,6 +25,9 @@ export interface VideoRow {
 }
 
 export interface VideoMeta {
+  // Row id to create the metadata row with, picked by the caller so it can
+  // link the clip (e.g. from a project attempt) before the upload finishes.
+  rowId?: string
   blockType?: string
   projectId?: string
   projectName?: string
@@ -70,7 +73,7 @@ async function createVideoRow(url: string, key: string, meta: VideoMeta): Promis
   if (meta.durationSec != null) data.durationSec = Math.round(meta.durationSec)
   if (meta.imported) data.imported = true
   const row = await tablesDB.createRow({
-    databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: ID.unique(), data,
+    databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: meta.rowId ?? ID.unique(), data,
   })
   return row as unknown as VideoRow
 }
