@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict"
 import {
-  alternateMainBlock, builtMainBlock, localDateStr, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
+  alternateMainBlock, builtMainBlock, builtMainType, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
@@ -47,6 +47,28 @@ assert.deepEqual([1, 2, 3, 4].map((i) => spec(i).warmup), ["constraints", "one_o
 assert.deepEqual([1, 2, 3].map((i) => spec(i).scFocus), ["max_force", "hypertrophy", "explosiveness"])
 assert.deepEqual([1, 2, 3, 4].map((i) => spec(i).exerciseSlot), [0, 1, 0, 1])
 assert.equal(workoutSpec({ ...plan, hasSc: false }, 1, [], start).scFocus, null)
+
+// ── start type: the cycle starts with the coach's pick; none / null = strength ──
+assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i)), ["strength", "power_endurance", "power", "strength"])
+assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i, null)), ["strength", "power_endurance", "power", "strength"])
+assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i, "power")), ["power", "strength", "power_endurance", "power"])
+const pePlan: PlanShape = { ...plan, startType: "power_endurance" }
+const peMains = Array.from({ length: 12 }, (_, i) => workoutSpec(pePlan, i + 1, [], start).mainBlock.name)
+assert.deepEqual(peMains, [
+  "Power endurance - 4x4", "Power boulders", "Project Bouldering",
+  "Base 1", "Power boulders", "Max bouldering",
+  "Power endurance - 4x4", "Power boulders", "Project Bouldering",
+  "Base 1", "Power boulders", "Max bouldering",
+])
+assert.deepEqual([1, 2, 3].map((i) => workoutSpec(pePlan, i, [], start).scFocus), ["hypertrophy", "explosiveness", "max_force"])
+assert.equal(workoutSpec(pePlan, 1, [], start).withTest, true)
+assert.equal(workoutSpec(pePlan, 1, [], start).warmup, "constraints")
+// built slots still steer the alternation with a shifted start (workout 1 swapped to Base 1 → 4 is the 4x4)
+const base1 = { blockName: "Base 1", type: "sequence" }
+assert.equal(workoutSpec(pePlan, 4, [{ planIndex: 1, createdAt: "2026-10-05T10:00:00Z", blocks: JSON.stringify([base1]) }], start).mainBlock.name, "Power endurance - 4x4")
+// a built workout's type is read from its main block (its plan may not start with strength)
+assert.equal(builtMainType(1, JSON.stringify([base1])), "power_endurance")
+assert.equal(builtMainType(2, "[]"), "power_endurance") // nothing recognised → default cycle
 
 // ── main block follows what was built, not the slot (swap / hand edits) ──
 const builtWith = (planIndex: number, blocks: { blockName: string; type: string }[], createdAt = "2026-10-05T10:00:00Z") =>

@@ -2511,6 +2511,29 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
         })}
       </View>}
 
+      {/* Mobility can be done by reps (active) or held (passive): the coach
+          picks here; a hold gets the athlete's countdown timer. */}
+      {isMobility && (exercise.type === "reps" || exercise.type === "both_sides") && (
+        <>
+          <FieldLabel label="Done as" />
+          <View style={styles.adaptationRow}>
+            {(["reps", "seconds"] as const).map((u) => {
+              const selected = (exercise.unit ?? "reps") === u
+              return (
+                <Pressable
+                  key={u}
+                  onPress={() => { if (!selected) update({ unit: u, reps: "" }) }}
+                  style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+                >
+                  <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>
+                    {u === "reps" ? "Reps" : "Hold (timer)"}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </>
+      )}
       {(exercise.type === "reps" || exercise.type === "both_sides") && (
         isMobility && exercise.unit !== "seconds" ? (
           <>

@@ -33,7 +33,9 @@ import {
 } from "@/utils/planProgress"
 import {
   localDateStr,
+  builtMainType,
   MAIN_CYCLE,
+  mainTypeFor,
   MainType,
   PLAN_FOCUS_LABEL,
   PLAN_WEEKS,
@@ -288,7 +290,7 @@ function PlanBody({
     slots.push({
       index: n,
       status,
-      mainType: spec?.mainType ?? MAIN_CYCLE[(n - 1) % MAIN_CYCLE.length],
+      mainType: spec?.mainType ?? (workout ? builtMainType(n, workout.blocks) : mainTypeFor(n, plan.startType)),
       mainBlock: spec?.mainBlock.name ?? mainPhase?.title ?? "",
       week: Math.ceil(n / WORKOUTS_PER_WEEK),
       kicker: spec ? PLAN_FOCUS_LABEL[spec.mainType] : `Workout ${n}`,
@@ -403,6 +405,7 @@ function PlanBody({
         <TypeColumns
           slots={slots}
           hasSc={plan.hasSc}
+          startType={plan.startType}
           selected={selected}
           onSelect={(n) => setSelected((cur) => (cur === n ? null : n))}
         />
@@ -545,17 +548,20 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
 function TypeColumns({
   slots,
   hasSc,
+  startType,
   selected,
   onSelect,
 }: {
   slots: Slot[]
   hasSc: boolean
+  startType: MainType | null
   selected: number | null
   onSelect: (index: number) => void
 }) {
   return (
     <View style={styles.columns}>
-      {MAIN_CYCLE.map((type) => {
+      {/* In the plan's own order: its first workout's type first. */}
+      {MAIN_CYCLE.map((_, i) => mainTypeFor(i + 1, startType)).map((type) => {
         const mine = slots.filter((s) => s.mainType === type)
         const color = ADAPTATION_COLOR[type]
         const doneN = mine.filter((s) => s.status === "done").length

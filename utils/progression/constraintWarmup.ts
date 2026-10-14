@@ -1,6 +1,7 @@
 import type { BlockRow, SessionRow } from "@/services/BoulderGraphService"
 import { BoulderLevelOptions, colourIndex, shiftColour } from "@/utils/boulderColours"
 import {
+  CONSTRAINT_COLOUR_EXCLUSIONS,
   CONSTRAINT_WARMUP_RULES,
   DEFAULT_CONSTRAINT_ROTATION,
   type ColourRange,
@@ -75,6 +76,15 @@ export function rotationFor(block: { blockName?: string; rotation?: ConstraintRo
 
 export function defaultRotation(name: string | undefined): ConstraintRotation | null {
   return DEFAULT_CONSTRAINT_ROTATION[constraintKey(name)] ?? null
+}
+
+// Colours this constraint can never be done on (CONSTRAINT_COLOUR_EXCLUSIONS).
+export function excludedColours(name: string | undefined): string[] {
+  return CONSTRAINT_COLOUR_EXCLUSIONS[constraintKey(name)] ?? []
+}
+
+export function colourAllowedFor(name: string | undefined, colour: string): boolean {
+  return !excludedColours(name).includes(colour)
 }
 
 // The colours a range allows for this flash level, easiest first.
@@ -171,28 +181,51 @@ export interface WarmupPick {
 export const NO_FLASH_COLOUR = "orange"
 
 // Null when nothing can be suggested (no candidates for this group).
+// A constraint that lands on a colour it's excluded from
+// (CONSTRAINT_COLOUR_EXCLUSIONS) is replaced by the next one in line from
+// the same group, else from any other group; with none left the warm-up is
+// one constraint shorter.
 export function suggestWarmup(
   candidates: WarmupCandidate[],
   pillar: WarmupPillar,
   usage: WarmupUsage,
   flash: string | null | undefined,
 ): WarmupPick[] | null {
-  const { count, attempts, rampBelowFlash } = CONSTRAINT_WARMUP_RULES
+  const { count } = CONSTRAINT_WARMUP_RULES
   const hasFlash = colourIndex(flash) >= 0
 
-  const pool = candidates.filter((c) =>
-    c.rotation.pillars.includes(pillar)
-    && (!hasFlash || allowedColours(c.rotation.colours, flash!).length > 0)
-  )
-  // Least recently used first (never used = oldest), then name.
+  const usable = candidates.filter((c) => !hasFlash || allowedColours(c.rotation.colours, flash!).length > 0)
+  // Least recently used first (never used = oldest), then name; last
+  // time's go after the fresh ones.
   const age = (c: WarmupCandidate) => usage.recency.get(c.id) ?? Number.POSITIVE_INFINITY
   const byAge = (a: WarmupCandidate, b: WarmupCandidate) => age(b) - age(a) || a.name.localeCompare(b.name)
-  const fresh = pool.filter((c) => !usage.last.has(c.id)).sort(byAge)
-  // Not enough fresh ones → reuse last time's, least recent first.
-  const reused = pool.filter((c) => usage.last.has(c.id)).sort(byAge)
-  const chosen = [...fresh, ...reused].slice(0, count)
-  if (chosen.length === 0) return null
+  const inLine = (pool: WarmupCandidate[]) => [
+    ...pool.filter((c) => !usage.last.has(c.id)).sort(byAge),
+    ...pool.filter((c) => usage.last.has(c.id)).sort(byAge),
+  ]
+  const own = inLine(usable.filter((c) => c.rotation.pillars.includes(pillar)))
+  const others = inLine(usable.filter((c) => !c.rotation.pillars.includes(pillar)))
 
+  let chosen = own.slice(0, count)
+  if (chosen.length === 0) return null
+  const queue = [...own.slice(count), ...others]
+  const rejected = new Set<string>()
+  // Each pass drops one constraint on an excluded colour, so this ends.
+  for (;;) {
+    const picks = assignColours(chosen, flash, hasFlash)
+    const bad = picks.find((p) => !colourAllowedFor(p.name, p.colour))
+    if (!bad) return picks.length > 0 ? picks : null
+    rejected.add(bad.id)
+    chosen = chosen.filter((c) => c.id !== bad.id)
+    const next = queue.find((c) => !rejected.has(c.id) && !chosen.some((x) => x.id === c.id))
+    if (next) chosen.push(next)
+  }
+}
+
+// Colours and attempts for the chosen constraints: the ramp to flash, each
+// clamped to its own range; orange for everyone without a flash level.
+function assignColours(chosen: WarmupCandidate[], flash: string | null | undefined, hasFlash: boolean): WarmupPick[] {
+  const { attempts, rampBelowFlash } = CONSTRAINT_WARMUP_RULES
   if (!hasFlash) {
     return chosen.map((c, slot) => ({ id: c.id, name: c.name, colour: NO_FLASH_COLOUR, attempts: attempts[slot] ?? 1 }))
   }

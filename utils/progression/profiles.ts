@@ -154,3 +154,12 @@ export const DEFAULT_CONSTRAINT_ROTATION: Record<string, ConstraintRotation> = {
   footmoves:                 { pillars: ["technique"], colours: "below_flash" },
   onefootonly:               { pillars: ["technique"], colours: "any" },
 }
+
+// Colours a constraint must never be done on, whatever its colour range or
+// the coach's own settings say — keyed like the table above. When the
+// rotation would put one of these on an excluded colour, another constraint
+// takes its place: same group first, then any other group (see
+// suggestWarmup). Add a line here for each new rule.
+export const CONSTRAINT_COLOUR_EXCLUSIONS: Record<string, string[]> = {
+  feetonair: ["orange"], // orange routes are too easy to need feet — coach 2026-10-14
+}

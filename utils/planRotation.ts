@@ -37,6 +37,9 @@ export interface PlanShape {
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  // Main type of workout 1; the cycle carries on from it. Missing / null =
+  // strength, so plans made before it existed keep their rotation.
+  startType?: MainType | null
 }
 
 // A workout already built from this plan (a protocol row with planId set).
@@ -63,6 +66,7 @@ export const WORKOUTS_PER_WEEK = 2
 export const PLAN_WORKOUTS = PLAN_WEEKS * WORKOUTS_PER_WEEK
 
 export const MAIN_CYCLE: MainType[] = ["strength", "power_endurance", "power"]
+export const DEFAULT_START_TYPE: MainType = "strength"
 
 // Library blocks per main type, in the order they alternate. Matched by name
 // AND type ("Base 1" once existed as both a sequence and a free session).
@@ -136,8 +140,24 @@ export function planIsOver(plan: Pick<PlanShape, "windowEnd">, built: BuiltPlanW
   return today > plan.windowEnd || nextPlanIndex(built) > PLAN_WORKOUTS
 }
 
-export function mainTypeFor(index: number): MainType {
-  return MAIN_CYCLE[(index - 1) % MAIN_CYCLE.length]
+// Main type of workout `index`: the fixed cycle, starting at the plan's
+// start type (strength unless the coach picked another).
+export function mainTypeFor(index: number, startType?: MainType | null): MainType {
+  const offset = Math.max(0, MAIN_CYCLE.indexOf(startType ?? DEFAULT_START_TYPE))
+  return MAIN_CYCLE[(index - 1 + offset) % MAIN_CYCLE.length]
+}
+
+// First workout index of a main type, given the start type.
+function firstIndexOf(mainType: MainType, startType?: MainType | null): number {
+  const offset = Math.max(0, MAIN_CYCLE.indexOf(startType ?? DEFAULT_START_TYPE))
+  return ((MAIN_CYCLE.indexOf(mainType) - offset + MAIN_CYCLE.length) % MAIN_CYCLE.length) + 1
+}
+
+// Main type of a built plan workout, without its plan: from the main block it
+// uses, else the default cycle (plans that start with strength).
+export function builtMainType(planIndex: number, blocksJson: string | undefined): MainType {
+  for (const t of MAIN_CYCLE) if (builtMainBlock(t, blocksJson)) return t
+  return mainTypeFor(planIndex)
 }
 
 const sameRef = (a: LibraryBlockRef, b: LibraryBlockRef) =>
@@ -174,8 +194,8 @@ export function alternateMainBlock(mainType: MainType, current: LibraryBlockRef)
 // fewer times so far; on a tie, not the one used last; at the start, the
 // first in MAIN_BLOCKS. Earlier slots not built yet count with the block
 // this same rule gives them.
-function mainBlockFor(index: number, built: BuiltPlanWorkout[]): LibraryBlockRef {
-  const mainType = mainTypeFor(index)
+function mainBlockFor(index: number, built: BuiltPlanWorkout[], startType?: MainType | null): LibraryBlockRef {
+  const mainType = mainTypeFor(index, startType)
   const blocks = MAIN_BLOCKS[mainType]
   // Newest build per slot (a slot can be rebuilt).
   const bySlot = new Map<number, BuiltPlanWorkout>()
@@ -186,7 +206,7 @@ function mainBlockFor(index: number, built: BuiltPlanWorkout[]): LibraryBlockRef
   const uses = blocks.map(() => 0)
   let last = -1
   let pick = 0
-  for (let n = MAIN_CYCLE.indexOf(mainType) + 1; n <= index; n += MAIN_CYCLE.length) {
+  for (let n = firstIndexOf(mainType, startType); n <= index; n += MAIN_CYCLE.length) {
     pick = 0
     for (let i = 1; i < blocks.length; i++) {
       if (uses[i] < uses[pick] || (uses[i] === uses[pick] && pick === last)) pick = i
@@ -201,7 +221,7 @@ function mainBlockFor(index: number, built: BuiltPlanWorkout[]): LibraryBlockRef
 }
 
 export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WorkoutSpec {
-  const mainType = mainTypeFor(index)
+  const mainType = mainTypeFor(index, plan.startType)
 
   // Density test: the first workout, and the first one built in the plan's
   // last week — workout 12 may never happen, since the plan ends at its date.
@@ -212,7 +232,7 @@ export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWork
   return {
     index,
     mainType,
-    mainBlock: mainBlockFor(index, built),
+    mainBlock: mainBlockFor(index, built, plan.startType),
     warmup: index % 2 === 1 ? "constraints" : "one_on_one_off",
     scFocus: plan.hasSc ? SC_FOCUS_FOR[mainType] : null,
     exerciseSlot: ((index - 1) % WORKOUTS_PER_WEEK) as 0 | 1,

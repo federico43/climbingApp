@@ -52,7 +52,10 @@ function scSummaryLines(scSets: any[]): string[] {
     const name = sc.exerciseName ?? "Exercise"
     byExercise.set(name, [...(byExercise.get(name) ?? []), sc])
   }
-  return [...byExercise.entries()].map(([name, sets]) => {
+  return [...byExercise.entries()].map(([exName, sets]) => {
+    // A swapped-in exercise says what it replaced (utils/scSwap).
+    const from = sets.find((x) => x.swappedFrom?.exerciseName)?.swappedFrom.exerciseName
+    const name = from ? `${exName} (for ${from})` : exName
     const reps = sets.filter((x) => x.repsCompleted != null).map((x) => Number(x.repsCompleted))
     if (reps.length) return `${name}: avg ${avg(reps)} reps`
     const sided = sets.filter((x) => x.repsLeft != null)

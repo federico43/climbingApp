@@ -33,7 +33,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
 | `components/AthleteAnalytics.tsx` | Coach: Training plan card — header, progress, next workout, Build |
-| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts; "Save the S&C as its own workout" |
+| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
 | `app/(tabs)/(buttonTabs)/plan.tsx` | Athlete: Plan page (read-only; the app's home when there's an active plan) |
@@ -57,6 +57,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `hasSc`, `hasMobility` | boolean | |
 | `scPatterns` | string (JSON) | `[{ movementType, exerciseIds: [id1, id2?] }]` × 4, in pick order. Fingers has `[]` |
 | `movementTypeFocus` | string (JSON) | Pre-v2 only — read, never written |
+| `startType` | string, optional | Main type of workout 1: `strength` \| `power_endurance` \| `power`. Missing / null = strength. Only written when not strength (or to clear it) |
 
 **`protocol`** (workouts) — plan fields, set only on workouts built from a plan:
 
@@ -110,7 +111,7 @@ gives two different workouts.
 
 | What | Rule |
 | --- | --- |
-| Main type | Fixed cycle **Strength → Power endurance → Power**, starting with Strength (each 4 times in 12) |
+| Main type | Fixed cycle **Strength → Power endurance → Power** (each 4 times in 12). Starts with Strength unless the coach picks another **first workout** type in the plan screen (`startType`, since 2026-10-14) — e.g. Power endurance → Power → Strength → … |
 | Main block | Strength: Project Bouldering ↔ Max bouldering. Power endurance: Power endurance - 4x4 ↔ Base 1 (the `sequence` one). Power: Power boulders. Picked from what earlier workouts of the type **actually used** (see below). **Always twice in the workout** (same library block, back to back) |
 | Warm-up | Alternates: odd workouts **3 constraints** for the plan's focus, even workouts **1 on 1 off** |
 | Test | **Density test as homework** (since 2026-10-07) on workout 1 and on the first workout built in the plan's last week (week 6): the workout keeps its warm-up, the test is split off into a homework workout (§7.6) |
@@ -154,6 +155,15 @@ Library blocks are found by **name + block type** (constants in
 `constraintWarmup.ts` (least recently used first, never the same as last
 time if avoidable; colours ramp `[flash − 2, flash − 1, flash]` within each
 constraint's range; attempts 3 → 2 → 1). **No flash level → all on orange.**
+
+**Colour exclusions** (`CONSTRAINT_COLOUR_EXCLUSIONS` in `profiles.ts`,
+since 2026-10-14): a constraint can be barred from some colours whatever its
+range says — today only **Feet on air: never on orange**. If the ramp puts
+it on an excluded colour (e.g. flash blue or green, or no flash level), the
+next constraint in line from the same group takes its place, else the least
+recently used one from another group; with none left the warm-up has one
+constraint fewer. Applies to plan workouts and the builder's suggestion
+card.
 
 Focus → constraints (`DEFAULT_CONSTRAINT_ROTATION` in `profiles.ts`; a
 constraint's own settings saved in the block editor override it — none do
@@ -266,11 +276,12 @@ For each pattern, in order:
 
 "Used for" is set per exercise in the exercise editor (none = all three).
 
-### 7.5 Split S&C
+### 7.5 Split S&C (removed 2026-10-14)
 
-In the builder, **"Save the S&C as its own workout"** saves two workouts: the
-climbing one and "… · S&C" (`planPart: "sc"`). The S&C one is extra — not one
-of the 2 a week — and doesn't move the rotation.
+The builder's **"Save the S&C as its own workout"** option is gone: a plan
+workout is always saved as one workout. S&C parts saved before
+(`planPart: "sc"`, "… · S&C") are still read — they don't move the
+rotation and show as "Also today" next to their climbing workout.
 
 ### 7.6 Homework
 
@@ -357,8 +368,6 @@ balance, fear management, general, test.
   box).
 - **Appwrite:** an index on `protocol.planId` if queries complain; delete
   the old targets table whenever convenient.
-- **Split S&C** is two writes — if the second fails, the climbing workout is
-  saved without its S&C (the error is shown).
 - **Not tested on a device yet** — coach screens need a login; checked by
   type-check, automated tests and a web build only.
 - **Security (separate task):** `blocks` and `exercises` are readable with

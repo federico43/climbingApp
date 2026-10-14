@@ -12,6 +12,7 @@ import {
   type FourByFourSuggestion,
 } from "@/utils/progression/fourByFour"
 import { FOUR_BY_FOUR_RULES } from "@/utils/progression/profiles"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -31,6 +32,11 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 // sets 1–2 lowers one boulder for the remaining sets (liveStepDown).
 
 type Phase = "preview" | "active" | "rest" | "review"
+
+// The "one set = all the boulders, logged once" line shows until the athlete
+// has logged their first set on this device (an athlete once logged every
+// boulder as if it were a set).
+const INTRO_SEEN_KEY = "fourByFour.introSeen"
 
 interface Props {
   block: any
@@ -85,6 +91,11 @@ export function FourByFourBlock({
   const [tops, setTops] = useState<number>(bouldersPerSet)
   const blockTimer = useBlockTimer()
   const { User } = ConsumeAuth()
+  const [showIntro, setShowIntro] = useState(false)
+  useEffect(() => {
+    AsyncStorage.getItem(INTRO_SEEN_KEY).then((v) => setShowIntro(v !== "1")).catch(() => {})
+  }, [])
+  const introLine = `One set = all ${bouldersPerSet} boulders, back to back. Log it once, when the whole set is done — not after each boulder.`
 
   const [suggestion, setSuggestion] = useState<FourByFourSuggestion | null>(null)
   const [suggestionReady, setSuggestionReady] = useState(attemptsDone > 0)
@@ -130,6 +141,10 @@ export function FourByFourBlock({
     const set = attemptsDone + 1
     logAttempt({ success: true, level: hardest, scData: { tops, set, grades } })
     setStepNotice(null)
+    if (showIntro) {
+      setShowIntro(false)
+      AsyncStorage.setItem(INTRO_SEEN_KEY, "1").catch(() => {})
+    }
     // Fell in set 1–2 → one boulder one colour easier for the remaining sets.
     if (!isLastSet && tops < bouldersPerSet && set <= FOUR_BY_FOUR_RULES.earlyFallSets) {
       const step = liveStepDown(grades)
@@ -148,11 +163,12 @@ export function FourByFourBlock({
         <TopBar title={blockTitle} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={styles.content}>
           {!!block.description && <Text style={styles.desc}>{block.description}</Text>}
+          {showIntro && <Text style={styles.intro}>{introLine}</Text>}
 
           <View style={styles.statsCard}>
             <View style={styles.statItem}><Text style={styles.statNum}>{sets}</Text><Text style={styles.statLabel}>sets</Text></View>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}><Text style={styles.statNum}>{bouldersPerSet}</Text><Text style={styles.statLabel}>boulders</Text></View>
+            <View style={styles.statItem}><Text style={styles.statNum}>{bouldersPerSet}</Text><Text style={styles.statLabel}>boulders per set</Text></View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}><Text style={styles.statNum}>{restTime >= 60 ? `${Math.round(restTime / 60)}m` : `${restTime}s`}</Text><Text style={styles.statLabel}>rest</Text></View>
           </View>
@@ -173,8 +189,8 @@ export function FourByFourBlock({
             <ActivityIndicator color={C.green} />
           ) : (ready && !pickOwn) ? (
             <>
-              <Text style={styles.sectionLabel}>Boulders</Text>
-              <SlotPills grades={grades} />
+              <Text style={styles.sectionLabel}>Boulders in each set</Text>
+              <BoulderList grades={grades} />
             </>
           ) : (
             <>
@@ -206,21 +222,27 @@ export function FourByFourBlock({
   }
 
   // ── Active — which set ──────────────────────────────────────────────────────
+  // One button for the whole set: the boulders are a reference list, not
+  // things to log one by one.
   if (phase === "active") {
+    const setNo = attemptsDone + 1
     return (
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} />
-        <View style={[shared_styles.container, { justifyContent: "center", gap: 6 }]}>
-          <Text style={styles.setLabel}>Set</Text>
-          <Text style={styles.setBig}>
-            {attemptsDone + 1}
-            <Text style={styles.setOf}> / {sets}</Text>
-          </Text>
-          {ready && <View style={{ marginTop: 8 }}><SlotPills grades={grades} /></View>}
+        <ScrollView contentContainerStyle={styles.activeContent}>
+          <Text style={styles.setKicker}>Set {setNo} of {sets}</Text>
+          <SetDots done={attemptsDone} total={sets} />
+          {showIntro && <Text style={styles.intro}>{introLine}</Text>}
+          {ready && (
+            <>
+              <Text style={styles.sectionLabel}>Climb these {bouldersPerSet}, back to back</Text>
+              <BoulderList grades={grades} />
+            </>
+          )}
           {!!stepNotice && <Text style={styles.stepNotice}>{stepNotice}</Text>}
-          <View style={{ width: "100%", marginTop: 28 }}>
-            <CustomButton title="Done — log tops" onPress={startSetRest} />
-          </View>
+        </ScrollView>
+        <View style={styles.footer}>
+          <CustomButton title={`Set done (all ${bouldersPerSet} boulders)`} onPress={startSetRest} />
         </View>
       </View>
     )
@@ -235,8 +257,8 @@ export function FourByFourBlock({
     return (
       <View style={styles.restContainer}>
         <View style={styles.restHeader}>
-          <Text style={styles.restTitle}>Set {attemptsDone + 1} done</Text>
-          <Text style={styles.restSub}>How many tops?</Text>
+          <Text style={styles.restTitle}>Set {attemptsDone + 1} of {sets} done</Text>
+          <Text style={styles.restSub}>How many of the {bouldersPerSet} boulders did you top?</Text>
         </View>
 
         <View style={styles.topsRow}>
@@ -262,7 +284,7 @@ export function FourByFourBlock({
         </View>
 
         <View style={styles.restFooter}>
-          <CustomButton title={isLastSet ? "Finish" : "Next set"} onPress={logSet} />
+          <CustomButton title={isLastSet ? "Save set · finish" : `Save set · on to set ${attemptsDone + 2}`} onPress={logSet} />
         </View>
       </View>
     )
@@ -295,19 +317,32 @@ export function FourByFourBlock({
   )
 }
 
-// The boulder slots as numbered colour pills, in climbing order.
-function SlotPills({ grades }: { grades: string[] }) {
+// The boulder slots in climbing order — a plain reference list (colour dot,
+// "Boulder n", colour), deliberately not tappable or button-like.
+function BoulderList({ grades }: { grades: string[] }) {
   return (
-    <View style={styles.slotRow}>
+    <View style={styles.boulderList}>
       {grades.map((g, i) => {
         const opt = BoulderLevelOptions.find((o) => o.value === g)
         return (
-          <View key={i} style={[styles.slotPill, opt && { backgroundColor: opt.color, borderColor: opt.color }]}>
-            <Text style={[styles.slotNum, opt && { color: opt.on }]}>{i + 1}</Text>
-            <Text style={[styles.slotLabel, opt && { color: opt.on }]}>{opt?.label ?? g}</Text>
+          <View key={i} style={[styles.boulderRow, i > 0 && styles.boulderRowSep]}>
+            <View style={[styles.boulderDot, { backgroundColor: opt?.color ?? C.border }]} />
+            <Text style={styles.boulderName}>Boulder {i + 1}</Text>
+            <Text style={styles.boulderColour}>{opt?.label ?? g}</Text>
           </View>
         )
       })}
+    </View>
+  )
+}
+
+// Sets done / to go: filled = logged, ringed = this one, faint = to come.
+function SetDots({ done, total }: { done: number; total: number }) {
+  return (
+    <View style={styles.setDots}>
+      {Array.from({ length: total }).map((_, i) => (
+        <View key={i} style={[styles.setDot, i < done && styles.setDotDone, i === done && styles.setDotCurrent]} />
+      ))}
     </View>
   )
 }
@@ -343,18 +378,27 @@ const styles = StyleSheet.create({
 
   footer: { backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36 },
 
-  // Active
-  setLabel: { fontSize: 14, color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
-  setBig: { fontSize: 80, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
-  setOf: { fontSize: 36, fontWeight: "700", color: C.textMuted },
-  slotRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
-  slotPill: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18,
-    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  intro: {
+    fontSize: 14, fontWeight: "600", color: C.textPrimary, lineHeight: 20,
+    borderLeftWidth: 3, borderLeftColor: C.green, paddingLeft: 10,
   },
-  slotNum: { fontSize: 12, fontWeight: "800", color: C.textMuted, fontVariant: ["tabular-nums"] },
-  slotLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+
+  // Active
+  activeContent: { padding: 20, gap: 16, paddingBottom: 8 },
+  setKicker: { fontSize: 34, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], marginTop: 8 },
+  setDots: { flexDirection: "row", gap: 8, marginTop: -6 },
+  setDot: { flex: 1, height: 6, borderRadius: 3, backgroundColor: C.surfaceHigh },
+  setDotDone: { backgroundColor: C.green },
+  setDotCurrent: { backgroundColor: "rgba(111,207,151,0.45)" },
+  boulderList: { paddingHorizontal: 4 },
+  boulderRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10 },
+  boulderRowSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
+  boulderDot: {
+    width: 14, height: 14, borderRadius: 7,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.45)",
+  },
+  boulderName: { flex: 1, fontSize: 15, color: C.textSecondary, fontVariant: ["tabular-nums"] },
+  boulderColour: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
 
   suggestionBanner: {
     backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
@@ -368,7 +412,7 @@ const styles = StyleSheet.create({
   restContainer: { flex: 1, backgroundColor: C.bg, paddingTop: 16, paddingBottom: 36, paddingHorizontal: 24 },
   restHeader: { alignItems: "center", gap: 4 },
   restTitle: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
-  restSub: { fontSize: 14, color: C.textMuted },
+  restSub: { fontSize: 14, color: C.textMuted, textAlign: "center" },
   topsRow: {
     flexDirection: "row", alignItems: "center", marginTop: 20,
     backgroundColor: C.surface, borderRadius: 16, overflow: "hidden",
@@ -392,5 +436,5 @@ const styles = StyleSheet.create({
   reviewTops: { fontSize: 14, color: C.green, fontWeight: "700" },
   reviewDots: { flex: 1, flexDirection: "row", gap: 4, marginHorizontal: 12 },
   reviewDot: { width: 10, height: 10, borderRadius: 5 },
-  stepNotice: { fontSize: 13, fontWeight: "600", color: C.textSecondary, textAlign: "center", marginTop: 12, paddingHorizontal: 12 },
+  stepNotice: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
 })

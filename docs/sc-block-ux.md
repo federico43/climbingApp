@@ -255,6 +255,39 @@ full-width "▶ Start 30 s hold"; when finished it reads "LOGGED 30 s" with
 3. Both-sides holds: left → right automatically (short switch countdown).
 4. Rep-based mobility unchanged (just Done).
 
+### Change exercise mid-workout ✅ 2026-10-14
+"Change exercise" (under the brief, and on mobility screens) opens a sheet
+with search + movement-pattern chips (starting on the exercise's own
+pattern) over the whole library (no 7/3s). The pick replaces the exercise
+for the rest of the block, **this session only** — the coach's block is
+not edited. Undo on the swap banner goes back (and restores the original's
+weight / level). Rules (`utils/scSwap.ts`):
+- Target: kept when both are measured the same way (reps/seconds, mobility
+  or not); otherwise the pick's library default, set to the block's focus
+  when it's rep-counted.
+- The pick is prefilled from **its own** history and ladder; rounds are
+  logged under its id/name (so history and progression follow it), with
+  `swappedFrom` (what the block prescribed) and `swapReason: "choice"`.
+  The older "Pick an easier exercise" swap logs `swapReason: "easier"`
+  (missing = easier on older logs).
+- Coach: session detail shows "replaced X" on those rounds; the exercise's
+  progress card says the athlete replaced it (no ladder advice, unlike an
+  easier swap); the analytics list badge reads "Replaced".
+
+### Mobility timer like the other timed exercises ✅ 2026-10-14
+Timed mobility had its countdown inline under the photo (easy to miss, one
+timer even for both-sides holds), the coach's block editor couldn't make a
+mobility exercise a hold (a "Both" exercise added by hand arrived as reps),
+and a hold typed as "30s" on a reps exercise got no timer. Now:
+- `isTimedExercise` (`utils/exerciseUnit.ts`): unit seconds, or mobility
+  whose target is written in seconds ("30s", "20-30 sec", "30 seg"…).
+- Timed mobility runs **Brief → Timer** like `LoggedExerciseUI`: "Start
+  timer", 5 s get-ready + beeps (same `TimedAmountControl`), both-sides
+  left → right with the side glow / switch card, then **Done** logs the
+  seconds held (both sides: `repsLeft` / `repsRight`). "Done without timer"
+  logs the target. Round 2+ opens on the timer.
+- Block editor: mobility exercises get **Done as: Reps | Hold (timer)**.
+
 ## 4. Open questions
 
 - **Q1** ✅ Effort = Easy / Solid / Max, mapped to RPE in the focus band.

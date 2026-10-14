@@ -1,9 +1,9 @@
 import { C } from "@/utils/theme"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
-import { amountLabel, ExerciseUnit } from "@/utils/exerciseUnit"
+import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, type ExerciseRow as LibraryExercise } from "@/services/BoulderGraphService"
+import { getSessions, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import {
   Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
@@ -11,7 +11,8 @@ import { findScSessions, readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry } from "@/utils/scNext"
 import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, usableAt, type ResolvedChain } from "@/utils/levelChain"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
-import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
+import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
+import { swapCandidates, swappedExercise, type SwapReason } from "@/utils/scSwap"
 import { Audio } from "expo-av"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useRef, useState } from "react"
@@ -121,8 +122,11 @@ interface ExerciseLog {
   // Set when this round ran at an automatic easier load (planRoundDrop) and
   // the athlete kept it: what the load was before the drop.
   adjustedFrom?: { weight?: string; levelId?: string }
-  // Done as an easier library exercise the athlete swapped in (its id).
+  // Done as another library exercise the athlete swapped in (its id), and why.
   swappedTo?: string
+  swapReason?: SwapReason
+  // How the exercise done was measured (a swap can change it).
+  unit?: ExerciseUnit
   // Exercises with an adjustable setting: the athlete's "I'm on the
   // hardest setting" switch for this round.
   atHardestSetting?: boolean
@@ -155,6 +159,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     if (u === weightUnit) return
     const from = weightUnit
     setLastWeights((prev) => Object.fromEntries(Object.entries(prev).map(([k, w]) => [k, String(convertWeight(parseFloat(w) || 0, from, u))])))
+    setOriginals((prev) => Object.fromEntries(Object.entries(prev).map(([k, p]) => [k, p.weight ? { ...p, weight: String(convertWeight(parseFloat(p.weight) || 0, from, u)) } : p])))
     setWeightUnitState(u)
     saveWeightUnit(u)
   }
@@ -189,37 +194,81 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // step easier (already applied to lastWeights / lastLevels), with this
   // banner + Undo. Cleared once that round is logged.
   const [roundDrops, setRoundDrops] = useState<Record<number, RoundDrop>>({})
-  // The live exercise library (null offline) — the easier-exercise picker
-  // reads it. Swaps: block exercise index → the easier exercise the athlete
-  // picked, used for the rest of the block.
+  // The live exercise library (null offline) — the swap picker reads it.
+  // Swaps: block exercise index → the library exercise the athlete picked
+  // instead (an easier one after a missed floor, or any one by choice), used
+  // for the rest of the block. This session only; the block isn't changed.
   const [library, setLibrary] = useState<LibraryExercise[] | null>(null)
-  const [swaps, setSwaps] = useState<Record<number, LibraryExercise>>({})
-  // Which exercise the picker is for; kept after closing so the sheet's
-  // content doesn't change while it slides away.
-  const [pickerFor, setPickerFor] = useState<number | null>(null)
+  const [swaps, setSwaps] = useState<Record<number, ActiveSwap>>({})
+  // While swapped: the block exercise's own prefill / in-session state, put
+  // back on Undo (and used by the review to judge its own rounds).
+  const [originals, setOriginals] = useState<Record<number, Prefill>>({})
+  // Sessions read on mount — a swapped-in exercise is prefilled from them.
+  const sessionsRef = useRef<SessionRow[] | null>(null)
+  // Which exercise the picker is for, and why; kept after closing so the
+  // sheet's content doesn't change while it slides away.
+  const [pickerFor, setPickerFor] = useState<{ idx: number; reason: SwapReason } | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   // The full-screen "Switch sides" card (timed both-sides holds) is shown on
   // the block's first switch only; after that the glow + haptic carry it.
   const [switchCardSeen, setSwitchCardSeen] = useState(false)
 
-  // The exercise as it's actually being done: the swap, if any, keeps the
-  // block's target (focus, reps, sides) but takes the picked exercise's
-  // identity, photo and notes, and progresses by weight (no ladder).
-  // The setting hints for the exercise as it's being done (a swap brings its own).
+  // The setting hints for the exercise as it's being done (a swap's prefill
+  // brings its own).
   function settingFor(idx: number): ExerciseSetting | undefined {
-    const swap = swaps[idx]
-    return swap ? settingOf(swap) : settings[idx]
+    return settings[idx]
   }
 
+  // The exercise as it's actually being done: a swap takes the picked
+  // exercise's identity, photo, notes and ladder, and keeps the block's
+  // target where it fits (see swappedExercise).
   function effectiveExercise(idx: number): Exercise {
     const ex = block.exercises[idx]
     const swap = swaps[idx]
     if (!swap || ex.type === "7/3s") return ex
+    return swappedExercise(ex, swap.row) as Exercise
+  }
+
+  // One exercise's prefill / in-session state, read from (or written to) the
+  // per-index maps below — so a swap can stash the original's and Undo can
+  // put it back.
+  function prefillAt(idx: number): Prefill {
     return {
-      ...ex, name: swap.name, exerciseId: swap.$id, photoUri: swap.photoUri, notes: swap.notes,
-      loadMode: "weight", levels: undefined, loadStep: swap.loadStep ?? undefined,
-      settingHarder: swap.settingHarder || undefined, settingEasier: swap.settingEasier || undefined,
+      chain: chains[idx], loadStep: loadSteps[idx], setting: settings[idx], weight: lastWeights[idx], level: lastLevels[idx],
+      note: suggestionNotes[idx], detail: suggestionDetails[idx], hardest: lastHardest[idx], past: pastSessions[idx],
     }
+  }
+  function applyPrefill(idx: number, p: Prefill | null) {
+    const put = <V,>(set: React.Dispatch<React.SetStateAction<Record<number, V>>>, v: V | undefined) =>
+      set((prev) => { const n = { ...prev }; if (v === undefined) delete n[idx]; else n[idx] = v; return n })
+    put(setChains, p?.chain)
+    put<number | undefined>(setLoadSteps, p?.loadStep)
+    put(setSettings, p?.setting)
+    put(setLastWeights, p?.weight)
+    put(setLastLevels, p?.level)
+    put(setSuggestionNotes, p?.note)
+    put(setSuggestionDetails, p?.detail)
+    put(setLastHardest, p?.hardest)
+    put(setPastSessions, p?.past)
+  }
+
+  function swapExercise(idx: number, row: LibraryExercise, reason: SwapReason) {
+    // Stash the block exercise's own state the first time only — swapping
+    // again from a swap still undoes back to the original.
+    if (!swaps[idx]) setOriginals((prev) => ({ ...prev, [idx]: prefillAt(idx) }))
+    setSwaps((prev) => ({ ...prev, [idx]: { row, reason } }))
+    // The picked exercise starts from its own history (nothing carried over
+    // from a different exercise); a pending easier-round banner was for the
+    // old one.
+    applyPrefill(idx, prefillFor(swappedExercise(block.exercises[idx], row) as Exercise, sessionsRef.current, library, weightUnit))
+    setRoundDrops((prev) => { const n = { ...prev }; delete n[idx]; return n })
+  }
+
+  function undoSwap(idx: number) {
+    applyPrefill(idx, originals[idx] ?? null)
+    setOriginals((prev) => { const n = { ...prev }; delete n[idx]; return n })
+    setSwaps((prev) => { const n = { ...prev }; delete n[idx]; return n })
+    setRoundDrops((prev) => { const n = { ...prev }; delete n[idx]; return n })
   }
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -257,32 +306,19 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         const hardest: Record<number, boolean> = {}
         const past: Record<number, FocusEntry[]> = {}
 
+        sessionsRef.current = sessions
         block.exercises.forEach((ex, idx) => {
-          if (ex.type === "7/3s" || ex.movementType === "mobility") return
-          const chain = resolveExerciseChain(ex, library)
-          if (chain) resolved[idx] = chain
-          const row = library ? findLibraryRow(ex, library) : undefined
-          steps[idx] = row?.loadStep ?? ex.loadStep ?? undefined
-          const setting = settingOf(row ?? ex)
-          if (setting) sets[idx] = setting
-          if (!sessions) return
-          // Search the whole family — every member of the full chain — since
-          // a round could have been logged under any of them.
-          const candidateIds = chain ? chainIds(chain, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
-          // Every focus: planNextForFocus picks today's focus's history, and
-          // explosiveness starts from max force (scNext.ts). Weights come
-          // back in the athlete's current unit.
-          const history = findScSessions(sessions, candidateIds, ex.name, { unit, limit: HISTORY_LOOKBACK })
-          if (history.length === 0) return
-          past[idx] = history
-
-          const next = planNextForFocus({ ...ex, setting }, chain ?? undefined, steps[idx], unit, history, "last time")
-          if (next.atHardest != null) hardest[idx] = next.atHardest
-          if (next.level) levels[idx] = next.level
-          if (next.weight != null) weights[idx] = String(next.weight)
-          if (next.note) notes[idx] = next.note
-          const basis = basisLine(next, ex.focus, next.level?.name ?? ex.name, unit)
-          if (basis) details[idx] = basis
+          const p = prefillFor(ex, sessions, library, unit)
+          if (!p) return
+          if (p.chain) resolved[idx] = p.chain
+          steps[idx] = p.loadStep
+          if (p.setting) sets[idx] = p.setting
+          if (p.past) past[idx] = p.past
+          if (p.hardest != null) hardest[idx] = p.hardest
+          if (p.level) levels[idx] = p.level
+          if (p.weight != null) weights[idx] = p.weight
+          if (p.note) notes[idx] = p.note
+          if (p.detail) details[idx] = p.detail
         })
 
         setChains(resolved)
@@ -322,7 +358,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
     const idx = currentExerciseIndex
-    const fullLog: ExerciseLog = { ...log, exerciseIndex: idx, round: currentRound, swappedTo: swaps[idx]?.$id }
+    const swap = swaps[idx]
+    const ex = effectiveExercise(idx)
+    const fullLog: ExerciseLog = {
+      ...log, exerciseIndex: idx, round: currentRound, swappedTo: swap?.row.$id, swapReason: swap?.reason,
+      unit: ex.type === "7/3s" ? undefined : isTimedExercise(ex) ? "seconds" : ex.unit,
+    }
     setLogs((prev) => [...prev, fullLog])
 
     // Remember the weight / level for this exercise so the next round prefills them.
@@ -332,15 +373,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     // Always remember the level picked, the prescribed step included — so
     // stepping back down in round 2 isn't undone by round 3 reopening on
     // round 1's harder level.
-    const swap = swaps[idx]
-    const chainNow = swap ? undefined : chains[idx]
+    const chainNow = chains[idx]
     if (chainNow) setLastLevels((prev) => ({ ...prev, [idx]: { exerciseId: log.levelId ?? "", name: log.exerciseName } }))
     const setting = settingFor(idx)
     if (setting) setLastHardest((prev) => ({ ...prev, [idx]: !!log.atHardestSetting }))
 
     // Under the floor → the next round of this exercise starts one step
     // easier (weaker side for both-sides). Only when there is a next round.
-    const ex = effectiveExercise(idx)
     let drop: RoundDrop | null = null
     if (ex && ex.type !== "7/3s" && ex.movementType !== "mobility" && currentRound < block.rounds - 1) {
       const round = readRound(log)
@@ -356,13 +395,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // negative pull-up on an explosiveness day.
         drop = planRoundDrop(target, round.amount, { kind: "level", chain: chain.chain, idx: at >= 0 ? at : chain.prescribedIdx, usable: usableAt(chain, ex.focus) })
       } else {
-        drop = planRoundDrop(target, round.amount, { kind: "weight", weight: round.weight ?? 0, loadStep: swap ? swap.loadStep ?? undefined : loadSteps[idx], unit: weightUnit })
+        drop = planRoundDrop(target, round.amount, { kind: "weight", weight: round.weight ?? 0, loadStep: loadSteps[idx], unit: weightUnit })
       }
       // Above the range: make it harder now (setup hint, or a little more
       // weight) — a suggestion only.
       drop ??= planRoundRaise(target, round.amount, ex.focus, {
         settingHarder: setting?.harder, atHardest: !!log.atHardestSetting,
-        weight: round.weight, loadStep: swap ? swap.loadStep ?? undefined : loadSteps[idx], unit: weightUnit, level: !!chain,
+        weight: round.weight, loadStep: loadSteps[idx], unit: weightUnit, level: !!chain,
       })
     }
     setRoundDrops((prev) => {
@@ -385,7 +424,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         exerciseName: log.exerciseName,
         // The focus it was programmed for, so next time's prefill only
         // compares against rounds done at the same focus.
-        focus: block.exercises[idx]?.type !== "7/3s" ? (block.exercises[idx] as RepExercise | BothSidesExercise)?.focus : undefined,
+        focus: ex.type !== "7/3s" ? ex.focus : undefined,
         round: currentRound + 1,
         repsCompleted: log.repsCompleted,
         weight: log.weight,
@@ -404,8 +443,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         adjustedFrom: log.adjustedFrom,
         atHardestSetting: log.atHardestSetting,
         // A swapped round belongs to the picked exercise's history; this
-        // points back at what the block prescribed (for the coach).
+        // points back at what the block prescribed, and why it was swapped
+        // (for the coach — see utils/scSwap).
         swappedFrom: swap ? { exerciseId: block.exercises[idx]?.exerciseId, exerciseName: block.exercises[idx]?.name } : undefined,
+        swapReason: swap?.reason,
       },
     })
 
@@ -497,7 +538,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       setCurrentExerciseIndex(0)
       setPhase("circuit")
     }
-    const upNext = block.exercises[0]
+    const upNext = effectiveExercise(0)
     // Ring sized to the screen, and smaller for each easier-round note, so
     // the notes and "Up next" fit without scrolling on most phones. The
     // content still scrolls if they don't.
@@ -528,7 +569,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             <View key={i} style={styles.restDrop}>
               <Ionicons name="arrow-down-circle" size={20} color={C.yellow} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.restDropName}>{block.exercises[Number(i)]?.name}</Text>
+                <Text style={styles.restDropName}>{effectiveExercise(Number(i))?.name}</Text>
                 <Text style={styles.restDropText}>{d.note}</Text>
               </View>
             </View>
@@ -552,13 +593,17 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   if (phase === "circuit") {
     const exercise = effectiveExercise(currentExerciseIndex)
     const swapped = swaps[currentExerciseIndex]
-    const roundKey = `${currentRound}-${currentExerciseIndex}-${swapped?.$id ?? ""}`
-    const pickEasier = () => { setPickerFor(currentExerciseIndex); setPickerOpen(true) }
-    const undoSwap = () => setSwaps((prev) => { const n = { ...prev }; delete n[currentExerciseIndex]; return n })
-    const swapNote = swapped ? `Swapped from ${block.exercises[currentExerciseIndex].name} for the rest of this block` : undefined
+    const roundKey = `${currentRound}-${currentExerciseIndex}-${swapped?.row.$id ?? ""}`
+    const openPicker = (reason: SwapReason) => { setPickerFor({ idx: currentExerciseIndex, reason }); setPickerOpen(true) }
+    const pickEasier = () => openPicker("easier")
+    const changeExercise = () => openPicker("choice")
+    const undoCurrentSwap = () => undoSwap(currentExerciseIndex)
+    const swapNote = swapped
+      ? `Replaces ${block.exercises[currentExerciseIndex].name} for the rest of this block (today only)`
+      : undefined
     // Round 2+ skips the brief (the athlete knows the exercise) unless the
     // load was just made easier or the exercise was just swapped.
-    const justSwapped = !!swapped && !logs.some((l) => l.exerciseIndex === currentExerciseIndex && l.swappedTo === swapped.$id)
+    const justSwapped = !!swapped && !logs.some((l) => l.exerciseIndex === currentExerciseIndex && l.swappedTo === swapped.row.$id)
     const startOnBrief = currentRound === 0 || !!roundDrops[currentExerciseIndex] || justSwapped
     // Share of the block's exercises done so far, across all rounds.
     const progress = (currentRound * block.exercises.length + currentExerciseIndex) / (block.rounds * block.exercises.length)
@@ -587,27 +632,34 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         </View>
         {exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
           <MobilityExerciseUI
-            key={`${currentRound}-${currentExerciseIndex}`}
+            key={roundKey}
             exercise={exercise}
+            startOnBrief={startOnBrief}
+            showSwitchCard={!switchCardSeen}
+            onSwitchCardShown={() => setSwitchCardSeen(true)}
+            onChangeExercise={changeExercise}
+            swapNote={swapNote}
+            onUndoSwap={undoCurrentSwap}
             onDone={(log) => handleExerciseDone(log)}
           />
         ) : exercise.type !== "7/3s" ? (
           <LoggedExerciseUI
             key={roundKey}
             exercise={exercise}
-            levelChain={swapped ? undefined : chains[currentExerciseIndex]}
+            levelChain={chains[currentExerciseIndex]}
             weightUnit={weightUnit}
             onWeightUnitChange={setWeightUnit}
             initialWeight={lastWeights[currentExerciseIndex] ?? ""}
-            initialLevel={swapped ? undefined : lastLevels[currentExerciseIndex]}
+            initialLevel={lastLevels[currentExerciseIndex]}
             setting={settingFor(currentExerciseIndex)}
             initialHardest={!!lastHardest[currentExerciseIndex]}
-            suggestionNote={currentRound === 0 ? suggestionNotes[currentExerciseIndex] : undefined}
-            suggestionDetail={currentRound === 0 ? suggestionDetails[currentExerciseIndex] : undefined}
+            suggestionNote={currentRound === 0 || justSwapped ? suggestionNotes[currentExerciseIndex] : undefined}
+            suggestionDetail={currentRound === 0 || justSwapped ? suggestionDetails[currentExerciseIndex] : undefined}
             roundDrop={roundDrops[currentExerciseIndex]}
             onPickEasier={pickEasier}
+            onChangeExercise={changeExercise}
             swapNote={swapNote}
-            onUndoSwap={undoSwap}
+            onUndoSwap={undoCurrentSwap}
             startOnBrief={startOnBrief}
             showSwitchCard={!switchCardSeen}
             onSwitchCardShown={() => setSwitchCardSeen(true)}
@@ -619,18 +671,15 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             onDone={(log) => handleExerciseDone(log)}
           />
         )}
-        <EasierExercisePicker
+        <ExerciseSwapPicker
           visible={pickerOpen}
-          original={pickerFor !== null ? block.exercises[pickerFor] : undefined}
+          reason={pickerFor?.reason ?? "choice"}
+          original={pickerFor !== null ? block.exercises[pickerFor.idx] : undefined}
+          current={pickerFor !== null ? swaps[pickerFor.idx]?.row : undefined}
           library={library}
           onClose={() => setPickerOpen(false)}
           onPick={(row) => {
-            const i = pickerFor!
-            setSwaps((prev) => ({ ...prev, [i]: row }))
-            // The drop banner did its job; the picked exercise starts fresh
-            // (no weight carried over from a different exercise).
-            setRoundDrops((prev) => { const n = { ...prev }; delete n[i]; return n })
-            setLastWeights((prev) => { const n = { ...prev }; delete n[i]; return n })
+            swapExercise(pickerFor!.idx, row, pickerFor!.reason)
             setPickerOpen(false)
           }}
         />
@@ -643,20 +692,32 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   if (phase === "review") {
     // What next session will start on, per exercise — the same rule the
     // prefill applies, run over today's rounds.
-    const nextTime = block.exercises.flatMap((ex, idx) => {
-      if (ex.type === "7/3s" || ex.movementType === "mobility") return []
-      // Swapped rounds were a different exercise — they don't judge this one.
-      const swappedTo = logs.find((l) => l.exerciseIndex === idx && l.swappedTo)
-      const rounds = logs
-        .filter((l) => l.exerciseIndex === idx && !l.swappedTo)
+    const judge = (ex: Exercise, roundLogs: ExerciseLog[], p: Prefill): string => {
+      if (ex.type === "7/3s" || ex.movementType === "mobility") return ""
+      const rounds = roundLogs
         .sort((a, b) => a.round - b.round)
         .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit))
       const summary = setsAtFinalLoad(rounds)
       const today: FocusEntry | null = summary ? { focus: ex.focus, date: new Date().toISOString(), prescribed: ex.reps, unit: ex.unit === "seconds" ? "seconds" : "reps", summary } : null
-      const { note } = today ? planNextForFocus({ ...ex, setting: settings[idx] }, chains[idx], loadSteps[idx], weightUnit, [today, ...(pastSessions[idx] ?? [])], "today") : { note: "" }
-      const swapNote = swappedTo ? `Swapped to ${swappedTo.exerciseName} — this exercise needs an easier version on its ladder` : ""
+      return today ? planNextForFocus({ ...ex, setting: p.setting }, p.chain, p.loadStep, weightUnit, [today, ...(p.past ?? [])], "today").note : ""
+    }
+    const nextTime = block.exercises.flatMap((ex, idx) => {
+      const out: { name: string; note: string }[] = []
+      const swap = swaps[idx]
+      // Swapped rounds were a different exercise — they don't judge this
+      // one; the block exercise is judged on its own rounds and state.
+      const note = judge(ex, logs.filter((l) => l.exerciseIndex === idx && !l.swappedTo), swap ? originals[idx] ?? {} : prefillAt(idx))
+      const easier = logs.find((l) => l.exerciseIndex === idx && l.swappedTo && l.swapReason === "easier")
+      const swapNote = easier ? `Swapped to ${easier.exerciseName} — this exercise needs an easier version on its ladder` : ""
       const text = [note, swapNote].filter(Boolean).join("\n")
-      return text ? [{ name: ex.name, note: text }] : []
+      if (text) out.push({ name: ex.name, note: text })
+      // The exercise swapped in is judged on its own rounds and history.
+      if (swap) {
+        const now = effectiveExercise(idx)
+        const swappedNote = judge(now, logs.filter((l) => l.exerciseIndex === idx && l.swappedTo === swap.row.$id), prefillAt(idx))
+        if (swappedNote) out.push({ name: now.name, note: swappedNote })
+      }
+      return out
     })
     return (
       <View style={shared_styles.screen}>
@@ -684,10 +745,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
               {logs
                 .filter((l) => l.round === roundIndex)
                 .map((l, i) => {
-                  const exUnit = (block.exercises[l.exerciseIndex] as any)?.unit as ExerciseUnit | undefined
+                  const exUnit = l.unit ?? (block.exercises[l.exerciseIndex] as any)?.unit as ExerciseUnit | undefined
                   return (
                   <View key={i} style={styles.reviewRow}>
                     <Text style={styles.reviewExerciseName}>{l.exerciseName}</Text>
+                    {!!l.swappedTo && (
+                      <Text style={styles.reviewDetail}>In place of {block.exercises[l.exerciseIndex]?.name}</Text>
+                    )}
 
                     {l.repsCompleted != null && (
                       <Text style={styles.reviewDetail}>
@@ -791,6 +855,54 @@ function settingOf(x: { settingHarder?: string | null; settingEasier?: string | 
 // Sessions read per exercise, any focus: enough for three of one focus
 // (stall rule) while the plan rotates three focuses.
 const HISTORY_LOOKBACK = 10
+
+// A block exercise swapped for another library exercise (see utils/scSwap).
+interface ActiveSwap { row: LibraryExercise; reason: SwapReason }
+
+// What an exercise starts on: its ladder, weight jump and setting hints from
+// the live library, and the weight / level / note from the athlete's own
+// history at today's focus (see planNextForFocus).
+interface Prefill {
+  chain?: ResolvedChain
+  loadStep?: number
+  setting?: ExerciseSetting
+  weight?: string
+  level?: LevelStep
+  note?: string
+  detail?: string     // what the note is based on
+  hardest?: boolean
+  past?: FocusEntry[] // recent sessions, any focus, newest first
+}
+
+// null for exercises that don't progress (mobility, 7/3s).
+function prefillFor(ex: Exercise, sessions: SessionRow[] | null, library: LibraryExercise[] | null, unit: WeightUnit): Prefill | null {
+  if (ex.type === "7/3s" || ex.movementType === "mobility") return null
+  const out: Prefill = {}
+  const chain = resolveExerciseChain(ex, library)
+  if (chain) out.chain = chain
+  const row = library ? findLibraryRow(ex, library) : undefined
+  out.loadStep = row?.loadStep ?? ex.loadStep ?? undefined
+  const setting = settingOf(row ?? ex)
+  if (setting) out.setting = setting
+  if (!sessions) return out
+  // Search the whole family — every member of the full chain — since a
+  // round could have been logged under any of them.
+  const candidateIds = chain ? chainIds(chain, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
+  // Every focus: planNextForFocus picks today's focus's history, and
+  // explosiveness starts from max force (scNext.ts). Weights come back in
+  // the athlete's current unit.
+  const history = findScSessions(sessions, candidateIds, ex.name, { unit, limit: HISTORY_LOOKBACK })
+  if (history.length === 0) return out
+  out.past = history
+  const next = planNextForFocus({ ...ex, setting }, chain ?? undefined, out.loadStep, unit, history, "last time")
+  if (next.atHardest != null) out.hardest = next.atHardest
+  if (next.level) out.level = next.level
+  if (next.weight != null) out.weight = String(next.weight)
+  if (next.note) out.note = next.note
+  const basis = basisLine(next, ex.focus, next.level?.name ?? ex.name, unit)
+  if (basis) out.detail = basis
+  return out
+}
 
 // History + library fetches can hang offline; past this, start without them
 // (the block's own copy of each chain is the fallback).
@@ -1140,7 +1252,7 @@ function RoundDropBanner({ drop, onUndo, onPickEasier }: { drop: RoundDrop; onUn
   )
 }
 
-// Shown while a block exercise is swapped for an easier one; Undo goes back.
+// Shown while a block exercise is swapped for another one; Undo goes back.
 function SwapBanner({ note, onUndo }: { note: string; onUndo: () => void }) {
   return (
     <View style={[styles.roundDropBanner, styles.swapBanner]}>
@@ -1155,63 +1267,119 @@ function SwapBanner({ note, onUndo }: { note: string; onUndo: () => void }) {
   )
 }
 
-// Easier exercises to swap to when nothing on the prescribed one can be
-// lowered: library exercises of the same movement pattern (same pattern
-// first, then the rest), never mobility or 7/3s. Picking one swaps it in
-// for the rest of the block; the round logs point back to the original.
-function EasierExercisePicker({ visible, original, library, onPick, onClose }: {
+// The library exercises to swap to (utils/scSwap swapCandidates).
+// "easier": offered when nothing on the prescribed exercise can be lowered —
+// same movement pattern first, then the rest, never mobility. "choice": the
+// athlete replaces it themselves — search + a pattern filter (starting on
+// the exercise's own pattern) over the whole library. Either way the pick is
+// used for the rest of this block only and the logs point back to the
+// original.
+function ExerciseSwapPicker({ visible, reason, original, current, library, onPick, onClose }: {
   visible: boolean
+  reason: SwapReason
   original?: Exercise
+  current?: LibraryExercise // already swapped in, if any
   library: LibraryExercise[] | null
   onPick: (row: LibraryExercise) => void
   onClose: () => void
 }) {
   const own = original && library ? findLibraryRow(original, library) : undefined
   const pattern = (own?.movementType ?? (original && original.type !== "7/3s" ? original.movementType : undefined)) as MovementType | undefined
-  const candidates = (library ?? [])
-    .filter((row) => row.$id !== own?.$id && row.type !== "7/3s" && row.movementType !== "mobility")
-    .sort((a, b) => Number(b.movementType === pattern) - Number(a.movementType === pattern) || a.name.localeCompare(b.name))
-  const samePattern = candidates.filter((row) => row.movementType === pattern)
-  const others = candidates.filter((row) => row.movementType !== pattern)
+  const [query, setQuery] = useState("")
+  const [patternFilter, setPatternFilter] = useState<MovementType | null>(null)
+  // Fresh search each time it opens, filtered to the exercise's own pattern.
+  useEffect(() => {
+    if (!visible) return
+    setQuery("")
+    setPatternFilter(reason === "choice" ? pattern ?? null : null)
+  }, [visible, reason, pattern])
+
+  const easier = reason === "easier"
+  const exclude = [own?.$id, original?.exerciseId, current?.$id]
+  const candidates = swapCandidates(library ?? [], exclude, pattern, easier ? {} : { query, movementType: patternFilter }, easier)
+  // Patterns that have something to offer, for the filter chips.
+  const patterns = MOVEMENT_TYPES.filter((m) => (library ?? []).some((row) => row.movementType === m && row.type !== "7/3s"))
+  const row = (r: LibraryExercise) => (
+    <Pressable key={r.$id} style={styles.pickerRow} onPress={() => onPick(r)}>
+      {r.photoUri ? (
+        <Image source={{ uri: r.photoUri }} style={styles.exRowThumb} contentFit="cover" />
+      ) : (
+        <View style={[styles.exRowThumb, styles.exRowIcon]}>
+          <Ionicons name={r.movementType === "mobility" ? "body-outline" : "barbell-outline"} size={20} color={C.green} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pickerName} numberOfLines={2}>{r.name}</Text>
+        {!!r.movementType && (
+          <Text style={styles.pickerMeta} numberOfLines={1}>{MOVEMENT_TYPE_LABEL[r.movementType as MovementType] ?? r.movementType}</Text>
+        )}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+    </Pressable>
+  )
   const section = (title: string, rows: LibraryExercise[]) => rows.length > 0 && (
     <>
       <Text style={styles.pickerSection}>{title}</Text>
-      {rows.map((row) => (
-        <Pressable key={row.$id} style={styles.pickerRow} onPress={() => onPick(row)}>
-          {row.photoUri ? (
-            <Image source={{ uri: row.photoUri }} style={styles.exRowThumb} contentFit="cover" />
-          ) : (
-            <View style={[styles.exRowThumb, styles.exRowIcon]}>
-              <Ionicons name="barbell-outline" size={20} color={C.green} />
-            </View>
-          )}
-          <Text style={styles.pickerName} numberOfLines={2}>{row.name}</Text>
-          <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
-        </Pressable>
-      ))}
+      {rows.map(row)}
     </>
   )
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.pickerBackdrop}>
-        <View style={styles.pickerSheet}>
+        <View style={[styles.pickerSheet, !easier && styles.pickerSheetTall]}>
           <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>Pick an easier exercise</Text>
+            <Text style={styles.pickerTitle}>{easier ? "Pick an easier exercise" : "Change exercise"}</Text>
             <Pressable onPress={onClose} hitSlop={10}>
               <Ionicons name="close" size={24} color={C.textSecondary} />
             </Pressable>
           </View>
           <Text style={styles.pickerHint}>
-            Used instead of {original?.name ?? "this exercise"} for the rest of this block. Same rep target.
+            Used instead of {original?.name ?? "this exercise"} for the rest of this block, today only. Your coach will see the change.
           </Text>
-          <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+          {!easier && library !== null && (
+            <>
+              <View style={styles.pickerSearch}>
+                <Ionicons name="search" size={16} color={C.textMuted} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search exercises"
+                  placeholderTextColor={C.textMuted}
+                  style={styles.pickerSearchInput}
+                  autoCorrect={false}
+                />
+                {!!query && (
+                  <Pressable onPress={() => setQuery("")} hitSlop={10}>
+                    <Ionicons name="close-circle" size={18} color={C.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerChips} keyboardShouldPersistTaps="handled">
+                {[null, ...patterns].map((m) => {
+                  const sel = patternFilter === m
+                  return (
+                    <Pressable key={m ?? "all"} style={[styles.pickerChip, sel && styles.pickerChipSelected]} onPress={() => setPatternFilter(m)}>
+                      <Text style={[styles.pickerChipText, sel && styles.pickerChipTextSelected]}>
+                        {m ? MOVEMENT_TYPE_LABEL[m] : "All"}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
+              </ScrollView>
+            </>
+          )}
+          <ScrollView contentContainerStyle={{ paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
             {library === null ? (
               <Text style={styles.pickerHint}>{"Couldn't load the exercise library — check your connection."}</Text>
-            ) : (
+            ) : easier ? (
               <>
-                {section(pattern ? `${MOVEMENT_TYPE_LABEL[pattern] ?? pattern} exercises` : "Exercises", pattern ? samePattern : candidates)}
-                {!!pattern && section("Other exercises", others)}
+                {section(pattern ? `${MOVEMENT_TYPE_LABEL[pattern] ?? pattern} exercises` : "Exercises", candidates.filter((r) => !pattern || r.movementType === pattern))}
+                {!!pattern && section("Other exercises", candidates.filter((r) => r.movementType !== pattern))}
               </>
+            ) : candidates.length === 0 ? (
+              <Text style={styles.pickerHint}>No exercises match.</Text>
+            ) : (
+              candidates.map(row)
             )}
           </ScrollView>
         </View>
@@ -1493,7 +1661,10 @@ function SwitchSidesCard({ side, onDone }: { side: Side; onDone: () => void }) {
 // "● Max force · 3–6 reps" — so the athlete knows why this rep range.
 function targetLine(ex: Exercise): { label?: string; color?: string; amount: string } {
   if (ex.type === "7/3s") return { amount: `7s hang · 3s rest × ${ex.series} · ${ex.edge}` }
-  const range = ex.reps ? amountLabel(ex.reps.replace(/\s*-\s*/, "–"), ex.unit) : ""
+  // A mobility hold typed as "30s" on a reps exercise reads as seconds.
+  const timed = isTimedExercise(ex)
+  const reps = timed && ex.unit !== "seconds" ? ex.reps.match(/\d+(\s*[-–]\s*\d+)?/)?.[0] ?? ex.reps : ex.reps
+  const range = reps ? amountLabel(reps.replace(/\s*-\s*/, "–"), timed ? "seconds" : ex.unit) : ""
   const amount = ex.type === "both_sides" && range ? `${range} each side` : range
   if (ex.movementType === "mobility") return { label: "Mobility", color: C.textSecondary, amount }
   if (ex.focus) return { label: FOCUS_LABEL[ex.focus], color: FOCUS_COLOR[ex.focus], amount }
@@ -1589,7 +1760,8 @@ interface LoggedExerciseUIProps {
   suggestionDetail?: string   // what the note is based on
   roundDrop?: RoundDrop
   onPickEasier?: () => void
-  swapNote?: string        // set while swapped for an easier exercise
+  onChangeExercise?: () => void // replace it with any library exercise (this session only)
+  swapNote?: string        // set while swapped for another exercise
   onUndoSwap?: () => void
   setting?: ExerciseSetting  // adjustable setting: the coach's hints
   initialHardest?: boolean   // the "hardest setting" switch to start on
@@ -1601,7 +1773,7 @@ interface LoggedExerciseUIProps {
 
 function LoggedExerciseUI({
   exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, suggestionNote, suggestionDetail,
-  roundDrop, onPickEasier, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, showSwitchCard, onSwitchCardShown, onDone,
+  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const sides = exercise.type === "both_sides"
   const isTimed = exercise.unit === "seconds"
@@ -1698,6 +1870,7 @@ function LoggedExerciseUI({
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
         />
         {!!setting && <SettingCard setting={setting} hardest={hardest} onChange={setHardest} />}
+        {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
       </ExerciseScreen>
     )
   }
@@ -1801,6 +1974,17 @@ function SettingCard({ setting, hardest, onChange }: { setting: ExerciseSetting;
   )
 }
 
+// "Change exercise": opens the swap picker (any library exercise, this
+// session only). Low-key — the default is doing what the coach set.
+function ChangeExerciseLink({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={6} style={styles.changeExercise}>
+      <Ionicons name="swap-horizontal" size={16} color={C.textSecondary} />
+      <Text style={styles.changeExerciseText}>Change exercise</Text>
+    </Pressable>
+  )
+}
+
 // The brief's "what this focus means right now" line, under the target.
 function FocusCue({ exercise }: { exercise: Exercise }) {
   if (exercise.type === "7/3s" || exercise.movementType === "mobility" || !exercise.focus) return null
@@ -1814,32 +1998,87 @@ function FocusCue({ exercise }: { exercise: Exercise }) {
 // ─── Mobility Exercise UI ─────────────────────────────────────────────────────
 
 // Mobility doesn't progress: no weight, RPE, level or suggestions — the
-// athlete does the target and taps Done. Timed ones keep the hold timer.
-function MobilityExerciseUI({ exercise, onDone }: {
+// athlete does the target and taps Done. Timed ones (isTimedExercise) run
+// like every other timed S&C exercise: Brief → Timer (5 s get-ready, beeps
+// on the last 3 s and at the end; both-sides left → right), then Done logs
+// the seconds held. "Done without timer" logs the target.
+function MobilityExerciseUI({ exercise, startOnBrief, showSwitchCard, onSwitchCardShown, onChangeExercise, swapNote, onUndoSwap, onDone }: {
   exercise: RepExercise | BothSidesExercise
+  startOnBrief: boolean
+  showSwitchCard: boolean
+  onSwitchCardShown: () => void
+  onChangeExercise?: () => void
+  swapNote?: string
+  onUndoSwap?: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }) {
-  const isTimed = exercise.unit === "seconds"
-  const [seconds, setSeconds] = useState<number>(targetNumber(exercise.reps))
+  const isTimed = isTimedExercise(exercise)
+  const sides = exercise.type === "both_sides"
+  const target = targetNumber(exercise.reps)
+  const [step, setStep] = useState<"brief" | "timer">(isTimed && !startOnBrief ? "timer" : "brief")
+  const [held, setHeld] = useState<Record<Side, number | null>>({ left: null, right: null })
+  const [timerSide, setTimerSide] = useState<Side>("left")
+  const [switching, setSwitching] = useState(false)
 
   function handleSave() {
-    onDone({
-      exerciseIndex: 0,
-      exerciseName: exercise.name,
-      repsCompleted: isTimed ? String(seconds) : exercise.reps || undefined,
-    })
+    const base = { exerciseIndex: 0, exerciseName: exercise.name }
+    if (!isTimed) return onDone({ ...base, repsCompleted: exercise.reps || undefined })
+    const secs = (s: Side) => String(held[s] ?? target)
+    onDone(sides ? { ...base, repsLeft: secs("left"), repsRight: secs("right") } : { ...base, repsCompleted: secs("left") })
   }
 
+  if (step === "brief") {
+    return (
+      <ExerciseScreen
+        scrollKey="brief"
+        footer={isTimed
+          ? <PillButton title="Start timer" icon="timer-outline" onPress={() => setStep("timer")} />
+          : <PillButton title="Done" icon="checkmark" onPress={handleSave} />}
+      >
+        <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
+        <ExerciseHeader name={exercise.name} exercise={exercise} />
+        {!!swapNote && !!onUndoSwap && <SwapBanner note={swapNote} onUndo={onUndoSwap} />}
+        {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Timer ──
+  const side = timerSide
+  const holdDone = held[side] != null
+  const toRight = sides && side === "left"
+  function switchToRight() {
+    setTimerSide("right")
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
+    if (showSwitchCard) {
+      setSwitching(true)
+      onSwitchCardShown()
+    }
+  }
   return (
-    <ExerciseScreen footer={<PillButton title="Done" icon="checkmark" onPress={handleSave} />}>
-      <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
-      <ExerciseHeader name={exercise.name} exercise={exercise} />
-      {isTimed && (
-        <View style={styles.inputSection}>
-          <Text style={styles.sectionLabel}>Hold timer</Text>
-          <TimedAmountControl target={targetNumber(exercise.reps)} onChange={setSeconds} />
-        </View>
-      )}
+    <ExerciseScreen
+      background={sides ? <SideGlow side={side} /> : undefined}
+      overlay={switching ? <SwitchSidesCard side={side} onDone={() => setSwitching(false)} /> : undefined}
+      scrollKey={`timer-${side}`}
+      footer={<PillButton
+        title={!holdDone ? "Finish the hold first" : toRight ? "Switch to right side" : "Done"}
+        icon={toRight ? "arrow-forward" : "checkmark"}
+        onPress={toRight ? switchToRight : handleSave}
+        disabled={!holdDone}
+      />}
+    >
+      <View style={{ marginTop: 16 }}>
+        <ExerciseRow exercise={exercise} onPress={() => setStep("brief")} />
+      </View>
+      <View style={styles.inputSection}>
+        {sides
+          ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+          : <Text style={styles.sectionLabel}>Hold timer</Text>}
+        <TimedAmountControl key={side} target={target} onChange={(v) => setHeld((prev) => ({ ...prev, [side]: v }))} />
+        <Pressable onPress={handleSave} hitSlop={6}>
+          <Text style={styles.linkText}>Done without timer</Text>
+        </Pressable>
+      </View>
     </ExerciseScreen>
   )
 }
@@ -2143,7 +2382,18 @@ const styles = StyleSheet.create({
   pickerHint: { fontSize: 14, color: C.textSecondary, marginTop: 6, marginBottom: 8 },
   pickerSection: { fontSize: 12, fontWeight: "800", color: C.green, letterSpacing: 1, textTransform: "uppercase", marginTop: 14, marginBottom: 8 },
   pickerRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.surface, borderRadius: 16, padding: 10, marginBottom: 8 },
-  pickerName: { flex: 1, fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  pickerName: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  pickerMeta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  pickerSearch: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surfaceHigh, borderRadius: 14, paddingHorizontal: 12, height: 44, marginTop: 4 },
+  pickerSearchInput: { flex: 1, fontSize: 15, color: C.textPrimary, paddingVertical: 0 },
+  pickerChips: { gap: 8, paddingVertical: 12 },
+  pickerChip: { paddingHorizontal: 12, height: 34, justifyContent: "center", borderRadius: 999, backgroundColor: C.surfaceHigh },
+  pickerChipSelected: { backgroundColor: C.green },
+  pickerChipText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  pickerChipTextSelected: { color: C.bg },
+  pickerSheetTall: { height: "85%" },
+  changeExercise: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 18, paddingVertical: 6 },
+  changeExerciseText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   roundDropText: { flex: 1, fontSize: 14, fontWeight: "600", color: C.textPrimary, lineHeight: 19 },
   roundDropUndo: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: C.surfaceHigh },
   roundDropUndoText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },

@@ -255,7 +255,15 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
                 <View key={i} style={styles.scLogRow}>
                   <View style={styles.scLogNameRow}>
                     <Text style={styles.scLogName}>{sc.exerciseName}</Text>
-                    {progressed && (
+                    {!!sc.swappedFrom && (
+                      <View style={[styles.levelUpBadge, styles.swapBadge]}>
+                        <Ionicons name="swap-horizontal" size={10} color={C.yellow} />
+                        <Text style={[styles.levelUpBadgeText, { color: C.yellow }]}>
+                          {sc.swapReason === "choice" ? "replaced" : "easier swap for"} {sc.swappedFrom.exerciseName ?? "the set exercise"}
+                        </Text>
+                      </View>
+                    )}
+                    {progressed && !sc.swappedFrom && (
                       <View style={styles.levelUpBadge}>
                         <Ionicons name="trending-up" size={10} color={C.green} />
                         <Text style={styles.levelUpBadgeText}>from {prescribed.name}</Text>
@@ -1060,6 +1068,7 @@ const styles = StyleSheet.create({
   scLogRow: { gap: 2, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: C.border },
   scLogNameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   scLogName: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
+  swapBadge: { backgroundColor: C.yellow + "22" },
   levelUpBadge: {
     flexDirection: "row", alignItems: "center", gap: 3,
     backgroundColor: C.green + "22", borderRadius: 6,
