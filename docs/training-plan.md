@@ -33,7 +33,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
 | `components/AthleteAnalytics.tsx` | Coach: Training plan card — header, progress, next workout, Build |
-| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts; "Save the S&C as its own workout" |
+| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
 | `app/(tabs)/(buttonTabs)/plan.tsx` | Athlete: Plan page (read-only; the app's home when there's an active plan) |
@@ -276,11 +276,12 @@ For each pattern, in order:
 
 "Used for" is set per exercise in the exercise editor (none = all three).
 
-### 7.5 Split S&C
+### 7.5 Split S&C (removed 2026-10-14)
 
-In the builder, **"Save the S&C as its own workout"** saves two workouts: the
-climbing one and "… · S&C" (`planPart: "sc"`). The S&C one is extra — not one
-of the 2 a week — and doesn't move the rotation.
+The builder's **"Save the S&C as its own workout"** option is gone: a plan
+workout is always saved as one workout. S&C parts saved before
+(`planPart: "sc"`, "… · S&C") are still read — they don't move the
+rotation and show as "Also today" next to their climbing workout.
 
 ### 7.6 Homework
 
@@ -367,8 +368,6 @@ balance, fear management, general, test.
   box).
 - **Appwrite:** an index on `protocol.planId` if queries complain; delete
   the old targets table whenever convenient.
-- **Split S&C** is two writes — if the second fails, the climbing workout is
-  saved without its S&C (the error is shown).
 - **Not tested on a device yet** — coach screens need a login; checked by
   type-check, automated tests and a web build only.
 - **Security (separate task):** `blocks` and `exercises` are readable with

@@ -29,7 +29,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   useWindowDimensions,
@@ -49,8 +48,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 // untagged (global) protocol instead of one owned by a specific athlete.
 //
 // `plan` = a new workout built from the athlete's training plan: it's saved
-// with the plan's id and its place in the rotation, and the coach can split
-// its S&C off into a workout of its own (docs/training-plan.md §9.5).
+// with the plan's id and its place in the rotation. (Splitting its S&C off
+// into a workout of its own was removed 2026-10-14; S&C parts saved before
+// that, planPart "sc", are still read everywhere.)
 //
 // With an athlete, any block can be made homework: on save it moves into a
 // workout of its own (planPart "homework", with a deadline) that the athlete
@@ -107,7 +107,6 @@ export function AthleteWorkoutBuilder({
     setOpenCards((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
   const [saving, setSaving] = useState(false)
-  const [splitSc, setSplitSc] = useState(false)
   // Blocks (local ids) marked as homework, and its deadline.
   const today = localDateStr(new Date())
   const [homeworkIds, setHomeworkIds] = useState<Set<string>>(() => new Set(initialHomeworkIds ?? []))
@@ -233,7 +232,6 @@ export function AthleteWorkoutBuilder({
   const canHomework = !!athlete && !protocol?.planPart
   const homework = canHomework ? blocks.filter((b) => homeworkIds.has(b.id)) : []
   const kept = homework.length ? blocks.filter((b) => !homeworkIds.has(b.id)) : blocks
-  const hasSc = kept.some((b) => b.type === "strength_conditioning")
 
   async function handleSave() {
     if (!validate()) return
@@ -274,13 +272,6 @@ export function AthleteWorkoutBuilder({
         await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(kept), source })
       } else if (kept.length === 0) {
         // The whole workout is homework.
-      } else if (plan && splitSc && hasSc) {
-        // The S&C goes in its own workout; the climbing one keeps the rest.
-        // Both share the plan index — only the climbing one moves the rotation.
-        const sc = kept.filter((b) => b.type === "strength_conditioning")
-        const climbing = kept.filter((b) => b.type !== "strength_conditioning")
-        await createProtocol({ name: name.trim(), blocks: stripLocalIds(climbing), athleteId: athlete?.$id, source, ...plan })
-        await createProtocol({ name: `${name.trim()} · S&C`, blocks: stripLocalIds(sc), athleteId: athlete?.$id, source, ...plan, planPart: "sc" })
       } else {
         await createProtocol({ name: name.trim(), blocks: stripLocalIds(kept), athleteId: athlete?.$id, source, ...plan })
       }
@@ -367,14 +358,6 @@ export function AthleteWorkoutBuilder({
           {/* What the athlete did last time — collapsed by default so it
               doesn't eat into the block list on narrow screens. */}
           {athlete && <AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} />}
-
-          {/* Plan workouts come with their warm-up already in. */}
-          {plan && !editing && hasSc && (
-            <View style={s.splitRow}>
-              <Text style={s.splitLabel}>Save the S&C as its own workout</Text>
-              <Switch value={splitSc} onValueChange={setSplitSc} trackColor={{ true: C.green }} />
-            </View>
-          )}
 
           {/* Homework: blocks moved into a workout of their own on save. */}
           {canHomework && blocks.length > 0 && (
