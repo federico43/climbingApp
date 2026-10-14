@@ -270,6 +270,16 @@ weight / level). Rules (`utils/scSwap.ts`):
   `swappedFrom` (what the block prescribed) and `swapReason: "choice"`.
   The older "Pick an easier exercise" swap logs `swapReason: "easier"`
   (missing = easier on older logs).
+- **Today only / Rest of the plan** (user, 2026-10-14): in a plan workout,
+  when the exercise is one of the plan's picks for its pattern (not
+  mobility or the fixed fingers / special-case ones), the picker offers
+  "Rest of the plan". Then the plan's pick is replaced in the same slot and
+  workouts already built for later slots get the new exercise — written by
+  the `aiProtocol` function's `planSwapExercise` action (server key;
+  athletes can't write the coach's rows), which also pushes the coach.
+  Logged with `swapScope: "plan"`. Undo also changes the plan back. If the
+  server refuses or can't be reached, the swap stays for today only and
+  the athlete is told.
 - Coach: session detail shows "replaced X" on those rounds; the exercise's
   progress card says the athlete replaced it (no ladder advice, unlike an
   easier swap); the analytics list badge reads "Replaced".
