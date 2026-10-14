@@ -1,4 +1,4 @@
-import { colors } from "@/theme/colors";
+import { C } from "@/utils/theme";
 import { spacing } from '@/theme/spacing';
 import { StyleSheet, Pressable,Text } from "react-native";
 
@@ -10,12 +10,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   contained: {
-    backgroundColor: colors.primary,
+    backgroundColor: C.green,
     padding: spacing.md,
     borderRadius: 12,
   },
   text:{
-    color: colors.dark,  // or colors.background for contrast
+    color: C.bg,
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
@@ -24,11 +24,11 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   containedLabel: {
-    color: "black",
+    color: C.bg,
   },
 
   textLabel: {
-    color: colors.text,
+    color: C.green,
   },
   disabled: {
     opacity: 0.4,
