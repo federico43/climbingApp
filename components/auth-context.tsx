@@ -1,5 +1,6 @@
 import { createContext, PropsWithChildren, use, useContext, useEffect, useState } from 'react'
 import {account} from '@/components/AppWrite'
+import { authErrorKind, CREDENTIALS_MESSAGE, OFFLINE_MESSAGE, type AuthErrorKind } from '@/utils/network'
 import { ID, Models } from 'appwrite'
 import { logRecord, getUsers} from '@/services/BoulderGraphService'
 import { registerForPushNotificationsAsync, savePushToken } from '@/services/notifications'
@@ -9,6 +10,10 @@ import { useRouter } from 'expo-router'
 type auth_information = {
     User: Models.User<Models.Preferences> | null;
     error: null | string
+    // What the last error was: no connection, wrong email/password, other.
+    errorKind: AuthErrorKind | null
+    // Re-reads the session (e.g. after the connection comes back).
+    refreshUser: () => Promise<void>
     isLoadingUser: boolean
     signUp: (email: string, password: string, username:string )  => Promise<void|boolean>
     signIn: (email: string, password: string )  => Promise<void|boolean>
@@ -23,7 +28,18 @@ type auth_information = {
 export const Context_constructor = createContext<auth_information | undefined >(undefined)
 
 export default function Auth_context({children}:PropsWithChildren) {
-    const [error, setError] = useState<null| string>(null)
+    const [error, setErrorText] = useState<null| string>(null)
+    const [errorKind, setErrorKind] = useState<AuthErrorKind | null>(null)
+    const setError = (message: string | null) => { setErrorText(message); if (message === null) setErrorKind(null) }
+    // Sign-in / sign-up / recovery failures: a connection problem and wrong
+    // credentials get their own clear message (utils/network).
+    const failWith = (error: unknown, fallback: string) => {
+        const kind = authErrorKind(error)
+        setErrorKind(kind)
+        setErrorText(kind === "network" ? OFFLINE_MESSAGE
+            : kind === "credentials" && error instanceof Error && (error as any).code === 401 ? CREDENTIALS_MESSAGE
+            : error instanceof Error ? error.message : fallback)
+    }
     const [user,setUser] = useState<Models.User<Models.Preferences > | null>(null)
     const [isLoadingUser, setisLoadingUser] = useState<boolean>(true)
     const [userName, setusername] = useState('')
@@ -89,11 +105,7 @@ export default function Auth_context({children}:PropsWithChildren) {
             return true 
             }
         catch (error){
-             if(error instanceof Error){
-                setError(  error.message)
-            }else {
-            setError(  "An error accured during sign up" )
-            }
+            failWith(error, "An error accured during sign up")
             return false
         }
     }
@@ -106,11 +118,7 @@ export default function Auth_context({children}:PropsWithChildren) {
             registerPushToken(session.$id)
             return true
         }catch (error){
-            if(error instanceof Error){
-                setError(error.message)
-            }else{
-                setError(  "An error accured during sign in" )
-            }
+            failWith(error, "An error accured during sign in")
             return false
         }
     }
@@ -120,8 +128,7 @@ export default function Auth_context({children}:PropsWithChildren) {
             await account.createRecovery(email, 'https://poetic-daifuku-bc250a.netlify.app/')
             return true
         } catch (error) {
-            if (error instanceof Error) setError(error.message)
-            else setError("Could not send recovery email.")
+            failWith(error, "Could not send recovery email.")
             return false
         }
     }
@@ -138,7 +145,7 @@ export default function Auth_context({children}:PropsWithChildren) {
     } 
  
   return (
-    <Context_constructor.Provider value={{ signOut, signUp: signUpFunction, signIn: signInFunction, sendRecovery, error, User: user, isLoadingUser, userName, role,
+    <Context_constructor.Provider value={{ signOut, signUp: signUpFunction, signIn: signInFunction, sendRecovery, error, errorKind, refreshUser: getUser, User: user, isLoadingUser, userName, role,
   assignedProtocolId }} >
         {children}
     </Context_constructor.Provider>

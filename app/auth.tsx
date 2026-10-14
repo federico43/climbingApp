@@ -1,6 +1,9 @@
-import { View, Text, StyleSheet, Pressable } from 'react-native'
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native'
 import CustomButton from '@/components/customButton'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Ionicons } from '@expo/vector-icons'
+import { APPWRITE_ENDPOINT } from '@/components/AppWrite'
+import { canReachServer, OFFLINE_MESSAGE } from '@/utils/network'
 import CustomTextInput from '@/components/customTextInput'
 import { colors, MainStyles } from '@/theme/colors'
 import { C } from '@/utils/theme'
@@ -11,7 +14,7 @@ type Mode = "signin" | "signup" | "forgot"
 
 export default function AuthScreen() {
   const router = useRouter()
-  const { signIn, signUp, sendRecovery, error } = ConsumeAuth()
+  const { signIn, signUp, sendRecovery, error, errorKind, refreshUser } = ConsumeAuth()
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
@@ -19,9 +22,32 @@ export default function AuthScreen() {
   const [loading, setLoading]   = useState(false)
   const [mode, setMode]         = useState<Mode>("signin")
   const [recoverySent, setRecoverySent] = useState(false)
+  // No connection to the server: checked on open (a light ping, no native
+  // module), after a sign-in fails for lack of one, and on Retry.
+  const [offline, setOffline] = useState(false)
+  const [checking, setChecking] = useState(false)
+
+  async function checkConnection(): Promise<boolean> {
+    setChecking(true)
+    const ok = await canReachServer(`${APPWRITE_ENDPOINT}/health/version`)
+    setOffline(!ok)
+    setChecking(false)
+    return ok
+  }
+
+  useEffect(() => { checkConnection() }, [])
+  useEffect(() => { if (errorKind === "network") setOffline(true) }, [errorKind])
+
+  // Back online: re-read the session too — the app may have opened offline
+  // with a saved session, which then signs the athlete straight in.
+  async function retry() {
+    if (await checkConnection()) await refreshUser()
+  }
 
   async function handleSubmit() {
     if (loading) return
+    // Known offline: check again rather than sending a request that can't arrive.
+    if (offline && !(await checkConnection())) return
 
     if (mode === "forgot") {
       if (!email) return
@@ -53,6 +79,18 @@ export default function AuthScreen() {
     }
   }
 
+  const offlineBanner = offline && (
+    <View style={styles.offline}>
+      <Ionicons name="cloud-offline-outline" size={22} color={C.textPrimary} />
+      <Text style={styles.offlineText}>{OFFLINE_MESSAGE}</Text>
+      <Pressable onPress={retry} disabled={checking} style={styles.retryBtn} hitSlop={6}>
+        {checking ? <ActivityIndicator size="small" color={C.bg} /> : <Text style={styles.retryText}>Retry</Text>}
+      </Pressable>
+    </View>
+  )
+  // The offline banner already says it; other errors show as before.
+  const errorText = error && !(offline && errorKind === "network") ? error : null
+
   // ── Forgot password screens ────────────────────────────────────────────────
   if (mode === "forgot") {
     return (
@@ -71,8 +109,9 @@ export default function AuthScreen() {
             <Text style={styles.hint}>
               Enter the email address for your account and we'll send you a link to reset your password.
             </Text>
+            {offlineBanner}
             <CustomTextInput placeHolder="email" onChangeText={setEmail} />
-            {error && <Text style={styles.errorText}>{error}</Text>}
+            {errorText && <Text style={styles.errorText}>{errorText}</Text>}
             <CustomButton title={loading ? "Sending…" : "Send reset link"} onPress={handleSubmit} disabled={loading} />
             <CustomButton title="Back to sign in" onPress={() => setMode("signin")} mode="text" />
           </>
@@ -88,6 +127,8 @@ export default function AuthScreen() {
         {mode === "signin" ? "Welcome Back" : "Create Account"}
       </Text>
 
+      {offlineBanner}
+
       {mode === "signup" && (
         <CustomTextInput placeHolder="user name" onChangeText={setUserName} />
       )}
@@ -100,7 +141,7 @@ export default function AuthScreen() {
         disabled={loading}
       />
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {errorText && <Text style={styles.errorText}>{errorText}</Text>}
 
       {mode === "signin" && (
         <Pressable onPress={() => setMode("forgot")} style={styles.forgotBtn}>
@@ -124,6 +165,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 4,
     backgroundColor: C.bg,
+  },
+  offline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.surfaceHigh,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  offlineText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.textPrimary,
+    lineHeight: 19,
+  },
+  retryBtn: {
+    minWidth: 64,
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: C.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.bg,
   },
   errorText: {
     color: colors.text,
