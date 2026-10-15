@@ -82,3 +82,32 @@ export function swapCandidates(
     .filter((row) => !q || row.name.toLowerCase().includes(q))
     .sort((a, b) => Number(b.movementType === pattern) - Number(a.movementType === pattern) || a.name.localeCompare(b.name))
 }
+
+// ─── For the rest of the plan ────────────────────────────────────────────────
+// The athlete can also make a "choice" swap stick for the training plan: the
+// plan's pick for that movement pattern is replaced, so every workout built
+// from then on uses the new exercise (built ones are updated by the server —
+// functions/aiProtocol planSwapExercise). Only an exercise that is one of the
+// plan's picks can be replaced this way (not mobility, which the app picks,
+// nor the fixed fingers / special-case exercises).
+
+export type SwapScope = "session" | "plan"
+
+export interface PatternPicks { movementType: string; exerciseIds: string[] }
+
+export function isPlanPick(patterns: PatternPicks[], exerciseId: string | undefined): boolean {
+  return !!exerciseId && patterns.some((p) => p.exerciseIds.includes(exerciseId))
+}
+
+// The plan's patterns with `fromId` replaced by `toId` in place (same
+// position, so "exercise 1 / 2 of the week" doesn't move). If `toId` was
+// already the pattern's other pick, the pattern keeps just that one. null
+// when `fromId` isn't a pick.
+export function replacePlanPick<T extends PatternPicks>(patterns: T[], fromId: string, toId: string): T[] | null {
+  if (!isPlanPick(patterns, fromId) || fromId === toId) return null
+  return patterns.map((p) => {
+    if (!p.exerciseIds.includes(fromId)) return p
+    const ids = p.exerciseIds.map((id) => (id === fromId ? toId : id))
+    return { ...p, exerciseIds: ids.filter((id, i) => ids.indexOf(id) === i) }
+  })
+}

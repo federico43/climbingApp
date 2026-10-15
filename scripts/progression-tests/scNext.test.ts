@@ -75,6 +75,9 @@ assert.deepEqual(findScSwaps([swapped, ...sessions], ["kb"], "KB squat"), [{ dat
 // The athlete's own "Change exercise" is a choice swap
 const chosen: any = { ...swapped, attempts: swapped.attempts.replace('"swappedFrom"', '"swapReason":"choice","swappedFrom"') }
 assert.equal(findScSwaps([chosen], ["kb"], "KB squat")[0].reason, "choice")
+assert.equal(findScSwaps([chosen], ["kb"], "KB squat")[0].forPlan, undefined)
+const forPlan: any = { ...swapped, attempts: swapped.attempts.replace('"swappedFrom"', '"swapReason":"choice","swapScope":"plan","swappedFrom"') }
+assert.equal(findScSwaps([forPlan], ["kb"], "KB squat")[0].forPlan, true)
 // The swapped round belongs to the picked exercise's history, not the original's
 assert.equal(findScSessions([swapped], ["kb"], "KB squat").length, 0)
 

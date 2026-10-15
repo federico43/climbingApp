@@ -21,6 +21,8 @@ interface WorkoutContextValue {
   // Active workout metadata
   protocol: any[]
   protocolName: string
+  // The coach / plan workout it was started from (null for ad-hoc ones).
+  link: SessionLink | null
   // UI state
   workoutActive: boolean
   workoutMinimized: boolean
@@ -192,6 +194,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     workout,
     protocol,
     protocolName,
+    link,
     workoutActive,
     workoutMinimized,
     modalVisible,
@@ -209,6 +212,12 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Consumer hook ────────────────────────────────────────────────────────────
+
+// The running workout's link, or null outside a workout (a block rendered
+// on its own, e.g. a preview).
+export function useWorkoutLink(): SessionLink | null {
+  return useContext(WorkoutContext)?.link ?? null
+}
 
 export function useWorkoutContext(): WorkoutContextValue {
   const ctx = useContext(WorkoutContext)

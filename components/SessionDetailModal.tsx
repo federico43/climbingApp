@@ -260,6 +260,7 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
                         <Ionicons name="swap-horizontal" size={10} color={C.yellow} />
                         <Text style={[styles.levelUpBadgeText, { color: C.yellow }]}>
                           {sc.swapReason === "choice" ? "replaced" : "easier swap for"} {sc.swappedFrom.exerciseName ?? "the set exercise"}
+                          {sc.swapScope === "plan" ? " · for the plan" : ""}
                         </Text>
                       </View>
                     )}

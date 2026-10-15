@@ -135,7 +135,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         windowStart,
         windowEnd,
         focus,
-        startType,
+        // Picked once, when the plan starts — editing never changes it.
+        ...(mode === "new" ? { startType } : {}),
         hasSc,
         hasMobility: hasSc && hasMobility,
         scPatterns: hasSc ? patterns : [],
@@ -234,21 +235,26 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
               })}
             </View>
 
-            <Text style={s.label}>First workout</Text>
-            <Text style={s.sub2}>
-              {MAIN_CYCLE.map((_, i) => PLAN_FOCUS_LABEL[mainTypeFor(i + 1, startType)]).join(" → ")} → …
-              {mode === "edit" ? " · only workouts not built yet follow a change" : ""}
-            </Text>
-            <View style={s.chipWrap}>
-              {MAIN_CYCLE.map((t) => {
-                const sel = startType === t
-                return (
-                  <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
-                    <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[t]}</Text>
-                  </Pressable>
-                )
-              })}
-            </View>
+            {/* Only when starting a plan: changing it later would reshuffle
+                the rotation under workouts already built. */}
+            {mode === "new" && (
+              <>
+                <Text style={s.label}>First workout</Text>
+                <Text style={s.sub2}>
+                  {MAIN_CYCLE.map((_, i) => PLAN_FOCUS_LABEL[mainTypeFor(i + 1, startType)]).join(" → ")} → …
+                </Text>
+                <View style={s.chipWrap}>
+                  {MAIN_CYCLE.map((t) => {
+                    const sel = startType === t
+                    return (
+                      <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[t]}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </>
+            )}
 
             <View style={s.switchRow}>
               <Text style={s.switchLabel}>Strength & conditioning</Text>

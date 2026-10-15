@@ -19,7 +19,9 @@ export function ScProgressionCard({ view }: { view: CoachExerciseView }) {
   if (view.flags.stalled) warnings.push({ icon: "pause-circle-outline", color: C.yellow, text: "Same load three sessions running — consider changing the exercise or the rep target." })
   for (const sw of view.swaps.slice(0, 3)) {
     warnings.push(sw.reason === "choice"
-      ? { icon: "swap-horizontal", color: C.textSecondary, text: `${shortDate(sw.date)}: the athlete replaced it with ${sw.to} during the workout (that session only).` }
+      ? { icon: "swap-horizontal", color: C.textSecondary, text: sw.forPlan
+        ? `${shortDate(sw.date)}: the athlete replaced it with ${sw.to} for the rest of the plan (later workouts updated).`
+        : `${shortDate(sw.date)}: the athlete replaced it with ${sw.to} during the workout (that session only).` }
       : { icon: "swap-horizontal", color: C.yellow, text: `${shortDate(sw.date)}: swapped to ${sw.to} after missing the minimum reps — add an easier version to this exercise's ladder.` })
   }
   if (view.rows.length === 0 && warnings.length === 0) return null
