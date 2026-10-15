@@ -6,7 +6,7 @@ import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions 
 import * as FileSystem from 'expo-file-system/legacy';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -20,6 +20,26 @@ const RING_SIZE   = 84
 const RING_BORDER = 4
 const INNER_IDLE  = 64
 const INNER_REC   = 28
+
+// After tapping stop, recordAsync normally resolves within a second or two.
+// Past this, assume it never will and offer a way out instead of leaving
+// the athlete stuck on "Saving video…".
+const SAVING_TIMEOUT_MS = 10000
+
+// Same settings on mount and right before every recording: other screens
+// (expo-video players, the Intervals / S&C timers) switch the shared iOS
+// audio session to playback-only, and recording needs it in record mode.
+// MixWithOthers keeps music already playing in another app going.
+function setRecordingAudioMode() {
+  return Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+    staysActiveInBackground: false,
+    interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+    interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+    shouldDuckAndroid: true,
+  })
+}
 
 // iOS reports lenses as localized device names (e.g. "Back Ultra Wide Camera"),
 // not stable IDs, and lumps in virtual multi-lens devices ("Dual", "Triple")
@@ -44,6 +64,8 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   const cameraRef = useRef<any>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingTimedOut, setSavingTimedOut] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [facing, setFacing] = useState<CameraType>("back")
   const [elapsed, setElapsed] = useState(0)
@@ -92,17 +114,22 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   // otherwise stops other audio the moment recording starts.
   useEffect(() => {
     console.log("VideoRecorder: mounted, setting audio mode")
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-      shouldDuckAndroid: true,
-    })
+    setRecordingAudioMode()
       .then(() => console.log("VideoRecorder: audio mode set"))
       .catch((err) => console.error("VideoRecorder: setAudioModeAsync failed:", err))
   }, [])
+
+  // The CameraView unmounts while saving / previewing, so a later remount
+  // has to wait for its own onCameraReady again.
+  useEffect(() => {
+    if (isSaving || previewUri) setCameraReady(false)
+  }, [isSaving, previewUri])
+
+  useEffect(() => {
+    if (!isSaving) { setSavingTimedOut(false); return }
+    const id = setTimeout(() => setSavingTimedOut(true), SAVING_TIMEOUT_MS)
+    return () => clearTimeout(id)
+  }, [isSaving])
 
   // ── Recording timer ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -186,13 +213,14 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   }
 
   const startRecording = async () => {
-    if (!cameraRef.current) {
-      console.error("startRecording: cameraRef not ready yet")
+    if (!cameraRef.current || !cameraReady) {
+      console.warn("startRecording: camera not ready yet")
       return;
     }
     try {
       setIsRecording(true);
       const freeBytes = await FileSystem.getFreeDiskStorageAsync().catch(() => null)
+      await setRecordingAudioMode().catch((err) => console.warn("startRecording: setAudioModeAsync failed:", err))
       console.log("startRecording: calling recordAsync, free disk space:", freeBytes)
       // `quality` is not a recordAsync option (CameraRecordingOptions has no
       // such field — it silently did nothing); video quality is controlled
@@ -201,10 +229,20 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         maxDuration: 120,
       });
       console.log("startRecording: recordAsync resolved", video?.uri)
+      // Set by the patched expo-camera when the first attempt failed and it
+      // retried with iOS's automatic audio session setup.
+      if (video?.audioFallbackReason) {
+        console.warn("startRecording: recorded via audio fallback, first attempt failed:", video.audioFallbackReason)
+      }
+      if (!video?.uri) throw new Error("Recording finished without a file.")
       // Don't commit yet — show the preview so the user can review.
       setPreviewUri(video.uri);
-    } catch (err) {
-      console.error("startRecording failed:", err);
+    } catch (err: any) {
+      console.error("startRecording failed:", err?.message ?? err);
+      Alert.alert(
+        "Couldn't record",
+        "Something went wrong starting the camera. Try again — if it keeps happening, close and reopen the app and share the debug logs.",
+      )
     } finally {
       setIsRecording(false);
       setIsSaving(false);
@@ -266,6 +304,20 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
     return (
       <View style={[styles.savingWrap, { backgroundColor: "rgba(0,0,0,0.92)" }]}>
         <Text style={styles.savingText}>Saving video…</Text>
+        {savingTimedOut && (
+          <Pressable
+            style={[styles.previewBtn, styles.previewBtnSecondary, styles.savingCloseBtn]}
+            onPress={() => {
+              console.error("VideoRecorder: recording never finished saving, closing")
+              setIsSaving(false)
+              setIsRecording(false)
+              onClose?.()
+            }}
+            hitSlop={10}
+          >
+            <Text style={styles.previewBtnText}>Close</Text>
+          </Pressable>
+        )}
         <DebugLogOverlay />
       </View>
     )
@@ -281,7 +333,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         videoQuality="720p"
         selectedLens={Platform.OS === "ios" ? selectedLens : undefined}
         onAvailableLensesChanged={(e) => setAvailableLenses(e.lenses)}
-        onCameraReady={() => console.log("VideoRecorder: camera ready")}
+        onCameraReady={() => { console.log("VideoRecorder: camera ready"); setCameraReady(true) }}
         onMountError={(e) => console.error("VideoRecorder: camera mount error:", e.message)}
       />
 
@@ -423,6 +475,9 @@ const styles = StyleSheet.create({
   savingText: {
     color: "white", fontSize: 16, fontWeight: "600",
     letterSpacing: 0.5,
+  },
+  savingCloseBtn: {
+    flex: 0, marginTop: 24, paddingHorizontal: 40,
   },
 
   // Preview screen
