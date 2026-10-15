@@ -127,7 +127,8 @@ export function findScSessions(
 // first, one per session. `reason` (utils/scSwap): "easier" = the app's
 // "Pick an easier exercise" (RoundDrop.pickEasier; every swap logged before
 // the reason existed), "choice" = the athlete's own "Change exercise".
-export interface ScSwap { date: string; to: string; reason: SwapReason }
+// `forPlan`: a choice swap the athlete also made for the rest of the plan.
+export interface ScSwap { date: string; to: string; reason: SwapReason; forPlan?: boolean }
 
 export function findScSwaps(sessions: SessionRow[], candidateIds: string[], exerciseName: string): ScSwap[] {
   const out: ScSwap[] = []
@@ -136,7 +137,7 @@ export function findScSwaps(sessions: SessionRow[], candidateIds: string[], exer
     try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
     const swap = attempts.find((a) => a?.type === "strength_conditioning" && a?.scData?.swappedFrom
       && scLogMatches(a.scData.swappedFrom, candidateIds, exerciseName))
-    if (swap) out.push({ date: s.$createdAt, to: swap.scData.exerciseName, reason: swapReasonOf(swap.scData) ?? "easier" })
+    if (swap) out.push({ date: s.$createdAt, to: swap.scData.exerciseName, reason: swapReasonOf(swap.scData) ?? "easier", ...(swap.scData.swapScope === "plan" ? { forPlan: true } : {}) })
   }
   return out
 }

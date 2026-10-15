@@ -11,6 +11,8 @@ const PROJECT = process.env.APPWRITE_FUNCTION_PROJECT_ID || "689e515d000c2e1af42
 const DATABASE_ID = process.env.DATABASE_ID || "68bd9dd7003c15f7147e"
 const USERS_TABLE = process.env.USERS_TABLE || "users"
 const PROTOCOLS_TABLE = process.env.PROTOCOLS_TABLE || "protocol"
+const TRAINING_PLANS_TABLE = process.env.TRAINING_PLANS_TABLE || "training_plans"
+const EXERCISES_TABLE = process.env.EXERCISES_TABLE || "exercises"
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
@@ -84,6 +86,65 @@ async function sendPush(messages, log, error) {
     error?.(`Expo push send failed: ${e?.message ?? e}`)
     return 0
   }
+}
+
+// Generic row helpers (both REST shapes, like the protocol ones above).
+async function getRow(table, id, log) {
+  const rid = encodeURIComponent(id)
+  return (
+    (await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${table}/rows/${rid}`, log)) ??
+    (await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents/${rid}`, log))
+  )
+}
+
+async function updateRow(table, id, data, log) {
+  const rid = encodeURIComponent(id)
+  return appwriteWrite(
+    "PATCH",
+    `/tablesdb/${DATABASE_ID}/tables/${table}/rows/${rid}`,
+    `/databases/${DATABASE_ID}/collections/${table}/documents/${rid}`,
+    data, log,
+  )
+}
+
+async function listRowsEqual(table, attribute, value, log) {
+  const query = encodeURIComponent(JSON.stringify({ method: "equal", attribute, values: [value] }))
+  const limit = encodeURIComponent(JSON.stringify({ method: "limit", values: [200] }))
+  const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${table}/rows?queries[]=${query}&queries[]=${limit}`, log)
+  if (viaTables) return viaTables.rows ?? []
+  const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents?queries[]=${query}&queries[]=${limit}`, log)
+  return viaDocs?.documents ?? []
+}
+
+const parseJson = (raw, fallback) => {
+  if (raw && typeof raw === "object") return raw
+  try { return JSON.parse(raw) } catch { return fallback }
+}
+
+// A block exercise swapped for library row `to` — mirrors swappedExercise in
+// utils/scSwap.ts: the pick's identity, photo, notes, pattern, ladder and
+// setting hints; the block's target kept when both are measured the same way,
+// else the pick's own default.
+function swapBlockExercise(ex, to) {
+  const mob = (m) => m === "mobility"
+  const sameMeasure = ex.type !== "7/3s" && to.type !== "7/3s"
+    && (ex.unit || "reps") === (to.unit || "reps") && mob(ex.movementType) === mob(to.movementType)
+  const out = {
+    ...ex,
+    type: to.type === "both_sides" ? "both_sides" : "reps",
+    name: to.name, exerciseId: to.$id,
+    photoUri: to.photoUri || undefined, notes: to.notes || undefined,
+    movementType: to.movementType || undefined,
+    loadMode: to.loadMode || "weight",
+    levels: parseJson(to.levels, undefined) || undefined,
+    loadStep: to.loadStep ?? undefined,
+    settingHarder: to.settingHarder || undefined, settingEasier: to.settingEasier || undefined,
+  }
+  if (!sameMeasure) {
+    out.unit = to.unit || "reps"
+    out.reps = to.defaultReps || ex.reps
+  }
+  return out
 }
 
 const clip = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "")
@@ -247,6 +308,75 @@ export default async ({ req, res, log, error }) => {
       data: { type: "homework_update", athleteId: userId, homeworkId: hw.$id },
     })), log, error)
     return res.json({ ok: true, row: updated }, 200)
+  }
+
+  // ── Action: athlete replaces an S&C exercise for the rest of their plan ─────
+  // body: { planId, fromExerciseId, toExerciseId, afterPlanIndex? }
+  // The plan's pick for that pattern is replaced (same slot), and workouts
+  // already built from the plan after `afterPlanIndex` (not done yet) get the
+  // new exercise too. Written with the server key — athletes can't write the
+  // coach's rows. The coach(es) get a push.
+  if (body.action === "planSwapExercise") {
+    const { planId, fromExerciseId: fromId, toExerciseId: toId } = body
+    if (typeof planId !== "string" || typeof fromId !== "string" || typeof toId !== "string" || fromId === toId) {
+      return res.json({ error: "Bad request." }, 400)
+    }
+    const plan = await getRow(TRAINING_PLANS_TABLE, planId, log)
+    if (!plan) return res.json({ error: "No such plan." }, 404)
+    if (plan.athleteId !== userId) return res.json({ error: "Not your plan." }, 403)
+    if (plan.status !== "active") return res.json({ error: "This plan has ended." }, 409)
+    const to = await getRow(EXERCISES_TABLE, toId, log)
+    if (!to) return res.json({ error: "No such exercise." }, 404)
+
+    const patterns = parseJson(plan.scPatterns, [])
+    if (!Array.isArray(patterns) || !patterns.some((p) => Array.isArray(p?.exerciseIds) && p.exerciseIds.includes(fromId))) {
+      return res.json({ error: "That exercise isn't one of the plan's picks." }, 400)
+    }
+    const nextPatterns = patterns.map((p) => {
+      if (!p.exerciseIds?.includes(fromId)) return p
+      const ids = p.exerciseIds.map((id) => (id === fromId ? toId : id))
+      return { ...p, exerciseIds: ids.filter((id, i) => ids.indexOf(id) === i) }
+    })
+    const updatedPlan = await updateRow(TRAINING_PLANS_TABLE, planId, { scPatterns: JSON.stringify(nextPatterns) }, log)
+    if (!updatedPlan) return res.json({ error: "Could not save. (Does the function's API key have write access?)" }, 502)
+
+    // Workouts already built for later slots.
+    const after = Number.isFinite(body.afterPlanIndex) ? body.afterPlanIndex : null
+    let workoutsUpdated = 0
+    if (after != null) {
+      const built = await listRowsEqual(PROTOCOLS_TABLE, "planId", planId, log)
+      for (const w of built) {
+        if (!(w.planIndex > after) || w.planPart === "homework") continue
+        const blocks = parseJson(w.blocks, null)
+        if (!Array.isArray(blocks)) continue
+        let changed = false
+        const next = blocks.map((b) => {
+          if (b?.type !== "strength_conditioning" || !Array.isArray(b.exercises)) return b
+          return {
+            ...b,
+            exercises: b.exercises.map((ex) => {
+              if (ex?.exerciseId !== fromId) return ex
+              changed = true
+              return swapBlockExercise(ex, to)
+            }),
+          }
+        })
+        if (changed && await updateProtocolRow(w.$id, { blocks: JSON.stringify(next) }, log)) workoutsUpdated++
+      }
+    }
+
+    const caller = await getUserRow(userId, log)
+    const name = caller?.username || "Your athlete"
+    const fromName = clip(body.fromExerciseName, 80) || "an exercise"
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    await sendPush(coaches.map((c) => ({
+      to: c.pushToken,
+      sound: "default",
+      title: "Plan exercise changed",
+      body: `${name} replaced ${fromName} with ${clip(to.name, 80)} for the rest of their plan.`,
+      data: { type: "plan_swap", athleteId: userId, planId },
+    })), log, error)
+    return res.json({ ok: true, scPatterns: nextPatterns, workoutsUpdated }, 200)
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY

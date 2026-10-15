@@ -93,3 +93,15 @@ These **write**, so `APPWRITE_API_KEY` needs write access to the database
 - **Out of scope (later phases)**: `sequence` (needs a spray-wall route) and
   `strength_conditioning` (needs the exercise library) blocks; athlete pairing
   and assignment; history-based personalization.
+
+## Plan exercise swap (`planSwapExercise`)
+
+`POST { action: "planSwapExercise", planId, fromExerciseId, fromExerciseName,
+toExerciseId, afterPlanIndex? }`, authenticated as the athlete. Checks the
+plan is the caller's and active and that `fromExerciseId` is one of its S&C
+picks; replaces it in `training_plans.scPatterns` (same slot), updates the
+S&C blocks of workouts built from the plan with `planIndex > afterPlanIndex`
+(homework excluded), and pushes the coach(es). Needs the function's
+`APPWRITE_API_KEY` to have **read + write** on `training_plans` and
+`protocol`, and read on `exercises` and `users`. Optional env overrides:
+`TRAINING_PLANS_TABLE`, `EXERCISES_TABLE`.

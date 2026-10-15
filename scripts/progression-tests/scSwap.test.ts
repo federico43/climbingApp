@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/scSwap.test.ts
 
 import assert from "node:assert/strict"
-import { swapCandidates, swappedExercise, swapReasonOf } from "@/utils/scSwap"
+import { isPlanPick, replacePlanPick, swapCandidates, swappedExercise, swapReasonOf } from "@/utils/scSwap"
 
 const row = (over: any) => ({ $createdAt: "", type: "reps", ...over })
 const kbSquat = row({ $id: "kb", name: "KB squat", movementType: "squat", loadMode: "weight", loadStep: 2 })
@@ -67,3 +67,24 @@ assert.equal(swapReasonOf({ swappedFrom: { exerciseName: "KB squat" } }), "easie
 assert.equal(swapReasonOf({ swappedFrom: { exerciseName: "KB squat" }, swapReason: "choice" }), "choice")
 
 console.log("all scSwap tests passed")
+
+// ── for the rest of the plan ──
+const patterns = [
+  { movementType: "squat", exerciseIds: ["kb", "split"] },
+  { movementType: "push", exerciseIds: ["pu1"] },
+  { movementType: "carry_grip", exerciseIds: [] },
+]
+assert.equal(isPlanPick(patterns, "kb"), true)
+assert.equal(isPlanPick(patterns, "mob"), false)
+assert.equal(isPlanPick(patterns, undefined), false)
+// same slot, other patterns untouched
+assert.deepEqual(replacePlanPick(patterns, "kb", "goblet")![0].exerciseIds, ["goblet", "split"])
+assert.deepEqual(replacePlanPick(patterns, "split", "goblet")![0].exerciseIds, ["kb", "goblet"])
+assert.equal(replacePlanPick(patterns, "kb", "goblet")![1], patterns[1])
+// picking the pattern's other exercise leaves just that one
+assert.deepEqual(replacePlanPick(patterns, "kb", "split")![0].exerciseIds, ["split"])
+// not a pick / no change → null
+assert.equal(replacePlanPick(patterns, "mob", "x"), null)
+assert.equal(replacePlanPick(patterns, "kb", "kb"), null)
+
+console.log("all scSwap plan tests passed")
