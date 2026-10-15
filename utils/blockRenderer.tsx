@@ -288,10 +288,12 @@ function ConstraintWarmupBlock({
     }
   }, [phase, blockStartTime, attempts, reviewElapsed])
 
-  function handleFinishRecording(videoUri: string) {
+  async function handleFinishRecording(videoUri: string) {
     setShowCamera(false)
-    saveVideoLocally(videoUri, block.type, { grade: (block as any).level })
-    logAttempt({ success: true, video: videoUri })
+    // The recorder's uri is a temp file that saveVideoLocally moves away, so
+    // the attempt has to point at the saved copy.
+    const saved = await saveVideoLocally(videoUri, block.type, { grade: (block as any).level })
+    logAttempt({ success: true, video: saved ?? undefined })
     if (attemptsDone + 1 >= targetAttempts) {
       setPhase("review")
     }
@@ -657,6 +659,8 @@ function ProjectBlock({
   }, [])
   useEffect(() => { loadProjects() }, [loadProjects])
   const notesRef = useRef("")
+  // Saved clip of the attempt in progress, attached when it's logged.
+  const pendingVideoRef = useRef<string | undefined>(undefined)
   const [notes, setNotes] = useState("")
   const [showNotes, setShowNotes] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
@@ -677,6 +681,7 @@ function ProjectBlock({
       notes: notesRef.current,
       level: projectGrade,
       projectId: selectedProject?.$id,
+      video: pendingVideoRef.current,
     })
 
     if (resolvedSuccess && selectedProject) {
@@ -708,6 +713,7 @@ function ProjectBlock({
   }
 
   function enterRest() {
+    pendingVideoRef.current = undefined
     setOutcome(null)
     setNotes("")
     notesRef.current = ""
@@ -857,12 +863,14 @@ function ProjectBlock({
             <VideoRecorder
               onFinish={(videoUri: string) => {
                 setShowCamera(false)
+                enterRest()
+                // Set after enterRest (which clears it) so this attempt's
+                // save picks it up.
                 saveVideoLocally(videoUri, block.type, {
                   projectId: selectedProject?.$id,
                   projectName: selectedProject?.name,
                   grade: selectedProject?.grade,
-                })
-                enterRest()
+                }).then((saved) => { pendingVideoRef.current = saved ?? undefined })
               }}
               onClose={() => setShowCamera(false)}
             />

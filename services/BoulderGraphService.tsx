@@ -25,7 +25,7 @@ export const CHECKIN_TABLE = "checkins"
 // through it — otherwise large libraries/histories get silently truncated.
 // `baseQueries` must include the sort order (needed for stable cursoring) and
 // any filters, but NOT a limit.
-async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+export async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
   const all: T[] = []
   let cursor: string | undefined
   for (;;) {

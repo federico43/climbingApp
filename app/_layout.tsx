@@ -1,5 +1,6 @@
 import Auth_context from '@/components/auth-context';
 import { UpdateBanner } from '@/components/UpdateBanner';
+import { VideoUploadQueueRunner } from '@/components/VideoUploadQueueRunner';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
@@ -18,6 +19,7 @@ export default function RootLayout() {
           <Stack.Screen name="OnBoarding" options={{ headerShown: false }} />
         </Stack>
         <UpdateBanner />
+        <VideoUploadQueueRunner />
       </Auth_context>
     </GestureHandlerRootView>
   );

@@ -34,6 +34,27 @@ const IMAGE_EXT_TYPES = {
   webp: "image/webp",
 }
 
+// Coach status comes from an Appwrite account label ("coach"), which only an
+// admin can set (console or server SDK) — unlike the `users.role` column,
+// which any signed-in client can write. Read with the caller's own JWT, so
+// the function needs no API key.
+async function callerIsCoach(req) {
+  const jwt = req.headers["x-appwrite-user-jwt"]
+  const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT
+  const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID
+  if (!jwt || !endpoint || !projectId) return false
+  try {
+    const response = await fetch(`${endpoint.replace(/\/$/, "")}/account`, {
+      headers: { "X-Appwrite-Project": projectId, "X-Appwrite-JWT": jwt },
+    })
+    if (!response.ok) return false
+    const account = await response.json()
+    return Array.isArray(account.labels) && account.labels.includes("coach")
+  } catch {
+    return false
+  }
+}
+
 export default async ({ req, res, log, error }) => {
   // ── Auth: any signed-in user may call this ──────────────────────────────────
   const userId = req.headers["x-appwrite-user-id"]
@@ -71,6 +92,14 @@ export default async ({ req, res, log, error }) => {
     // Only ever delete inside our own namespaces — never an arbitrary bucket path.
     if (!objectKey.startsWith("videos/") && !objectKey.startsWith("images/")) {
       return res.json({ error: "Invalid key." }, 400)
+    }
+    // Keys and public URLs are visible to other users, so knowing one isn't
+    // enough: callers may delete their own uploads, and only a coach anyone
+    // else's (e.g. removing an athlete's clip).
+    const ownsObject = objectKey.startsWith(`videos/${userId}/`) || objectKey.startsWith(`images/${userId}/`)
+    if (!ownsObject && !(await callerIsCoach(req))) {
+      log(`Refused delete of ${objectKey} by ${userId}`)
+      return res.json({ error: "Not allowed to delete this object." }, 403)
     }
     try {
       await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }))

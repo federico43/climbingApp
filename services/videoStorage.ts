@@ -1,5 +1,5 @@
 import { account, functions, tablesDB } from "@/components/AppWrite"
-import { DATABASE_ID } from "@/services/BoulderGraphService"
+import { DATABASE_ID, listAllRows } from "@/services/BoulderGraphService"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 
@@ -35,10 +35,14 @@ export interface VideoMeta {
 
 interface PresignResult { uploadUrl: string; publicUrl: string; key: string; contentType: string }
 
-function extOf(uri: string): string {
+export const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v"]
+
+// Container extension of a clip uri, defaulting to mp4 when it has none we
+// recognize. Shared by local saving and upload so both agree on the format.
+export function videoExtOf(uri: string): string {
   const m = /\.([a-zA-Z0-9]+)(?:\?|$)/.exec(uri)
-  const ext = (m?.[1] ?? "mp4").toLowerCase()
-  return ext === "mov" || ext === "m4v" ? ext : "mp4"
+  const ext = (m?.[1] ?? "").toLowerCase()
+  return VIDEO_EXTENSIONS.includes(ext) ? ext : "mp4"
 }
 
 // Ask the function for a short-lived presigned PUT URL + the final public URL.
@@ -59,8 +63,8 @@ async function requestUploadUrl(ext: string): Promise<PresignResult> {
   return JSON.parse(execution.responseBody) as PresignResult
 }
 
-// Save the metadata row (the bytes are already in R2). userId is stamped server-side.
-async function createVideoRow(url: string, key: string, meta: VideoMeta): Promise<VideoRow> {
+// Save the metadata row (the bytes are already in R2).
+export async function createVideoRow(url: string, key: string, meta: VideoMeta): Promise<VideoRow> {
   const user = await account.get()
   const data: any = { userId: user.$id, url, key }
   if (meta.blockType) data.blockType = meta.blockType
@@ -75,41 +79,31 @@ async function createVideoRow(url: string, key: string, meta: VideoMeta): Promis
   return row as unknown as VideoRow
 }
 
-// Full pipeline: presign → PUT the file straight to R2 → record metadata.
-// Throws on failure so callers can surface an "upload failed" state.
-export async function uploadVideo(localUri: string, meta: VideoMeta): Promise<VideoRow> {
-  const ext = extOf(localUri)
-  const { uploadUrl, publicUrl, key, contentType } = await requestUploadUrl(ext)
-
+// Presign → PUT the file straight to R2. Foreground session on purpose: a
+// background URLSession (expo-file-system's iOS default) keeps uploading
+// while JS is suspended, so the follow-up step (creating the row the coach
+// sees) only ran whenever the athlete reopened the app — or never, if the
+// app was killed. A foreground upload that gets cut off just fails, and the
+// upload queue (services/videoUploadQueue.ts) retries it with a fresh URL.
+export async function putVideoObject(localUri: string): Promise<{ url: string; key: string }> {
+  const { uploadUrl, publicUrl, key, contentType } = await requestUploadUrl(videoExtOf(localUri))
+  const startedAt = Date.now()
   const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
     httpMethod: "PUT",
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
     headers: { "Content-Type": contentType },
   })
+  console.log("[upload] R2 PUT returned after", Date.now() - startedAt, "ms, status:", result.status)
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`R2 upload failed (${result.status})`)
   }
-  return createVideoRow(publicUrl, key, meta)
-}
-
-// Fire-and-forget upload used right after a clip is saved locally. Never throws
-// and never blocks the workout — a failed or not-yet-configured upload is just
-// logged. Returns immediately; the PUT happens in the background.
-export function uploadVideoInBackground(localUri: string, meta: VideoMeta): void {
-  if (!VIDEO_PRESIGN_FUNCTION_ID) return  // backend not wired up yet — skip silently
-  uploadVideo(localUri, meta).catch((e) =>
-    console.warn("[video] background upload to coach failed:", e?.message ?? e)
-  )
+  return { url: publicUrl, key }
 }
 
 // Coach: list a given athlete's clips, newest first.
 export async function getVideosByUserId(userId: string): Promise<VideoRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: VIDEOS_TABLE,
-    queries: [Query.equal("userId", userId), Query.orderDesc("$createdAt"), Query.limit(100)],
-  })
-  return response.rows as unknown as VideoRow[]
+  return listAllRows<VideoRow>(VIDEOS_TABLE, [Query.equal("userId", userId), Query.orderDesc("$createdAt")])
 }
 
 // Athlete's own clips.
@@ -137,12 +131,26 @@ async function deleteVideoObject(key: string): Promise<void> {
   }
 }
 
-// Coach: fully remove a clip — the metadata row and the R2 object. The row goes
-// first (the user-visible part); R2 cleanup is best-effort so a transient R2
+// Coach: fully remove a clip — the metadata row, the R2 object, and any
+// feedback left on it (rows + the coach's bubble recordings). The clip's row
+// goes first (the user-visible part); the rest is best-effort so a transient
 // failure can't block the delete or strand the row.
 export async function deleteVideo(row: Pick<VideoRow, "$id" | "key">): Promise<void> {
+  const feedback = await getFeedbackForVideo(row.$id).catch((e) => {
+    console.warn("[video] could not load feedback to delete:", e?.message ?? e)
+    return [] as VideoFeedbackRow[]
+  })
   await deleteVideoRow(row.$id)
-  deleteVideoObject(row.key).catch((e) => console.warn("[video] R2 object delete failed:", e?.message ?? e))
+  const cleanup: Promise<void>[] = [deleteVideoObject(row.key)]
+  for (const fb of feedback) {
+    cleanup.push(tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: FEEDBACK_TABLE, rowId: fb.$id }).then(() => {}))
+    cleanup.push(deleteVideoObject(fb.bubbleVideoKey))
+  }
+  Promise.allSettled(cleanup).then((results) => {
+    for (const r of results) {
+      if (r.status === "rejected") console.warn("[video] cleanup after delete failed:", r.reason?.message ?? r.reason)
+    }
+  })
 }
 
 // ─── Coach feedback on a clip ──────────────────────────────────────────────────
@@ -194,20 +202,8 @@ function parseFeedbackRow(row: any): VideoFeedbackRow {
 // Upload the coach's recorded bubble video to R2 (same presign pipeline as
 // the athlete's clips).
 export async function uploadBubbleVideo(localUri: string): Promise<{ url: string; key: string }> {
-  const ext = extOf(localUri)
-  console.log("[feedback] uploadBubbleVideo: requesting presign for", localUri)
-  const { uploadUrl, publicUrl, key, contentType } = await requestUploadUrl(ext)
-  const startedAt = Date.now()
-  const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
-    httpMethod: "PUT",
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: { "Content-Type": contentType },
-  })
-  console.log("[feedback] uploadBubbleVideo: R2 PUT returned after", Date.now() - startedAt, "ms, status:", result.status)
-  if (result.status < 200 || result.status >= 300) {
-    throw new Error(`R2 upload failed (${result.status})`)
-  }
-  return { url: publicUrl, key }
+  console.log("[feedback] uploadBubbleVideo:", localUri)
+  return putVideoObject(localUri)
 }
 
 export async function createVideoFeedback(params: {
@@ -238,22 +234,14 @@ export async function createVideoFeedback(params: {
 
 // All feedback for one clip, newest first (usually just one).
 export async function getFeedbackForVideo(videoId: string): Promise<VideoFeedbackRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: FEEDBACK_TABLE,
-    queries: [Query.equal("videoId", videoId), Query.orderDesc("$createdAt")],
-  })
-  return response.rows.map(parseFeedbackRow)
+  const rows = await listAllRows<any>(FEEDBACK_TABLE, [Query.equal("videoId", videoId), Query.orderDesc("$createdAt")])
+  return rows.map(parseFeedbackRow)
 }
 
 // Athlete: every piece of feedback left on any of their clips, newest first.
 export async function getFeedbackForAthlete(athleteId: string): Promise<VideoFeedbackRow[]> {
-  const response = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: FEEDBACK_TABLE,
-    queries: [Query.equal("athleteId", athleteId), Query.orderDesc("$createdAt")],
-  })
-  return response.rows.map(parseFeedbackRow)
+  const rows = await listAllRows<any>(FEEDBACK_TABLE, [Query.equal("athleteId", athleteId), Query.orderDesc("$createdAt")])
+  return rows.map(parseFeedbackRow)
 }
 
 export async function markFeedbackViewed(id: string): Promise<void> {

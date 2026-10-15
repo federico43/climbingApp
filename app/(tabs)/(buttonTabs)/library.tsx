@@ -8,6 +8,7 @@ import { ImportVideoModal } from "@/components/ImportVideoModal"
 import { BLOCK_LABELS, BlockType } from "@/components/workoutBlocks"
 import { ConsumeAuth } from "@/components/auth-context"
 import { getFeedbackForAthlete, getMyVideos, VideoFeedbackRow, VideoRow } from "@/services/videoStorage"
+import { QueuedUpload, retryUpload, UploadStatus, useUploadQueue } from "@/services/videoUploadQueue"
 import { groupByDate } from "@/utils/dateGroups"
 import { deleteVideoFile, listSavedVideos, saveVideoLocally } from "@/utils/saveVideo"
 import { useFocusEffect } from "@react-navigation/native"
@@ -15,7 +16,7 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import * as ImagePicker from "expo-image-picker"
 import * as VideoThumbnails from "expo-video-thumbnails"
-import React, { useCallback, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
@@ -72,7 +73,7 @@ function extractBlockType(filename: string): string | null {
 
 // File pattern is `boulderapp_<type>_<timestamp>.mov`
 function extractTimestamp(filename: string): number {
-  const m = filename.match(/_(\d{10,})\.(mov|mp4)$/)
+  const m = filename.match(/_(\d{10,})\.(mov|mp4|m4v)$/)
   return m ? Number(m[1]) : 0
 }
 
@@ -94,6 +95,14 @@ async function getThumbnail(filename: string, uri: string): Promise<string | nul
   } catch {
     return null
   }
+}
+
+// Upload-to-coach state badge on a local clip's card.
+const UPLOAD_BADGE: Record<UploadStatus, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
+  pending: { icon: "time-outline", color: "#fff" },
+  uploading: { icon: "cloud-upload-outline", color: "#fff" },
+  uploaded: { icon: "cloud-done-outline", color: "rgba(255,255,255,0.7)" },
+  failed: { icon: "alert-circle", color: "#FF6B5E" },
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -120,40 +129,55 @@ export default function LibraryScreen() {
     useCallback(() => { loadVideos() }, [])
   )
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      getMyVideos()
-        .then((rows) => {
-          setSubmitted(rows)
-          // Parallel, not sequential — each thumbnail downloads a frame from
-          // the remote clip, so awaiting them one at a time made a library of
-          // more than a few clips take a long time to fill in.
-          const toGenerate: typeof rows = []
-          const seeded: Record<string, string> = {}
-          for (const row of rows) {
-            const cached = thumbnailCache.get(row.$id)
-            if (cached) seeded[row.$id] = cached
-            else toGenerate.push(row)
-          }
-          setSubmittedThumbs((prev) => ({ ...prev, ...seeded }))
-          Promise.all(
-            toGenerate.map(async (row) => {
-              const thumb = await getThumbnail(row.$id, row.url)
-              if (thumb) setSubmittedThumbs((prev) => ({ ...prev, [row.$id]: thumb }))
-            })
-          )
-        })
-        .catch((e: any) => { console.warn("[feedback] getMyVideos failed:", e?.message ?? e); setSubmitted([]) })
-      getFeedbackForAthlete(User.$id)
-        .then((rows) => {
-          const byVideo: Record<string, VideoFeedbackRow> = {}
-          for (const row of rows) if (!byVideo[row.videoId]) byVideo[row.videoId] = row
-          setFeedbackByVideoId(byVideo)
-        })
-        .catch((e: any) => console.warn("[feedback] getFeedbackForAthlete failed:", e?.message ?? e))
-    }, [User])
-  )
+  const uploadQueue = useUploadQueue()
+  const uploadByFilename = useMemo(() => {
+    const map: Record<string, QueuedUpload> = {}
+    for (const e of uploadQueue) map[e.filename] = e
+    return map
+  }, [uploadQueue])
+  const unsent = uploadQueue.filter((e) => e.status !== "uploaded")
+  const failed = unsent.filter((e) => e.status === "failed")
+  const uploadedCount = uploadQueue.length - unsent.length
+
+  const loadSubmitted = useCallback(() => {
+    if (!User) return
+    getMyVideos()
+      .then((rows) => {
+        setSubmitted(rows)
+        // Parallel, not sequential — each thumbnail downloads a frame from
+        // the remote clip, so awaiting them one at a time made a library of
+        // more than a few clips take a long time to fill in.
+        const toGenerate: typeof rows = []
+        const seeded: Record<string, string> = {}
+        for (const row of rows) {
+          const cached = thumbnailCache.get(row.$id)
+          if (cached) seeded[row.$id] = cached
+          else toGenerate.push(row)
+        }
+        setSubmittedThumbs((prev) => ({ ...prev, ...seeded }))
+        Promise.all(
+          toGenerate.map(async (row) => {
+            const thumb = await getThumbnail(row.$id, row.url)
+            if (thumb) setSubmittedThumbs((prev) => ({ ...prev, [row.$id]: thumb }))
+          })
+        )
+      })
+      .catch((e: any) => { console.warn("[feedback] getMyVideos failed:", e?.message ?? e); setSubmitted([]) })
+    getFeedbackForAthlete(User.$id)
+      .then((rows) => {
+        const byVideo: Record<string, VideoFeedbackRow> = {}
+        for (const row of rows) if (!byVideo[row.videoId]) byVideo[row.videoId] = row
+        setFeedbackByVideoId(byVideo)
+      })
+      .catch((e: any) => console.warn("[feedback] getFeedbackForAthlete failed:", e?.message ?? e))
+  }, [User])
+
+  useFocusEffect(loadSubmitted)
+
+  // A queued clip just reached the coach — show it under "Submitted clips".
+  useEffect(() => {
+    if (uploadedCount > 0) loadSubmitted()
+  }, [uploadedCount, loadSubmitted])
 
   async function loadVideos() {
     if (videoListCache.length === 0) setLoading(true)
@@ -247,6 +271,20 @@ export default function LibraryScreen() {
           <Ionicons name="download-outline" size={14} color="#fff" />
         </View>
       )}
+      {uploadByFilename[item.filename] && (
+        <Pressable
+          style={styles.feedbackDot}
+          hitSlop={8}
+          disabled={uploadByFilename[item.filename].status !== "failed"}
+          onPress={() => retryUpload(item.filename)}
+        >
+          <Ionicons
+            name={UPLOAD_BADGE[uploadByFilename[item.filename].status].icon}
+            size={16}
+            color={UPLOAD_BADGE[uploadByFilename[item.filename].status].color}
+          />
+        </Pressable>
+      )}
       <View style={styles.cardOverlay}>
         <Text style={styles.cardLabel} numberOfLines={1}>
           {formatBlockType(item.blockType)}
@@ -281,7 +319,7 @@ export default function LibraryScreen() {
           <Text style={styles.emptyIcon}>🎬</Text>
           <Text style={styles.emptyTitle}>No videos yet</Text>
           <Text style={styles.emptyText}>
-            Record your attempts during training — they'll appear here.
+            Record your attempts during training — they&apos;ll appear here.
           </Text>
           <Pressable style={styles.emptyAddButton} onPress={handlePickVideo}>
             <Ionicons name="add" size={18} color={C.bg} />
@@ -293,6 +331,25 @@ export default function LibraryScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
+          {unsent.length > 0 && (
+            <View style={styles.uploadBanner}>
+              <Ionicons
+                name={failed.length > 0 ? "alert-circle" : "cloud-upload-outline"}
+                size={18}
+                color={failed.length > 0 ? "#FF6B5E" : C.textSecondary}
+              />
+              <Text style={styles.uploadBannerText}>
+                {unsent.length === 1 ? "1 video" : `${unsent.length} videos`} waiting to reach your coach
+                {failed.length > 0 ? " — no connection or upload failed" : ""}
+              </Text>
+              {failed.length > 0 && (
+                <Pressable onPress={() => failed.forEach((e) => retryUpload(e.filename))} hitSlop={8}>
+                  <Text style={styles.uploadBannerAction}>Retry</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
           {submitted.length > 0 && (
             <View style={{ marginBottom: 18 }}>
               <Text style={styles.groupHeader}>Submitted clips</Text>
@@ -500,6 +557,14 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 16,
   },
   cardLabel: { color: "#fff", fontSize: 12, fontWeight: "600" },
+
+  uploadBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: C.surface, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 18,
+  },
+  uploadBannerText: { flex: 1, fontSize: 13, color: C.textSecondary, lineHeight: 18 },
+  uploadBannerAction: { fontSize: 14, fontWeight: "700", color: C.green },
 
   empty: {
     flex: 1,
