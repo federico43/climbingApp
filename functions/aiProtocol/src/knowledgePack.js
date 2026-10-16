@@ -34,8 +34,8 @@ export const GRADES = ["orange", "blue", "green", "yellow", "red", "black"]
 
 const BLOCK_GUIDE = `Only use these five block types:
 
-1. project_bouldering — Work a hard boulder ("project") over several attempts with rest between tries.
-   Fields: blockName, description, adaptation, targetAttempts (1–20, typical 4–10), restTime (seconds between attempts, 60–300, typical 120–180).
+1. project_bouldering — Work hard boulders of one grade against the clock, resting between tries; the app counts attempts and why they fell.
+   Fields: blockName, description, adaptation, grade (a boulder grade; omit to let the athlete pick), timeLimit (minutes, 5–90, typical 15–30), restTime (seconds between attempts, 60–300, typical 120–180).
 
 2. constraint_warmup — Easy climbing with a movement constraint (e.g. silent feet, straight arms) to warm up and reinforce technique.
    Fields: blockName, description, adaptation, level (a boulder grade), targetAttempts (1–10, typical 1–3).
@@ -101,10 +101,11 @@ const BLOCK_ITEM_SCHEMA = {
     blockName: { type: "string", description: "Short block title." },
     description: { type: "string", description: "Coaching instructions for the athlete." },
     adaptation: { type: "string", enum: ADAPTATIONS, description: "Target training adaptation." },
-    targetAttempts: { type: "integer", description: "Attempts. For project_bouldering, constraint_warmup, and sequence." },
+    targetAttempts: { type: "integer", description: "Attempts. For constraint_warmup and sequence." },
     restTime: { type: "integer", description: "Rest between attempts (seconds). For project_bouldering and sequence." },
     level: { type: "string", enum: GRADES, description: "Boulder grade. Only for constraint_warmup." },
-    timeLimit: { type: "integer", description: "Time cap in minutes (0 = no timer). Only for exploration_session." },
+    grade: { type: "string", enum: GRADES, description: "Boulder grade worked. Only for project_bouldering (omit to let the athlete pick)." },
+    timeLimit: { type: "integer", description: "Time cap in minutes. For project_bouldering (5–90, required) and exploration_session (0 = no timer)." },
   },
   required: ["type", "blockName", "description", "adaptation"],
 }

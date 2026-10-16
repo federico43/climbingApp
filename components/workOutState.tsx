@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import CustomButton from "./customButton"
+import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export function WorkOutState({
     restTimeRemaining,
     logAttempt,
     undoLastAttempt,
+    updateLastAttempt,
     startWorkout,
     startRestTimer,
     currentBlockIndex,
@@ -234,14 +236,25 @@ export function WorkOutState({
               const durStr = dm > 0
                 ? (ds === 0 ? `${dm}m` : `${dm}m ${ds}s`)
                 : `${ds}s`
+              // Project bouldering: grade · attempts · sent + fall reasons under the row.
+              const projectAttempts = block.type === "project_bouldering" && !block.coached
+                ? attempts.filter((a) => a.blockIndex === originalIndex)
+                : null
               return (
-                <View key={originalIndex} style={styles.summaryBlockRow}>
-                  <Text style={styles.summaryBlockIndex}>{i + 1}</Text>
-                  <Text style={styles.summaryBlockName} numberOfLines={1}>
-                    {block.blockName || "Block"}
-                  </Text>
-                  <Text style={styles.summaryBlockDuration}>{durStr}</Text>
-                  <Text style={styles.summaryBlockCheck}>✓</Text>
+                <View key={originalIndex}>
+                  <View style={styles.summaryBlockRow}>
+                    <Text style={styles.summaryBlockIndex}>{i + 1}</Text>
+                    <Text style={styles.summaryBlockName} numberOfLines={1}>
+                      {block.blockName || "Block"}
+                    </Text>
+                    <Text style={styles.summaryBlockDuration}>{durStr}</Text>
+                    <Text style={styles.summaryBlockCheck}>✓</Text>
+                  </View>
+                  {!!projectAttempts?.length && (
+                    <View style={styles.summaryProject}>
+                      <ProjectSummaryCard attempts={projectAttempts} compact />
+                    </View>
+                  )}
                 </View>
               )
             })}
@@ -333,6 +346,7 @@ export function WorkOutState({
             attemptsDone={attemptsDone}
             logAttempt={logAttempt}
             undoLastAttempt={undoLastAttempt}
+            updateLastAttempt={updateLastAttempt}
             timeRemaining={timeRemaining}
             restTimeRemaining={restTimeRemaining}
             startRestTimer={startRestTimer}
@@ -350,7 +364,7 @@ export function WorkOutState({
 
 // Blocks that render their own time display (countdown or work/rest) — the host
 // chip would duplicate it, so skip them.
-const SELF_TIMED_BLOCKS = new Set(["exploration_session", "intervals", "free_session"])
+const SELF_TIMED_BLOCKS = new Set(["exploration_session", "intervals", "free_session", "project_bouldering"])
 
 // Per-block countdown for blocks that carry a time constraint. Remounts per
 // block (keyed by index), turns red and reads "Time's up" at zero — it never
@@ -574,6 +588,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: 8,
   },
+  summaryProject: { paddingLeft: 40, paddingRight: 8, paddingBottom: 10 },
   summaryBlockRow: {
     flexDirection: "row",
     alignItems: "center",

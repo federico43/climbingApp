@@ -25,6 +25,9 @@ export interface VideoRow {
 }
 
 export interface VideoMeta {
+  // Row id to create the metadata row with, picked by the caller so it can
+  // link the clip (e.g. from a project attempt) before the upload finishes.
+  rowId?: string
   blockType?: string
   projectId?: string
   projectName?: string
@@ -74,7 +77,7 @@ export async function createVideoRow(url: string, key: string, meta: VideoMeta):
   if (meta.durationSec != null) data.durationSec = Math.round(meta.durationSec)
   if (meta.imported) data.imported = true
   const row = await tablesDB.createRow({
-    databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: ID.unique(), data,
+    databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: meta.rowId ?? ID.unique(), data,
   })
   return row as unknown as VideoRow
 }
@@ -104,6 +107,17 @@ export async function putVideoObject(localUri: string): Promise<{ url: string; k
 // Coach: list a given athlete's clips, newest first.
 export async function getVideosByUserId(userId: string): Promise<VideoRow[]> {
   return listAllRows<VideoRow>(VIDEOS_TABLE, [Query.equal("userId", userId), Query.orderDesc("$createdAt")])
+}
+
+// One clip by row id (e.g. the videoId a project attempt links to); null
+// when it doesn't exist — the upload may have failed or not finished yet.
+export async function getVideoById(id: string): Promise<VideoRow | null> {
+  try {
+    const row = await tablesDB.getRow({ databaseId: DATABASE_ID, tableId: VIDEOS_TABLE, rowId: id })
+    return row as unknown as VideoRow
+  } catch {
+    return null
+  }
 }
 
 // Athlete's own clips.

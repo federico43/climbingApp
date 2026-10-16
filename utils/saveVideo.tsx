@@ -7,7 +7,7 @@ const getVideoDir = videoDir
 export async function saveVideoLocally(
   uri: string,
   blockType?: string,
-  meta?: { projectId?: string; projectName?: string; grade?: string },
+  meta?: { projectId?: string; projectName?: string; grade?: string; rowId?: string },
   options?: {
     // Recorded clips auto-submit to the coach during a monitored block.
     // Imported clips are a deliberate, out-of-session action, so callers can

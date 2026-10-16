@@ -573,6 +573,7 @@ export function AthleteAnalytics({ athlete }: { athlete: AppUser }) {
         onClose={() => setSelectedDate(null)}
         onDeleted={(id) => setSessions((prev) => prev.filter((s) => s.$id !== id))}
         onUpdated={(updated) => setSessions((prev) => prev.map((s) => (s.$id === updated.$id ? updated : s)))}
+        canGiveFeedback
       />
 
       {managing && (

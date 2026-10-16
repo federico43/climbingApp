@@ -13,6 +13,8 @@ import {
   WARMUP_INTERVALS_BLOCK,
   type WorkoutSpec,
 } from "@/utils/planRotation"
+import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
+import { colourLabel } from "@/utils/boulderColours"
 import { SC_PLAN_RULES } from "@/utils/scPlanBuilder"
 import { FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 
@@ -82,6 +84,7 @@ function settingsSeconds(b: any): number {
   const n = (v: unknown, fallback: number) => (typeof v === "number" && v > 0 ? v : fallback)
   switch (b.type) {
     case "project_bouldering":
+      return normalizeProjectBlock(b).timeLimit * 60   // always time-capped (v2)
     case "sequence":
       return n(b.targetAttempts, 5) * (ATTEMPT_SECS + n(b.restTime, 180))
     case "constraint_warmup":
@@ -136,6 +139,7 @@ function mainDetail(b: any, copies: number): string {
   const each = copies > 1 ? " each" : ""
   switch (b.type) {
     case "project_bouldering":
+      return projectDetail(b) + each
     case "sequence":
       return b.targetAttempts ? `${plural(b.targetAttempts, "attempt")}${each}` : ""
     case "four_by_four":
@@ -145,6 +149,12 @@ function mainDetail(b: any, copies: number): string {
     default:
       return b.timeLimit ? `${b.timeLimit} min${each}` : ""
   }
+}
+
+// "Yellow · 20 min" (or just "20 min" when the athlete picks the grade).
+export function projectDetail(b: any): string {
+  const pb = normalizeProjectBlock(b)
+  return [pb.grade ? colourLabel(pb.grade) : "", `${pb.timeLimit} min`].filter(Boolean).join(" · ")
 }
 
 function scFocusOf(blocks: any[]): Focus | null {

@@ -141,8 +141,16 @@ async function runQueue(ignoreBackoff: boolean): Promise<void> {
         object = await putVideoObject(localUri)
         await update(entry.filename, { object })
       }
-      const row = await createVideoRow(object.url, object.key, entry.meta)
-      await update(entry.filename, { status: "uploaded", remoteId: row.$id, lastError: undefined, nextAttemptAt: undefined })
+      let remoteId: string
+      try {
+        remoteId = (await createVideoRow(object.url, object.key, entry.meta)).$id
+      } catch (e: any) {
+        // A caller-chosen rowId (project attempts link to it) already exists:
+        // an earlier attempt created the row but its response never arrived.
+        if (entry.meta.rowId && e?.code === 409) remoteId = entry.meta.rowId
+        else throw e
+      }
+      await update(entry.filename, { status: "uploaded", remoteId, lastError: undefined, nextAttemptAt: undefined })
       console.log("[uploadQueue] sent to coach:", entry.filename)
     } catch (e: any) {
       const attempts = entry.attempts + 1
