@@ -21,6 +21,7 @@ export interface AiBlock {
   targetAttempts?: number
   restTime?: number
   level?: string
+  grade?: string
   timeLimit?: number
   // When set, this block reuses a saved library block (resolved in the editor).
   libraryId?: string
@@ -90,8 +91,10 @@ function normalizeBlocks(blocksIn: any): AiBlock[] {
     const block: AiBlock = { type: b.type, blockName, description, adaptation }
 
     if (b.type === "project_bouldering") {
-      block.targetAttempts = clampInt(b.targetAttempts, 1, 20, 5)
-      block.restTime = clampInt(b.restTime, 30, 600, 120)
+      // v2: one grade under a time cap; targetAttempts is no longer used.
+      block.grade = GRADES.includes(b.grade) ? b.grade : ""
+      block.timeLimit = clampInt(b.timeLimit, 5, 90, 20)
+      block.restTime = clampInt(b.restTime, 30, 600, 180)
     } else if (b.type === "constraint_warmup") {
       block.targetAttempts = clampInt(b.targetAttempts, 1, 10, 1)
       block.level = GRADES.includes(b.level) ? b.level : ""

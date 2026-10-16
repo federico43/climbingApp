@@ -373,7 +373,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           >
             {climbs.length === 0 ? (
               <Text style={styles.emptyText}>
-                Select a grade and tap "Log climb" to record your first boulder.
+                Select a grade and tap &quot;Log climb&quot; to record your first boulder.
               </Text>
             ) : (
               [...climbs].reverse().map((c) => (

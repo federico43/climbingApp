@@ -28,19 +28,7 @@ export default function PastWorkoutsScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      load()
-    }, [User])
-  )
-
-  // Reload after a workout ends (refreshKey bumps from the provider)
-  useEffect(() => {
-    if (User && workoutCtx.refreshKey > 0) load()
-  }, [workoutCtx.refreshKey])
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setSessions(await getSessions())
     } catch (e) {
@@ -48,7 +36,20 @@ export default function PastWorkoutsScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!User) return
+      load()
+    }, [User, load])
+  )
+
+  // Reload after a workout ends (refreshKey bumps from the provider)
+  useEffect(() => {
+    if (User && workoutCtx.refreshKey > 0) load()
+  }, [User, load, workoutCtx.refreshKey])
+
 
   const trainedDays: Record<string, any> = {}
   for (const s of sessions) {

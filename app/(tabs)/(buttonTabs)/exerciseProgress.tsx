@@ -1,7 +1,7 @@
 import { C } from "@/utils/theme"
 import { getSessions, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   ActivityIndicator,
   Pressable,
@@ -206,9 +206,7 @@ export default function ExerciseProgressScreen() {
   const [progression, setProgression] = useState<CoachExerciseView | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [name, athleteId])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const sessions = athleteId
@@ -223,7 +221,10 @@ export default function ExerciseProgressScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [athleteId, name])
+
+  useEffect(() => { load() }, [load])
+
 
   function toChartPoints(key: "avgReps" | "avgWeight" | "avgRpe") {
     return dataPoints

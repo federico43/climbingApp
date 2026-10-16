@@ -1,5 +1,24 @@
+diff --git a/node_modules/expo-camera/ios/Common/CameraExceptions.swift b/node_modules/expo-camera/ios/Common/CameraExceptions.swift
+index 8a2bad6..dddcbab 100644
+--- a/node_modules/expo-camera/ios/Common/CameraExceptions.swift
++++ b/node_modules/expo-camera/ios/Common/CameraExceptions.swift
+@@ -42,6 +42,14 @@ internal final class CameraRecordingFailedException: Exception {
+   }
+ }
+ 
++// Same message as CameraRecordingFailedException plus the real NSError and
++// audio session state, which the generic exception throws away.
++internal final class CameraRecordingFailedDetailedException: GenericException<String> {
++  override var reason: String {
++    "An error occurred while recording a video: \(param)"
++  }
++}
++
+ internal final class CameraMetadataDecodingException: Exception {
+   override var reason: String {
+     "Could not decode image metadata"
 diff --git a/node_modules/expo-camera/ios/Current/CameraSessionManager.swift b/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
-index dc2a548..05c7cdb 100644
+index dc2a548..c722cf9 100644
 --- a/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
 +++ b/node_modules/expo-camera/ios/Current/CameraSessionManager.swift
 @@ -37,6 +37,11 @@ class CameraSessionManager: NSObject {
@@ -14,30 +33,227 @@ index dc2a548..05c7cdb 100644
    }
  
    func initializeCaptureSessionInput() {
-diff --git a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
-index 0cf1b56..9719507 100644
---- a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
-+++ b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
-@@ -51,6 +51,22 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
-     let fileUrl = URL(fileURLWithPath: path)
-     videoRecordedPromise = promise
+@@ -144,6 +149,16 @@ class CameraSessionManager: NSObject {
+     }
  
-+    // `session.automaticallyConfiguresApplicationAudioSession = false` (see
-+    // CameraSessionManager) means AVCaptureSession no longer activates the
-+    // app's audio session for us — Apple's docs are explicit that when you
-+    // opt out of that, activating the session becomes the app's job. Without
-+    // this, AVCaptureMovieFileOutput has no active audio session to record
-+    // into and its recording delegate immediately fires back with an error.
-+    // .mixWithOthers keeps the "don't stop Spotify" behavior that
-+    // automaticallyConfiguresApplicationAudioSession was disabled for.
+     if !delegate.isMuted && delegate.mode == .video {
++      // With automaticallyConfiguresApplicationAudioSession off, the app's
++      // audio session has to already be .playAndRecord when the mic input
++      // joins the capture session — configuring it only right before
++      // startRecording (CameraVideoRecording) is too late if something
++      // (expo-video, expo-av) left it in .playback in the meantime.
++      if !session.automaticallyConfiguresApplicationAudioSession {
++        if let audioError = CameraSessionManager.activateRecordingAudioSession() {
++          log.warn("\(#function): failed to activate audio session: \(audioError)")
++        }
++      }
+       if let audioCapturedevice = AVCaptureDevice.default(for: .audio) {
+         do {
+           let audioDeviceInput = try AVCaptureDeviceInput(device: audioCapturedevice)
+@@ -157,6 +172,19 @@ class CameraSessionManager: NSObject {
+     }
+   }
+ 
++  // .playAndRecord + .mixWithOthers so recording doesn't stop music already
++  // playing in another app. Returns the error description on failure.
++  static func activateRecordingAudioSession() -> String? {
 +    do {
 +      let audioSession = AVAudioSession.sharedInstance()
 +      try audioSession.setCategory(.playAndRecord, options: [.mixWithOthers, .allowBluetooth, .defaultToSpeaker])
 +      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
++      return nil
 +    } catch {
-+      log.info("\(#function): failed to activate audio session: \(error.localizedDescription)")
++      return (error as NSError).description
++    }
++  }
++
+   func enableTorch() {
+     guard let delegate, let device = captureDeviceInput?.device, device.hasTorch else {
+       return
+diff --git a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
+index 0cf1b56..fd19824 100644
+--- a/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
++++ b/node_modules/expo-camera/ios/Current/CameraVideoRecording.swift
+@@ -8,6 +8,7 @@ protocol CameraVideoRecordingDelegate: AnyObject {
+   var mirror: Bool { get }
+   var appContext: AppContext? { get }
+   var videoBitrate: Int? { get }
++  var sessionQueue: DispatchQueue { get }
+ }
+ 
+ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+@@ -17,6 +18,19 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+   private var videoCodecType: AVVideoCodecType?
+   private var isValidVideoOptions = true
+ 
++  // Set by CameraView. Needed to fall back to iOS's automatic audio session
++  // configuration when a recording fails immediately.
++  weak var session: AVCaptureSession?
++  private var recordingStartedAt: Date?
++  private var audioSetupError: String?
++  private var retriedWithAutomaticAudio = false
++  private var fallbackReason: String?
++  private var stopRequested = false
++  // A recording that ends with an error this soon after starting never
++  // really captured anything — that's the audio-session failure mode, as
++  // opposed to e.g. running out of space mid-clip.
++  private let immediateFailureWindow: TimeInterval = 2
++
+   init(delegate: CameraVideoRecordingDelegate) {
+     self.delegate = delegate
+     super.init()
+@@ -47,10 +61,31 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+       return
+     }
+ 
++    videoRecordedPromise = promise
++    retriedWithAutomaticAudio = false
++    fallbackReason = nil
++    stopRequested = false
++    startFileRecording(videoFileOutput: videoFileOutput, appContext: appContext)
++  }
++
++  private func startFileRecording(videoFileOutput: AVCaptureMovieFileOutput, appContext: AppContext) {
+     let path = FileSystemUtilities.generatePathInCache(appContext, in: "Camera", extension: ".mov")
+     let fileUrl = URL(fileURLWithPath: path)
+-    videoRecordedPromise = promise
+ 
++    // `session.automaticallyConfiguresApplicationAudioSession = false` (see
++    // CameraSessionManager) means AVCaptureSession no longer activates the
++    // app's audio session for us, so it's the app's job. Re-asserted here
++    // too because expo-video forces .playback whenever any player changes
++    // state, which may have happened since the mic input was added.
++    audioSetupError = nil
++    if session?.automaticallyConfiguresApplicationAudioSession != true {
++      audioSetupError = CameraSessionManager.activateRecordingAudioSession()
++      if let audioSetupError {
++        log.warn("\(#function): failed to activate audio session: \(audioSetupError)")
++      }
 +    }
 +
++    recordingStartedAt = Date()
      videoFileOutput.startRecording(to: fileUrl, recordingDelegate: self)
    }
  
+@@ -64,6 +99,7 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+   }
+ 
+   func stopRecording(videoFileOutput: AVCaptureMovieFileOutput?) {
++    stopRequested = true
+     videoFileOutput?.stopRecording()
+   }
+ 
+@@ -113,14 +149,99 @@ class CameraVideoRecording: NSObject, AVCaptureFileOutputRecordingDelegate {
+       success = value == true ? true : false
+     }
+ 
++    if !success && videoRecordedPromise != nil && retryWithAutomaticAudioIfPossible(output: output, failedFileURL: outputFileURL, error: error) {
++      return
++    }
++
+     if success && videoRecordedPromise != nil {
+-      videoRecordedPromise?.resolve(["uri": outputFileURL.absoluteString])
++      var result: [String: Any] = ["uri": outputFileURL.absoluteString]
++      if let fallbackReason {
++        result["audioFallbackReason"] = fallbackReason
++      }
++      videoRecordedPromise?.resolve(result)
+     } else if videoRecordedPromise != nil {
+-      videoRecordedPromise?.reject(CameraRecordingFailedException())
++      videoRecordedPromise?.reject(CameraRecordingFailedDetailedException(describeFailure(error)))
+     }
+ 
+     videoRecordedPromise = nil
+     videoCodecType = nil
++    recordingStartedAt = nil
++  }
++
++  // When the first attempt fails right away, hand audio session setup back
++  // to AVCaptureSession and try once more. That may pause music playing in
++  // another app, but it records.
++  private func retryWithAutomaticAudioIfPossible(output: AVCaptureFileOutput, failedFileURL: URL, error: Error?) -> Bool {
++    guard !retriedWithAutomaticAudio,
++      let startedAt = recordingStartedAt,
++      Date().timeIntervalSince(startedAt) < immediateFailureWindow,
++      let session,
++      let videoFileOutput = output as? AVCaptureMovieFileOutput,
++      let delegate,
++      let appContext = delegate.appContext else {
++      return false
++    }
++    retriedWithAutomaticAudio = true
++    fallbackReason = describeFailure(error)
++    log.warn("Recording failed immediately, retrying with automatic audio session: \(fallbackReason ?? "")")
++    try? FileManager.default.removeItem(at: failedFileURL)
++
++    delegate.sessionQueue.async {
++      // The user tapped stop while the retry was being set up — don't start
++      // a recording they can no longer stop.
++      if self.stopRequested {
++        self.videoRecordedPromise?.reject(CameraRecordingFailedDetailedException(self.fallbackReason ?? "stopped before retry"))
++        self.videoRecordedPromise = nil
++        self.videoCodecType = nil
++        self.recordingStartedAt = nil
++        return
++      }
++      session.beginConfiguration()
++      session.automaticallyConfiguresApplicationAudioSession = true
++      // Re-adding the mic input makes the session reconfigure the app's
++      // audio session under the new setting.
++      let audioInputs = session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.filter { $0.device.hasMediaType(.audio) }
++      for input in audioInputs {
++        session.removeInput(input)
++      }
++      if let device = AVCaptureDevice.default(for: .audio), let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
++        session.addInput(input)
++      }
++      session.commitConfiguration()
++      if !session.isRunning {
++        session.startRunning()
++      }
++      self.startFileRecording(videoFileOutput: videoFileOutput, appContext: appContext)
++    }
++    return true
++  }
++
++  private func describeFailure(_ error: Error?) -> String {
++    var parts: [String] = []
++    if let nsError = error as NSError? {
++      parts.append("\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)")
++      if let reason = nsError.localizedFailureReason {
++        parts.append(reason)
++      }
++      if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
++        parts.append("underlying \(underlying.domain) \(underlying.code): \(underlying.localizedDescription)")
++      }
++    } else {
++      parts.append("no error object")
++    }
++    if let startedAt = recordingStartedAt {
++      parts.append(String(format: "after %.2fs", Date().timeIntervalSince(startedAt)))
++    }
++    let audioSession = AVAudioSession.sharedInstance()
++    parts.append("audio category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue) otherAudioPlaying=\(audioSession.isOtherAudioPlaying) inputAvailable=\(audioSession.isInputAvailable)")
++    parts.append("autoAudioSession=\(session?.automaticallyConfiguresApplicationAudioSession ?? false) sessionRunning=\(session?.isRunning ?? false) interrupted=\(session?.isInterrupted ?? false)")
++    if let audioSetupError {
++      parts.append("audio setup error: \(audioSetupError)")
++    }
++    if let fallbackReason {
++      parts.append("first attempt: \(fallbackReason)")
++    }
++    return parts.joined(separator: " | ")
+   }
+ 
+   func cleanup() {
+diff --git a/node_modules/expo-camera/ios/Current/CameraView.swift b/node_modules/expo-camera/ios/Current/CameraView.swift
+index b2e7f9e..3917c58 100644
+--- a/node_modules/expo-camera/ios/Current/CameraView.swift
++++ b/node_modules/expo-camera/ios/Current/CameraView.swift
+@@ -154,6 +154,7 @@ public class CameraView: ExpoView, EXAppLifecycleListener, EXCameraInterface, Ca
+     photoCapture = CameraPhotoCapture(delegate: self)
+     videoRecording = CameraVideoRecording(delegate: self)
+     session = sessionManager.session
++    videoRecording.session = sessionManager.session
+ 
+     #if !targetEnvironment(simulator)
+     setupPreview()

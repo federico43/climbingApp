@@ -1,6 +1,8 @@
 import { C } from "@/utils/theme"
 import { adaptationColor } from "@/utils/adaptations"
 import { getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
+import { colourLabel } from "@/utils/boulderColours"
+import { fallReasonLabel, PROJECT_V2, summarizeProjectAttempts } from "@/utils/progression/projectBouldering"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -75,6 +77,8 @@ interface SummaryBlock {
   color: string
   isSC: boolean
   scLines: string[]
+  // Project bouldering v2: "Yellow · 9 attempts · sent" + top fall reason.
+  projectLine?: string
   sends: number
   total: number
 }
@@ -89,6 +93,18 @@ interface DaySummary {
   dateKey: string
   dateLabel: string
   sessions: SessionSummary[]
+}
+
+function projectLine(attempts: any[]): string {
+  const p = summarizeProjectAttempts(attempts)
+  const parts = [
+    p.grade ? colourLabel(p.grade) : "",
+    `${p.attempts} attempt${p.attempts !== 1 ? "s" : ""}`,
+    p.sent ? "sent ✓" : "not sent",
+    p.reasons.length ? `mostly ${fallReasonLabel(p.reasons[0].key).toLowerCase()} (${p.reasons[0].count})` : "",
+    p.reviewClips ? `🎥 ${p.reviewClips} to review` : "",
+  ]
+  return parts.filter(Boolean).join(" · ")
 }
 
 function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary {
@@ -108,6 +124,9 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
       color: adaptationColor(block),
       isSC,
       scLines: isSC ? scSummaryLines(blockAttempts.filter((a: any) => a.scData).map((a: any) => a.scData)) : [],
+      projectLine: block.type === "project_bouldering" && !block.coached && blockAttempts.some((a: any) => a.pbv === PROJECT_V2)
+        ? projectLine(blockAttempts)
+        : undefined,
       sends: blockAttempts.filter((a: any) => a.success).length,
       total: blockAttempts.length,
     }
@@ -216,6 +235,8 @@ export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: s
                                   ) : (
                                     <Text style={s.line}>No exercises logged</Text>
                                   )
+                                ) : b.projectLine ? (
+                                  <Text style={s.line}>{b.projectLine}</Text>
                                 ) : showStats ? (
                                   <Text style={s.line}>
                                     {b.total === 0

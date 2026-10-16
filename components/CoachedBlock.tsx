@@ -91,6 +91,7 @@ function CoachSequences({ block, attempts, logAttempt }: Omit<Props, "goToNextBl
         .then((r) => setInfo((p) => ({ ...p, [id]: { name: r.name, level: r.level ?? undefined } })))
         .catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- info is only a cache check; depending on it would refetch routes still in flight
   }, [logged])
 
   // The type the coach's sequences get: the assigned route's, else the block's name.

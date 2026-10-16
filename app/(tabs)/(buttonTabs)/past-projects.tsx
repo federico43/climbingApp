@@ -16,12 +16,9 @@ import {
 import { useRouter } from "expo-router"
 import { Image as CachedImage } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-
-const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -31,6 +28,8 @@ import {
   View,
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+
+const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

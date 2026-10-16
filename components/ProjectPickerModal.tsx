@@ -25,7 +25,7 @@ import {
   TextInput,
   View,
 } from "react-native"
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 
 // Boulder grades (`color` = swatch, `on` = foreground when selected). Moved to utils/boulderColours.ts (pure, shared with the progression rules);
@@ -83,6 +83,7 @@ export function ProjectPickerModal({ visible, onClose, onSelect, initialMode }: 
       setImageUri(null)
       setShowCamera(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset the form only when the modal opens
   }, [visible])
 
   // Picking a project (created or chosen from the list) closes this native

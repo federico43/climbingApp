@@ -90,7 +90,7 @@ export interface SevenThreesExercise {
 
 export type Exercise = RepExercise | BothSidesExercise | SevenThreesExercise
 
-export interface StrengthConditioningBlock {
+export interface StrengthConditioningBlockData {
   type: "strength_conditioning"
   description?: string
   rounds: number
@@ -140,7 +140,7 @@ interface ExerciseLog {
 type Phase = "intro" | "circuit" | "rest" | "review"
 
 interface Props {
-  block: StrengthConditioningBlock
+  block: StrengthConditioningBlockData
   goToNextBlock: () => void
   goToPreviousBlock?: () => void
   logAttempt: (attempt: any) => void
@@ -828,7 +828,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                     )}
 
                     {l.notes ? (
-                      <Text style={styles.reviewNotes}>"{l.notes}"</Text>
+                      <Text style={styles.reviewNotes}>&quot;{l.notes}&quot;</Text>
                     ) : null}
                   </View>
                   )
@@ -1706,6 +1706,7 @@ function SwitchSidesCard({ side, onDone }: { side: Side; onDone: () => void }) {
   useEffect(() => {
     const t = setTimeout(onDone, 1500)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start the timer once on mount; a new onDone each render must not restart it
   }, [])
   return (
     <Pressable style={styles.switchCard} onPress={onDone}>

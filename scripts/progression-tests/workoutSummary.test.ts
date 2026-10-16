@@ -8,7 +8,9 @@ import { buildDurationHistory, estimateBlockSeconds, summarizeBlocks, summarizeS
 const empty = new Map<string, number[]>()
 
 // ── estimates from settings ──
-assert.equal(estimateBlockSeconds({ type: "project_bouldering", targetAttempts: 5, restTime: 240 }, empty), 5 * 300)
+// Project bouldering is time-capped (v2): its time limit, 20 min for a v1 block without one.
+assert.equal(estimateBlockSeconds({ type: "project_bouldering", targetAttempts: 5, restTime: 240 }, empty), 20 * 60)
+assert.equal(estimateBlockSeconds({ type: "project_bouldering", grade: "red", timeLimit: 30, restTime: 240 }, empty), 30 * 60)
 assert.equal(estimateBlockSeconds({ type: "four_by_four", sets: 4, bouldersPerSet: 4, restTime: 240 }, empty), 4 * (240 + 240))
 assert.equal(estimateBlockSeconds({ type: "intervals", series: 4, workTime: 60, restTime: 60 }, empty), 480)
 assert.equal(estimateBlockSeconds({ type: "free_session", timeLimit: 25 }, empty), 1500)
@@ -25,7 +27,7 @@ const history = buildDurationHistory([
 assert.equal(estimateBlockSeconds({ type: "project_bouldering", blockName: "Project Bouldering" }, history), 2200)
 assert.equal(estimateBlockSeconds({ type: "strength_conditioning", blockName: "Mobility", rounds: 3, exercises: [] }, history), 900)
 // A different project block isn't timed from other project blocks
-assert.equal(estimateBlockSeconds({ type: "project_bouldering", blockName: "New one", targetAttempts: 2, restTime: 60 }, history), 240)
+assert.equal(estimateBlockSeconds({ type: "project_bouldering", blockName: "New one", timeLimit: 15, restTime: 60 }, history), 900)
 
 // ── phases ──
 const sc = (name: string, n: number) => ({ type: "strength_conditioning", blockName: name, rounds: 3, restBetweenRounds: 60,
@@ -34,8 +36,8 @@ const s = summarizeBlocks([
   sc("S&C 1", 3), sc("S&C 2", 3),
   { type: "constraint_warmup", blockName: "Silent feet", targetAttempts: 3 },
   { type: "constraint_warmup", blockName: "Sloth", targetAttempts: 2, adaptation: "strength" },
-  { type: "project_bouldering", blockName: "Project Bouldering", targetAttempts: 5, restTime: 240 },
-  { type: "project_bouldering", blockName: "Project Bouldering", targetAttempts: 5, restTime: 240 },
+  { type: "project_bouldering", blockName: "Project Bouldering", grade: "yellow", timeLimit: 20, restTime: 240 },
+  { type: "project_bouldering", blockName: "Project Bouldering", grade: "yellow", timeLimit: 20, restTime: 240 },
 ], empty)
 assert.deepEqual(s.phases.map((p) => p.key), ["sc", "warmup", "main"])
 assert.equal(s.phases[0].title, "Max force")
@@ -43,7 +45,7 @@ assert.equal(s.phases[0].detail, "6 exercises · 3 rounds")
 assert.equal(s.phases[1].title, "2 constraints")
 assert.equal(s.phases[1].detail, "Silent feet · Sloth")
 assert.equal(s.phases[2].title, "Project Bouldering ×2")
-assert.equal(s.phases[2].detail, "5 attempts each")
+assert.equal(s.phases[2].detail, "Yellow · 20 min each")
 assert.equal(s.phases[2].adaptation, "strength")
 assert.equal(s.minutes, s.phases.reduce((t, p) => t + p.minutes, 0))
 assert.ok(s.phases.every((p) => p.minutes % 5 === 0 && p.minutes >= 5))

@@ -81,9 +81,10 @@ the URL, not a separate key column):
 Request body: `{ "action": "delete", "kind": "image", "url": "https://pub-xxx.r2.dev/images/<userId>/…" }`
 The function derives the object key by stripping `R2_PUBLIC_BASE` from `url`.
 
-> Authorization note: the function only requires a signed-in user. In practice
-> only the coach learns object keys (by reading the `videos` table), so keep the
-> `videos` table's **Read** permission restricted to coaches — that's what gates
-> who can delete. (The athlete app never reads this table; clips show from the
-> local library.) The table also needs **Delete** permission for whoever removes
-> rows.
+> Authorization: deletes are only allowed for the caller's own uploads
+> (`videos/<userId>/…`, `images/<userId>/…`) or when the caller's Appwrite
+> account has the **`coach` label** (Auth → Users → the coach → Labels).
+> Labels can only be set by an admin, unlike the `users.role` column. Add the
+> label to every coach account **before** deploying this version, or coaches
+> won't be able to remove athletes' clips from R2 (the row still gets
+> deleted; the object would be left behind).

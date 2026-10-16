@@ -41,14 +41,7 @@ export default function MyWorkoutsScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      load()
-    }, [User])
-  )
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setTemplates(await listAthleteTemplates(User!.$id, { migrate: false }))
     } catch (e) {
@@ -56,7 +49,15 @@ export default function MyWorkoutsScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [User])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!User) return
+      load()
+    }, [User, load])
+  )
+
 
   // Newest-first by default; the athlete can flip it.
   const sorted = [...templates].sort((a, b) =>

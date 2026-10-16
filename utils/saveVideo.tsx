@@ -1,25 +1,14 @@
 import * as FileSystem from "expo-file-system/legacy"
-import { uploadVideoInBackground } from "@/services/videoStorage"
+import { VIDEO_EXTENSIONS, videoExtOf } from "@/services/videoStorage"
+import { enqueueVideoUpload, removeFromUploadQueue, videoDir } from "@/services/videoUploadQueue"
 
-function getVideoDir(): string {
-  return FileSystem.documentDirectory + "bouldervideos/"
-}
-
-function extOf(uri: string): string {
-  const m = /\.([a-zA-Z0-9]+)(?:\?|$)/.exec(uri)
-  const ext = (m?.[1] ?? "mov").toLowerCase()
-  return ext === "mp4" ? ext : "mov"
-}
+const getVideoDir = videoDir
 
 export async function saveVideoLocally(
   uri: string,
   blockType?: string,
-  meta?: { projectId?: string; projectName?: string; grade?: string },
+  meta?: { projectId?: string; projectName?: string; grade?: string; rowId?: string },
   options?: {
-    // Recorded clips are always .mov/.mp4 straight from the camera; an
-    // imported clip keeps whatever container it already came in so it isn't
-    // silently relabeled to a format it isn't.
-    ext?: string
     // Recorded clips auto-submit to the coach during a monitored block.
     // Imported clips are a deliberate, out-of-session action, so callers can
     // opt out and let the athlete decide instead.
@@ -39,7 +28,8 @@ export async function saveVideoLocally(
     await FileSystem.makeDirectoryAsync(videoDir, { intermediates: true })
     console.log("[saveVideo] directory ready")
 
-    const ext = options?.ext ?? extOf(uri)
+    // Keeps whatever container the clip came in (camera .mov, imported .mp4/.m4v).
+    const ext = videoExtOf(uri)
     const tag = options?.imported ? "_imported" : ""
     const filename = `boulderapp_${blockType ?? "video"}${tag}_${Date.now()}.${ext}`
     const dest = videoDir + filename
@@ -47,14 +37,19 @@ export async function saveVideoLocally(
     const sourceInfo = await FileSystem.getInfoAsync(uri)
     console.log("[saveVideo] source exists:", sourceInfo.exists, "size:", (sourceInfo as any).size ?? "?")
 
-    await FileSystem.copyAsync({ from: uri, to: dest })
-    console.log("[saveVideo] copy done")
+    // Move, not copy: the source is a temp file in the cache (camera output
+    // or the picker's export), and copying left a second full-size copy of
+    // every clip behind.
+    await FileSystem.moveAsync({ from: uri, to: dest })
+    console.log("[saveVideo] move done")
 
     const destInfo = await FileSystem.getInfoAsync(dest)
     console.log("[saveVideo] dest exists:", destInfo.exists, "size:", (destInfo as any).size ?? "?")
 
     if (options?.notifyCoach ?? true) {
-      uploadVideoInBackground(dest, { blockType, ...meta, imported: options?.imported })
+      // Persistent queue: retried until it reaches the coach (see
+      // services/videoUploadQueue.ts). Not awaited past the enqueue itself.
+      await enqueueVideoUpload(filename, { blockType, ...meta, imported: options?.imported })
     }
 
     return dest
@@ -77,7 +72,7 @@ export async function listSavedVideos(): Promise<{ filename: string; uri: string
     console.log("[listVideos] all files:", files)
 
     const filtered = files.filter(
-      (f) => f.startsWith("boulderapp_") && (f.endsWith(".mov") || f.endsWith(".mp4"))
+      (f) => f.startsWith("boulderapp_") && VIDEO_EXTENSIONS.some((ext) => f.endsWith("." + ext))
     )
     console.log("[listVideos] filtered:", filtered)
 
@@ -95,4 +90,5 @@ export async function deleteVideoFile(filename: string): Promise<void> {
   const uri = getVideoDir() + filename
   console.log("[deleteVideo] deleting:", uri)
   await FileSystem.deleteAsync(uri, { idempotent: true })
+  await removeFromUploadQueue(filename)
 }

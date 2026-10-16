@@ -37,6 +37,11 @@ export interface Attempt {
   routeId?: string    // sequence: which spray-wall route
   variation?: string  // sequence: which variation (easy/original/hard)
   coached?: boolean   // logged on a coached block (the Done marker, or a coach's sequence)
+  // Project bouldering v2 (docs/project-bouldering-v2.md):
+  fallReasons?: string[]  // FallReason keys tagged while resting
+  videoId?: string        // `videos` row id of the clip filmed on this attempt
+  reviewClip?: boolean    // filmed because the app asked (for the coach to review)
+  pbv?: number            // 2 = logged by the v2 runtime
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -214,8 +219,23 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
     })
   }, [currentBlockIndex])
 
+  // Merge `patch` into the current block's most recent attempt — e.g. the
+  // fall reasons a project attempt gets tagged with while the athlete rests.
+  const updateLastAttempt = useCallback((patch: Partial<Omit<Attempt, "blockIndex" | "type" | "timestamp">>) => {
+    setAttempts((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].blockIndex === currentBlockIndex) {
+          const next = [...prev]
+          next[i] = { ...prev[i], ...patch }
+          return next
+        }
+      }
+      return prev
+    })
+  }, [currentBlockIndex])
+
   const logAttempt = useCallback(
-    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
+    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation, fallReasons, videoId, reviewClip, pbv }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
       if (status !== "running" || !currentBlock) return
 
       const newAttempt: Attempt = {
@@ -229,6 +249,10 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
         rpe,
         routeId,
         variation,
+        ...(fallReasons ? { fallReasons } : {}),
+        ...(videoId ? { videoId } : {}),
+        ...(reviewClip ? { reviewClip } : {}),
+        ...(pbv ? { pbv } : {}),
         blockIndex: currentBlockIndex,
         type: currentBlock.type,
         timestamp: Date.now(),
@@ -276,6 +300,7 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
     skipBlock,
     logAttempt,
     undoLastAttempt,
+    updateLastAttempt,
     startWorkout,
     restoreWorkout,
     startRestTimer,

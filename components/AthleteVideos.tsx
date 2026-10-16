@@ -4,7 +4,7 @@ import { VideoRow, deleteVideo, getFeedbackForAthlete, getVideosByUserId } from 
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { Ionicons } from "@expo/vector-icons"
 import * as VideoThumbnails from "expo-video-thumbnails"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
 function formatBlockType(type?: string | null): string {
@@ -48,11 +48,11 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [feedbackVideoIds, setFeedbackVideoIds] = useState<Set<string>>(new Set())
 
-  function refreshFeedbackIds() {
+  const refreshFeedbackIds = useCallback(() => {
     getFeedbackForAthlete(athlete.$id)
       .then((rows) => setFeedbackVideoIds(new Set(rows.map((r) => r.videoId))))
       .catch((e: any) => console.warn("[feedback] getFeedbackForAthlete failed:", e?.message ?? e))
-  }
+  }, [athlete.$id])
 
   useEffect(() => {
     let cancelled = false
@@ -85,7 +85,7 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
       .finally(() => { if (!cancelled) setLoading(false) })
     refreshFeedbackIds()
     return () => { cancelled = true }
-  }, [athlete.$id])
+  }, [athlete.$id, refreshFeedbackIds])
 
   function handleDelete(v: VideoRow) {
     Alert.alert("Remove clip", "Remove this clip from the athlete's submissions?", [

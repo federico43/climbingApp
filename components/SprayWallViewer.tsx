@@ -142,7 +142,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
 
   const badgeAngles = useMemo(() => {
     const result: Record<string, number> = {}
-    const placed: Array<{ bx: number; by: number }> = []
+    const placed: { bx: number; by: number }[] = []
     for (const hold of holds) {
       const cx   = hold.x * imgW + imgLeft
       const cy   = hold.y * imgH + imgTop
