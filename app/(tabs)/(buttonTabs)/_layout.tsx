@@ -222,7 +222,7 @@ function MinimizedWorkoutBar({
       -1,
       true
     )
-  }, [])
+  }, [pulse, barPulse])
 
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }))
   const barOverlayStyle = useAnimatedStyle(() => ({ opacity: barPulse.value }))

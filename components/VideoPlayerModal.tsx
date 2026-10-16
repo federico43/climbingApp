@@ -158,6 +158,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
       // viewer's data in the background for a clip they're no longer looking at.
       resumable?.cancelAsync().catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on clip identity, not the video object
   }, [video?.$id, video?.url])
 
   // Cleanup is independent of the trigger above — scoped purely to clip
@@ -169,6 +170,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
     return () => {
       FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => {})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on clip identity, not the video object
   }, [video?.$id])
 
   useEffect(() => {
@@ -217,6 +219,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
       timeSub.remove()
       statusSub.remove()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceUri/localUri are only logged; don't resubscribe when they change
   }, [player])
 
   // ── Controls visibility (watch phase only) ──────────────────────────────────
@@ -237,7 +240,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
     }, CONTROLS_HIDE_DELAY)
   }, [controlsOpacity])
 
-  useEffect(() => { showControls() }, [])
+  useEffect(() => { showControls() }, [showControls])
 
   // ── Tap handling ────────────────────────────────────────────────────────────
 
@@ -413,7 +416,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
       )}
       {phase === "watch" && loadStatus === "error" && (
         <View style={styles.loadOverlay} pointerEvents="none">
-          <Text style={styles.loadErrorText}>Couldn't load this video</Text>
+          <Text style={styles.loadErrorText}>Couldn&apos;t load this video</Text>
         </View>
       )}
 

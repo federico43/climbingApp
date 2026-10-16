@@ -31,14 +31,7 @@ export default function MySequencesScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [modal, setModal] = useState<{ editing: SprayRouteRow | null } | null>(null)
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      load()
-    }, [User])
-  )
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setSequences(await getMySprayRoutes(User!.$id))
     } catch (e) {
@@ -46,7 +39,15 @@ export default function MySequencesScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [User])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!User) return
+      load()
+    }, [User, load])
+  )
+
 
   function tryOut(route: SprayRouteRow) {
     workoutCtx.openWorkout(
@@ -141,7 +142,7 @@ export default function MySequencesScreen() {
               ))
             ) : (
               <View style={styles.empty}>
-                <Text style={styles.emptyText}>No sequences yet — tap "New" to build one</Text>
+                <Text style={styles.emptyText}>No sequences yet — tap &quot;New&quot; to build one</Text>
               </View>
             )}
           </ScrollView>

@@ -46,25 +46,26 @@ function HomeContent() {
   // shows across all tabs.
   const workoutCtx = useWorkoutContext()
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!User) return
-      load()
-    }, [User])
-  )
-
-  // Reload after a workout ends (refreshKey bumps from the provider)
-  useEffect(() => {
-    if (User && workoutCtx.refreshKey > 0) load()
-  }, [workoutCtx.refreshKey])
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setTemplates(await listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]))
     } finally {
       setLoading(false)
     }
-  }
+  }, [User])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!User) return
+      load()
+    }, [User, load])
+  )
+
+  // Reload after a workout ends (refreshKey bumps from the provider)
+  useEffect(() => {
+    if (User && workoutCtx.refreshKey > 0) load()
+  }, [User, load, workoutCtx.refreshKey])
+
 
   // The workout card mounts only after the launch intro so its entrance is
   // actually visible.
@@ -116,7 +117,7 @@ function HomeContent() {
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
                   <Ionicons name="barbell-outline" size={36} color={C.textMuted} />
                   <Text style={styles.emptyTitle}>No workout yet</Text>
-                  <Text style={styles.emptyText}>Your coach hasn't built a workout for you yet.</Text>
+                  <Text style={styles.emptyText}>Your coach hasn&apos;t built a workout for you yet.</Text>
                   <Pressable
                     onPress={() => router.push("/(tabs)/(buttonTabs)/workout-library" as any)}
                     hitSlop={8}

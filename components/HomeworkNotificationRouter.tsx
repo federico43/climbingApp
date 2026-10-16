@@ -27,7 +27,7 @@ function Router({ hasPlan }: { hasPlan: boolean }) {
     if (!intent) return
     setHomeworkIntent(intent)
     router.navigate((hasPlan ? "/(tabs)/(buttonTabs)/plan" : "/(tabs)/(buttonTabs)") as any)
-  }, [response, hasPlan])
+  }, [response, hasPlan, router])
 
   return null
 }

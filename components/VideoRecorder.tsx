@@ -163,7 +163,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
       cancelAnimation(ringScale);   ringScale.value   = withTiming(1, { duration: 150 })
       cancelAnimation(recDotOpacity); recDotOpacity.value = withTiming(1, { duration: 150 })
     }
-  }, [isRecording])
+  }, [isRecording, innerSize, innerRadius, ringScale, recDotOpacity])
 
   const innerStyle = useAnimatedStyle(() => ({
     width: innerSize.value,

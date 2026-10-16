@@ -75,10 +75,6 @@ export interface PlacedHold {
   match?: boolean      // move holds: both hands match on this hold
 }
 
-// Default hold radius as a fraction of the image width (~5%). Stored as a
-// fraction so routes look identical across screen sizes (phone vs desktop).
-const DEFAULT_RADIUS_FRACTION = 0.05
-
 const TYPE_CONFIG: Record<HoldType, { label: string; symbol: string }> = {
   start:  { label: "Start",  symbol: "S" },
   move:   { label: "Move",   symbol: "①" },
@@ -571,7 +567,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
     // on drop, when the final setHolds re-runs this with isDragging cleared.
     if (isDragging.current) return badgeAnglesRef.current
     const result: Record<string, number> = {}
-    const placed: Array<{ bx: number; by: number }> = []
+    const placed: { bx: number; by: number }[] = []
     for (const hold of holds) {
       const cx = hold.x * imgW + imgLeft
       const cy = hold.y * imgH + imgTop

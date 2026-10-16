@@ -272,7 +272,7 @@ export default function DesignScreen() {
                     key={a.$id}
                     style={[styles.copyPill, sel && styles.copyPillSel]}
                     onPress={() => setCopyTargets((prev) => {
-                      const n = new Set(prev); n.has(a.$id) ? n.delete(a.$id) : n.add(a.$id); return n
+                      const n = new Set(prev); if (n.has(a.$id)) n.delete(a.$id); else n.add(a.$id); return n
                     })}
                   >
                     <Text style={[styles.copyPillText, sel && styles.copyPillTextSel]}>{a.username ?? a.$id}</Text>
