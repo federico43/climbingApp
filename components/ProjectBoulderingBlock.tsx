@@ -253,9 +253,10 @@ export function ProjectBoulderingBlock({
                 <Pressable
                   key={g.value}
                   onPress={() => setGrade(g.value)}
-                  style={[s.gradeOption, { borderColor: g.color }, on && { backgroundColor: g.color }]}
+                  style={[s.gradeChip, on && { backgroundColor: g.color, borderColor: g.color }]}
                 >
-                  <Text style={[s.gradeOptionText, { color: on ? g.on : C.textPrimary }]}>{g.label}</Text>
+                  <View style={[s.gradeDot, { backgroundColor: g.color }, on && { backgroundColor: g.on }]} />
+                  <Text style={[s.gradeChipText, on && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
                 </Pressable>
               )
             })}
@@ -274,11 +275,14 @@ export function ProjectBoulderingBlock({
         <TopBar
           title={blockTitle}
           onBack={attempts.length === 0 ? () => setPhase(settings.grade ? "intro" : "grade") : undefined}
-          right={grade ? <GradePill grade={grade} small /> : undefined}
         />
         <View style={s.readyBody}>
           <View style={s.readyTop}>
-            {timeChip}
+            {/* Grade beside the clock — TopBar's side slot is too narrow for it. */}
+            <View style={s.readyMeta}>
+              {!!grade && <GradePill grade={grade} />}
+              {timeChip}
+            </View>
             <Text style={s.countNum}>{attempts.length}</Text>
             <Text style={s.countLabel}>
               attempt{attempts.length !== 1 ? "s" : ""}
@@ -503,9 +507,18 @@ const s = StyleSheet.create({
   infoPill: { backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   infoPillText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
 
-  gradeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  gradeOption: { width: "30%", flexGrow: 1, paddingVertical: 18, borderRadius: 14, borderWidth: 2, alignItems: "center" },
-  gradeOptionText: { fontSize: 16, fontWeight: "800" },
+  // Same chips as the 4×4 / constraint-warmup grade pickers.
+  gradeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  gradeChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  gradeDot: {
+    width: 10, height: 10, borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.45)",
+  },
+  gradeChipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
 
   gradePill: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5, alignSelf: "center" },
   gradePillSmall: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10 },
@@ -513,13 +526,14 @@ const s = StyleSheet.create({
 
   timeChip: {
     flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "center",
-    backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 10,
+    backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
   },
   timeChipUrgent: { backgroundColor: C.red },
   timeChipText: { fontSize: 20, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
 
   readyBody: { flex: 1, alignItems: "center", justifyContent: "space-evenly", paddingHorizontal: 24 },
   readyTop: { alignItems: "center" },
+  readyMeta: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   countNum: { fontSize: 64, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   countLabel: { fontSize: 15, color: C.textSecondary, marginTop: -4 },
   bigButton: {
