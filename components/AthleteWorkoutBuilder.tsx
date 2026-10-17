@@ -36,7 +36,7 @@ import {
 } from "react-native"
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Per-athlete workout builder (big screen). Two card panes: the workout (left)
 // and the available blocks (right). Saving creates a protocol and assigns it to
@@ -505,12 +505,17 @@ export function AthleteWorkoutBuilder({
         </View>
       </View>
 
-      {/* Narrow: block picker as a full-screen sheet */}
+      {/* Narrow: block picker as a full-screen sheet. The <Modal> is its own
+          native window, so it needs its own SafeAreaProvider — otherwise the
+          picker's SafeAreaView gets 0 insets and its header (incl. the back
+          button) sits under the status bar, untappable. */}
       {!wide && (
         <Modal visible={pickerOpen} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setPickerOpen(false)}>
-          <SCLibraryContext.Provider value={null}>
-            <BlockPickerModal onAdd={(b) => { addBlock(b); setPickerOpen(false) }} onClose={() => setPickerOpen(false)} />
-          </SCLibraryContext.Provider>
+          <SafeAreaProvider>
+            <SCLibraryContext.Provider value={null}>
+              <BlockPickerModal onAdd={(b) => { addBlock(b); setPickerOpen(false) }} onClose={() => setPickerOpen(false)} />
+            </SCLibraryContext.Provider>
+          </SafeAreaProvider>
         </Modal>
       )}
 

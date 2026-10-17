@@ -41,7 +41,8 @@ export interface Attempt {
   fallReasons?: string[]  // FallReason keys tagged while resting
   videoId?: string        // `videos` row id of the clip filmed on this attempt
   reviewClip?: boolean    // filmed because the app asked (for the coach to review)
-  pbv?: number            // 2 = logged by the v2 runtime
+  reviewPrompted?: boolean // logging this one raised the "film your next attempt" prompt
+  pbv?: number           // 2 = logged by the v2 runtime
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -235,7 +236,7 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
   }, [currentBlockIndex])
 
   const logAttempt = useCallback(
-    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation, fallReasons, videoId, reviewClip, pbv }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
+    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation, fallReasons, videoId, reviewClip, reviewPrompted, pbv }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
       if (status !== "running" || !currentBlock) return
 
       const newAttempt: Attempt = {
@@ -252,6 +253,7 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
         ...(fallReasons ? { fallReasons } : {}),
         ...(videoId ? { videoId } : {}),
         ...(reviewClip ? { reviewClip } : {}),
+        ...(reviewPrompted ? { reviewPrompted } : {}),
         ...(pbv ? { pbv } : {}),
         blockIndex: currentBlockIndex,
         type: currentBlock.type,

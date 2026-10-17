@@ -124,6 +124,8 @@ interface Props {
   onUpdated: (session: SessionRow) => void
   // Coach viewing an athlete: project clips open with feedback recording.
   canGiveFeedback?: boolean
+  // Coach: a logged S&C exercise opens its progress (exerciseProgress).
+  onOpenExercise?: (name: string) => void
 }
 
 // ─── Project bouldering v2 view ───────────────────────────────────────────────
@@ -250,7 +252,7 @@ function isProgression(sc: any, prescribed: any | null): boolean {
   return !!prescribed && !!sc.exerciseId && sc.exerciseId !== prescribed.exerciseId
 }
 
-function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+function ScBlockView({ block, attempts, onOpenExercise }: { block: any; attempts: any[]; onOpenExercise?: (name: string) => void }) {
   const exercises: any[] = block.exercises ?? []
 
   // Group scData entries by round number (1-indexed, as logged by StrengthConditioningBlock)
@@ -313,7 +315,14 @@ function ScBlockView({ block, attempts }: { block: any; attempts: any[] }) {
                 return (
                 <View key={i} style={styles.scLogRow}>
                   <View style={styles.scLogNameRow}>
-                    <Text style={styles.scLogName}>{sc.exerciseName}</Text>
+                    {onOpenExercise && sc.exerciseName ? (
+                      <Pressable onPress={() => onOpenExercise(sc.exerciseName)} hitSlop={4} style={styles.scLogLink}>
+                        <Text style={[styles.scLogName, styles.scLogNameLink]}>{sc.exerciseName}</Text>
+                        <Ionicons name="trending-up" size={12} color={C.green} />
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.scLogName}>{sc.exerciseName}</Text>
+                    )}
                     {!!sc.swappedFrom && (
                       <View style={[styles.levelUpBadge, styles.swapBadge]}>
                         <Ionicons name="swap-horizontal" size={10} color={C.yellow} />
@@ -521,7 +530,7 @@ function AttemptStatusRow({
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdated, canGiveFeedback }: Props) {
+export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdated, canGiveFeedback, onOpenExercise }: Props) {
   const [editingId, setEditingId]                   = useState<string | null>(null)
   const [editedBlocks, setEditedBlocks]             = useState<EditableBlock[]>([])
   const [attemptsByKey, setAttemptsByKey]           = useState<Record<string, any[]>>({})
@@ -827,7 +836,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                         {coached ? (
                           <CoachedBlockView blockType={block.blockType} attempts={blockAttempts} />
                         ) : block.blockType === "strength_conditioning" ? (
-                          <ScBlockView block={block.block} attempts={blockAttempts} />
+                          <ScBlockView block={block.block} attempts={blockAttempts} onOpenExercise={onOpenExercise} />
                         ) : block.blockType === "free_session" ? (
                           <FreeSessionBlockView block={block.block} attempts={blockAttempts} />
                         ) : block.blockType === "project_bouldering" && blockAttempts.some((a) => a.pbv === PROJECT_V2) ? (
@@ -1130,6 +1139,8 @@ const styles = StyleSheet.create({
   scLogRow: { gap: 2, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: C.border },
   scLogNameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   scLogName: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
+  scLogLink: { flexDirection: "row", alignItems: "center", gap: 4 },
+  scLogNameLink: { color: C.green, textDecorationLine: "underline" },
   swapBadge: { backgroundColor: C.yellow + "22" },
   levelUpBadge: {
     flexDirection: "row", alignItems: "center", gap: 3,

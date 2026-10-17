@@ -296,6 +296,23 @@ export async function getSessionsByUserId(userId: string): Promise<SessionRow[]>
   return listAllRows<SessionRow>(SESSION_TABLE, [Query.equal("userId", userId), Query.orderDesc("$createdAt")])
 }
 
+// Every user's sessions since `sinceIso` (coach dashboard), newest first.
+// Skips the heavy `protocol` JSON (comes back as ""); `attempts` stays — it
+// dates the session (sessionLocalDate).
+export async function listRecentSessions(sinceIso: string): Promise<SessionRow[]> {
+  const base = [Query.greaterThanEqual("$createdAt", sinceIso), Query.orderDesc("$createdAt")]
+  // userId is a relationship: selecting it needs "userId.$id" and comes back
+  // as an object — flattened to the id like an unselected read returns it.
+  const columns = ["$id", "$createdAt", "userId.$id", "attempts", "protocolId", "planId", "planIndex"]
+  try {
+    const rows = await listAllRows<any>(SESSION_TABLE, [...base, Query.select(columns)])
+    return rows.map((r) => ({ ...r, userId: r.userId?.$id ?? r.userId, protocol: r.protocol ?? "" }))
+  } catch {
+    // e.g. the link columns don't exist yet — select fails on unknown columns
+    return listAllRows<SessionRow>(SESSION_TABLE, base)
+  }
+}
+
 export async function getSessions(): Promise<SessionRow[]> {
   const user = await account.get()
   return listAllRows<SessionRow>(SESSION_TABLE, [Query.equal("userId", user.$id), Query.orderDesc("$createdAt")])
@@ -416,6 +433,15 @@ export async function getActiveTrainingPlan(athleteId: string): Promise<Training
     Query.orderDesc("$createdAt"),
   ])
   return rows[0] ? toTrainingPlan(rows[0]) : null
+}
+
+// Every athlete's active plan (coach dashboard), newest first per athlete.
+export async function listActivePlans(): Promise<TrainingPlanRow[]> {
+  const rows = await listAllRows<any>(TRAINING_PLANS_TABLE, [
+    Query.equal("status", "active"),
+    Query.orderDesc("$createdAt"),
+  ])
+  return rows.map(toTrainingPlan)
 }
 
 // Full history (active + archived), newest first.
@@ -591,13 +617,11 @@ export async function deleteAthlete(userId: string): Promise<void> {
   })
 }
 
+// Every user (coaches train too, so no role filter), by name. Paginated —
+// a single listRows stops at 25.
 export async function getAthletes(): Promise<AppUser[]> {
-  const result = await tablesDB.listRows({
-    databaseId: DATABASE_ID,
-    tableId: USERS_TABLE,
-    //queries: [Query.equal("role", "athlete")],
-  })
-  return result.rows as unknown as AppUser[]
+  const rows = await listAllRows<AppUser>(USERS_TABLE)
+  return rows.sort((a, b) => (a.username ?? "").localeCompare(b.username ?? ""))
 }
 
 export async function assignProtocol(userId: string, protocolId: string): Promise<void> {
@@ -688,6 +712,14 @@ export async function createProtocol(
 }
 
 // Workouts built from a training plan (incl. split-off S&C ones), oldest first.
+// Every athlete's homework (coach dashboard), newest first.
+export async function listAllHomework(): Promise<ProtocolRow[]> {
+  return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [
+    Query.equal("planPart", "homework"),
+    Query.orderDesc("$createdAt"),
+  ])
+}
+
 export async function listPlanWorkouts(planId: string): Promise<ProtocolRow[]> {
   return listAllRows<ProtocolRow>(PROTOCOLS_TABLE, [Query.equal("planId", planId), Query.orderAsc("$createdAt")])
 }
