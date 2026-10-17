@@ -4,7 +4,8 @@
 
 import assert from "node:assert/strict"
 import {
-  canMoveSlot, daysToMove, defaultTrainingDays, firstOpenDay, parseTrainingTime, planReminders, schedulePlan,
+  canMoveSlot, daysToMove, defaultTrainingDays, firstOpenDay, homeworkBusyDays, parseTrainingTime, planReminders,
+  scheduleFor, schedulePlan,
   type ScheduleInput,
 } from "@/utils/planSchedule"
 
@@ -138,3 +139,20 @@ console.log("all plan schedule tests passed")
 }
 
 console.log("all plan schedule reminder tests passed")
+
+// ─── From the rows ───────────────────────────────────────────────────────────
+{
+  const homework = [
+    { $id: "a", scheduledFor: new Date(2026, 9, 20, 18).toISOString() },
+    { $id: "b", scheduledFor: new Date(2026, 9, 22, 18).toISOString(), homeworkStatus: "cant_attend" as const },
+    { $id: "c", scheduledFor: new Date(2026, 9, 27, 18).toISOString() },
+    { $id: "d", scheduledFor: null },
+  ]
+  const busy = homeworkBusyDays(homework, [{ protocolId: "c" }])
+  assert.deepEqual([...busy], ["2026-10-20"])
+  const plan = { windowStart: "2026-10-19", windowEnd: "2026-11-29", trainingDays: [2, 4], trainingTime: null, scheduleOverrides: {} }
+  const s = scheduleFor(plan, new Map(), homework, [{ protocolId: "c" }], new Date(2026, 9, 19, 8))
+  assert.deepEqual(s.slice(0, 2).map((x) => x.date), ["2026-10-22", "2026-10-27"])
+}
+
+console.log("all plan schedule row tests passed")

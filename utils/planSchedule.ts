@@ -214,6 +214,66 @@ export function daysToMove(input: ScheduleInput, index: number): string[] {
   return out
 }
 
+// ─── From the rows ───────────────────────────────────────────────────────────
+
+// The parts of a training plan the scheduler reads (TrainingPlanRow has them all).
+export interface SchedulePlan {
+  windowStart: string
+  windowEnd: string
+  trainingDays: number[] | null
+  trainingTime: string | null
+  scheduleOverrides: Record<number, string>
+}
+
+export interface ScheduleHomework {
+  $id: string
+  scheduledFor?: string | null
+  homeworkStatus?: "cant_attend" | null
+}
+
+// Days with homework still to do on them: picked, not "can't attend", no
+// session started from it yet.
+export function homeworkBusyDays(homework: ScheduleHomework[], sessions: { protocolId?: string | null }[]): Set<string> {
+  return new Set(
+    homework
+      .filter((hw) => hw.scheduledFor && hw.homeworkStatus !== "cant_attend" && !sessions.some((s) => s.protocolId === hw.$id))
+      .map((hw) => localDateStr(new Date(hw.scheduledFor!))),
+  )
+}
+
+// The plan's schedule as of `now`, from its row, what's done
+// (donePlanWorkouts) and the athlete's homework — what the Plan page and the
+// coach's cards show.
+export function scheduleFor(
+  plan: SchedulePlan,
+  done: Map<number, string>,
+  homework: ScheduleHomework[],
+  sessions: { protocolId?: string | null }[],
+  now: Date,
+): ScheduledSlot[] {
+  return schedulePlan(scheduleInputFor(plan, done, homework, sessions, now))
+}
+
+export function scheduleInputFor(
+  plan: SchedulePlan,
+  done: Map<number, string>,
+  homework: ScheduleHomework[],
+  sessions: { protocolId?: string | null }[],
+  now: Date,
+): ScheduleInput {
+  return {
+    windowStart: plan.windowStart,
+    windowEnd: plan.windowEnd,
+    trainingDays: plan.trainingDays,
+    trainingTime: plan.trainingTime,
+    done,
+    overrides: plan.scheduleOverrides ?? {},
+    busyDays: homeworkBusyDays(homework, sessions),
+    today: localDateStr(now),
+    now,
+  }
+}
+
 // ─── Reminders ───────────────────────────────────────────────────────────────
 
 export interface PlanReminder {
