@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  normalizeProjectBlock, resumedBlockStart, shouldPromptReviewClip, summarizeProjectAttempts,
+  normalizeProjectBlock, resumedBlockStart, reviewPromptHistory, shouldPromptReviewClip, summarizeProjectAttempts,
   type ReviewPromptState,
 } from "@/utils/progression/projectBouldering"
 
@@ -98,6 +98,28 @@ assert.equal(shouldPromptReviewClip({ ...base, attemptNumber: 6, promptsThisBloc
 assert.equal(shouldPromptReviewClip({ ...base, secondsLeft: 240 }, low), false)
 assert.equal(shouldPromptReviewClip({ ...base, secondsLeft: 241 }, low), true)
 assert.equal(shouldPromptReviewClip({ ...base, secondsLeft: null }, low), true)
+
+// ── reviewPromptHistory ──
+// Read from the attempts, so it survives re-entering the block / resuming.
+assert.deepEqual(reviewPromptHistory([]), { promptsThisBlock: 0, lastPromptAttempt: null })
+assert.deepEqual(
+  reviewPromptHistory([{}, { reviewPrompted: true }, {}, {}, { reviewPrompted: true }, {}]),
+  { promptsThisBlock: 2, lastPromptAttempt: 5 },
+)
+// Undoing the attempt that raised a prompt gives it back.
+const prompted = [{}, {}, { reviewPrompted: true }]
+assert.deepEqual(reviewPromptHistory(prompted.slice(0, -1)), { promptsThisBlock: 0, lastPromptAttempt: null })
+// A remounted block keeps its caps: 2 prompts already → no third, however lucky.
+const remounted = [{}, { reviewPrompted: true }, {}, {}, { reviewPrompted: true }, {}, {}, {}]
+assert.equal(
+  shouldPromptReviewClip({ ...base, attemptNumber: remounted.length + 1, ...reviewPromptHistory(remounted) }, low),
+  false,
+)
+// …and its cooldown: prompt on attempt 2, now logging 4.
+assert.equal(
+  shouldPromptReviewClip({ ...base, attemptNumber: 4, ...reviewPromptHistory([{}, { reviewPrompted: true }, {}]) }, low),
+  false,
+)
 
 // ── resumedBlockStart ──
 assert.equal(resumedBlockStart([]), null)

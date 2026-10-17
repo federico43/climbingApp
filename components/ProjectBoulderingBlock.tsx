@@ -8,7 +8,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { BoulderLevelOptions, colourIndex, colourLabel, shiftColour } from "@/utils/boulderColours"
 import {
   FALL_REASONS, fallReasonLabel, normalizeProjectBlock, PROJECT_V2, resumedBlockStart,
-  shouldPromptReviewClip, summarizeProjectAttempts,
+  reviewPromptHistory, shouldPromptReviewClip, summarizeProjectAttempts,
 } from "@/utils/progression/projectBouldering"
 import { saveVideoLocally } from "@/utils/saveVideo"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
@@ -68,11 +68,11 @@ export function ProjectBoulderingBlock({
   )
   const [overtime, setOvertime] = useState(false)   // "One more attempt" after time's up
 
-  // Review-clip prompt state (per block visit).
+  // Review-clip prompt: the per-block caps come from the attempts themselves
+  // (reviewPromptHistory); only the unanswered card and an accepted "film the
+  // next one" live here.
   const [promptVisible, setPromptVisible] = useState(false)
   const [recordNext, setRecordNext] = useState(false)
-  const promptsRef = useRef(0)
-  const lastPromptRef = useRef<number | null>(null)
   const [showCamera, setShowCamera] = useState(false)
   const filmingReviewRef = useRef(false)
 
@@ -118,24 +118,22 @@ export function ProjectBoulderingBlock({
 
   function record(extra: { videoId?: string; reviewClip?: boolean } = {}) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {})
-    const attemptNumber = attempts.length + 1
-    logAttempt({ success: false, level: grade, fallReasons: [], pbv: PROJECT_V2, ...extra })
-    if (overtime) setOvertime(false)   // the one extra attempt is spent
     const ask = shouldPromptReviewClip({
       enabled: settings.reviewPrompts,
-      attemptNumber,
+      attemptNumber: attempts.length + 1,
       sentInBlock: summary.sent,
       clipsThisWorkout: allAttempts.filter((a) => a.reviewClip).length + (extra.reviewClip ? 1 : 0),
-      promptsThisBlock: promptsRef.current,
-      lastPromptAttempt: lastPromptRef.current,
+      ...reviewPromptHistory(attempts),
       secondsLeft: startedAt == null ? null : secondsLeft,
       restTime: settings.restTime,
-      pendingRecord: recordNext,
+      // The review clip being logged right now settles the pending one.
+      pendingRecord: recordNext && !extra.reviewClip,
     }, Math.random)
-    if (ask) {
-      promptsRef.current += 1
-      lastPromptRef.current = attemptNumber
-    }
+    logAttempt({
+      success: false, level: grade, fallReasons: [], pbv: PROJECT_V2, ...extra,
+      ...(ask ? { reviewPrompted: true } : {}),
+    })
+    if (overtime) setOvertime(false)   // the one extra attempt is spent
     setPromptVisible(ask)
     startRestTimer(settings.restTime)
     setPhase("rest")
@@ -166,7 +164,10 @@ export function ProjectBoulderingBlock({
     updateLastAttempt?.({ success: sent, fallReasons: [] })
     if (sent) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
-      if (!recordNext) setPromptVisible(false)
+      // Sent: no more review clips in this block — drop the card, and an
+      // already-accepted "film the next one" with it.
+      setPromptVisible(false)
+      setRecordNext(false)
     }
   }
 
@@ -178,11 +179,9 @@ export function ProjectBoulderingBlock({
 
   function undo() {
     undoLastAttempt?.()
-    if (lastPromptRef.current === attempts.length) {
-      // The prompt this attempt raised goes with it.
-      promptsRef.current = Math.max(0, promptsRef.current - 1)
-      lastPromptRef.current = null
-    }
+    // The prompt this attempt raised goes with it (its count lives on the
+    // attempt), and so does a "film the next one" accepted from it.
+    if (last?.reviewPrompted) setRecordNext(false)
     setPromptVisible(false)
     setPhase("ready")
   }
@@ -193,6 +192,25 @@ export function ProjectBoulderingBlock({
       <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.bg }]}>
         {secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
       </Text>
+    </View>
+  )
+
+  // Shown on rest and, if rest ran out (or was skipped) before it was
+  // answered, on ready too — it has already used up one of the block's prompts.
+  const promptCard = promptVisible && !recordNext && (
+    <View style={s.promptCard}>
+      <Ionicons name="videocam" size={22} color={C.yellow} />
+      <View style={{ flex: 1, gap: 10 }}>
+        <Text style={s.promptText}>Film your next attempt so your coach can review it?</Text>
+        <View style={s.promptActions}>
+          <Pressable style={s.promptYes} onPress={() => { setRecordNext(true); setPromptVisible(false) }}>
+            <Text style={s.promptYesText}>Sure</Text>
+          </Pressable>
+          <Pressable onPress={() => setPromptVisible(false)} hitSlop={8}>
+            <Text style={s.linkMuted}>Not now</Text>
+          </Pressable>
+        </View>
+      </View>
     </View>
   )
 
@@ -283,6 +301,8 @@ export function ProjectBoulderingBlock({
                 <Text style={s.linkMuted}>Don&apos;t film it</Text>
               </Pressable>
             </View>
+          ) : promptVisible ? (
+            promptCard
           ) : (
             <Pressable onPress={() => film(false)} hitSlop={8} style={s.filmLink}>
               <Ionicons name="videocam-outline" size={16} color={C.textSecondary} />
@@ -347,22 +367,7 @@ export function ProjectBoulderingBlock({
             </>
           )}
 
-          {promptVisible && !recordNext && (
-            <View style={s.promptCard}>
-              <Ionicons name="videocam" size={22} color={C.yellow} />
-              <View style={{ flex: 1, gap: 10 }}>
-                <Text style={s.promptText}>Film your next attempt so your coach can review it?</Text>
-                <View style={s.promptActions}>
-                  <Pressable style={s.promptYes} onPress={() => { setRecordNext(true); setPromptVisible(false) }}>
-                    <Text style={s.promptYesText}>Sure</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setPromptVisible(false)} hitSlop={8}>
-                    <Text style={s.linkMuted}>Not now</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          )}
+          {promptCard}
           {recordNext && (
             <Text style={s.hint}>📹 Your next attempt will be filmed for your coach.</Text>
           )}
@@ -552,7 +557,7 @@ const s = StyleSheet.create({
   chipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
   chipTextOn: { color: "#fff", fontWeight: "800" },
   promptCard: {
-    flexDirection: "row", gap: 12, padding: 16, borderRadius: 16,
+    flexDirection: "row", gap: 12, padding: 16, borderRadius: 16, alignSelf: "stretch",
     backgroundColor: C.surface, borderWidth: 1, borderColor: C.yellow,
   },
   promptText: { fontSize: 15, fontWeight: "700", color: C.textPrimary, lineHeight: 21 },

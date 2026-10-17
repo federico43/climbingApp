@@ -104,7 +104,7 @@ export function summarizeProjectAttempts(attempts: ProjectAttemptLike[]): Projec
 
 // ─── Random "film the next attempt" prompt ────────────────────────────────────
 
-export const REVIEW_PROMPT_PROBABILITY = 0.3
+export const REVIEW_PROMPT_PROBABILITY = 1 // TEMP-VERIFY
 export const REVIEW_CLIPS_PER_WORKOUT = 2
 export const REVIEW_PROMPTS_PER_BLOCK = 2
 export const REVIEW_PROMPT_COOLDOWN = 3   // attempts between two prompts
@@ -133,6 +133,25 @@ export function shouldPromptReviewClip(s: ReviewPromptState, rand: () => number)
   if (s.lastPromptAttempt != null && s.attemptNumber - s.lastPromptAttempt < REVIEW_PROMPT_COOLDOWN) return false
   if (s.secondsLeft != null && s.secondsLeft <= s.restTime + 60) return false
   return rand() < REVIEW_PROMPT_PROBABILITY
+}
+
+// The block's prompt history, read from its attempts (each one that raised a
+// prompt carries `reviewPrompted`) rather than kept in component state — so it
+// survives leaving and re-entering the block or resuming the workout, and
+// undoing an attempt takes its prompt with it. Attempt numbers are 1-based
+// positions in the block, the same numbering `attemptNumber` uses.
+export function reviewPromptHistory(attempts: { reviewPrompted?: boolean }[]): {
+  promptsThisBlock: number
+  lastPromptAttempt: number | null
+} {
+  let promptsThisBlock = 0
+  let lastPromptAttempt: number | null = null
+  attempts.forEach((a, i) => {
+    if (!a.reviewPrompted) return
+    promptsThisBlock += 1
+    lastPromptAttempt = i + 1
+  })
+  return { promptsThisBlock, lastPromptAttempt }
 }
 
 // When the block's clock started, rebuilt from its attempts when a workout is

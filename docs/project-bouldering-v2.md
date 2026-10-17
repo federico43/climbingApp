@@ -195,7 +195,7 @@ Función pura `shouldPromptReviewClip(state, rand)` (testeada):
 state = {
   enabled: boolean            // block.reviewPrompts !== false
   attemptNumber: number       // nº del intento recién registrado (1-based)
-  justSent: boolean           // el intento recién registrado es "Sent!"
+  sentInBlock: boolean        // ya hay un "Sent!" en este bloque (el intento recién registrado aún no: se marca en el rest)
   clipsThisWorkout: number    // clips de revisión ya grabados en TODO el entreno
   promptsThisBlock: number    // prompts mostrados en este bloque (aceptados o no)
   lastPromptAttempt: number | null
@@ -209,7 +209,7 @@ Regla — se muestra si **todas** se cumplen y `rand() < 0.3`:
 
 - `enabled` y no `pendingRecord`;
 - `attemptNumber >= 2` (el 1º es de lectura/calentamiento del grado);
-- no `justSent` en este bloque (si ya encadenó, el siguiente intento es menos útil);
+- no `sentInBlock` (si ya encadenó, el siguiente intento es menos útil);
 - `clipsThisWorkout < 2` — **máximo 2 clips de revisión por entreno**;
 - `promptsThisBlock < 2` — como mucho 2 prompts por bloque (aunque los rechace);
 - `lastPromptAttempt == null || attemptNumber - lastPromptAttempt >= 3` (enfriamiento);
@@ -218,11 +218,21 @@ Regla — se muestra si **todas** se cumplen y `rand() < 0.3`:
 Probabilidad 0.3 por intento elegible ⇒ en un bloque de ~8 intentos sale ~1–2
 veces de media; con los topes nunca más de 2 por bloque ni 2 clips por entreno.
 Se evalúa al registrar el intento y la tarjeta aparece en la pantalla de rest.
+Si el rest se acaba (o se salta) sin respuesta, la tarjeta sigue en ready —en
+lugar del enlace "Film this one"— hasta que conteste o pulse Attempt: el prompt
+ya cuenta para el tope.
+
+`promptsThisBlock` y `lastPromptAttempt` **no** viven en estado del componente:
+el intento que lanza el prompt se guarda con `reviewPrompted: true` y
+`reviewPromptHistory(attempts)` los reconstruye. Así los topes y el
+enfriamiento sobreviven a salir y volver al bloque o reanudar el entreno, y
+"Undo attempt" devuelve el prompt de ese intento (y cancela un "Sure" dado a él).
 
 Si acepta ("Sure"): `recordNext = true` → en ready el botón grande es "Record
 attempt" → `VideoRecorder` → al terminar: `saveVideoLocally(..., { rowId })` con
 título "Review request · …", se registra el intento con `videoId` y
-`reviewClip: true`, y entra en rest. "Don't record" cancela el pendiente.
+`reviewClip: true`, y entra en rest. "Don't record" cancela el pendiente. Marcar "Sent!" también lo cancela (y
+oculta la tarjeta): tras encadenar no se piden más clips en el bloque.
 "Not now" solo consume el prompt.
 
 ## 7. Chips finales de razón de caída (5)
