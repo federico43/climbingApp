@@ -150,13 +150,14 @@ export function AthleteDetail({
         </View>
         <Pressable
           style={card.outlineBtn}
+          accessibilityLabel="Log a session"
           onPress={() => router.push({
             pathname: "/(tabs)/(buttonTabs)/workout-log",
             params: { athleteId: athlete.$id, athleteName: athlete.username },
           })}
         >
-          <Ionicons name="checkmark-circle-outline" size={15} color={C.green} />
-          <Text style={card.outlineBtnText}>Log session</Text>
+          <Ionicons name="checkmark-circle-outline" size={wide ? 15 : 18} color={C.green} />
+          {wide && <Text style={card.outlineBtnText}>Log session</Text>}
         </Pressable>
       </View>
 
