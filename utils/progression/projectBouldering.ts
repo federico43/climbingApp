@@ -104,7 +104,7 @@ export function summarizeProjectAttempts(attempts: ProjectAttemptLike[]): Projec
 
 // ─── Random "film the next attempt" prompt ────────────────────────────────────
 
-export const REVIEW_PROMPT_PROBABILITY = 1 // TEMP-VERIFY
+export const REVIEW_PROMPT_PROBABILITY = 0.3
 export const REVIEW_CLIPS_PER_WORKOUT = 2
 export const REVIEW_PROMPTS_PER_BLOCK = 2
 export const REVIEW_PROMPT_COOLDOWN = 3   // attempts between two prompts
