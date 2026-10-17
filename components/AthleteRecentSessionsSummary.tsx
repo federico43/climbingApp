@@ -13,7 +13,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 // Grouped by calendar day, not by session row, since an athlete can log
 // more than one session on the same day.
 
-function formatBlockType(type: string): string {
+export function formatBlockType(type: string): string {
   return (type ?? "").split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join(" ")
 }
 
@@ -27,6 +27,11 @@ function sessionTimestamp(session: SessionRow, attempts: any[]): number {
 
 function dateKeyOf(session: SessionRow, attempts: any[]): string {
   return new Date(sessionTimestamp(session, attempts)).toISOString().slice(0, 10)
+}
+
+// The day a session is grouped under (same key as groupByDay / SessionDetailModal).
+export function sessionDayKey(session: SessionRow): string {
+  return dateKeyOf(session, parseAttempts(session))
 }
 
 function dateLabelOf(dateKey: string): string {
@@ -70,7 +75,7 @@ function scSummaryLines(scSets: any[]): string[] {
   })
 }
 
-interface SummaryBlock {
+export interface SummaryBlock {
   blockIndex: number
   blockName: string
   blockType: string
@@ -83,13 +88,13 @@ interface SummaryBlock {
   total: number
 }
 
-interface SessionSummary {
+export interface SessionSummary {
   id: string
   timeLabel: string
   blocks: SummaryBlock[]
 }
 
-interface DaySummary {
+export interface DaySummary {
   dateKey: string
   dateLabel: string
   sessions: SessionSummary[]
@@ -137,7 +142,7 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
 
 // Groups sessions by calendar day and returns the most recent `dayCount`
 // days, each with its session(s) sorted earliest-first.
-function groupByDay(sessions: SessionRow[], dayCount: number): DaySummary[] {
+export function groupByDay(sessions: SessionRow[], dayCount: number): DaySummary[] {
   const byDay = new Map<string, { session: SessionRow; attempts: any[] }[]>()
   for (const session of sessions) {
     const attempts = parseAttempts(session)
