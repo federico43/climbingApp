@@ -11,6 +11,8 @@ import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
+import { movePlanWorkout, reconcilePlanReminders, saveTrainingDays } from "@/services/planSchedule"
+import { TrainingDaysPicker, weekdaysLabel } from "@/components/TrainingDaysPicker"
 import {
   getActiveTrainingPlan,
   BlockRow,
@@ -41,6 +43,17 @@ import {
   WORKOUTS_PER_WEEK,
   workoutSpec,
 } from "@/utils/planRotation"
+import { shortDay } from "@/utils/homework"
+import {
+  daysToMove,
+  parseTrainingTime,
+  schedulePlan,
+  scheduleInputFor,
+  trainingDaysOf,
+  type ScheduledSlot,
+  type ScheduleInput,
+  type ScheduleState,
+} from "@/utils/planSchedule"
 import { FOCUS_LABEL } from "@/utils/scProgression"
 import {
   buildDurationHistory,
@@ -54,6 +67,7 @@ import { useFocusEffect } from "@react-navigation/native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -84,7 +98,9 @@ interface Slot {
   kicker: string           // main type, e.g. "Power endurance"
   kickerColor: string
   title: string            // the built workout's name, else the main block
-  when: string             // "Done 25 Sep" / "Week 3"
+  when: string             // "Done 25 Sep" / "Tue 21 Oct" / "Week 3"
+  date: string | null      // the day it was done, or the scheduler's day
+  scheduleState: ScheduleState
   summary: WorkoutSummary | null
   workout: ProtocolRow | null
 }
@@ -255,36 +271,27 @@ function PlanBody({
 
   const history = useMemo(() => buildDurationHistory(sessions), [sessions])
 
+  // Homework rides on the athlete's templates (planPart "homework"); its
+  // picked days show on the timeline like events, and keep plan workouts off.
+  const homework = templates.filter((t) => t.planPart === "homework")
+  // A day for every workout still to do (utils/planSchedule.ts).
+  const scheduleInput = scheduleInputFor(plan, done, homework, sessions, new Date())
+  const schedule = schedulePlan(scheduleInput)
+
   const slots: Slot[] = []
   for (let n = 1; n <= PLAN_WORKOUTS; n++) {
-    const workout = builtBySlot.get(n) ?? null
-    const spec = plan.focus
-      ? workoutSpec({ ...plan, focus: plan.focus }, n, built, today)
-      : null
-    const summary = workout
-      ? summarizeBlocks(parseBlocks(workout), history)
-      : spec && plan.focus
-        ? summarizeSpec(spec, { ...plan, focus: plan.focus }, library, history)
-        : null
-    const doneOn = done.get(n)
-    const status: SlotStatus = doneOn ? "done" : workout && !over ? "ready" : "upcoming"
-    const mainPhase = summary?.phases.find((p) => p.key === "main")
-    slots.push({
-      index: n,
-      status,
-      mainType: spec?.mainType ?? (workout ? builtMainType(n, workout.blocks) : mainTypeFor(n, plan.startType)),
-      mainBlock: spec?.mainBlock.name ?? mainPhase?.title ?? "",
-      week: Math.ceil(n / WORKOUTS_PER_WEEK),
-      kicker: spec ? PLAN_FOCUS_LABEL[spec.mainType] : `Workout ${n}`,
-      kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : C.textSecondary,
-      title: workout?.name ?? mainPhase?.title ?? `Workout ${n}`,
-      when: doneOn
-        ? `Done ${shortDate(doneOn)}`
-        : status === "ready" ? "Ready" : `Week ${Math.ceil(n / WORKOUTS_PER_WEEK)}`,
-      summary,
-      workout,
-    })
+    slots.push(buildSlot(n, { plan, builtBySlot, built, today, over, done, schedule, history, library }))
   }
+  // Reminders for the coming week's workouts follow the schedule.
+  const reminderLabels: Record<number, string> = {}
+  for (const s of slots) reminderLabels[s.index] = `Workout ${s.index} · ${s.kicker}`
+  const reminderKey = over ? "" : JSON.stringify([schedule, plan.trainingTime, reminderLabels])
+  useEffect(() => {
+    if (!reminderKey) return
+    const [slotsNow, time, labels] = JSON.parse(reminderKey)
+    reconcilePlanReminders(slotsNow, time, labels)
+  }, [reminderKey])
+
   // Shown by default: the one to do next (ready, else the first upcoming).
   const featured = (slots.find((s) => s.status === "ready") ?? slots.find((s) => s.status === "upcoming"))?.index ?? 1
   // A tapped tile opens its detail below the grid (none by default — the
@@ -292,9 +299,6 @@ function PlanBody({
   const [selected, setSelected] = useState<number | null>(null)
   const shown = selected ? slots.find((s) => s.index === selected) ?? null : null
   const { workout: latest, scPart } = pickLatestWorkout(templates)
-  // Homework rides on the athlete's templates (planPart "homework"); its
-  // picked days show on the timeline like events.
-  const homework = templates.filter((t) => t.planPart === "homework")
 
 
   return (
@@ -328,7 +332,9 @@ function PlanBody({
       </View>
 
       {/* ── Timeline: start → end, status, the 6-week day grid ─────────────── */}
-      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} planWorkouts={workouts} />
+
+      {!over && <TrainingDaysCard plan={plan} onSaved={onChanged} />}
 
       {/* ── Workouts ──────────────────────────────────────────────────────── */}
       <View style={styles.card}>
@@ -360,14 +366,69 @@ function PlanBody({
         <WorkoutDetail
           slot={shown}
           isNext={shown.index === featured}
+          planId={plan.$id}
+          scheduleInput={over ? null : scheduleInput}
           onClose={() => setSelected(null)}
           onStart={onStart}
+          onMoved={onChanged}
         />
       )}
       </View>
 
     </>
   )
+}
+
+// One tile of the plan: what workout n is, whether it's done / ready /
+// upcoming, and its day. Kept out of PlanBody: the branching here would
+// otherwise multiply the code paths the hooks lint rule walks.
+function buildSlot(n: number, ctx: {
+  plan: TrainingPlanRow
+  builtBySlot: Map<number, ProtocolRow>
+  built: { planIndex: number; createdAt: string; blocks: string }[]
+  today: string
+  over: boolean
+  done: Map<number, string>
+  schedule: ScheduledSlot[]
+  history: ReturnType<typeof buildDurationHistory>
+  library: BlockRow[]
+}): Slot {
+  const { plan, builtBySlot, built, today, over, done, schedule, history, library } = ctx
+  const workout = builtBySlot.get(n) ?? null
+  const spec = plan.focus
+    ? workoutSpec({ ...plan, focus: plan.focus }, n, built, today)
+    : null
+  const summary = workout
+    ? summarizeBlocks(parseBlocks(workout), history)
+    : spec && plan.focus
+      ? summarizeSpec(spec, { ...plan, focus: plan.focus }, library, history)
+      : null
+  const doneOn = done.get(n)
+  const status: SlotStatus = doneOn ? "done" : workout && !over ? "ready" : "upcoming"
+  const mainPhase = summary?.phases.find((p) => p.key === "main")
+  const planned = schedule[n - 1]
+  const plannedLabel = over || !planned?.date
+    ? `Week ${Math.ceil(n / WORKOUTS_PER_WEEK)}`
+    : shortDay(planned.date)
+  return {
+    index: n,
+    status,
+    mainType: spec?.mainType ?? (workout ? builtMainType(n, workout.blocks) : mainTypeFor(n, plan.startType)),
+    mainBlock: spec?.mainBlock.name ?? mainPhase?.title ?? "",
+    week: Math.ceil(n / WORKOUTS_PER_WEEK),
+    kicker: spec ? PLAN_FOCUS_LABEL[spec.mainType] : `Workout ${n}`,
+    kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : C.textSecondary,
+    title: workout?.name ?? mainPhase?.title ?? `Workout ${n}`,
+    when: doneOn
+      ? `Done ${shortDate(doneOn)}`
+      : !over && planned?.state === "unfit"
+        ? "Won't fit"
+        : status === "ready" ? `Ready · ${plannedLabel}` : plannedLabel,
+    date: doneOn ?? planned?.date ?? null,
+    scheduleState: doneOn ? "done" : planned?.state ?? "unfit",
+    summary,
+    workout,
+  }
 }
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
@@ -502,15 +563,22 @@ function TypeColumns({
 function WorkoutDetail({
   slot,
   isNext,
+  planId,
+  scheduleInput,
   onClose,
   onStart,
+  onMoved,
 }: {
   slot: Slot
   isNext: boolean
+  planId: string
+  scheduleInput: ScheduleInput | null // null once the plan is over
   onClose: () => void
   onStart: (w: ProtocolRow) => void
+  onMoved: () => void
 }) {
   const { summary } = slot
+  const canMove = !!scheduleInput && slot.scheduleState !== "done"
   const color = ADAPTATION_COLOR[slot.mainType]
   const isReady = slot.status === "ready"
   return (
@@ -566,6 +634,157 @@ function WorkoutDetail({
       ) : slot.status === "upcoming" ? (
         <Text style={styles.phaseNote}>Preview — your coach builds the exact workout.</Text>
       ) : null}
+
+      {canMove && (
+        <MoveDay
+          // Reset the picker when another workout is opened.
+          key={slot.index}
+          index={slot.index}
+          planId={planId}
+          current={slot.date}
+          input={scheduleInput!}
+          onMoved={onMoved}
+        />
+      )}
+    </View>
+  )
+}
+
+// The athlete's training days: what the scheduler puts plan workouts on.
+// Saved through the aiProtocol function (the plan row is the coach's).
+function TrainingDaysCard({ plan, onSaved }: { plan: TrainingPlanRow; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [days, setDays] = useState<number[]>(plan.trainingDays ?? [])
+  const [time, setTime] = useState(plan.trainingTime ?? "")
+  const [saving, setSaving] = useState(false)
+  const timeOk = !time.trim() || !!parseTrainingTime(time)
+
+  function start() {
+    setDays(plan.trainingDays ?? [])
+    setTime(plan.trainingTime ?? "")
+    setEditing(true)
+  }
+
+  async function save() {
+    if (!timeOk) return
+    setSaving(true)
+    try {
+      await saveTrainingDays(plan.$id, days, time.trim() || null)
+      setEditing(false)
+      onSaved()
+    } catch (e: any) {
+      Alert.alert("Couldn't save", e?.message ?? "Try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.detailHeadRow}>
+        <Text style={styles.cardTitle}>Training days</Text>
+        {!editing && (
+          <Pressable onPress={start} hitSlop={10}>
+            <Text style={styles.linkText}>Change</Text>
+          </Pressable>
+        )}
+      </View>
+      {editing ? (
+        <>
+          <TrainingDaysPicker
+            windowStart={plan.windowStart}
+            days={days}
+            time={time}
+            onChangeDays={setDays}
+            onChangeTime={setTime}
+          />
+          {!timeOk && <Text style={styles.phaseNote}>Write the time as 18:00.</Text>}
+          <View style={styles.daysActions}>
+            <Pressable onPress={() => setEditing(false)} hitSlop={8} disabled={saving}>
+              <Text style={styles.moveCancel}>Cancel</Text>
+            </Pressable>
+            <ScalePressable style={[styles.daysSave, !timeOk && { opacity: 0.5 }]} onPress={save} disabled={saving || !timeOk}>
+              <Text style={styles.slotStartText}>{saving ? "Saving…" : "Save"}</Text>
+            </ScalePressable>
+          </View>
+        </>
+      ) : (
+        <Text style={styles.workoutsWeek}>
+          {weekdaysLabel(trainingDaysOf(plan))}
+          {plan.trainingTime ? ` · ${plan.trainingTime}` : ""}
+          {plan.trainingDays ? "" : " (default)"}
+        </Text>
+      )}
+    </View>
+  )
+}
+
+// "Move" under a workout still to do: the days it can go on (the scheduler's
+// rules — a rest day either side, 2 a plan week, no homework days), saved
+// through the aiProtocol function; the workouts after it follow.
+function MoveDay({
+  index,
+  planId,
+  current,
+  input,
+  onMoved,
+}: {
+  index: number
+  planId: string
+  current: string | null
+  input: ScheduleInput
+  onMoved: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState<string | null>(null)
+  const days = useMemo(() => (open ? daysToMove(input, index) : []), [open, input, index])
+
+  async function pick(day: string) {
+    if (day === current) { setOpen(false); return }
+    setSaving(day)
+    try {
+      await movePlanWorkout(planId, index, day, shortDay(day))
+      setOpen(false)
+      onMoved()
+    } catch (e: any) {
+      Alert.alert("Couldn't move it", e?.message ?? "Try again.")
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  if (!open) {
+    return (
+      <Pressable style={styles.moveBtn} onPress={() => setOpen(true)} hitSlop={6}>
+        <Ionicons name="calendar-outline" size={15} color={C.textSecondary} />
+        <Text style={styles.moveBtnText}>{current ? "Move to another day" : "Pick a day"}</Text>
+      </Pressable>
+    )
+  }
+  return (
+    <View style={styles.moveBox}>
+      <Text style={styles.phaseLabel}>Move to</Text>
+      {days.length === 0 ? (
+        <Text style={styles.phaseNote}>No other day fits before the plan ends.</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moveDays}>
+          {days.map((d) => (
+            <Pressable
+              key={d}
+              style={[styles.moveDay, d === current && styles.moveDayCurrent]}
+              onPress={() => pick(d)}
+              disabled={saving !== null}
+            >
+              <Text style={[styles.moveDayText, d === current && { color: C.bg }]}>
+                {saving === d ? "…" : shortDay(d)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <Pressable onPress={() => setOpen(false)} hitSlop={6}>
+        <Text style={styles.moveCancel}>Cancel</Text>
+      </Pressable>
     </View>
   )
 }
@@ -664,6 +883,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   slotStartText: { fontSize: 14.5, fontWeight: "800", color: C.bg },
+
+  // Move a workout to another day
+  moveBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
+  moveBtnText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
+  moveBox: { gap: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
+  moveDays: { gap: 6 },
+  moveDay: { backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  moveDayCurrent: { backgroundColor: C.green },
+  moveDayText: { fontSize: 12.5, fontWeight: "700", color: C.textPrimary },
+  moveCancel: { fontSize: 12.5, fontWeight: "600", color: C.textMuted },
+  linkText: { fontSize: 13, fontWeight: "700", color: C.green },
+  daysActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16 },
+  daysSave: { height: 38, paddingHorizontal: 20, borderRadius: 12, backgroundColor: C.green, alignItems: "center", justifyContent: "center" },
 
   // S&C patterns under the focus title
   scBox: { marginTop: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border, gap: 8 },
