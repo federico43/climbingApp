@@ -34,13 +34,16 @@ There are no adaptation targets anymore — the rotation replaced them
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
 | `components/coach/PlanCard.tsx` | Coach: Training plan card — header, progress, next workout, Build (was `AthleteAnalytics.tsx`; see docs/coach-dashboard.md) |
 | `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
+| `utils/planSchedule.ts` | Pure. Weekly scheduler: a day for every plan workout not done yet (§11), moves, reminders |
+| `services/planSchedule.ts` | Athlete: training days / moved workouts through the `aiProtocol` function, local reminders |
+| `components/TrainingDaysPicker.tsx` | Training days + usual time (coach's plan screen, athlete's Plan page) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
 | `app/(tabs)/(buttonTabs)/plan.tsx` | Athlete: Plan page (read-only; the app's home when there's an active plan) |
 | `components/SuggestedWarmupCard.tsx` | Builder: constraint warm-up for hand-built workouts (hidden for plan workouts) |
 | `components/ExerciseForm.tsx` | Exercise editor: "Used for" focuses; no progression for mobility |
 | `components/StrengthConditioningBlock.tsx` | Athlete S&C logging; simple Done card for mobility |
-| `scripts/progression-tests/planWorkout.test.ts`, `constraintWarmup.test.ts`, `scHistory.test.ts`, `planProgress.test.ts`, `workoutSummary.test.ts` | Automated checks (run with `node --import ./scripts/progression-tests/alias-hook.mjs <file>`) |
+| `scripts/progression-tests/planWorkout.test.ts`, `planSchedule.test.ts`, `constraintWarmup.test.ts`, `scHistory.test.ts`, `planProgress.test.ts`, `workoutSummary.test.ts` | Automated checks (run with `node --import ./scripts/progression-tests/alias-hook.mjs <file>`) |
 | `scripts/tag-exercises/tag-exercises.mjs` | One-off: tagged the exercise library with movement patterns (2026-10-04) |
 
 ## 3. Data model (Appwrite)
@@ -58,6 +61,9 @@ There are no adaptation targets anymore — the rotation replaced them
 | `scPatterns` | string (JSON) | `[{ movementType, exerciseIds: [id1, id2?] }]` × 4, in pick order. Fingers has `[]` |
 | `movementTypeFocus` | string (JSON) | Pre-v2 only — read, never written |
 | `startType` | string, optional | Main type of workout 1: `strength` \| `power_endurance` \| `power`. Missing / null = strength. Only written when not strength (or to clear it) |
+| `trainingDays` | string (JSON), optional | Weekdays for the scheduler, `[2,4]` (0 = Sunday). Missing / empty = days 1 and 4 of each plan week (§11) |
+| `trainingTime` | string, optional | Usual time, `"18:00"` — today drops out once it's passed; reminders 1 h before |
+| `scheduleOverrides` | string (JSON), optional | `{ "3": "2026-10-28" }`: workouts the athlete moved by hand. Written only by the `aiProtocol` function |
 
 **`protocol`** (workouts) — plan fields, set only on workouts built from a plan:
 
@@ -372,3 +378,49 @@ balance, fear management, general, test.
   type-check, automated tests and a web build only.
 - **Security (separate task):** `blocks` and `exercises` are readable with
   no login; check sessions / users permissions.
+
+## 11. Weekly schedule
+
+Added 2026-10-17. Every plan workout not done yet gets a day, worked out
+on the fly by `schedulePlan` in `utils/planSchedule.ts` — never stored.
+Only the days the athlete moves by hand are saved
+(`training_plans.scheduleOverrides`). The design doc is
+[Diseño: agendador de entrenamientos semanales](https://claude.ai/code/artifact/925f78ad-203c-429a-9d90-aefa77c6ab2b).
+
+| Rule | Detail |
+| --- | --- |
+| Training days | `trainingDays` (coach's plan screen or the athlete's Plan page). None set → days 1 and 4 of each plan week (a Monday start → Mon, Thu) |
+| Order | Slots go 1 → 12, each on a later day than the one before |
+| Rest | Never two plan workouts on back-to-back days (`MIN_REST_DAYS` = 1) |
+| Capacity | 1 a day, 2 per plan week (`MAX_PER_WEEK` = `WORKOUTS_PER_WEEK`), counting the ones done |
+| Homework | A day with homework scheduled (not done, not "can't attend") takes no plan workout |
+| Done | A done workout stays on the day it was done (`donePlanWorkouts`) |
+| Moved | A day the athlete picked wins while it keeps the rules; the workouts after it follow. A picked day that has passed is dropped |
+| Window | From today (tomorrow once `trainingTime` has passed) or the plan's start, to `windowEnd`. What doesn't fit shows "Won't fit" — the plan still ends at its date |
+
+A missed day isn't stored as missed: the next time the page works the
+schedule out, that workout simply lands on the next free day, and the rest
+move along.
+
+**Screens.** Plan page: each tile shows its day ("Ready · Tue 21 Oct"); a
+workout's detail has **Move to another day** (only days that keep the
+rules, `daysToMove`), and a **Training days** card. Timeline (athlete and
+coach): planned days ringed. Coach's plan card: the next workout's day.
+
+**Writes.** The athlete can't write their coach's `training_plans` row, so
+training days and moves go through the `aiProtocol` function's
+`planSchedule` action (`functions/aiProtocol/README.md`); a move pushes the
+coach. The coach saves training days with the rest of the plan.
+
+**Reminders.** Local, for workouts in the next 7 days: 1 hour before
+`trainingTime`, else 9:00 that morning. Cancelled and rebuilt every time the
+Plan page works the schedule out.
+
+**Appwrite (to do):** add `trainingDays`, `trainingTime` and
+`scheduleOverrides` (optional strings) to `training_plans`, and give the
+function's API key write access to it. Until then, saving training days
+says which column is missing; the defaults still schedule.
+
+**Open:** 2 a week is a fixed cap for now (no catch-up week); homework and
+a plan workout never share a day. Both are constants / one check in
+`utils/planSchedule.ts`. Not tested on a device yet.

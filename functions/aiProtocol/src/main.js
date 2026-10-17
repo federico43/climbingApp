@@ -379,6 +379,68 @@ export default async ({ req, res, log, error }) => {
     return res.json({ ok: true, scPatterns: nextPatterns, workoutsUpdated }, 200)
   }
 
+  // ── Action: athlete sets their training days / moves a plan workout ─────────
+  // body: { planId, trainingDays?: number[], trainingTime?: "18:00" | null,
+  //         move?: { index, day, whenLabel? } }
+  // The weekly scheduler (utils/planSchedule.ts) works the dates out on the
+  // phone; this only checks the caller owns the plan and the day is inside it,
+  // then writes with the server key (athletes can't write training_plans).
+  // A moved workout pushes the coach(es).
+  if (body.action === "planSchedule") {
+    const { planId } = body
+    if (typeof planId !== "string") return res.json({ error: "Bad request." }, 400)
+    const plan = await getRow(TRAINING_PLANS_TABLE, planId, log)
+    if (!plan) return res.json({ error: "No such plan." }, 404)
+    if (plan.athleteId !== userId) return res.json({ error: "Not your plan." }, 403)
+    if (plan.status !== "active") return res.json({ error: "This plan has ended." }, 409)
+
+    const data = {}
+    if ("trainingDays" in body) {
+      const days = Array.isArray(body.trainingDays)
+        ? [...new Set(body.trainingDays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+        : []
+      data.trainingDays = days.length ? JSON.stringify(days) : null
+    }
+    if ("trainingTime" in body) {
+      const time = typeof body.trainingTime === "string" ? body.trainingTime.trim() : ""
+      if (time && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(time)) return res.json({ error: "Pick a valid time." }, 400)
+      data.trainingTime = time || null
+    }
+    const move = body.move
+    if (move) {
+      if (!Number.isInteger(move.index) || move.index < 1 || move.index > 12 || !DAY_RE.test(move.day ?? "")) {
+        return res.json({ error: "Pick a day." }, 400)
+      }
+      if (move.day < plan.windowStart || move.day > plan.windowEnd) {
+        return res.json({ error: "That day is outside the plan." }, 400)
+      }
+      const overrides = parseJson(plan.scheduleOverrides, {})
+      const next = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {}
+      next[String(move.index)] = move.day
+      data.scheduleOverrides = JSON.stringify(next)
+    }
+    if (Object.keys(data).length === 0) return res.json({ error: "Nothing to change." }, 400)
+
+    const updated = await updateRow(TRAINING_PLANS_TABLE, planId, data, log)
+    if (!updated) {
+      return res.json({ error: "Could not save. (Do training_plans have the trainingDays, trainingTime and scheduleOverrides columns, and does the function's API key have write access?)" }, 502)
+    }
+
+    if (move) {
+      const caller = await getUserRow(userId, log)
+      const name = caller?.username || "Your athlete"
+      const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+      await sendPush(coaches.map((c) => ({
+        to: c.pushToken,
+        sound: "default",
+        title: "Plan workout moved",
+        body: `${name} moved workout ${move.index} to ${clip(move.whenLabel, 40) || move.day}.`,
+        data: { type: "plan_schedule", athleteId: userId, planId },
+      })), log, error)
+    }
+    return res.json({ ok: true, row: updated }, 200)
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     error("ANTHROPIC_API_KEY not set")
