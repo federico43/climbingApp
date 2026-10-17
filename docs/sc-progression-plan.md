@@ -398,7 +398,7 @@ The original plan for this phase:
 | `components/StrengthConditioningBlock.tsx` | Prefill, in-session drop + Undo, easier-exercise picker, logging controls, "Next time" card | 1–5 |
 | `components/ScProgressionCard.tsx` (new) | Coach progression card | 5 |
 | `app/(tabs)/(buttonTabs)/exerciseProgress.tsx` | Shows the card above the charts | 5 |
-| `components/AthleteAnalytics.tsx` | Deload / Stuck / Swapped badges in the S&C list | 5 |
+| `components/AthleteAnalytics.tsx` | Deload / Stuck / Swapped badges in the S&C list (removed 2026-10-16 with the coach dashboard — the flags show on `exerciseProgress`) | 5 |
 | `components/workoutBlocks.tsx` | Editor flag: full ladder, "Next session: …", warnings; `Exercise.loadStep` | 1, 2, 5 |
 | `components/ExerciseForm.tsx` | "Smallest weight jump", the progression-ladder editor (§7) | 2, §7 |
 | `app/(tabs)/(buttonTabs)/exercises.tsx` | Invalidates the library cache on delete | 1 |

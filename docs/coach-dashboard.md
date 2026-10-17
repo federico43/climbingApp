@@ -1,7 +1,10 @@
 # Coach dashboard
 
-Status: **phase 1 — design, waiting for approval** (2026-10-16). Nothing
-implemented yet. Phase 2 implements this doc as written (plus corrections).
+Status: **done 2026-10-16** (branch `coach-dashboard`). Checked with
+type-check, lint, `coachRoster.test.ts`, the roster queries against live
+Appwrite data, and visually on the web at 1400 / 1000 / 375 px with mock
+data (screens behind login can't be opened from the preview). Not tried on
+a device. §9 lists what changed from the phase-1 design.
 
 Rewrites the coach's **Design** tab (`app/(tabs)/(buttonTabs)/design.tsx`)
 as an analytics dashboard built for tablet / web, that degrades to
@@ -121,10 +124,10 @@ per-athlete summary `{ pendingHomework, overdueHomework, plan, lastSessionDay }`
 
 | Data | Query | Notes |
 | --- | --- | --- |
-| Athletes | `users` — all rows (`listAllRows`) | Today `getAthletes()` does a single `listRows` with no limit → **only the first 25 users**. Fix: paginate. No role filter (it's commented out today; coaches can train too); the signed-in coach is excluded from the list. |
+| Athletes | `users` — all rows (`listAllRows`) | `getAthletes()` used a single `listRows` with no limit → **only the first 25 users**. Now paginated. No role filter (coaches train too); the signed-in coach is **included**. |
 | Homework (all) | `protocol` where `planPart = "homework"` | One query instead of one per athlete. Grouped by `athleteId`. |
 | Active plans (all) | `training_plans` where `status = "active"` | Newest per `athleteId` (same rule as `getActiveTrainingPlan`). |
-| Recent sessions (all) | `workoutsession` where `$createdAt ≥ today − 60 d`, `Query.select(["$id","$createdAt","userId","protocolId","planId","planIndex","attempts"])`, ordered desc | `attempts` is needed for the session's real day (`sessionLocalDate` uses the first attempt's timestamp); the `protocol` JSON is skipped. Used for "last session", "workouts this week", and homework done-ness (`homeworkStatus` matches `protocolId`). |
+| Recent sessions (all) | `workoutsession` where `$createdAt ≥ today − 60 d`, `Query.select(["$id","$createdAt","userId.$id","protocolId","planId","planIndex","attempts"])`, ordered desc. `userId` is a **relationship**: it must be selected as `userId.$id` and comes back as an object, flattened to the id | `attempts` is needed for the session's real day (`sessionLocalDate` uses the first attempt's timestamp); the `protocol` JSON is skipped. Used for "last session", "workouts this week", and homework done-ness (`homeworkStatus` matches `protocolId`). |
 
 Derived:
 
@@ -165,9 +168,8 @@ Derived:
 
 ### 4.4 Detail header
 
-Name, plan subtitle; **Log session** (→ `workout-log`, as today); ⋮ menu
-(placeholder for future actions; phase 2 puts "Copy templates…" there only
-if trivial, otherwise no ⋮).
+Avatar, name, plan subtitle ("Autumn block · week 3 of 6"); **Log session**
+(→ `workout-log`, as before; icon-only on a phone). No ⋮ menu.
 
 ### 4.5 Plan card (from `AthleteAnalytics`'s "Training plan" section)
 
@@ -214,10 +216,9 @@ Data: `listAthleteHomework(athleteId)` + the athlete's sessions (4.5).
 
 ### 4.8 Recent activity
 
-Last 5 training days (newest first): date, workout name (from
-`protocolId` → the athlete's templates/homework when linked, else block
-names), duration (`blockDurations` sum, else first→last attempt), a small
-coloured dot per block type (`adaptationColor`). Tap → `SessionDetailModal`
+Last 5 training days (newest first): date, total minutes (`blockDurations`
+sum, when saved), "n sessions" if more than one, and one chip per block
+(name, left rail in its adaptation colour). Tap → `SessionDetailModal`
 (feedback, edit, delete — as today from the calendar). "Show more" adds 5.
 
 Reuse: the day-grouping and per-block summary logic of
@@ -270,10 +271,12 @@ Say "borra exerciseProgress" if you'd rather drop it.
 | `hooks/useCoachRoster.ts` | New: roster-wide queries + per-athlete summary + KPIs |
 | `utils/coachRoster.ts` | New, pure: summary/KPI/filter/search derivation (+ a test in `scripts/progression-tests/`) |
 | `components/coach/RosterList.tsx`, `KpiRow.tsx` | New |
+| `components/coach/AthleteDetail.tsx`, `styles.ts` | New: detail panel (loads the athlete's data, lays out the cards) |
 | `components/coach/PlanCard.tsx`, `HomeworkCard.tsx`, `AthleteCard.tsx`, `RecentActivityCard.tsx`, `TemplatesCard.tsx` | New, from `AthleteAnalytics` / `design.tsx` |
 | `components/PlanTimelineCard.tsx` | New, **moved** out of `plan.tsx` |
 | `app/(tabs)/(buttonTabs)/plan.tsx` | Uses `PlanTimelineCard` |
-| `components/AthleteRecentSessionsSummary.tsx` | Exports its pure helpers |
+| `components/AthleteRecentSessionsSummary.tsx` | Exports its pure helpers (`groupByDay`, `sessionDayKey`, …) |
+| `scripts/coach-indexes/create-indexes.mjs` | New: the two Appwrite indexes (§7) |
 | `components/SessionDetailModal.tsx` | S&C exercise → `exerciseProgress` (see §5) |
 | `services/BoulderGraphService.tsx` | `getAthletes` paginated; new `listAllHomework`, `listActivePlans`, `listRecentSessions(sinceIso)` |
 | `components/AthleteAnalytics.tsx`, `SessionBarsChart.tsx`, `utils/athleteAnalytics.ts` | Deleted |
@@ -289,20 +292,68 @@ indexes may be missing:
 
 | Table | Query | Index (key) | Needed? |
 | --- | --- | --- | --- |
-| `protocol` | `planPart = "homework"` | `planPart` | **Add** — otherwise Appwrite scans (or rejects the query on large tables) |
-| `training_plans` | `status = "active"` | `status` | **Add** (small table, but cheap) |
-| `workoutsession` | `$createdAt ≥ …` order `$createdAt` desc | `$createdAt` | Appwrite indexes `$createdAt` internally; add a key index only if the query errors |
+| `protocol` | `planPart = "homework"` | `planPart` | **Added** (`idx_planPart`) |
+| `training_plans` | `status = "active"` | `status` | **Added** (`idx_status`) |
+| `workoutsession` | `$createdAt ≥ …` order `$createdAt` desc | `$createdAt` | Not needed (internal index; checked live) |
 
-I'll create the two indexes in phase 2 with a script run with the server
-key (`node --env-file=.env.local …`, as the other scripts) and note them in
-§7. Permissions: unchanged — the coach already reads every athlete's
+Created 2026-10-16 with `node --env-file=.env.local
+scripts/coach-indexes/create-indexes.mjs --apply` (key indexes
+`protocol.idx_planPart`, `training_plans.idx_status`, prefix length 32 —
+see §9). The `$createdAt` range query works without a new index.
+Permissions: unchanged — the coach already reads every athlete's
 `users`, `protocol`, `training_plans`, `workoutsession` rows.
 
-## 8. Open points (defaults if you don't say otherwise)
+## 8. Decisions
 
-1. `exerciseProgress` entry point → via `SessionDetailModal` (§5).
+1. `exerciseProgress` entry point → tapping a logged S&C exercise in
+   `SessionDetailModal` (only when the host passes `onOpenExercise` — the
+   coach dashboard does; the athlete's Past workouts doesn't).
 2. "Workouts this week" counts every session (incl. homework / split-off
-   S&C). Alternative: only plan workouts.
-3. Inactive thresholds 7 / 14 / 30 days.
-4. Roster excludes the signed-in coach; includes other coaches.
+   S&C), Monday → today, by the session's real day (`sessionLocalDate`).
+3. Inactive thresholds 7 / 14 / 30 days: tapping the active Inactive chip
+   steps 7 → 14 → 30 → off.
+4. The roster includes every user, the signed-in coach too (corrected on
+   review).
 5. Strings stay in English like the rest of the app.
+
+## 9. Changes from the phase-1 design
+
+- **Indexes** need a prefix length: `planPart` / `status` are long string
+  columns and Appwrite rejected a full-length index (767-byte limit). The
+  script (`scripts/coach-indexes/create-indexes.mjs`) creates them with
+  `lengths: [32]`. **Applied 2026-10-16**: `protocol.idx_planPart`,
+  `training_plans.idx_status`.
+- Medium layout (900–1199) uses the same single-column order as the phone
+  (homework first) rather than plan first.
+- Templates card hides homework rows (they're in the Homework card).
+- Flash level is owned once (`useFlashLevel` in `AthleteCard.tsx`) and
+  shared by the Athlete card and the plan's Build.
+- Recent activity shows block chips + minutes, not a workout name.
+- The S&C exercise badges (Down 2× / Stuck / Swapped) went with the S&C
+  list; the same flags are on each exercise's progress screen.
+- Live check (2026-10-16): 17 users, 5 homework rows, 10 active plans, 119
+  sessions in the last 60 days — the four roster queries return in one go
+  each.
+
+## 10. What to try
+
+Tablet / web (≥ 900 px wide):
+- The roster stays on the left; type part of a name (accents don't matter);
+  the list filters as you type.
+- Tap each KPI that has a filter and each chip; tap Inactive repeatedly
+  (7 → 14 → 30 → off). Counts on chips match the KPIs.
+- Pick an athlete, leave the tab and come back / reload: the same athlete
+  re-opens.
+- ≥ 1200 px: plan / timeline / templates on the left of the detail,
+  homework / activity / athlete on the right. Narrower: one column.
+- Homework: move a deadline → the roster badge and KPI update.
+- Build the next workout, Edit / start / end a plan → roster status updates.
+- Recent activity → tap a day → session detail; tap an S&C exercise →
+  its progress screen.
+- Compare an athlete's Timeline with what they see on their Plan page
+  (same component).
+
+Phone:
+- Roster screen with KPI cards (swipe sideways), search, chips.
+- Tap an athlete → detail (homework first); ‹ and Android back return to
+  the list, with the last athlete highlighted.

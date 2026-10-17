@@ -227,6 +227,9 @@ Notes:
 
 ## 4. Coach card + builder — `AthleteAnalytics.tsx`, `AthleteWorkoutBuilder.tsx`
 
+> Since 2026-10-16 the coach card lives in `components/coach/PlanCard.tsx`
+> (`AthleteAnalytics.tsx` is gone — docs/coach-dashboard.md).
+
 **Card:** replace targets + "Suggest next 3" with:
 - Plan header: name, focus, dates, "Workout *n* of 12".
 - **Next workout** preview from `workoutSpec` (main block, warm-up kind, S&C

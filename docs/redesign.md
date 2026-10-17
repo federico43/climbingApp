@@ -138,8 +138,9 @@ the gear. Back returns to where it was opened (`backBehavior="history"`).
 | About | Version + update status (tap to restart when ready) · Welcome page |
 | | Sign out |
 
-Not in Settings: Exercise progress (needs a specific exercise — opened from
-the coach's analytics) and Spray wall (coach tool, in Design).
+Not in Settings: Exercise progress (needs a specific exercise — opened by
+the coach from an S&C exercise in a session's detail, docs/coach-dashboard.md)
+and Spray wall (coach tool, in Design).
 
 ## 6. Files
 

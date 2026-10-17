@@ -32,7 +32,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `utils/progression/constraintWarmup.ts`, `profiles.ts` | Constraint warm-up rotation + the focus → constraint table |
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
-| `components/AthleteAnalytics.tsx` | Coach: Training plan card — header, progress, next workout, Build |
+| `components/coach/PlanCard.tsx` | Coach: Training plan card — header, progress, next workout, Build (was `AthleteAnalytics.tsx`; see docs/coach-dashboard.md) |
 | `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
