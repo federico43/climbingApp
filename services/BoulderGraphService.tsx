@@ -301,10 +301,12 @@ export async function getSessionsByUserId(userId: string): Promise<SessionRow[]>
 // dates the session (sessionLocalDate).
 export async function listRecentSessions(sinceIso: string): Promise<SessionRow[]> {
   const base = [Query.greaterThanEqual("$createdAt", sinceIso), Query.orderDesc("$createdAt")]
-  const columns = ["$id", "$createdAt", "userId", "attempts", "protocolId", "planId", "planIndex"]
+  // userId is a relationship: selecting it needs "userId.$id" and comes back
+  // as an object — flattened to the id like an unselected read returns it.
+  const columns = ["$id", "$createdAt", "userId.$id", "attempts", "protocolId", "planId", "planIndex"]
   try {
-    const rows = await listAllRows<SessionRow>(SESSION_TABLE, [...base, Query.select(columns)])
-    return rows.map((r) => ({ ...r, protocol: r.protocol ?? "" }))
+    const rows = await listAllRows<any>(SESSION_TABLE, [...base, Query.select(columns)])
+    return rows.map((r) => ({ ...r, userId: r.userId?.$id ?? r.userId, protocol: r.protocol ?? "" }))
   } catch {
     // e.g. the link columns don't exist yet — select fails on unknown columns
     return listAllRows<SessionRow>(SESSION_TABLE, base)
