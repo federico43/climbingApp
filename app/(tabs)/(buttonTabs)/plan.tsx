@@ -299,17 +299,18 @@ function PlanBody({
 
   return (
     <>
-      {/* Two groups: what to do now, then the plan as a whole. */}
-      {latest && (
+      {/* Two groups: what to do now, then the plan as a whole. Homework
+          first — it has a deadline, the next workout doesn't. */}
+      {homework.length > 0 && (
         <View style={styles.group}>
-          <GroupLabel icon="flash" text="Up next" />
-          <LatestWorkoutCard workout={latest} scPart={scPart} />
+          <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
         </View>
       )}
 
-      {homework.length > 0 && (
-        <View style={[styles.group, latest && styles.groupSpaced]}>
-          <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
+      {latest && (
+        <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
+          <GroupLabel icon="flash" text="Up next" />
+          <LatestWorkoutCard workout={latest} scPart={scPart} />
         </View>
       )}
 

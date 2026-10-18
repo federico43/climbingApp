@@ -102,7 +102,7 @@ export function LatestWorkoutCard({
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.cardTopRow}>
-        <Text style={styles.cardKicker}>{tag ? "Today's workout" : "Latest workout"}</Text>
+        <Text style={styles.cardKicker}>{tag ? "Your next workout" : "Latest workout"}</Text>
         <Text style={styles.cardDate}>Built {builtOn(workout)}</Text>
       </View>
       {tag && (
