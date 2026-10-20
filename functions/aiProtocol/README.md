@@ -105,3 +105,16 @@ S&C blocks of workouts built from the plan with `planIndex > afterPlanIndex`
 `APPWRITE_API_KEY` to have **read + write** on `training_plans` and
 `protocol`, and read on `exercises` and `users`. Optional env overrides:
 `TRAINING_PLANS_TABLE`, `EXERCISES_TABLE`.
+
+## Weekly schedule (`planSchedule`)
+
+`POST { action: "planSchedule", planId, trainingDays?, trainingTime?, move? }`,
+authenticated as the athlete. `trainingDays` is `number[]` (0 = Sunday;
+empty = the default days), `trainingTime` `"18:00"` or `null`, `move`
+`{ index, day, whenLabel? }` (a plan workout moved by hand to `day`, which
+must be inside the plan's dates). Checks the plan is the caller's and active,
+then writes `trainingDays` / `trainingTime` / `scheduleOverrides` on the
+`training_plans` row; a move pushes the coach(es). The dates themselves are
+worked out on the phone (`utils/planSchedule.ts`). Needs those three
+optional string columns on `training_plans` and **read + write** on it for
+the function's `APPWRITE_API_KEY`.
