@@ -6,6 +6,7 @@ import { AthleteCard, useFlashLevel } from "@/components/coach/AthleteCard"
 import { HomeworkCard } from "@/components/coach/HomeworkCard"
 import { PlanCard } from "@/components/coach/PlanCard"
 import { RecentActivityCard } from "@/components/coach/RecentActivityCard"
+import { RolePill } from "@/components/coach/RolePill"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
 import { card } from "@/components/coach/styles"
 import {
@@ -145,7 +146,10 @@ export function AthleteDetail({
           <Text style={styles.avatarText}>{(athlete.username || "?")[0].toUpperCase()}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.name} numberOfLines={1}>{athlete.username || athlete.$id}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>{athlete.username || athlete.$id}</Text>
+            <RolePill athlete={athlete} onChanged={onChanged} />
+          </View>
           <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
         </View>
         <Pressable
@@ -215,7 +219,8 @@ const styles = StyleSheet.create({
   back: { marginRight: -4 },
   avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.green, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 18, fontWeight: "800", color: C.bg },
-  name: { fontSize: 22, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  name: { flexShrink: 1, fontSize: 22, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
   subtitle: { fontSize: 13, color: C.textSecondary },
   scroll: { paddingHorizontal: 16, paddingTop: 4, gap: 14 },
   columns: { flexDirection: "row", alignItems: "flex-start", gap: 14 },

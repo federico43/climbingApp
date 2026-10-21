@@ -1,6 +1,7 @@
 import { account, tablesDB, storage, functions } from "@/components/AppWrite"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
+import { isNetworkError } from "@/utils/network"
 import type { Focus, LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
 
@@ -263,33 +264,39 @@ export function sessionLinkFor(p: ProtocolRow): SessionLink {
 
 // `forUserId` lets a coach log a session on behalf of an athlete — omit it
 // to save under the logged-in user (the normal self-logging path).
-export async function saveSession(data: any, forUserId?: string) {
-  try {
-    const userId = forUserId ?? (await account.get()).$id
-    const full = { ...data, userId }
-    // Optional columns the schema may not have yet — on failure, retry
-    // without the link columns, then without blockDurations too, so the
-    // session still saves. Add the columns in Appwrite whenever.
-    const { protocolId: _pid, planId: _plid, planIndex: _pidx, ...noLink } = full
-    const { blockDurations: _bd, ...bare } = noLink
-    const payloads = [full]
-    if (Object.keys(noLink).length < Object.keys(full).length) payloads.push(noLink)
-    if (noLink.blockDurations !== undefined) payloads.push(bare)
-    let lastError: unknown
-    for (const payload of payloads) {
-      try {
-        return await tablesDB.createRow({
-          databaseId: DATABASE_ID,
-          tableId: SESSION_TABLE,
-          rowId: ID.unique(),
-          data: payload,
-        })
-      } catch (e) {
-        lastError = e
-      }
+// Throws when the row can't be written (no connection, server error) so the
+// caller can keep the session and retry — never swallow it, or the workout is
+// lost (services/sessionSyncQueue.ts). `rowId` lets a retry reuse the same id:
+// if an earlier try did reach the server, the retry fails with a 409 instead
+// of saving the session twice.
+export async function saveSession(data: any, forUserId?: string, rowId: string = ID.unique()) {
+  const userId = forUserId ?? (await account.get()).$id
+  const full = { ...data, userId }
+  // Optional columns the schema may not have yet — on failure, retry
+  // without the link columns, then without blockDurations too, so the
+  // session still saves. Add the columns in Appwrite whenever.
+  const { protocolId: _pid, planId: _plid, planIndex: _pidx, ...noLink } = full
+  const { blockDurations: _bd, ...bare } = noLink
+  const payloads = [full]
+  if (Object.keys(noLink).length < Object.keys(full).length) payloads.push(noLink)
+  if (noLink.blockDurations !== undefined) payloads.push(bare)
+  let lastError: unknown
+  for (const payload of payloads) {
+    try {
+      return await tablesDB.createRow({
+        databaseId: DATABASE_ID,
+        tableId: SESSION_TABLE,
+        rowId,
+        data: payload,
+      })
+    } catch (e) {
+      lastError = e
+      // Offline or already saved — a smaller payload won't change that.
+      if (isNetworkError(e) || (e as { code?: number })?.code === 409) break
     }
-    throw lastError
-  } catch (error) { console.error("Failed to save session", error) }
+  }
+  console.error("Failed to save session", lastError)
+  throw lastError
 }
 
 export async function getSessionsByUserId(userId: string): Promise<SessionRow[]> {

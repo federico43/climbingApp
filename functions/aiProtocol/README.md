@@ -62,10 +62,42 @@ Behavior:
   pushed (this app assumes a small, flat coach roster, not per-athlete coach
   assignment).
 - A coach with no saved `pushToken` is silently skipped, not an error.
-- Delivery is best-effort via `https://exp.host/--/api/v2/push/send` — no
-  retry, no delivery receipts checked. Fine for a "heads up" ping.
+- Delivery is best-effort via `https://exp.host/--/api/v2/push/send`, with
+  guardrails (see "Push failures" below).
 - Called with `async: true` (queued on Appwrite) — the client never waits on
   or depends on the result.
+
+## Push failures
+
+Expo answers HTTP 200 even when a push failed — the real result is a per-message
+ticket in the response, and later a receipt from Apple/Google. All pushes go
+through `src/expoPush.js`, which:
+
+- Skips malformed tokens (one would make Expo reject the whole batch) and sends
+  each token once.
+- Retries once on a network error, 429 or 5xx. If Expo rejects a batch with a
+  4xx, sends its messages one by one so one bad message doesn't sink the rest.
+- Reads every ticket and logs each error with its code (`DeviceNotRegistered`,
+  `MessageRateExceeded`, `InvalidCredentials`, …) to the execution log.
+- For actions called with `async: true` (`notifyCoach`, `homeworkAssigned`),
+  waits 5 s and looks up the receipts too. Receipts not ready by then are
+  skipped. Sync actions don't wait, so the athlete's screen isn't held up.
+- Clears `pushToken` on the user's row when the token is malformed or
+  `DeviceNotRegistered` (app uninstalled, token expired). The app saves a
+  fresh token the next time it opens.
+
+One phone, one account: on sign-out the app clears its token from the user's
+row (`clearPushToken` in `services/notifications.ts`). If that couldn't run
+(offline), the next account to sign in on the phone saves the token and calls
+`{ "action": "claimPushToken" }`, which removes the same token from every
+other user's row.
+
+Every execution that pushes logs a line like
+`Expo push: 1 sent, 1 failed, 1 token(s) to clear` — look in the function's
+Executions tab in Appwrite. `InvalidCredentials` / `MismatchSenderId` mean
+the FCM/APNs keys in the Expo project need fixing, not the token.
+
+Tests: `node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/expoPush.test.ts`
 
 ## Homework actions
 

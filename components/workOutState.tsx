@@ -1,5 +1,6 @@
 import { C } from "@/utils/theme"
 import { useWorkout } from "@/hooks/WorkoutHook"
+import { useSessionSyncState } from "@/services/sessionSyncQueue"
 import { BlockRenderer } from "@/utils/blockRenderer"
 import { BlockTimerContext } from "@/utils/blockTimer"
 import { LastBlockContext } from "@/utils/blockNav"
@@ -119,10 +120,11 @@ export function WorkOutState({
     }
   }, [status, workoutStartTime])
 
-  // The session is already saved the moment it completes (see WorkoutHook), so
-  // the summary just closes itself after AUTO_CLOSE_SECS — doing what "Save
+  // The session is saved the moment it completes (see WorkoutContext — kept on
+  // the phone until it reaches the server), so the summary just closes itself after AUTO_CLOSE_SECS — doing what "Save
   // workout" used to — unless the athlete leaves first.
   const [autoCloseIn, setAutoCloseIn] = useState(AUTO_CLOSE_SECS)
+  const sync = useSessionSyncState()
   const closeSummaryRef = useRef(() => {})
   closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
   useEffect(() => {
@@ -262,7 +264,9 @@ export function WorkOutState({
             }}
           />
           <Text style={styles.summaryAutoClose}>
-            Workout saved · closing in {autoCloseIn}s
+            {sync.pending > 0 && sync.offline
+              ? "No connection — saved on this phone, it uploads once you're back online"
+              : "Workout saved"} · closing in {autoCloseIn}s
           </Text>
         </ScrollView>
       </SafeAreaView>

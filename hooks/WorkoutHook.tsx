@@ -1,5 +1,3 @@
-import { saveSession, SessionLink } from "@/services/BoulderGraphService"
-import { serializeSession } from "@/utils/workoutSession"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,8 +45,7 @@ export interface Attempt {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-// `link` = the workout this run was started from; saved on the session.
-export function useWorkout(protocolInput: Block[], link: SessionLink | null = null) {
+export function useWorkout(protocolInput: Block[]) {
   // Use the protocol reactively: the provider holds it as state and sets it via
   // openWorkout/resume, so derived values (currentBlock, totalBlocks) always
   // reflect the active protocol — and a restored protocol reaches the hook.
@@ -90,15 +87,8 @@ export function useWorkout(protocolInput: Block[], link: SessionLink | null = nu
     }
   }, [])
 
-  // ── Persist completed session ───────────────────────────────────────────────
-
-  useEffect(() => {
-    if (status === "completed") {
-      // Skipped blocks are dropped and indices remapped (see serializeSession).
-      saveSession({ ...serializeSession(protocol, attempts, blockDurations, skippedBlocks), ...link })
-    }
-    // deps include the data so the persisted closure is never stale
-  }, [status, attempts, protocol, blockDurations, skippedBlocks, link])
+  // A completed session is saved by the provider (contexts/WorkoutContext.tsx),
+  // through the offline-safe sync queue.
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 

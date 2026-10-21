@@ -1,4 +1,5 @@
 import Auth_context from '@/components/auth-context';
+import { SessionSyncRunner } from '@/components/SessionSyncRunner';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { VideoUploadQueueRunner } from '@/components/VideoUploadQueueRunner';
 import { Stack } from 'expo-router';
@@ -20,6 +21,7 @@ export default function RootLayout() {
         </Stack>
         <UpdateBanner />
         <VideoUploadQueueRunner />
+        <SessionSyncRunner />
       </Auth_context>
     </GestureHandlerRootView>
   );

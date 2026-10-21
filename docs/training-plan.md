@@ -115,7 +115,7 @@ gives two different workouts.
 | Main block | Strength: Project Bouldering ↔ Max bouldering. Power endurance: Power endurance - 4x4 ↔ Base 1 (the `sequence` one). Power: Power boulders. Picked from what earlier workouts of the type **actually used** (see below). **Always twice in the workout** (same library block, back to back) |
 | Warm-up | Alternates: odd workouts **3 constraints** for the plan's focus, even workouts **1 on 1 off** |
 | Test | **Density test as homework** (since 2026-10-07) on workout 1 and on the first workout built in the plan's last week (week 6): the workout keeps its warm-up, the test is split off into a homework workout (§7.6) |
-| S&C focus | Tied to the main type: Strength → **max force**, Power endurance → **hypertrophy**, Power → **explosiveness** |
+| S&C focus | Tied to the main type: Strength → **max force**, Power endurance → **hypertrophy**, Power → **explosiveness**. **Core** has its own cycle (below) |
 | S&C exercise | Workout 1 of the week → each pattern's exercise 1, workout 2 → exercise 2 (by index parity) |
 
 **Main block choice** (since 2026-10-06): read from the blocks of the earlier
@@ -217,6 +217,13 @@ patterns are swapped between blocks if needed).
 
 Every exercise is programmed for the day's S&C focus (reps from its range:
 3–6 max force / explosiveness, 8–12 hypertrophy).
+
+**Core never trains explosiveness** (coach 2026-10-21). The core pattern
+ignores the day's focus and alternates **max force ↔ hypertrophy**, flipping
+every two workouts (`coreFocusFor` in `utils/planRotation.ts`: workouts 1–2, 5–6, 9–10 max
+force; 3–4, 7–8, 11–12 hypertrophy), so each of its two exercises goes max force →
+hypertrophy → max force … The exercise editor's "Used for" and the block
+editor's Focus only offer those two for core (`focusesFor`).
 
 **Progression is per focus.** An exercise comes back with a different focus
 each time (exercise 1: max force → explosiveness → hypertrophy → …), so the

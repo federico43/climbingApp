@@ -1,7 +1,8 @@
+import { useAuth } from "@/components/auth-context"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { useWorkout } from "@/hooks/WorkoutHook"
-import { saveSession, SessionLink } from "@/services/BoulderGraphService"
-import { notifyCoachOfWorkoutCompletion } from "@/services/notifications"
+import { SessionLink } from "@/services/BoulderGraphService"
+import { enqueueSession, onSessionsSynced } from "@/services/sessionSyncQueue"
 import { serializeSession } from "@/utils/workoutSession"
 import {
   clearPersistedWorkout,
@@ -55,12 +56,16 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const [workoutMinimized, setWorkoutMinimized] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const userId = useAuth().User?.$id ?? null
+
+  // Workouts finished offline reach the server later — reload screens then.
+  useEffect(() => onSessionsSynced(() => setRefreshKey((k) => k + 1)), [])
 
   // No OTA-update reloads mid-workout (see utils/updateHold.ts).
   useHoldUpdates(workoutActive)
 
   // Hook lives here so state survives modal close/reopen during minimize.
-  const workout = useWorkout(protocol, link)
+  const workout = useWorkout(protocol)
 
   // Keep the screen awake for the entire duration of an active workout —
   // including when it's minimized (rest timers, etc. keep running).
@@ -76,7 +81,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   // On launch, recover an interrupted workout (app closed by the user or killed
   // by the OS mid-session):
   //   • recent → RESUME it (restored, minimized — the mini-bar reappears),
-  //   • too old → save the logged work as a session so it isn't lost,
+  //   • too old → save the logged work as a session so it isn't lost
+  //     (through the sync queue, so it also survives having no signal),
   //   • empty  → just drop it.
   useEffect(() => {
     (async () => {
@@ -93,15 +99,18 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       // on every relaunch until the first attempt was logged.
       if (ageMs > STALE_MS) {
         if ((saved.attempts?.length ?? 0) > 0) {
-          await saveSession({
-            ...serializeSession(
-              saved.protocol ?? [],
-              saved.attempts,
-              saved.blockDurations ?? {},
-              new Set(saved.skippedBlocks ?? []),
-            ),
-            ...saved.link,
-          })
+          await enqueueSession(
+            {
+              ...serializeSession(
+                saved.protocol ?? [],
+                saved.attempts,
+                saved.blockDurations ?? {},
+                new Set(saved.skippedBlocks ?? []),
+              ),
+              ...saved.link,
+            },
+            { userId: saved.userId ?? null },
+          )
         }
         await clearPersistedWorkout()
         return
@@ -134,6 +143,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       protocol,
       protocolName,
       link,
+      userId,
       attempts: workout.attempts,
       blockDurations: workout.blockDurations,
       skippedBlocks: Array.from(workout.skippedBlocks),
@@ -150,15 +160,24 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     protocol,
     protocolName,
     link,
+    userId,
   ])
 
-  // A completed workout already saved itself (in the hook) — drop the snapshot
-  // and let the coach know (fire-and-forget, best-effort).
+  // A completed workout goes into the sync queue (stored on the phone first,
+  // then written to Appwrite and the coach pinged — now, or once there's a
+  // connection again). Only once it's in the queue is the snapshot dropped,
+  // so there's never a moment where the workout exists nowhere.
   useEffect(() => {
-    if (workout.status === "completed") {
-      clearPersistedWorkout()
-      notifyCoachOfWorkoutCompletion(protocolName)
-    }
+    if (workout.status !== "completed") return
+    enqueueSession(
+      {
+        // Skipped blocks are dropped and indices remapped (see serializeSession).
+        ...serializeSession(protocol, workout.attempts, workout.blockDurations, workout.skippedBlocks),
+        ...link,
+      },
+      { userId, notifyProtocolName: protocolName },
+    ).then(() => clearPersistedWorkout())
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per completion, with that moment's data
   }, [workout.status])
 
   const openWorkout = useCallback((p: any[], name: string, l?: SessionLink) => {

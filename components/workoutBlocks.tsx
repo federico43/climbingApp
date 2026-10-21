@@ -22,7 +22,7 @@ import {
   resolveAdaptation,
 } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
-import { Focus, FOCUSES, FOCUS_LABEL, FOCUS_REP_RANGE, LevelStep } from "@/utils/scProgression"
+import { Focus, FOCUS_LABEL, FOCUS_REP_RANGE, focusesFor, LevelStep } from "@/utils/scProgression"
 import { authoredGrades, fitGrades, suggestNextFourByFour, type FourByFourSuggestion } from "@/utils/progression/fourByFour"
 import { normalizeProjectBlock, PROJECT_DEFAULT_REST_S, PROJECT_DEFAULT_TIME_MIN, PROJECT_MAX_TIME_MIN, PROJECT_MIN_TIME_MIN } from "@/utils/progression/projectBouldering"
 import { INTERVALS_KIND_LABEL, intervalsDescription, suggestNextIntervals, type IntervalsKind, type IntervalsSuggestion } from "@/utils/progression/intervals"
@@ -2511,7 +2511,8 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
       {/* Mobility has no focus or progression — just a target. */}
       {!isMobility && <FieldLabel label="Focus" />}
       {!isMobility && <View style={styles.adaptationRow}>
-        {FOCUSES.map((f) => {
+        {/* Core has no explosiveness (focusesFor). */}
+        {focusesFor(exercise.movementType).map((f) => {
           const selected = exercise.focus === f
           return (
             <Pressable
