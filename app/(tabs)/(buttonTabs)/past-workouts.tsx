@@ -5,6 +5,7 @@ import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { getSessions, SessionRow } from "@/services/BoulderGraphService"
+import { useSessionSyncState } from "@/services/sessionSyncQueue"
 import {
   countSessionsInMonth,
   countUniqueDaysInRange,
@@ -27,6 +28,8 @@ export default function PastWorkoutsScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  // Finished without a connection — not on the server (or this calendar) yet.
+  const { pending } = useSessionSyncState()
 
   const load = useCallback(async () => {
     try {
@@ -68,7 +71,12 @@ export default function PastWorkoutsScreen() {
   return (
     <ScreenGradient>
       <SafeAreaView style={styles.safe} edges={["top"]}>
-        <SubScreenHeader title="Past workouts" subtitle="Tap a marked day to see its sessions" />
+        <SubScreenHeader
+          title="Past workouts"
+          subtitle={pending > 0
+            ? `${pending} workout${pending !== 1 ? "s" : ""} saved on this phone — shows up here once you're online`
+            : "Tap a marked day to see its sessions"}
+        />
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={C.green} />
