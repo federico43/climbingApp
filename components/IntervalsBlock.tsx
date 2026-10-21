@@ -12,6 +12,7 @@ import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 interface Props {
   block: any  // { blockName, description, series, workTime, restTime, kind? }
@@ -45,6 +46,7 @@ function fmt(sec: number): string {
 // question — warm-up: "very pumped in the last two rounds?", power
 // endurance: "felt very easy?".
 export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goToPreviousBlock }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const plannedSeries = Math.max(1, block.series ?? 6)
   const plannedWork = Math.max(1, block.workTime ?? 30)
   const restTime = Math.max(0, block.restTime ?? 60)
@@ -324,7 +326,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
             </View>
           )}
           <View style={{ width: "100%", marginTop: 20 }}>
-            <CustomButton title="Continue" onPress={handleFinish} disabled={!!question && answer === undefined} />
+            <CustomButton title={nextLabel} onPress={handleFinish} disabled={!!question && answer === undefined} />
           </View>
         </View>
       </View>

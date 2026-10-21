@@ -25,6 +25,7 @@ import {
 } from "react-native"
 import { shared_styles, TopBar, warmup_styles } from "../utils/BlockStyles"
 import { saveVideoLocally } from "./saveVideo"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -228,6 +229,7 @@ function ConstraintWarmupBlock({
   goToPreviousBlock,
   blockStartTime,
 }: ConstraintWarmupBlockProps) {
+  const nextLabel = useNextBlockLabel("Continue")
   const targetAttempts = block.targetAttempts ?? 1
   const attemptsDone = attempts.length
   // Revisiting a block that already met its target lands on the review state
@@ -408,7 +410,7 @@ function ConstraintWarmupBlock({
           </Text>
           <Text style={{ fontSize: 13, color: C.textSecondary, marginBottom: 24 }}>total time</Text>
           <View style={{ width: "100%" }}>
-            <CustomButton title="Continue" onPress={goToNextBlock} />
+            <CustomButton title={nextLabel} onPress={goToNextBlock} />
           </View>
         </View>
       </View>
