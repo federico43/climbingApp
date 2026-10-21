@@ -17,6 +17,7 @@ import Animated, {
 import { router } from "expo-router"
 import CustomButton from "./customButton"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
+import { mainSwapFor } from "@/utils/mainSwap"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ export function WorkOutState({
   autoStart = false,
   workout,
   onSetCoached,
+  onSwapMain,
 }: {
   protocol: any[]
   protocolName: string
@@ -62,6 +64,9 @@ export function WorkOutState({
   // Switches the current block between guided and coached (§12a). Omitted →
   // no switch.
   onSetCoached?: (index: number, coached: boolean) => void
+  // ⇄ the current main block to the other one of its type (plan workouts,
+  // utils/mainSwap.ts). Omitted → no switch.
+  onSwapMain?: (index: number) => Promise<void>
 }) {
   const {
     currentBlock,
@@ -95,6 +100,30 @@ export function WorkOutState({
       [
         { text: "Cancel", style: "cancel" },
         { text: "Skip", style: "destructive", onPress: skipBlock },
+      ]
+    )
+  }
+
+  const [swapping, setSwapping] = useState(false)
+  const nothingLogged = !attempts.some((a) => a.blockIndex === currentBlockIndex)
+  const mainSwap = onSwapMain && nothingLogged ? mainSwapFor(protocol, currentBlockIndex) : null
+
+  function handleSwapMain() {
+    if (!mainSwap || !onSwapMain) return
+    Alert.alert(
+      `Switch to ${mainSwap.to.name}?`,
+      `You'll do ${mainSwap.to.name} instead of ${mainSwap.from.name} today. Your plan stays the same.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Switch",
+          onPress: () => {
+            setSwapping(true)
+            onSwapMain(currentBlockIndex)
+              .catch((e: any) => Alert.alert("Couldn't switch", e?.message ?? "Check your connection and try again."))
+              .finally(() => setSwapping(false))
+          },
+        },
       ]
     )
   }
@@ -326,24 +355,34 @@ export function WorkOutState({
           />
         </View>
       </View>
-      {/* Coach is here / On my own — only before anything's logged on the block. */}
-      {onSetCoached && currentBlock && !attempts.some((a) => a.blockIndex === currentBlockIndex) && (
-        <Pressable
-          style={[styles.coachSwitch, currentBlock.coached && styles.coachSwitchOn]}
-          onPress={() => onSetCoached(currentBlockIndex, !currentBlock.coached)}
-          hitSlop={6}
-        >
-          <Ionicons
-            name={currentBlock.coached ? "person" : "person-outline"}
-            size={13}
-            color={currentBlock.coached ? C.bg : C.textSecondary}
-          />
-          <Text style={[styles.coachSwitchText, currentBlock.coached && { color: C.bg }]}>
-            {currentBlock.coached ? "Coach is here · switch to on my own" : "Coach is here?"}
-          </Text>
-        </Pressable>
-      )}
-      <BlockEntry key={`${currentBlockIndex}-${currentBlock?.coached ? "c" : "g"}`}>
+      {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
+      <View style={styles.blockSwitches}>
+        {onSetCoached && currentBlock && nothingLogged && (
+          <Pressable
+            style={[styles.coachSwitch, currentBlock.coached && styles.coachSwitchOn]}
+            onPress={() => onSetCoached(currentBlockIndex, !currentBlock.coached)}
+            hitSlop={6}
+          >
+            <Ionicons
+              name={currentBlock.coached ? "person" : "person-outline"}
+              size={13}
+              color={currentBlock.coached ? C.bg : C.textSecondary}
+            />
+            <Text style={[styles.coachSwitchText, currentBlock.coached && { color: C.bg }]}>
+              {currentBlock.coached ? "Coach is here · switch to on my own" : "Coach is here?"}
+            </Text>
+          </Pressable>
+        )}
+        {mainSwap && (
+          <Pressable style={styles.coachSwitch} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
+            <Ionicons name="swap-horizontal" size={13} color={C.textSecondary} />
+            <Text style={styles.coachSwitchText}>
+              {swapping ? "Switching…" : `Switch to ${mainSwap.to.name}`}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+      <BlockEntry key={`${currentBlockIndex}-${currentBlock?.blockName ?? ""}-${currentBlock?.coached ? "c" : "g"}`}>
         <BlockTimerContext.Provider value={blockTimer}>
           <LastBlockContext.Provider value={isLastBlock}>
             <BlockRenderer
@@ -500,9 +539,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  blockSwitches: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 20 },
   coachSwitch: {
     flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
-    marginHorizontal: 20, marginTop: 8, marginBottom: 2,
+    marginTop: 8, marginBottom: 2,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
     borderWidth: 1, borderColor: C.border,
   },
