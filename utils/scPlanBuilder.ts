@@ -1,13 +1,14 @@
 import type { Exercise, StrengthConditioningBlock } from "@/components/workoutBlocks"
 import type { ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
-import type { PlanShape, ScPattern, WorkoutSpec } from "@/utils/planRotation"
+import { coreFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 4 movement patterns (one of
 // each pattern's two exercises per workout) plus app-picked mobility, with
-// every exercise programmed for the day's S&C focus. Load, reps and level
+// every exercise programmed for the day's S&C focus (core: its own max force ↔
+// hypertrophy cycle). Load, reps and level
 // then progress from the athlete's history as for any S&C block
 // (utils/scHistory.ts, utils/scProgression.ts). Pure — no fetching or UI.
 
@@ -161,8 +162,10 @@ export function buildScBlocks(
   const byId = new Map(exercises.map((e) => [e.$id, e]))
   const patterns = orderPatterns(plan.scPatterns)
   const main = patterns.map((p) => {
-    const row = exerciseForPattern(p, spec, focus, byId, exercises, warnings)
-    return row ? withFocus(exerciseDraftFromLibrary(row), focus) : null
+    // Core follows its own max force ↔ hypertrophy cycle (no explosiveness).
+    const f = p.movementType === "core" ? coreFocusFor(spec.index) : focus
+    const row = exerciseForPattern(p, spec, f, byId, exercises, warnings)
+    return row ? withFocus(exerciseDraftFromLibrary(row), f) : null
   })
   const pair = (i: number) => [main[i], main[i + 1]].filter((e): e is ExerciseDraft => !!e)
 

@@ -13,6 +13,13 @@ export type LoadMode = "weight" | "level"
 
 export const FOCUSES: Focus[] = ["max_force", "hypertrophy", "explosiveness"]
 
+// The focuses an exercise of this movement pattern can be trained at. Core
+// never trains explosiveness — it only alternates max force and hypertrophy
+// (coach 2026-10-21).
+export function focusesFor(movementType?: string): Focus[] {
+  return movementType === "core" ? FOCUSES.filter((f) => f !== "explosiveness") : FOCUSES
+}
+
 export const FOCUS_LABEL: Record<Focus, string> = {
   max_force:     "Max force",
   hypertrophy:   "Hypertrophy",

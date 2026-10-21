@@ -5,7 +5,7 @@ import { ExerciseUnit } from "@/utils/exerciseUnit"
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { chainTailFor, ladderHasFork, mergeIntoLadder, resolveFullChain } from "@/utils/levelChain"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, MovementType } from "@/utils/movementTypes"
-import { Focus, FOCUSES, FOCUS_LABEL, LevelStep, LoadMode } from "@/utils/scProgression"
+import { Focus, FOCUS_LABEL, focusesFor, LevelStep, LoadMode } from "@/utils/scProgression"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -114,6 +114,8 @@ export function ExerciseForm({
   const [focuses, setFocuses] = useState<Focus[]>(exercise?.focuses ?? [])
   // Mobility has no focus or progression — just a target (default below).
   const isMobility = movementType === "mobility"
+  // Core has no explosiveness (focusesFor).
+  const allowedFocuses = focusesFor(movementType)
   const [defaultRepsText, setDefaultRepsText] = useState(exercise?.unit !== "seconds" ? exercise?.defaultReps ?? "" : "")
   // Mobility done by reps that can also be held (passive) — with its own
   // default hold. Stored as unit "reps" + defaultHold.
@@ -215,7 +217,7 @@ export function ExerciseForm({
       const loadStep = parseFloat(loadStepText.replace(",", "."))
       if (effectiveLoadMode === "weight" && loadStep > 0) payload.loadStep = loadStep
       else if (exercise?.loadStep) payload.loadStep = null
-      if (!isMobility) payload.focuses = focuses
+      if (!isMobility) payload.focuses = focuses.filter((f) => allowedFocuses.includes(f))
       else if (exercise?.focuses?.length) payload.focuses = []
       // Cleared ("") when switched off or emptied, like notes.
       const keepSetting = hasSetting && !isMobility
@@ -310,10 +312,10 @@ export function ExerciseForm({
         <>
         <Text style={styles.label}>Used for</Text>
         <Text style={styles.levelsHint}>
-          Which S&C focuses this exercise can be programmed for in a training plan. None picked = all three.
+          Which S&C focuses this exercise can be programmed for in a training plan. None picked = {allowedFocuses.length === 2 ? "both" : "all three"}.
         </Text>
         <View style={styles.chipRow}>
-          {FOCUSES.map((f) => {
+          {allowedFocuses.map((f) => {
             const on = focuses.includes(f)
             return (
               <Pressable

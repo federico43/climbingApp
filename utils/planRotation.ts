@@ -95,6 +95,16 @@ export const SC_FOCUS_FOR: Record<MainType, Focus> = {
   power: "explosiveness",
 }
 
+// Core never trains explosiveness (coach 2026-10-21): it has its own cycle,
+// max force ↔ hypertrophy, whatever the day's S&C focus. It flips every
+// week, so each of the pattern's two exercises (one per workout of the week)
+// alternates max force → hypertrophy → max force … on its own.
+export const CORE_FOCUS_CYCLE: Focus[] = ["max_force", "hypertrophy"]
+
+export function coreFocusFor(index: number): Focus {
+  return CORE_FOCUS_CYCLE[Math.floor((index - 1) / WORKOUTS_PER_WEEK) % CORE_FOCUS_CYCLE.length]
+}
+
 // ─── Dates ───────────────────────────────────────────────────────────────────
 
 // "YYYY-MM-DD" in the device's own timezone (not UTC — a late-evening
