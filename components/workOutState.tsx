@@ -13,6 +13,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated"
+import { router } from "expo-router"
 import CustomButton from "./customButton"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 
@@ -118,6 +119,27 @@ export function WorkOutState({
     }
   }, [status, workoutStartTime])
 
+  // The session is already saved the moment it completes (see WorkoutHook), so
+  // the summary just closes itself after AUTO_CLOSE_SECS — doing what "Save
+  // workout" used to — unless the athlete leaves first.
+  const [autoCloseIn, setAutoCloseIn] = useState(AUTO_CLOSE_SECS)
+  const closeSummaryRef = useRef(() => {})
+  closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
+  useEffect(() => {
+    if (status !== "completed") return
+    setAutoCloseIn(AUTO_CLOSE_SECS)
+    const end = Date.now() + AUTO_CLOSE_SECS * 1000
+    const id = setInterval(() => {
+      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      setAutoCloseIn(r)
+      if (r <= 0) {
+        clearInterval(id)
+        closeSummaryRef.current()
+      }
+    }, 250)
+    return () => clearInterval(id)
+  }, [status])
+
   function handleStartWorkout() {
     onWorkoutStart()
     startWorkout()
@@ -177,23 +199,7 @@ export function WorkOutState({
         <View style={styles.progressBar}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressText}>Summary</Text>
-            <Pressable
-              hitSlop={8}
-              onPress={() => {
-                Alert.alert(
-                  "Exit workout",
-                  "Close the workout summary?",
-                  [
-                    { text: "Stay", style: "cancel" },
-                    {
-                      text: "Exit",
-                      style: "destructive",
-                      onPress: () => { onWorkoutEnd(); resetWorkout() },
-                    },
-                  ]
-                )
-              }}
-            >
+            <Pressable hitSlop={8} onPress={() => closeSummaryRef.current()}>
               <Text style={styles.exitButton}>✕</Text>
             </Pressable>
           </View>
@@ -249,9 +255,15 @@ export function WorkOutState({
           </View>
 
           <CustomButton
-            title="Save workout"
-            onPress={() => { onWorkoutEnd(); resetWorkout() }}
+            title="Back to home"
+            onPress={() => {
+              closeSummaryRef.current()
+              router.navigate("/")
+            }}
           />
+          <Text style={styles.summaryAutoClose}>
+            Workout saved · closing in {autoCloseIn}s
+          </Text>
         </ScrollView>
       </SafeAreaView>
     )
@@ -351,6 +363,9 @@ export function WorkOutState({
     </SafeAreaView>
   )
 }
+
+// How long the summary stays up before closing itself.
+const AUTO_CLOSE_SECS = 10
 
 // Blocks that render their own time display (countdown or work/rest) — the host
 // chip would duplicate it, so skip them.
@@ -611,5 +626,11 @@ const styles = StyleSheet.create({
   summaryBlockCheck: {
     fontSize: 14,
     color: C.green,
+  },
+  summaryAutoClose: {
+    fontSize: 13,
+    color: C.textMuted,
+    textAlign: "center",
+    fontVariant: ["tabular-nums"],
   },
 })
