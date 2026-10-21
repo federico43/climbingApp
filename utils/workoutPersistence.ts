@@ -12,6 +12,7 @@ export interface PersistedWorkout {
   protocol: any[]
   protocolName: string
   link?: SessionLink | null   // which workout it came from (absent on older snapshots)
+  userId?: string | null      // who's doing it (absent on older snapshots)
   attempts: any[]
   blockDurations: Record<number, number>
   skippedBlocks: number[]

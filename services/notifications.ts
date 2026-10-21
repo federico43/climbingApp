@@ -124,16 +124,15 @@ async function clearPushTokenNow(userId: string): Promise<void> {
  * coach(es). Rides the existing aiProtocol function (Appwrite's free tier
  * caps functions at 2, and that slot already has the user-lookup plumbing
  * this needs — see its `notifyCoach` action in functions/aiProtocol/src/main.js).
- * Fire-and-forget — queued on Appwrite (`async: true`), so this never blocks
- * or can fail the athlete's flow.
+ * Queued on Appwrite (`async: true`), so it returns as soon as Appwrite has
+ * it. Rejects when that fails (e.g. offline) — callers go through
+ * services/sessionSyncQueue.ts, which retries once the connection is back.
  */
-export function notifyCoachOfWorkoutCompletion(protocolName: string): void {
-  functions
-    .createExecution({
-      functionId: AI_PROTOCOL_FUNCTION_ID,
-      body: JSON.stringify({ action: "notifyCoach", protocolName }),
-      async: true,
-      method: ExecutionMethod.POST,
-    })
-    .catch((e) => console.log("Coach notification failed", e))
+export async function sendWorkoutCompletedNotification(protocolName: string): Promise<void> {
+  await functions.createExecution({
+    functionId: AI_PROTOCOL_FUNCTION_ID,
+    body: JSON.stringify({ action: "notifyCoach", protocolName }),
+    async: true,
+    method: ExecutionMethod.POST,
+  })
 }
