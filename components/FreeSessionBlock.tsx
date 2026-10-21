@@ -4,6 +4,7 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -53,6 +54,7 @@ function formatElapsed(seconds: number): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
+  const nextLabel = useNextBlockLabel("Next block")
   const [phase, setPhase] = useState<Phase>("intro")
   const [elapsed, setElapsed] = useState(0)
   const startTimeRef = useRef<number | null>(null)
@@ -181,7 +183,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           />
         </View>
         <Pressable style={styles.nextBtn} onPress={finish}>
-          <Text style={styles.nextBtnText}>Next block</Text>
+          <Text style={styles.nextBtnText}>{nextLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>

@@ -33,6 +33,7 @@ import {
   isEarlyFall, pickRoute, routesVisibleTo, suggestNextSequence,
   type RouteInfo, type SequenceSuggestion,
 } from "@/utils/progression/sequence"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 const SEQUENCE_HERO = require("@/assets/images/sequenceBlockPicture.jpeg")
 
@@ -60,6 +61,7 @@ export function SequenceBlock({
   goToNextBlock,
   goToPreviousBlock,
 }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const targetAttempts: number = block.targetAttempts ?? 5
   const restTime: number       = block.restTime ?? 120
   const blockTitle: string     = block.blockName || "Sequence"
@@ -829,7 +831,7 @@ export function SequenceBlock({
             </React.Fragment>
           ))}
 
-          <CustomButton title="Continue" onPress={goToNextBlock} />
+          <CustomButton title={nextLabel} onPress={goToNextBlock} />
         </ScrollView>
       </View>
     )

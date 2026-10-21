@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function CoachedBlock({ block, attempts, logAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+  const nextLabel = useNextBlockLabel("Done")
   const isSequence = block.type === "sequence"
 
   function done() {
@@ -51,7 +53,7 @@ export function CoachedBlock({ block, attempts, logAttempt, goToNextBlock, goToP
         <Text style={s.title}>{block.blockName || "Block"}</Text>
         {isSequence && <CoachSequences block={block} attempts={attempts} logAttempt={logAttempt} />}
         <Pressable style={s.doneBtn} onPress={done}>
-          <Text style={s.doneBtnText}>Done</Text>
+          <Text style={s.doneBtnText}>{nextLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>

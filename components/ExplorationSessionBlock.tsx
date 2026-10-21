@@ -13,6 +13,7 @@ import {
   Text,
   View,
 } from "react-native"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ interface Props {
 }
 
 export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const timeLimitSeconds = (block?.timeLimit ?? 0) * 60
 
   const [levels, setLevels] = useState<DbLevel[]>([])
@@ -267,7 +269,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
         )}
 
         <Pressable style={[styles.primaryButton, { width: "100%" }]} onPress={goToNextBlock}>
-          <Text style={styles.primaryButtonText}>Continue</Text>
+          <Text style={styles.primaryButtonText}>{nextLabel}</Text>
         </Pressable>
       </ScrollView>
       </View>

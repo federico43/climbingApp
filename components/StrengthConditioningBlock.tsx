@@ -39,6 +39,7 @@ import { ZoomableImage } from "@/components/ZoomableImage"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 const SC_HERO = require("@/assets/images/SCPicture.jpeg")
 
@@ -149,6 +150,7 @@ interface Props {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const blockTimer = useBlockTimer()
   // The plan workout this block belongs to, if any: a "Change exercise" can
   // then also be made for the rest of the plan (utils/scSwap).
@@ -837,7 +839,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           ))}
         </ScrollView>
         <View style={styles.screenFooter}>
-          <PillButton title="Continue" icon="arrow-forward" onPress={goToNextBlock} />
+          <PillButton title={nextLabel} icon="arrow-forward" onPress={goToNextBlock} />
         </View>
       </View>
     )

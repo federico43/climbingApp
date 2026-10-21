@@ -17,6 +17,7 @@ import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 // 4×4 power-endurance protocol: N sets of M boulders, resting between sets.
 // Each boulder slot has its own colour (block.boulderGrades); each set logs
@@ -57,6 +58,7 @@ export function FourByFourBlock({
   goToNextBlock,
   goToPreviousBlock,
 }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const sets: number = block.sets ?? 4
   const bouldersPerSet: number = block.bouldersPerSet ?? 4
   const restTime: number = block.restTime ?? 240
@@ -310,7 +312,7 @@ export function FourByFourBlock({
           </View>
         ))}
         <View style={{ marginTop: 8 }}>
-          <CustomButton title="Continue" onPress={goToNextBlock} />
+          <CustomButton title={nextLabel} onPress={goToNextBlock} />
         </View>
       </ScrollView>
     </View>

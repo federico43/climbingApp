@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { BlockRenderer } from "@/utils/blockRenderer"
 import { BlockTimerContext } from "@/utils/blockTimer"
+import { LastBlockContext } from "@/utils/blockNav"
 import { Ionicons } from "@expo/vector-icons"
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -84,19 +85,6 @@ export function WorkOutState({
     workoutStartTime,
     skippedBlocks,
   } = workout
-
-  // On the final block, advancing finishes the workout — make that deliberate
-  // so an accidental tap can't end (and save) the session by surprise.
-  function handleNext() {
-    if (isLastBlock) {
-      Alert.alert("Finish workout?", "This will end and save your session.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Finish", style: "default", onPress: goToNextBlock },
-      ])
-    } else {
-      goToNextBlock()
-    }
-  }
 
   function handleSkip() {
     Alert.alert(
@@ -341,21 +329,23 @@ export function WorkOutState({
       )}
       <BlockEntry key={`${currentBlockIndex}-${currentBlock?.coached ? "c" : "g"}`}>
         <BlockTimerContext.Provider value={blockTimer}>
-          <BlockRenderer
-            block={currentBlock}
-            attemptsDone={attemptsDone}
-            logAttempt={logAttempt}
-            undoLastAttempt={undoLastAttempt}
-            updateLastAttempt={updateLastAttempt}
-            timeRemaining={timeRemaining}
-            restTimeRemaining={restTimeRemaining}
-            startRestTimer={startRestTimer}
-            attempts={attempts}
-            currentBlockIndex={currentBlockIndex}
-            goToNextBlock={handleNext}
-            goToPreviousBlock={goToPreviousBlock}
-            blockStartTime={blockStartTime}
-          />
+          <LastBlockContext.Provider value={isLastBlock}>
+            <BlockRenderer
+              block={currentBlock}
+              attemptsDone={attemptsDone}
+              logAttempt={logAttempt}
+              undoLastAttempt={undoLastAttempt}
+              updateLastAttempt={updateLastAttempt}
+              timeRemaining={timeRemaining}
+              restTimeRemaining={restTimeRemaining}
+              startRestTimer={startRestTimer}
+              attempts={attempts}
+              currentBlockIndex={currentBlockIndex}
+              goToNextBlock={goToNextBlock}
+              goToPreviousBlock={goToPreviousBlock}
+              blockStartTime={blockStartTime}
+            />
+          </LastBlockContext.Provider>
         </BlockTimerContext.Provider>
       </BlockEntry>
     </SafeAreaView>

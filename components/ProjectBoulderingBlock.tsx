@@ -18,6 +18,7 @@ import * as Haptics from "expo-haptics"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
+import { useNextBlockLabel } from "@/utils/blockNav"
 
 // Project bouldering v2 (docs/project-bouldering-v2.md): work boulders of one
 // grade against the block's clock. One big button logs an attempt and starts
@@ -51,6 +52,7 @@ export function ProjectBoulderingBlock({
   block, logAttempt, updateLastAttempt, undoLastAttempt, restTimeRemaining, startRestTimer,
   attempts, allAttempts, goToNextBlock, goToPreviousBlock,
 }: Props) {
+  const nextLabel = useNextBlockLabel("Continue")
   const settings = normalizeProjectBlock(block)
   const blockTitle: string = block.blockName || "Project bouldering"
   const limitSecs = settings.timeLimit * 60
@@ -420,7 +422,7 @@ export function ProjectBoulderingBlock({
       />
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
         <ProjectSummaryCard attempts={attempts} />
-        <CustomButton title="Continue" onPress={goToNextBlock} />
+        <CustomButton title={nextLabel} onPress={goToNextBlock} />
       </ScrollView>
     </View>
   )
