@@ -11,10 +11,13 @@ import {
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
   type BuiltPlanWorkout, type MainType, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
-import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
+import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
+import { buildPlanWorkout, withUpcomingWorkouts, type PlanWorkout } from "@/utils/planWorkout"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   AppUser,
+  createProtocol,
+  deleteProtocol,
   getSessionsByUserId,
   listBlocks,
   listExercises,
@@ -23,6 +26,7 @@ import {
   SessionRow,
   TrainingPlanRow,
 } from "@/services/BoulderGraphService"
+import { notifyHomeworkAssigned } from "@/services/homework"
 import { useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -30,6 +34,8 @@ const MAIN_TYPE_LABEL: Record<MainType, string> = {
   strength: "Strength", power_endurance: "Power endurance", power: "Power",
 }
 // What the coach can ⇄ Swap on the next workout, and which workout it's for.
+type GeneratedWorkout = PlanWorkout & { name: string; slot: { planId: string; planIndex: number } }
+
 type SpecSwaps = { index: number } & Partial<Pick<WorkoutSpec, "mainBlock" | "warmup" | "scFocus">>
 
 // S&C focus swap: Max force → Hypertrophy → Explosiveness → Max force.
@@ -42,7 +48,8 @@ function formatPlanDate(dateStr: string): string {
 }
 
 // The athlete's training plan: settings, progress, and the next workout
-// with its Build and a ⇄ Swap on each line (docs/coach-dashboard.md §4.5).
+// with a ⇄ Swap on each line, Edit details (opens the builder) and Create
+// (saves it as generated) (docs/coach-dashboard.md §4.5).
 export function PlanCard({
   athlete,
   plan,
@@ -66,7 +73,10 @@ export function PlanCard({
   onPlanWorkouts: (rows: ProtocolRow[]) => void
   onHomeworkChanged: () => void
 }) {
-  const [building, setBuilding] = useState(false)
+  // Which of Edit details / Create is generating or saving the next workout.
+  const [busy, setBusy] = useState<"edit" | "create" | null>(null)
+  // The plan workout Create just saved, for the "sent" line.
+  const [created, setCreated] = useState<number | null>(null)
   const [draftWorkout, setDraftWorkout] = useState<{
     name: string; blocks: Block[]; homeworkIds: string[]; plan: { planId: string; planIndex: number }
   } | null>(null)
@@ -104,35 +114,101 @@ export function PlanCard({
   // Re-reads sessions, the plan's workouts and both libraries first, so
   // anything done, built or edited since this page opened counts (e.g. an
   // exercise re-tagged with a different movement pattern).
-  async function handleBuild() {
-    if (!plan || !planShape || !nextSpec) return
-    setBuilding(true)
+  async function generateNext() {
+    if (!plan || !planShape || !nextSpec) return null
+    const [fresh, built, exerciseRows, blockRows] = await Promise.all([
+      getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
+    ])
+    onSessions(fresh)
+    onPlanWorkouts(built)
+    return {
+      name: `Workout ${nextSpec.index} · ${MAIN_TYPE_LABEL[nextSpec.mainType]}`,
+      slot: { planId: plan.$id, planIndex: nextSpec.index },
+      ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel),
+    }
+  }
+
+  // Opens the generated workout in the builder, to review and adjust
+  // before saving.
+  function openInBuilder(next: GeneratedWorkout) {
+    // The Density test rides along pre-marked as homework (split off on save).
+    const withIds = injectLocalIds([...next.homework, ...next.blocks])
+    setDraftWorkout({
+      name: next.name,
+      blocks: withIds,
+      homeworkIds: withIds.slice(0, next.homework.length).map((b) => b.id),
+      plan: next.slot,
+    })
+  }
+
+  async function handleEditDetails() {
+    setBusy("edit")
     try {
-      const [fresh, built, exerciseRows, blockRows] = await Promise.all([
-        getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
-      ])
-      onSessions(fresh)
-      onPlanWorkouts(built)
-      const { blocks, homework: homeworkBlocks, warnings } = buildPlanWorkout(
-        planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel,
-      )
-      // The Density test rides along pre-marked as homework (split off on save).
-      const withIds = injectLocalIds([...homeworkBlocks, ...blocks])
-      const open = () => setDraftWorkout({
-        name: `Workout ${nextSpec.index} · ${MAIN_TYPE_LABEL[nextSpec.mainType]}`,
-        blocks: withIds,
-        homeworkIds: withIds.slice(0, homeworkBlocks.length).map((b) => b.id),
-        plan: { planId: plan.$id, planIndex: nextSpec.index },
-      })
-      if (warnings.length > 0) {
-        Alert.alert("Check this workout", warnings.join("\n\n"), [{ text: "OK", onPress: open }])
+      const next = await generateNext()
+      if (!next) return
+      if (next.warnings.length > 0) {
+        Alert.alert("Check this workout", next.warnings.join("\n\n"), [{ text: "OK", onPress: () => openInBuilder(next) }])
       } else {
-        open()
+        openInBuilder(next)
       }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not build the workout.")
     } finally {
-      setBuilding(false)
+      setBusy(null)
+    }
+  }
+
+  // Saves the generated workout as it is — the athlete sees it right away.
+  // With warnings, the coach picks: create anyway, or review it first.
+  async function handleCreate() {
+    setBusy("create")
+    try {
+      const next = await generateNext()
+      if (!next) return
+      if (next.blocks.length === 0) {
+        Alert.alert("Nothing to create", [...next.warnings, "Use Edit details to build it by hand."].join("\n\n"))
+        return
+      }
+      if (next.warnings.length > 0) {
+        Alert.alert("Check this workout", next.warnings.join("\n\n"), [
+          { text: "Cancel", style: "cancel" },
+          { text: "Edit details", onPress: () => openInBuilder(next) },
+          { text: "Create anyway", onPress: () => { void create(next) } },
+        ])
+        return
+      }
+      await create(next)
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not create the workout.")
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Same rows the builder's Save makes: the Density test first as homework
+  // (undone if the workout can't be saved), then the workout, then the
+  // athlete hears about the homework.
+  async function create(next: GeneratedWorkout) {
+    setBusy("create")
+    let homeworkRow: ProtocolRow | null = null
+    try {
+      const dueBy = defaultDueBy(today)
+      if (next.homework.length > 0) {
+        homeworkRow = await createProtocol({
+          name: homeworkName(next.name, next.homework), blocks: next.homework, athleteId: athlete.$id,
+          ...next.slot, planPart: "homework", dueBy,
+        })
+      }
+      await createProtocol({ name: next.name, blocks: next.blocks, athleteId: athlete.$id, ...next.slot })
+      if (homeworkRow) notifyHomeworkAssigned(homeworkRow.$id, shortDay(dueBy))
+      setCreated(next.slot.planIndex)
+      if (plan) listPlanWorkouts(plan.$id).then(onPlanWorkouts).catch(console.error)
+      onHomeworkChanged()
+    } catch (e: any) {
+      if (homeworkRow) await deleteProtocol(homeworkRow.$id).catch(() => {})
+      Alert.alert("Error", e?.message ?? "Could not create the workout.")
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -200,14 +276,12 @@ export function PlanCard({
             </View>
           ) : nextSpec && (
             <View style={styles.box}>
-              <View style={card.headerRow}>
-                <Text style={styles.nextTitle}>
-                  Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today))}
-                </Text>
-                <Pressable style={card.outlineBtn} onPress={handleBuild} disabled={building}>
-                  <Text style={card.outlineBtnText}>{building ? "…" : "Build"}</Text>
-                </Pressable>
-              </View>
+              {created === nextSpec.index - 1 && (
+                <Text style={styles.sent}>✓ Workout {created} created — {athlete.username} can see it now.</Text>
+              )}
+              <Text style={styles.nextTitle}>
+                Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today))}
+              </Text>
               {nextSpec.scFocus && (
                 <PickRow
                   color={ADAPTATION_COLOR.conditioning}
@@ -228,6 +302,14 @@ export function PlanCard({
                 onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
               />
               {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Density test as homework" />}
+              <View style={styles.actions}>
+                <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
+                  <Text style={card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
+                </Pressable>
+                <Pressable style={[card.primaryBtn, { alignSelf: "auto" }]} onPress={handleCreate} disabled={busy !== null}>
+                  <Text style={card.primaryBtnText}>{busy === "create" ? "Creating…" : "Create"}</Text>
+                </Pressable>
+              </View>
             </View>
           )}
         </>
@@ -299,7 +381,9 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: C.textSecondary },
   box: { backgroundColor: C.surfaceHigh, borderRadius: 12, padding: 12, gap: 8 },
   boxText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
-  nextTitle: { flex: 1, fontSize: 13.5, fontWeight: "700", color: C.textPrimary },
+  nextTitle: { fontSize: 13.5, fontWeight: "700", color: C.textPrimary },
+  sent: { fontSize: 12.5, fontWeight: "600", color: C.green },
+  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
   pickRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   pickText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
