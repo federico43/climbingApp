@@ -90,8 +90,9 @@ export default function Auth_context({children}:PropsWithChildren) {
                 password: password
             })
             console.log(userId)
-            await logRecord('users', { username: username}, userId)
+            await logRecord('users', { username: username, role: "athlete" }, userId)
             setusername(username)
+            setRole("athlete")
             setError(null) 
             return true 
             }
