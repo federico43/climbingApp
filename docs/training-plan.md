@@ -220,8 +220,8 @@ Every exercise is programmed for the day's S&C focus (reps from its range:
 
 **Core never trains explosiveness** (coach 2026-10-21). The core pattern
 ignores the day's focus and alternates **max force ↔ hypertrophy**, flipping
-every week (`coreFocusFor` in `utils/planRotation.ts`: weeks 1, 3, 5 max
-force; 2, 4, 6 hypertrophy), so each of its two exercises goes max force →
+every two workouts (`coreFocusFor` in `utils/planRotation.ts`: workouts 1–2, 5–6, 9–10 max
+force; 3–4, 7–8, 11–12 hypertrophy), so each of its two exercises goes max force →
 hypertrophy → max force … The exercise editor's "Used for" and the block
 editor's Focus only offer those two for core (`focusesFor`).
 
