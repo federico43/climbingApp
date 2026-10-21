@@ -1,7 +1,9 @@
 import { useAuth } from "@/components/auth-context"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { useWorkout } from "@/hooks/WorkoutHook"
-import { SessionLink } from "@/services/BoulderGraphService"
+import { listBlocks, SessionLink } from "@/services/BoulderGraphService"
+import { applyMainSwap, mainSwapFor } from "@/utils/mainSwap"
+import { cloneLibraryBlock, findLibraryBlock } from "@/utils/planWorkout"
 import { enqueueSession, onSessionsSynced } from "@/services/sessionSyncQueue"
 import { serializeSession } from "@/utils/workoutSession"
 import {
@@ -35,6 +37,10 @@ interface WorkoutContextValue {
   // "Coach is here" / "On my own" mid-workout — this session's copy of the
   // block only, never the saved workout (docs/training-plan-implementation.md §12a).
   setBlockCoached: (index: number, coached: boolean) => void
+  // The athlete's ⇄ switch of a plan workout's main block to the other one
+  // of its type (utils/mainSwap.ts) — this session only. Throws when the
+  // library block can't be fetched (e.g. no connection).
+  swapMainBlock: (index: number) => Promise<void>
   closeModal: () => void
   endWorkout: () => void
   minimize: () => void
@@ -192,6 +198,15 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setProtocol((p) => p.map((b, i) => (i === index ? { ...b, coached: coached || undefined } : b)))
   }, [])
 
+  const swapMainBlock = useCallback(async (index: number) => {
+    const swap = mainSwapFor(protocol, index)
+    if (!swap) return
+    const row = findLibraryBlock(swap.to, await listBlocks())
+    if (!row) throw new Error(`No "${swap.to.name}" block in the library.`)
+    const logged = new Set(workout.attempts.map((a) => a.blockIndex))
+    setProtocol((p) => applyMainSwap(p, index, cloneLibraryBlock(row), logged))
+  }, [protocol, workout.attempts])
+
   const closeModal = useCallback(() => {
     if (!workoutActive) setModalVisible(false)
   }, [workoutActive])
@@ -219,6 +234,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     modalVisible,
     openWorkout,
     setBlockCoached,
+    swapMainBlock,
     closeModal,
     endWorkout,
     minimize,
