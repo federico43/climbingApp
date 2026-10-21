@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
+import { sendExpoPush } from "./expoPush.js"
 
 // Model. Haiku is cheap and plenty for turning a sentence into a structured
 // protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
@@ -13,8 +14,6 @@ const USERS_TABLE = process.env.USERS_TABLE || "users"
 const PROTOCOLS_TABLE = process.env.PROTOCOLS_TABLE || "protocol"
 const TRAINING_PLANS_TABLE = process.env.TRAINING_PLANS_TABLE || "training_plans"
 const EXERCISES_TABLE = process.env.EXERCISES_TABLE || "exercises"
-
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 async function appwriteFetch(path, log) {
   const apiKey = process.env.APPWRITE_API_KEY
@@ -66,28 +65,6 @@ async function updateProtocolRow(id, data, log) {
   )
 }
 
-// Best-effort Expo push to the given tokens. Returns how many were sent.
-async function sendPush(messages, log, error) {
-  const valid = messages.filter((m) => typeof m.to === "string" && m.to)
-  if (valid.length === 0) return 0
-  try {
-    const r = await fetch(EXPO_PUSH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(valid),
-    })
-    if (!r.ok) {
-      error?.(`Expo push send failed: ${r.status} ${await r.text().catch(() => "")}`)
-      return 0
-    }
-    log?.(`Pushed ${valid.length} message(s)`)
-    return valid.length
-  } catch (e) {
-    error?.(`Expo push send failed: ${e?.message ?? e}`)
-    return 0
-  }
-}
-
 // Generic row helpers (both REST shapes, like the protocol ones above).
 async function getRow(table, id, log) {
   const rid = encodeURIComponent(id)
@@ -115,6 +92,33 @@ async function listRowsEqual(table, attribute, value, log) {
   const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents?queries[]=${query}&queries[]=${limit}`, log)
   return viaDocs?.documents ?? []
 }
+
+// Best-effort Expo push to user rows: `build(user)` is the message minus
+// `to`. Users without a token are skipped. Tokens Expo says are dead
+// (DeviceNotRegistered, or malformed) are cleared from their rows so we stop
+// pushing them; the app saves a fresh one on its next launch. Pass
+// `receiptWaitMs` only from async executions (see expoPush.js). Returns how
+// many were accepted by Expo.
+async function pushToUsers(users, build, log, error, { receiptWaitMs = 0 } = {}) {
+  const withToken = users.filter((u) => typeof u?.pushToken === "string" && u.pushToken)
+  if (withToken.length === 0) return 0
+  const { sent, invalidTokens } = await sendExpoPush(
+    withToken.map((u) => ({ ...build(u), to: u.pushToken })),
+    { log, error, receiptWaitMs },
+  )
+  for (const token of invalidTokens) {
+    for (const u of withToken.filter((x) => x.pushToken === token)) {
+      const cleared = await updateRow(USERS_TABLE, u.$id, { pushToken: null }, log)
+      if (cleared) log(`Cleared dead push token for user ${u.$id}`)
+      else error(`Could not clear dead push token for user ${u.$id}`)
+    }
+  }
+  return sent
+}
+
+// Async executions (nobody waits on the response) look up delivery receipts
+// after this long, to catch tokens Apple/Google reject.
+const RECEIPT_WAIT_MS = 5000
 
 const parseJson = (raw, fallback) => {
   if (raw && typeof raw === "object") return raw
@@ -212,36 +216,15 @@ export default async ({ req, res, log, error }) => {
     const protocolName = typeof body.protocolName === "string" ? body.protocolName.trim().slice(0, 120) : ""
     const athleteName = caller.username || "An athlete"
 
-    const coaches = (await listCoachRows(log)).filter(
-      (c) => c.$id !== userId && typeof c.pushToken === "string" && c.pushToken
-    )
-    if (coaches.length === 0) return res.json({ ok: true, notified: 0 }, 200)
-
-    const messages = coaches.map((c) => ({
-      to: c.pushToken,
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    // Called with async: true, so there's time to check delivery receipts.
+    const notified = await pushToUsers(coaches, () => ({
       sound: "default",
       title: "Workout completed",
       body: protocolName ? `${athleteName} finished "${protocolName}".` : `${athleteName} finished a workout.`,
       data: { type: "workout_completed", athleteId: userId },
-    }))
-
-    try {
-      const r = await fetch(EXPO_PUSH_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(messages),
-      })
-      const result = await r.json().catch(() => null)
-      if (!r.ok) {
-        error(`Expo push send failed: ${r.status} ${JSON.stringify(result)}`)
-        return res.json({ error: "Could not send notification." }, 502)
-      }
-      log(`Notified ${messages.length} coach(es)`)
-      return res.json({ ok: true, notified: messages.length }, 200)
-    } catch (e) {
-      error(`Expo push send failed: ${e?.message ?? e}`)
-      return res.json({ error: "Could not send notification." }, 502)
-    }
+    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS })
+    return res.json({ ok: true, notified }, 200)
   }
 
   // ── Action: coach made homework (or moved its deadline) → push the athlete ───
@@ -253,15 +236,15 @@ export default async ({ req, res, log, error }) => {
     const athlete = await getUserRow(hw.athleteId, log)
     const due = DAY_RE.test(hw.dueBy ?? "") ? ` Pick a day before ${clip(body.dueLabel, 40) || hw.dueBy}.` : ""
     const extended = body.extended === true
-    const sent = await sendPush([{
-      to: athlete?.pushToken,
+    // Called with async: true, so there's time to check delivery receipts.
+    const sent = await pushToUsers(athlete ? [athlete] : [], () => ({
       sound: "default",
       title: extended ? "More time for your homework" : "You've got homework",
       body: extended
         ? `${clip(hw.name, 80) || "Your homework"} is now due ${clip(body.dueLabel, 40) || hw.dueBy}. Pick a day.`
         : `${clip(hw.name, 80) || "New homework"} from your coach.${due}`,
       data: { type: "homework_assigned", homeworkId: hw.$id },
-    }], log, error)
+    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS })
     return res.json({ ok: true, notified: sent }, 200)
   }
 
@@ -300,13 +283,12 @@ export default async ({ req, res, log, error }) => {
     if (!updated) return res.json({ error: "Could not save. (Does the function's API key have write access?)" }, 502)
 
     const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
-    await sendPush(coaches.map((c) => ({
-      to: c.pushToken,
+    await pushToUsers(coaches, () => ({
       sound: "default",
       title: body.cantAttend === true ? "Homework: can't attend" : "Homework scheduled",
       body: pushBody,
       data: { type: "homework_update", athleteId: userId, homeworkId: hw.$id },
-    })), log, error)
+    }), log, error)
     return res.json({ ok: true, row: updated }, 200)
   }
 
@@ -369,13 +351,12 @@ export default async ({ req, res, log, error }) => {
     const name = caller?.username || "Your athlete"
     const fromName = clip(body.fromExerciseName, 80) || "an exercise"
     const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
-    await sendPush(coaches.map((c) => ({
-      to: c.pushToken,
+    await pushToUsers(coaches, () => ({
       sound: "default",
       title: "Plan exercise changed",
       body: `${name} replaced ${fromName} with ${clip(to.name, 80)} for the rest of their plan.`,
       data: { type: "plan_swap", athleteId: userId, planId },
-    })), log, error)
+    }), log, error)
     return res.json({ ok: true, scPatterns: nextPatterns, workoutsUpdated }, 200)
   }
 
