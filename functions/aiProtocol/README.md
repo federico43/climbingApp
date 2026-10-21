@@ -86,6 +86,12 @@ through `src/expoPush.js`, which:
   `DeviceNotRegistered` (app uninstalled, token expired). The app saves a
   fresh token the next time it opens.
 
+One phone, one account: on sign-out the app clears its token from the user's
+row (`clearPushToken` in `services/notifications.ts`). If that couldn't run
+(offline), the next account to sign in on the phone saves the token and calls
+`{ "action": "claimPushToken" }`, which removes the same token from every
+other user's row.
+
 Every execution that pushes logs a line like
 `Expo push: 1 sent, 1 failed, 1 token(s) to clear` — look in the function's
 Executions tab in Appwrite. `InvalidCredentials` / `MismatchSenderId` mean

@@ -120,6 +120,17 @@ async function pushToUsers(users, build, log, error, { receiptWaitMs = 0 } = {})
 // after this long, to catch tokens Apple/Google reject.
 const RECEIPT_WAIT_MS = 5000
 
+// Users whose row holds `token`. Filters a full listing in memory rather
+// than querying `pushToken`, which may not have an index — the roster is small.
+async function listUsersWithToken(token, log) {
+  const limit = encodeURIComponent(JSON.stringify({ method: "limit", values: [5000] }))
+  const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows?queries[]=${limit}`, log)
+  const rows = viaTables?.rows
+    ?? (await appwriteFetch(`/databases/${DATABASE_ID}/collections/${USERS_TABLE}/documents?queries[]=${limit}`, log))?.documents
+    ?? []
+  return rows.filter((u) => u?.pushToken === token)
+}
+
 const parseJson = (raw, fallback) => {
   if (raw && typeof raw === "object") return raw
   try { return JSON.parse(raw) } catch { return fallback }
@@ -225,6 +236,26 @@ export default async ({ req, res, log, error }) => {
       data: { type: "workout_completed", athleteId: userId },
     }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS })
     return res.json({ ok: true, notified }, 200)
+  }
+
+  // ── Action: this device's token now belongs to the caller ───────────────────
+  // The app calls this right after saving its token on the caller's row. Any
+  // other account still holding the same token (someone else used this phone
+  // and the sign-out cleanup didn't run, e.g. offline) loses it, so their
+  // pushes stop reaching this device. The token is read from the caller's own
+  // row, not the body, so nobody can strip someone else's token.
+  if (body.action === "claimPushToken") {
+    const caller = await getUserRow(userId, log)
+    const token = caller?.pushToken
+    if (typeof token !== "string" || !token) return res.json({ ok: true, cleared: 0 }, 200)
+    const others = (await listUsersWithToken(token, log)).filter((u) => u.$id !== userId)
+    let cleared = 0
+    for (const u of others) {
+      if (await updateRow(USERS_TABLE, u.$id, { pushToken: null }, log)) cleared++
+      else error(`Could not clear shared push token for user ${u.$id}`)
+    }
+    if (cleared) log(`Moved push token to ${userId}, cleared it from ${cleared} other account(s)`)
+    return res.json({ ok: true, cleared }, 200)
   }
 
   // ── Action: coach made homework (or moved its deadline) → push the athlete ───
