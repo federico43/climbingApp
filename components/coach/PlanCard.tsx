@@ -9,10 +9,10 @@ import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
 import {
   alternateMainBlock, localDateStr, MAIN_BLOCK_COPIES, nextPlanIndex, planIsOver, planWeek, workoutSpec,
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
-  type BuiltPlanWorkout, type LibraryBlockRef, type MainType, type PlanShape, type WorkoutSpec,
+  type BuiltPlanWorkout, type MainType, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
-import { FOCUS_LABEL } from "@/utils/scProgression"
+import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   AppUser,
   getSessionsByUserId,
@@ -29,12 +29,20 @@ import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } fr
 const MAIN_TYPE_LABEL: Record<MainType, string> = {
   strength: "Strength", power_endurance: "Power endurance", power: "Power",
 }
+// What the coach can ⇄ Swap on the next workout, and which workout it's for.
+type SpecSwaps = { index: number } & Partial<Pick<WorkoutSpec, "mainBlock" | "warmup" | "scFocus">>
+
+// S&C focus swap: Max force → Hypertrophy → Explosiveness → Max force.
+function nextFocus(focus: Focus): Focus {
+  return FOCUSES[(FOCUSES.indexOf(focus) + 1) % FOCUSES.length]
+}
+
 function formatPlanDate(dateStr: string): string {
   return new Date(dateStr + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
 // The athlete's training plan: settings, progress, and the next workout
-// with its Build / ⇄ Swap (docs/coach-dashboard.md §4.5).
+// with its Build and a ⇄ Swap on each line (docs/coach-dashboard.md §4.5).
 export function PlanCard({
   athlete,
   plan,
@@ -62,8 +70,9 @@ export function PlanCard({
   const [draftWorkout, setDraftWorkout] = useState<{
     name: string; blocks: Block[]; homeworkIds: string[]; plan: { planId: string; planIndex: number }
   } | null>(null)
-  // The coach's ⇄ Swap of the next workout's main block, for that workout only.
-  const [swappedMain, setSwappedMain] = useState<{ index: number; block: LibraryBlockRef } | null>(null)
+  // The coach's ⇄ Swaps on the next workout (S&C focus, warm-up, main
+  // block), for that workout only — dropped once the card moves on.
+  const [swaps, setSwaps] = useState<SpecSwaps>({ index: 0 })
   const [planModal, setPlanModal] = useState<"edit" | "new" | null>(null)
 
   // Where the plan is: built climbing workouts (split-off S&C doesn't move
@@ -79,10 +88,14 @@ export function PlanCard({
   const rotationSpec: WorkoutSpec | null = planShape && !planEnded
     ? workoutSpec(planShape, nextIndex, builtWorkouts, today)
     : null
-  const nextSpec: WorkoutSpec | null = rotationSpec && swappedMain?.index === rotationSpec.index
-    ? { ...rotationSpec, mainBlock: swappedMain.block }
+  const nextSpec: WorkoutSpec | null = rotationSpec && swaps.index === rotationSpec.index
+    ? { ...rotationSpec, ...swaps, index: rotationSpec.index }
     : rotationSpec
   const swapTo = nextSpec ? alternateMainBlock(nextSpec.mainType, nextSpec.mainBlock) : null
+  function swap(change: Omit<SpecSwaps, "index">) {
+    if (!nextSpec) return
+    setSwaps((prev) => ({ ...(prev.index === nextSpec.index ? prev : {}), ...change, index: nextSpec.index }))
+  }
   // Same numbers the athlete sees on their Plan page.
   const done = plan ? donePlanWorkouts(plan.$id, planWorkouts, sessions) : new Map<number, string>()
   const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today) : 0
@@ -196,25 +209,24 @@ export function PlanCard({
                 </Pressable>
               </View>
               {nextSpec.scFocus && (
-                <PickRow color={ADAPTATION_COLOR.conditioning} text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`} />
+                <PickRow
+                  color={ADAPTATION_COLOR.conditioning}
+                  text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
+                  onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!) })}
+                />
               )}
               <PickRow
                 color={C.textMuted}
                 text={nextSpec.warmup === "constraints"
                   ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
                   : "Warm-up · 1 on 1 off"}
+                onSwap={() => swap({ warmup: nextSpec.warmup === "constraints" ? "one_on_one_off" : "constraints" })}
               />
-              <View style={styles.pickRow}>
-                <View style={[styles.dot, { backgroundColor: ADAPTATION_COLOR[nextSpec.mainType] }]} />
-                <Text style={[styles.pickText, { flex: 1 }]}>
-                  {MAIN_TYPE_LABEL[nextSpec.mainType]} · {nextSpec.mainBlock.name} × {MAIN_BLOCK_COPIES}
-                </Text>
-                {swapTo && (
-                  <Pressable onPress={() => setSwappedMain({ index: nextSpec.index, block: swapTo })} hitSlop={8}>
-                    <Text style={card.link}>⇄ Swap</Text>
-                  </Pressable>
-                )}
-              </View>
+              <PickRow
+                color={ADAPTATION_COLOR[nextSpec.mainType]}
+                text={`${MAIN_TYPE_LABEL[nextSpec.mainType]} · ${nextSpec.mainBlock.name} × ${MAIN_BLOCK_COPIES}`}
+                onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
+              />
               {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Density test as homework" />}
             </View>
           )}
@@ -261,11 +273,16 @@ function Stat({ value, label }: { value: string; label: string }) {
   )
 }
 
-function PickRow({ color, text }: { color: string; text: string }) {
+function PickRow({ color, text, onSwap }: { color: string; text: string; onSwap?: () => void }) {
   return (
     <View style={styles.pickRow}>
       <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={styles.pickText}>{text}</Text>
+      <Text style={[styles.pickText, { flex: 1 }]}>{text}</Text>
+      {onSwap && (
+        <Pressable onPress={onSwap} hitSlop={8}>
+          <Text style={card.link}>⇄ Swap</Text>
+        </Pressable>
+      )}
     </View>
   )
 }
