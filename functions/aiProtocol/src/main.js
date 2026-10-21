@@ -204,8 +204,10 @@ export default async ({ req, res, log, error }) => {
     // Only an athlete finishing their own workout triggers a coach ping — a
     // coach logging their own session (or a caller we can't identify) is a
     // silent no-op, not an error, so the client doesn't need to know the difference.
+    // A missing role counts as athlete: accounts made before sign-up set it
+    // have none, and they're athletes unless a coach says otherwise.
     const caller = await getUserRow(userId, log)
-    if (!caller || caller.role !== "athlete") {
+    if (!caller || caller.role === "coach") {
       return res.json({ ok: true, notified: 0 }, 200)
     }
 
