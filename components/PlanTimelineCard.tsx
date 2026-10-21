@@ -1,14 +1,13 @@
 import { C } from "@/utils/theme"
 import { ProtocolRow, SessionRow, TrainingPlanRow } from "@/services/BoulderGraphService"
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
-import { daysLeft, donePlanWorkouts, planDays, trainedDaysIn } from "@/utils/planProgress"
-import { homeworkBusyDays, scheduleFor } from "@/utils/planSchedule"
+import { daysLeft, planDays, trainedDaysIn } from "@/utils/planProgress"
 import { localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { StyleSheet, Text, View } from "react-native"
 
 // The plan's timeline: start → end, status, days left and the 6-week day
-// grid (trained / today / to come / planned workouts / homework days). The athlete sees it on
+// grid (trained / today / to come / homework days). The athlete sees it on
 // their Plan page; the coach sees the very same card on the dashboard
 // (docs/coach-dashboard.md §4.6).
 
@@ -36,16 +35,12 @@ export function PlanTimelineCard({
   plan,
   sessions,
   homework,
-  planWorkouts,
 }: {
   plan: TrainingPlanRow
   sessions: SessionRow[]
   // The athlete's homework rows (planPart "homework"); their picked days
   // show on the grid like events.
   homework: ProtocolRow[]
-  // The plan's built workouts; with them, the days the weekly scheduler
-  // (utils/planSchedule.ts) puts the workouts still to do on are marked.
-  planWorkouts?: ProtocolRow[]
 }) {
   const today = localDateStr(new Date())
   const { windowStart, windowEnd } = plan
@@ -56,13 +51,10 @@ export function PlanTimelineCard({
 
   const days = planDays(windowStart, windowEnd)
   const trained = trainedDaysIn(windowStart, windowEnd, sessions)
-  const homeworkDays = homeworkBusyDays(homework, sessions)
-  const plannedDays = new Set(
-    planWorkouts && !over
-      ? scheduleFor(plan, donePlanWorkouts(plan.$id, planWorkouts, sessions), homework, sessions, new Date())
-        .filter((s) => s.date && (s.state === "scheduled" || s.state === "moved"))
-        .map((s) => s.date!)
-      : [],
+  const homeworkDays = new Set(
+    homework
+      .filter((hw) => hw.scheduledFor && hw.homeworkStatus !== "cant_attend" && !sessions.some((s) => s.protocolId === hw.$id))
+      .map((hw) => localDateStr(new Date(hw.scheduledFor!))),
   )
 
   const focusColor = plan.focus ? ADAPTATION_COLOR[plan.focus] : C.textSecondary
@@ -92,12 +84,11 @@ export function PlanTimelineCard({
         <Text style={[styles.statusPillText, { color: focusColor }]}>{statusLine}</Text>
       </View>
       <View style={styles.timelineDivider} />
-      <DaysGrid days={days} trained={trained} homework={homeworkDays} planned={plannedDays} today={today} />
+      <DaysGrid days={days} trained={trained} homework={homeworkDays} today={today} />
       <View style={styles.legend}>
         <LegendDot style={styles.cellTrained} label="Trained" />
         <LegendDot style={[styles.cellFuture, styles.cellToday]} label="Today" />
         <LegendDot style={styles.cellFuture} label="To come" />
-        {plannedDays.size > 0 && <LegendDot style={[styles.cellFuture, styles.cellPlanned]} label="Workout" />}
         {homeworkDays.size > 0 && <LegendDot style={[styles.cellFuture, styles.cellHomework]} label="Homework" />}
       </View>
     </View>
@@ -105,9 +96,7 @@ export function PlanTimelineCard({
 }
 
 // One row per plan week, one cell per day, starting on the plan's first day.
-function DaysGrid({ days, trained, homework, planned, today }: {
-  days: string[]; trained: Set<string>; homework: Set<string>; planned: Set<string>; today: string
-}) {
+function DaysGrid({ days, trained, homework, today }: { days: string[]; trained: Set<string>; homework: Set<string>; today: string }) {
   const weeks: string[][] = []
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
   return (
@@ -128,12 +117,7 @@ function DaysGrid({ days, trained, homework, planned, today }: {
               : d < today ? styles.cellPast : styles.cellFuture
             return (
               <View key={d} style={styles.gridCellWrap}>
-                <View style={[
-                  styles.cell, style,
-                  planned.has(d) && !isTrained && styles.cellPlanned,
-                  homework.has(d) && !isTrained && styles.cellHomework,
-                  d === today && styles.cellToday,
-                ]}>
+                <View style={[styles.cell, style, homework.has(d) && !isTrained && styles.cellHomework, d === today && styles.cellToday]}>
                   {homework.has(d) && <View style={styles.cellHomeworkDot} />}
                 </View>
               </View>
@@ -198,7 +182,6 @@ const styles = StyleSheet.create({
   cellPast: { backgroundColor: C.surfaceHigh },
   cellFuture: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.16)" },
   cellToday: { borderWidth: 2, borderColor: C.green },
-  cellPlanned: { backgroundColor: "rgba(255,255,255,0.10)", borderWidth: 2, borderColor: C.textSecondary },
   cellHomework: { borderWidth: 2, borderColor: ADAPTATION_COLOR.test },
   cellHomeworkDot: { position: "absolute", top: 8, left: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: ADAPTATION_COLOR.test },
   legend: { flexDirection: "row", flexWrap: "wrap", columnGap: 16, rowGap: 6, paddingLeft: 28 },
