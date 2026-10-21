@@ -15,8 +15,6 @@ import {
   updateTrainingPlan,
 } from "@/services/BoulderGraphService"
 import DateTimePicker from "@react-native-community/datetimepicker"
-import { TrainingDaysPicker } from "@/components/TrainingDaysPicker"
-import { parseTrainingTime } from "@/utils/planSchedule"
 import { useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 
@@ -55,9 +53,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
   const [hasSc, setHasSc] = useState(false)
   const [hasMobility, setHasMobility] = useState(false)
-  // Weekly scheduler: empty = the default days; "" = no usual time.
-  const [trainingDays, setTrainingDays] = useState<number[]>([])
-  const [trainingTime, setTrainingTime] = useState("")
   // In pick order — mp1…mp4.
   const [patterns, setPatterns] = useState<ScPattern[]>([])
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
@@ -75,8 +70,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
       setPatterns(current.scPatterns)
-      setTrainingDays(current.trainingDays ?? [])
-      setTrainingTime(current.trainingTime ?? "")
     } else {
       setName("")
       setWindowStart(localDateStr(new Date()))
@@ -85,8 +78,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setHasSc(false)
       setHasMobility(false)
       setPatterns([])
-      setTrainingDays([])
-      setTrainingTime("")
     }
     setPickerOpen(false)
   }, [visible, mode, current])
@@ -126,7 +117,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   // What's still missing, in order — the first one is shown under the button.
   const problems: string[] = []
   if (!focus) problems.push("Pick a focus")
-  if (trainingTime.trim() && !parseTrainingTime(trainingTime)) problems.push("Write the usual time as 18:00")
   if (hasSc) {
     if (patterns.length !== SC_PATTERN_COUNT) problems.push(`Pick ${SC_PATTERN_COUNT} movement patterns (${patterns.length} so far)`)
     for (const p of patterns) {
@@ -150,8 +140,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         hasSc,
         hasMobility: hasSc && hasMobility,
         scPatterns: hasSc ? patterns : [],
-        trainingDays,
-        trainingTime: trainingTime.trim() || null,
       }
       const plan = mode === "edit" && current
         ? await updateTrainingPlan(current, input)
@@ -267,15 +255,6 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                 </View>
               </>
             )}
-
-            <Text style={s.label}>Training days</Text>
-            <TrainingDaysPicker
-              windowStart={windowStart}
-              days={trainingDays}
-              time={trainingTime}
-              onChangeDays={setTrainingDays}
-              onChangeTime={setTrainingTime}
-            />
 
             <View style={s.switchRow}>
               <Text style={s.switchLabel}>Strength & conditioning</Text>

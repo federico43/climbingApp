@@ -118,7 +118,6 @@ export function AthleteDetail({
       loading={loadingPlan}
       planWorkouts={planWorkouts}
       sessions={sessions}
-      homework={homework}
       flashLevel={flashLevel}
       onPlanChanged={(p) => { setPlan(p); onChanged() }}
       onSessions={setSessions}
@@ -126,7 +125,7 @@ export function AthleteDetail({
       onHomeworkChanged={() => { reloadHomework(); onChanged() }}
     />
   )
-  const timelineCard = plan && <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} planWorkouts={planWorkouts} />
+  const timelineCard = plan && <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />

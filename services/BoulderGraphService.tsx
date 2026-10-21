@@ -386,11 +386,7 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // — still read for old plans, no longer written. startType (string, MainType,
 // optional) is the main type of workout 1 — missing/null = strength; only
 // written when a plan starts with something else (or had one already), so
-// strength plans save even before the column exists. The weekly scheduler
-// (utils/planSchedule.ts) adds three optional columns, each only written once
-// used: trainingDays (string, JSON number[], 0 = Sunday), trainingTime
-// (string, "18:00") and scheduleOverrides (string, JSON { slot: "YYYY-MM-DD" },
-// the days the athlete moved by hand — written by the aiProtocol function).
+// strength plans save even before the column exists.
 
 export interface TrainingPlanRow {
   $id: string
@@ -405,9 +401,6 @@ export interface TrainingPlanRow {
   hasMobility: boolean
   scPatterns: ScPattern[]
   startType: MainType | null  // null = strength (the default cycle)
-  trainingDays: number[] | null          // null = the default days (utils/planSchedule.ts)
-  trainingTime: string | null            // "18:00", or null
-  scheduleOverrides: Record<number, string> // slot → day the athlete picked
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
 }
 
@@ -421,24 +414,6 @@ function parseJsonArray(raw: unknown): any[] {
   }
 }
 
-function parseTrainingDays(raw: unknown): number[] | null {
-  const days = parseJsonArray(raw).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-  return days.length ? days : null
-}
-
-function parseOverrides(raw: unknown): Record<number, string> {
-  let obj: any = raw
-  if (typeof raw === "string") {
-    try { obj = JSON.parse(raw) } catch { return {} }
-  }
-  const out: Record<number, string> = {}
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return out
-  for (const [k, v] of Object.entries(obj)) {
-    if (Number.isInteger(Number(k)) && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) out[Number(k)] = v
-  }
-  return out
-}
-
 function toTrainingPlan(row: any): TrainingPlanRow {
   return {
     ...row,
@@ -447,9 +422,6 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
-    trainingDays: parseTrainingDays(row.trainingDays),
-    trainingTime: typeof row.trainingTime === "string" && row.trainingTime ? row.trainingTime : null,
-    scheduleOverrides: parseOverrides(row.scheduleOverrides),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
   }
 }
@@ -490,8 +462,6 @@ export interface TrainingPlanInput {
   hasMobility: boolean
   scPatterns: ScPattern[]
   startType?: MainType | null
-  trainingDays?: number[] | null // null / empty = the default days
-  trainingTime?: string | null
 }
 
 // `previous`: the plan being edited, if any. startType is left out when it's
@@ -505,17 +475,6 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (start || previous?.startType) data.startType = start
     else delete data.startType
   }
-  // Scheduler columns: same idea — only written once a plan uses them.
-  if ("trainingDays" in input) {
-    const days = input.trainingDays?.length ? JSON.stringify(input.trainingDays) : null
-    if (days || previous?.trainingDays) data.trainingDays = days
-    else delete data.trainingDays
-  }
-  if ("trainingTime" in input) {
-    const time = input.trainingTime || null
-    if (time || previous?.trainingTime) data.trainingTime = time
-    else delete data.trainingTime
-  }
   return data
 }
 
@@ -524,10 +483,6 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
 function planWriteError(e: unknown): unknown {
   if (/Unknown attribute:?\s*"?startType/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "startType" to the training_plans table in Appwrite to start a plan with something other than strength.')
-  }
-  const col = /Unknown attribute:?\s*"?(trainingDays|trainingTime)/i.exec(String((e as any)?.message ?? ""))
-  if (col) {
-    return new Error(`Add the optional string column "${col[1]}" to the training_plans table in Appwrite to set training days.`)
   }
   return e
 }

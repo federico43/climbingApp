@@ -5,9 +5,7 @@ import { Block, injectLocalIds } from "@/components/workoutBlocks"
 import { card } from "@/components/coach/styles"
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
-import { shortDay } from "@/utils/homework"
 import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
-import { scheduleFor } from "@/utils/planSchedule"
 import {
   alternateMainBlock, localDateStr, MAIN_BLOCK_COPIES, nextPlanIndex, planIsOver, planWeek, workoutSpec,
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
@@ -43,7 +41,6 @@ export function PlanCard({
   loading,
   planWorkouts,
   sessions,
-  homework = [],
   flashLevel,
   onPlanChanged,
   onSessions,
@@ -55,7 +52,6 @@ export function PlanCard({
   loading: boolean
   planWorkouts: ProtocolRow[]
   sessions: SessionRow[]
-  homework?: ProtocolRow[] // the athlete's homework — its days keep plan workouts off
   flashLevel: string | null
   onPlanChanged: (plan: TrainingPlanRow | null) => void
   onSessions: (rows: SessionRow[]) => void
@@ -91,10 +87,6 @@ export function PlanCard({
   const done = plan ? donePlanWorkouts(plan.$id, planWorkouts, sessions) : new Map<number, string>()
   const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today) : 0
   const inWindow = !!plan && today >= plan.windowStart && today <= plan.windowEnd
-  // The day the weekly scheduler gives the next workout to build (utils/planSchedule.ts).
-  const nextDay = plan && nextIndex <= PLAN_WORKOUTS
-    ? scheduleFor(plan, done, homework, sessions, new Date())[nextIndex - 1]?.date ?? null
-    : null
 
   // Re-reads sessions, the plan's workouts and both libraries first, so
   // anything done, built or edited since this page opened counts (e.g. an
@@ -197,7 +189,7 @@ export function PlanCard({
             <View style={styles.box}>
               <View style={card.headerRow}>
                 <Text style={styles.nextTitle}>
-                  Next: workout {nextSpec.index} · {nextDay ? shortDay(nextDay) : `week ${Math.max(1, planWeek(plan.windowStart, today))}`}
+                  Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today))}
                 </Text>
                 <Pressable style={card.outlineBtn} onPress={handleBuild} disabled={building}>
                   <Text style={card.outlineBtnText}>{building ? "…" : "Build"}</Text>
