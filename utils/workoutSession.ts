@@ -1,9 +1,9 @@
 // Serialize a workout into the payload shape `saveSession` expects.
 //
 // Skipped blocks are dropped and the surviving block indices are remapped so
-// attempts/durations stay aligned. Shared by the live completion path (the
-// workout hook) and the crash-recovery flush (the workout provider) so both
-// produce identical sessions.
+// attempts/durations stay aligned. Shared by the live completion path and the
+// crash-recovery flush (both in the workout provider) so both produce
+// identical sessions.
 
 export interface SerializedSession {
   protocol: string
