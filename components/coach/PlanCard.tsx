@@ -12,22 +12,24 @@ import {
   type BuiltPlanWorkout, type MainType, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
-import { buildPlanWorkout, withUpcomingWorkouts, type PlanWorkout } from "@/utils/planWorkout"
+import { buildPlanWorkout, withUpcomingWorkouts, workoutPreview, type PlanWorkout } from "@/utils/planWorkout"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   AppUser,
+  BlockRow,
   createProtocol,
   deleteProtocol,
   getSessionsByUserId,
   listBlocks,
   listExercises,
   listPlanWorkouts,
+  ExerciseRow,
   ProtocolRow,
   SessionRow,
   TrainingPlanRow,
 } from "@/services/BoulderGraphService"
 import { notifyHomeworkAssigned } from "@/services/homework"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
 const MAIN_TYPE_LABEL: Record<MainType, string> = {
@@ -84,6 +86,14 @@ export function PlanCard({
   // block), for that workout only — dropped once the card moves on.
   const [swaps, setSwaps] = useState<SpecSwaps>({ index: 0 })
   const [planModal, setPlanModal] = useState<"edit" | "new" | null>(null)
+  // Both libraries, for the next workout's exercise preview. Edit details /
+  // Create re-read them, so this copy only has to be close.
+  const [libraries, setLibraries] = useState<{ blocks: BlockRow[]; exercises: ExerciseRow[] } | null>(null)
+  useEffect(() => {
+    Promise.all([listBlocks(), listExercises()])
+      .then(([blocks, exercises]) => setLibraries({ blocks, exercises }))
+      .catch(console.error)
+  }, [])
 
   // Where the plan is: built climbing workouts (split-off S&C doesn't move
   // the rotation), the next one's spec, and whether the plan is over.
@@ -102,6 +112,13 @@ export function PlanCard({
     ? { ...rotationSpec, ...swaps, index: rotationSpec.index }
     : rotationSpec
   const swapTo = nextSpec ? alternateMainBlock(nextSpec.mainType, nextSpec.mainBlock) : null
+  // The exercises the next workout would get, from what this page has
+  // loaded — the same generation Edit details / Create run on fresh data.
+  const preview = planShape && nextSpec && libraries
+    ? workoutPreview(buildPlanWorkout(
+      planShape, nextSpec, libraries.blocks, libraries.exercises, withUpcomingWorkouts(sessions, planWorkouts), flashLevel,
+    ).blocks)
+    : null
   function swap(change: Omit<SpecSwaps, "index">) {
     if (!nextSpec) return
     setSwaps((prev) => ({ ...(prev.index === nextSpec.index ? prev : {}), ...change, index: nextSpec.index }))
@@ -289,6 +306,7 @@ export function PlanCard({
                   onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!) })}
                 />
               )}
+              {nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
               <PickRow
                 color={C.textMuted}
                 text={nextSpec.warmup === "constraints"
@@ -296,6 +314,7 @@ export function PlanCard({
                   : "Warm-up · 1 on 1 off"}
                 onSwap={() => swap({ warmup: nextSpec.warmup === "constraints" ? "one_on_one_off" : "constraints" })}
               />
+              {nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
               <PickRow
                 color={ADAPTATION_COLOR[nextSpec.mainType]}
                 text={`${MAIN_TYPE_LABEL[nextSpec.mainType]} · ${nextSpec.mainBlock.name} × ${MAIN_BLOCK_COPIES}`}
@@ -369,6 +388,19 @@ function PickRow({ color, text, onSwap }: { color: string; text: string; onSwap?
   )
 }
 
+// One block's exercises, together, under its line.
+function ExerciseChips({ names }: { names: string[] }) {
+  return (
+    <View style={styles.exerciseWrap}>
+      {names.map((name, i) => (
+        <View key={i} style={styles.exerciseChip}>
+          <Text style={styles.chipText}>{name}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   planName: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
   planWindow: { fontSize: 13, color: C.textSecondary, fontVariant: ["tabular-nums"] },
@@ -386,5 +418,9 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
   pickRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  // The plan's pattern chips, a shade darker than the box they sit in;
+  // indented to line up with the line's text (dot 10 + gap 8).
+  exerciseWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginLeft: 18, marginTop: -2 },
+  exerciseChip: { backgroundColor: C.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   pickText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
 })

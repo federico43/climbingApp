@@ -127,3 +127,20 @@ export function buildPlanWorkout(
 
   return { blocks, homework, warnings }
 }
+
+// What the coach's Plan card lists under the next workout's lines: each S&C
+// block's exercise names (one group per block, in order) and the constraint
+// warm-ups' names.
+export function workoutPreview(blocks: PlanBlockDraft[]): { sc: string[][]; warmup: string[] } {
+  const sc: string[][] = []
+  const warmup: string[] = []
+  for (const b of blocks) {
+    if (b.type === "strength_conditioning") {
+      const names = b.exercises.map((e) => e.name).filter(Boolean)
+      if (names.length > 0) sc.push(names)
+    } else if (b.type === "constraint_warmup" && b.blockName) {
+      warmup.push(b.blockName)
+    }
+  }
+  return { sc, warmup }
+}
