@@ -3,7 +3,7 @@ import {account} from '@/components/AppWrite'
 import { authErrorKind, CREDENTIALS_MESSAGE, OFFLINE_MESSAGE, type AuthErrorKind } from '@/utils/network'
 import { ID, Models } from 'appwrite'
 import { logRecord, getUsers} from '@/services/BoulderGraphService'
-import { registerForPushNotificationsAsync, savePushToken } from '@/services/notifications'
+import { clearPushToken, registerForPushNotificationsAsync, savePushToken } from '@/services/notifications'
 import { useRouter } from 'expo-router'
 //how do you use use context 
 //create the information structure. has to be a type object. Obviously.
@@ -127,6 +127,8 @@ export default function Auth_context({children}:PropsWithChildren) {
     const signOut = async () =>{
         
         try {
+            // Before the session goes away — it's what allows the write.
+            if (user) await clearPushToken(user.$id)
             await account.deleteSession("current")
             setUser(null)  
             router.replace("/auth")
