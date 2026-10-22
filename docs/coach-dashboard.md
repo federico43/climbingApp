@@ -175,14 +175,16 @@ Avatar, name, plan subtitle ("Autumn block · week 3 of 6"); **Log session**
 
 Kept as-is functionally: plan name, dates, focus, S&C pattern chips,
 "n of 12 built", **Next: workout n · week w** with its S&C / warm-up / main
-lines, **⇄ Swap**, **Build** (opens `AthleteWorkoutBuilder` with the draft),
+lines (S&C exercises as chips per block), **⇄ Swap** on each line,
+**Edit details** (opens `AthleteWorkoutBuilder` with the draft; was Build),
+**Create** (saves the draft as is — the athlete sees it right away),
 Edit / Start a plan / Start a new plan (`TrainingPlanModal`), the
 "made before v2" notice. Adds "n of 12 done · this week n of 2"
 (`donePlanWorkouts`, `doneThisWeek` from `utils/planProgress.ts` — the same
 numbers the athlete sees).
 
 Data: `getActiveTrainingPlan(athleteId)`, `listPlanWorkouts(planId)`,
-`getSessionsByUserId(athleteId)` (full history: needed by Build and by
+`getSessionsByUserId(athleteId)` (full history: needed by Edit details / Create and by
 `donePlanWorkouts`'s block-id matching of older sessions).
 
 ### 4.6 Timeline card — the athlete's calendar, reused

@@ -32,7 +32,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `utils/progression/constraintWarmup.ts`, `profiles.ts` | Constraint warm-up rotation + the focus → constraint table |
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
-| `components/coach/PlanCard.tsx` | Coach: Training plan card — header, progress, next workout, Build (was `AthleteAnalytics.tsx`; see docs/coach-dashboard.md) |
+| `components/coach/PlanCard.tsx` | Coach: Training plan card — header, progress, next workout, Edit details / Create (was `AthleteAnalytics.tsx`; see docs/coach-dashboard.md) |
 | `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
@@ -317,19 +317,27 @@ their route. Details: `training-plan-implementation.md` §12.
 
 - **Training plan card**: name, dates, focus, S&C patterns (+ mobility),
   "n of 12 workouts built", and the **next workout**: S&C focus, warm-up kind,
-  main block × 2, with **Build**. **⇄ Swap** next to the
-  main block switches it to the type's other block (Project ↔ Max, 4×4 ↔
-  Base 1; hidden for Power) for that workout only; Build uses it, and the
-  rotation then balances (§5). On a test workout: "+ Density test as
-  homework".
+  main block × 2, with **Edit details** and **Create**. Under the S&C line,
+  each S&C block's exercises as dark chips, one group per block (and the
+  3 constraint names under a constraints warm-up). **⇄ Swap** on each line,
+  for that workout only: S&C focus cycles Max force → Hypertrophy →
+  Explosiveness; warm-up toggles constraints ↔ 1 on 1 off; main block
+  switches to the type's other block (Project ↔ Max, 4×4 ↔ Base 1; hidden
+  for Power), and the rotation then balances (§5). On a test workout:
+  "+ Density test as homework".
 - **Homework section**: each homework's deadline, workout and status, with
   the athlete's message if they can't attend. Tap one to **set a new
   deadline** (the athlete is pushed and picks a day again) or **cancel**
   it.
-- **Build**: re-reads sessions, the plan's workouts and the exercise and
-  block libraries (so library edits are always picked up), generates the
-  workout, shows any warnings ("Check this workout"), then opens the builder
-  with the blocks. Saving stores `planId` / `planIndex` and the card moves on.
+- **Edit details** (was Build): re-reads sessions, the plan's workouts and
+  the exercise and block libraries (so library edits are always picked up),
+  generates the workout, shows any warnings ("Check this workout"), then
+  opens the builder with the blocks. Saving stores `planId` / `planIndex`
+  and the card moves on.
+- **Create**: the same generation, saved as is — no builder — so the
+  athlete sees it right away (Density test as homework with the default
+  deadline, as the builder's Save does). With warnings the coach picks
+  Cancel / Edit details / Create anyway.
 - The builder's "Suggested warm-up" card is only for hand-built workouts.
 
 ## 9. Adaptation tags
