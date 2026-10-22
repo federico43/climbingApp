@@ -112,6 +112,7 @@ function TabsWithPlan() {
         <Tabs.Screen name="past-projects" options={{ href: null }} />
         <Tabs.Screen name="workout-log" options={{ href: null }} />
         <Tabs.Screen name="workout-library" options={{ href: null }} />
+        <Tabs.Screen name="schedule" options={{ href: null }} />
       </Tabs>
 
       {/* Workout modal lives at the layout level so it overlays everything */}
