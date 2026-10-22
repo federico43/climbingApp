@@ -5,10 +5,11 @@
 
 import assert from "node:assert/strict"
 import {
-  alternateMainBlock, builtMainBlock, builtMainType, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
+  alternateMainBlock, builtMainBlock, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
+import { focusesFor } from "@/utils/scProgression"
 
 // ── dates ──
 const start = "2026-10-05"
@@ -168,6 +169,29 @@ assert.deepEqual(sc.blocks.map((b) => [b.blockName, b.restBetweenRounds]), [["S&
 assert.deepEqual(names(sc.blocks[0]), ["Pistol Squat", "Push-ups"])
 sc = buildScBlocks(noMob, workoutSpec(noMob, 2, [], start), exercises, [])
 assert.deepEqual(sc.blocks.map((b) => b.restBetweenRounds), [120, 120])
+
+// core never does explosiveness: max force ↔ hypertrophy, flipping every
+// week, so each of its two exercises alternates on its own
+assert.deepEqual(Array.from({ length: 8 }, (_, i) => coreFocusFor(i + 1)),
+  ["max_force", "max_force", "hypertrophy", "hypertrophy", "max_force", "max_force", "hypertrophy", "hypertrophy"])
+const corePlan: PlanShape = { ...plan, scPatterns: [...plan.scPatterns.slice(0, 3), { movementType: "core", exerciseIds: ["c1", "c2"] }] }
+const coreLib = [...exercises, ex("c1", "Hanging leg raise", "core"), ex("c2", "Ab wheel", "core")]
+const coreOf = (i: number) => buildScBlocks(corePlan, workoutSpec(corePlan, i, [], start), coreLib, []).blocks
+  .flatMap((b) => b.exercises).find((e) => e.movementType === "core")!
+const cores = Array.from({ length: 6 }, (_, i) => coreOf(i + 1))
+assert.deepEqual(cores.map((e) => [e.name, e.focus]), [
+  ["Hanging leg raise", "max_force"], ["Ab wheel", "max_force"],
+  ["Hanging leg raise", "hypertrophy"], ["Ab wheel", "hypertrophy"],
+  ["Hanging leg raise", "max_force"], ["Ab wheel", "max_force"],
+])
+assert.equal(cores[2].reps, "8-12")
+// the rest of the workout keeps the day's focus (workout 3: power → explosiveness)
+assert.equal(buildScBlocks(corePlan, workoutSpec(corePlan, 3, [], start), coreLib, []).blocks[0].exercises[1].focus, "explosiveness")
+// a core exercise only "Used for" hypertrophy is passed over on a max force week
+assert.equal(buildScBlocks(corePlan, workoutSpec(corePlan, 1, [], start), coreLib.map((e) => e.$id === "c1" ? { ...e, focuses: ["hypertrophy"] } : e), []).blocks
+  .flatMap((b) => b.exercises).find((e) => e.movementType === "core")!.name, "Ab wheel")
+assert.deepEqual(focusesFor("core"), ["max_force", "hypertrophy"])
+assert.deepEqual(focusesFor("push"), ["max_force", "hypertrophy", "explosiveness"])
 
 // no S&C
 assert.deepEqual(buildScBlocks({ ...plan, hasSc: false }, spec(1), exercises, []).blocks, [])
