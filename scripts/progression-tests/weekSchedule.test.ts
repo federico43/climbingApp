@@ -19,7 +19,7 @@ assert.equal(startFromOffset(50, 44), GRID_START + 1)
 assert.equal(startFromOffset(-5, 44), GRID_START)
 assert.equal(startFromOffset(10_000, 44), GRID_END - 0.5)
 
-assert.equal(stepStart(18, 1), 18.5)
+assert.equal(stepStart(9, 1), 9.5)
 assert.equal(stepStart(GRID_START, -1), GRID_START)
 assert.equal(stepStart(GRID_END - 0.5, 1), GRID_END - 0.5)
 
