@@ -9,18 +9,18 @@ export interface WeekSession {
 }
 
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-// The calendar's visible hours.
+// The calendar's visible hours: 6:00 to 18:00.
 export const GRID_START = 6
-export const GRID_END = 23
+export const GRID_END = 18
 export const DURATIONS = [1.5, 2, 2.5, 3]
 // A usual session runs two and a half hours.
 export const DEFAULT_HOURS = 2.5
 
 // Example week shown until the screen loads real data.
 export const EXAMPLE_WEEK: WeekSession[] = [
-  { id: "ex1", day: 0, start: 18, hours: 2.5 },
-  { id: "ex2", day: 2, start: 18.5, hours: 2.5 },
-  { id: "ex3", day: 4, start: 18, hours: 2.5 },
+  { id: "ex1", day: 0, start: 7, hours: 2.5 },
+  { id: "ex2", day: 2, start: 9, hours: 2.5 },
+  { id: "ex3", day: 4, start: 7, hours: 2.5 },
   { id: "ex4", day: 5, start: 10, hours: 2.5 },
 ]
 

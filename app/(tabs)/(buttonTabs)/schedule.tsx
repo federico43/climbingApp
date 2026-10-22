@@ -24,7 +24,6 @@ export default function ScheduleScreen() {
   // The new session as it's being set up in the sheet, drawn on the grid.
   const [preview, setPreview] = useState<SessionDraft | null>(null)
   const [justSaved, setJustSaved] = useState(false)
-  const scrollRef = useRef<ScrollView>(null)
   const nextId = useRef(1)
 
   useEffect(() => {
@@ -56,7 +55,7 @@ export default function ScheduleScreen() {
             <Pressable
               style={s.addBtn}
               hitSlop={6}
-              onPress={() => setDraft({ id: null, days: [], start: 18, hours: DEFAULT_HOURS })}
+              onPress={() => setDraft({ id: null, days: [], start: 8, hours: DEFAULT_HOURS })}
             >
               <Ionicons name="add" size={22} color="#10251A" />
             </Pressable>
@@ -77,11 +76,8 @@ export default function ScheduleScreen() {
         </View>
 
         <ScrollView
-          ref={scrollRef}
           style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
-          // Open on the morning; the night hours are a scroll away.
-          onLayout={() => scrollRef.current?.scrollTo({ y: (9 - GRID_START) * HOUR, animated: false })}
         >
           <View style={[s.grid, { height: HOURS.length * HOUR }]}>
             <View style={s.gutter}>

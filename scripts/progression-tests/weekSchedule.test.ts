@@ -23,8 +23,8 @@ assert.equal(stepStart(18, 1), 18.5)
 assert.equal(stepStart(GRID_START, -1), GRID_START)
 assert.equal(stepStart(GRID_END - 0.5, 1), GRID_END - 0.5)
 
-assert.equal(clampHours(22, 2), 1)
-assert.equal(clampHours(18, 1.5), 1.5)
+assert.equal(clampHours(17, 2), 1)
+assert.equal(clampHours(9, 2.5), 2.5)
 
 assert.deepEqual(weekSummary(EXAMPLE_WEEK), { days: 4, hours: 10 })
 assert.deepEqual(weekSummary([]), { days: 0, hours: 0 })
