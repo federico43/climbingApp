@@ -3,7 +3,7 @@ import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { SessionDraft, WeekSessionSheet } from "@/components/WeekSessionSheet"
 import { C } from "@/utils/theme"
 import {
-  DEFAULT_HOURS, EXAMPLE_WEEK, GRID_END, GRID_START, WEEK_DAYS, WeekSession,
+  DEFAULT_HOURS, EXAMPLE_WEEK, GRID_END, GRID_START, WEEK_DAYS, WeekSession, clampHours,
   formatHours, formatTime, startFromOffset, weekSummary,
 } from "@/utils/weekSchedule"
 import { Ionicons } from "@expo/vector-icons"
@@ -21,6 +21,8 @@ export default function ScheduleScreen() {
   const [sessions, setSessions] = useState<WeekSession[]>(EXAMPLE_WEEK)
   const [saved, setSaved] = useState<WeekSession[]>(EXAMPLE_WEEK)
   const [draft, setDraft] = useState<SessionDraft | null>(null)
+  // The new session as it's being set up in the sheet, drawn on the grid.
+  const [preview, setPreview] = useState<SessionDraft | null>(null)
   const [justSaved, setJustSaved] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
   const nextId = useRef(1)
@@ -115,6 +117,15 @@ export default function ScheduleScreen() {
                     <Text style={s.blockTime} numberOfLines={1}>{formatHours(x.hours)}</Text>
                   </Pressable>
                 ))}
+                {preview && !preview.id && preview.days.includes(day) && (
+                  <View
+                    pointerEvents="none"
+                    style={[s.block, s.preview, { top: (preview.start - GRID_START) * HOUR, height: clampHours(preview.start, preview.hours) * HOUR - 2 }]}
+                  >
+                    <Text style={s.previewTime} numberOfLines={1}>{formatTime(preview.start)}</Text>
+                    <Text style={s.blockTime} numberOfLines={1}>{formatTime(preview.start + clampHours(preview.start, preview.hours))}</Text>
+                  </View>
+                )}
               </Pressable>
             ))}
           </View>
@@ -148,6 +159,7 @@ export default function ScheduleScreen() {
           setDraft(null)
         }}
         onClose={() => setDraft(null)}
+        onChange={setPreview}
       />
     </ScreenGradient>
   )
@@ -177,6 +189,8 @@ const s = StyleSheet.create({
     borderLeftColor: C.green, backgroundColor: C.green + "2B",
     paddingHorizontal: 4, paddingVertical: 4, overflow: "hidden",
   },
+  preview: { borderWidth: 1.5, borderStyle: "dashed", borderColor: C.green, backgroundColor: C.green + "1A" },
+  previewTime: { fontSize: 11, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
   blockTitle: { fontSize: 11, fontWeight: "800", color: C.textPrimary },
   blockTime: { fontSize: 10, color: C.textSecondary, fontVariant: ["tabular-nums"] },
   footer: {

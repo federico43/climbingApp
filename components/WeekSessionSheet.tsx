@@ -19,13 +19,16 @@ interface Props {
   onSave: (draft: SessionDraft) => void
   onDelete: (id: string) => void
   onClose: () => void
+  // Every edit, so the screen can draw the session where it will go.
+  onChange?: (draft: SessionDraft | null) => void
 }
 
 // Bottom sheet to add or edit a session in the default week (Settings › My week).
-export function WeekSessionSheet({ draft, onSave, onDelete, onClose }: Props) {
+export function WeekSessionSheet({ draft, onSave, onDelete, onClose, onChange }: Props) {
   const insets = useSafeAreaInsets()
   const [d, setD] = useState<SessionDraft | null>(draft)
   useEffect(() => setD(draft), [draft])
+  useEffect(() => onChange?.(d), [d, onChange])
 
   const editing = !!d?.id
   const toggleDay = (day: number) => {
