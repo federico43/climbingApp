@@ -3,9 +3,10 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { getSessions, getUsers, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import {
-  Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
+  Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
 import { findScSessions, readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry } from "@/utils/scNext"
@@ -233,6 +234,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // The full-screen "Switch sides" card (timed both-sides holds) is shown on
   // the block's first switch only; after that the glow + haptic carry it.
   const [switchCardSeen, setSwitchCardSeen] = useState(false)
+  // The athlete's Edge Lifts max (kg; null = none yet, undefined = couldn't
+  // read it, e.g. offline), read on mount — max force Edge Lifts start on
+  // it, after a warm-up built from it (utils/edgeWarmup.ts).
+  const [edgeMax, setEdgeMax] = useState<number | null | undefined>(undefined)
 
   // The setting hints for the exercise as it's being done (a swap's prefill
   // brings its own).
@@ -335,10 +340,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       withTimeout(getSessions(), PREFILL_TIMEOUT_MS).catch(() => null),
       withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
       loadWeightUnit(),
+      User?.$id ? withTimeout(getUsers(User.$id), PREFILL_TIMEOUT_MS).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([sessions, library, unit]) => {
+      .then(([sessions, library, unit, me]) => {
         if (cancelled) return
         setWeightUnitState(unit)
+        const max = me ? currentMax(me as any) : undefined
+        setEdgeMax(max)
         const resolved: Record<number, ResolvedChain> = {}
         const weights: Record<number, string> = {}
         const levels: Record<number, LevelStep> = {}
@@ -363,6 +371,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           if (p.weight != null) weights[idx] = p.weight
           if (p.note) notes[idx] = p.note
           if (p.detail) details[idx] = p.detail
+          // Edge Lifts with a max: the rounds are at the max, not last
+          // time's weight.
+          if (max != null && ex.type !== "7/3s" && needsWarmup(ex)) {
+            weights[idx] = String(convertWeight(max, "kg", unit))
+            delete notes[idx]
+            delete details[idx]
+          }
         })
 
         setChains(resolved)
@@ -678,7 +693,17 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
         </View>
-        {exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
+        {exercise.type !== "7/3s" && exercise.maxTest ? (
+          <MaxTestUI
+            key={roundKey}
+            exercise={exercise}
+            userId={User?.$id}
+            currentMaxKg={edgeMax}
+            weightUnit={weightUnit}
+            onSaved={setEdgeMax}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        ) : exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
           <MobilityExerciseUI
             key={roundKey}
             exercise={exercise}
@@ -708,6 +733,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             swapNote={swapNote}
             onUndoSwap={undoCurrentSwap}
             startOnBrief={startOnBrief}
+            warmup={currentRound === 0 && !swapped && edgeMax != null && needsWarmup(exercise) ? warmupRamp(edgeMax, weightUnit, loadSteps[currentExerciseIndex]) : undefined}
+            noMax={currentRound === 0 && !swapped && edgeMax === null && needsWarmup(exercise)}
             showSwitchCard={!switchCardSeen}
             onSwitchCardShown={() => setSwitchCardSeen(true)}
             onDone={(log) => handleExerciseDone(log)}
@@ -742,6 +769,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     // prefill applies, run over today's rounds.
     const judge = (ex: Exercise, roundLogs: ExerciseLog[], p: Prefill): string => {
       if (ex.type === "7/3s" || ex.movementType === "mobility") return ""
+      // The max decides Edge Lifts' weight (utils/edgeWarmup.ts), not the
+      // progression rule.
+      if (ex.maxTest || (edgeMax != null && needsWarmup(ex))) return ""
       const rounds = roundLogs
         .sort((a, b) => a.round - b.round)
         .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit))
@@ -1038,7 +1068,8 @@ function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
 
 const TIMED_PREP_SECS = 5
 
-function TimedAmountControl({ target, onChange }: { target: number; onChange: (v: number) => void }) {
+// `fixed`: the length isn't the athlete's to change (warm-up holds).
+function TimedAmountControl({ target, onChange, fixed }: { target: number; onChange: (v: number) => void; fixed?: boolean }) {
   type Phase = "idle" | "prepare" | "running" | "done"
   const [phase, setPhase] = useState<Phase>("idle")
   const [dur, setDur] = useState(Math.max(1, target || 30))
@@ -1103,16 +1134,16 @@ function TimedAmountControl({ target, onChange }: { target: number; onChange: (v
     return (
       <View style={styles.timerCard}>
         <View style={styles.timerLengthRow}>
-          <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => Math.max(5, d - 5))}>
+          {!fixed && <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => Math.max(5, d - 5))}>
             <Text style={styles.timerAdjustText}>−5 s</Text>
-          </Pressable>
+          </Pressable>}
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text style={styles.timerLengthValue}>{dur}<Text style={styles.timedBigUnit}> s</Text></Text>
-            <Text style={styles.timerLengthCaption}>Timer length</Text>
+            <Text style={styles.timerLengthCaption}>{fixed ? "Hold" : "Timer length"}</Text>
           </View>
-          <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => d + 5)}>
+          {!fixed && <Pressable style={styles.timerAdjustBtn} hitSlop={6} onPress={() => setDur((d) => d + 5)}>
             <Text style={styles.timerAdjustText}>+5 s</Text>
-          </Pressable>
+          </Pressable>}
         </View>
         <Pressable style={({ pressed }) => [styles.timerStartBtn, pressed && { opacity: 0.8 }]} onPress={startPrepare}>
           <Ionicons name="play" size={16} color={C.green} />
@@ -1219,7 +1250,7 @@ function EffortChips({ value, onChange }: { value: Effort | null; onChange: (v: 
 // the kg / lb switch only when tapped. Level mode shows the ladder instead.
 function LoadControl({
   weight, setWeight, weightUnit, onWeightUnitChange, weightStep,
-  levelChain, level, setLevel, suggestedLevelId, suggestionNote, suggestionDetail,
+  levelChain, level, setLevel, suggestedLevelId, suggestionNote, suggestionDetail, prefix,
 }: {
   weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
   onWeightUnitChange: (u: WeightUnit) => void
@@ -1228,6 +1259,7 @@ function LoadControl({
   suggestedLevelId?: string
   suggestionNote?: string
   suggestionDetail?: string
+  prefix?: string   // before the weight on the line ("Then 30 kg")
 }) {
   const [editing, setEditing] = useState(false)
   return (
@@ -1265,7 +1297,7 @@ function LoadControl({
       ) : (
         <Pressable style={styles.weightLine} onPress={() => setEditing(true)}>
           <Ionicons name="barbell-outline" size={18} color={C.textSecondary} />
-          <Text style={styles.weightLineValue}>{weight > 0 ? `${weight} ${weightUnit}` : "Bodyweight"}</Text>
+          <Text style={styles.weightLineValue}>{weight > 0 ? `${prefix ? `${prefix} ` : ""}${weight} ${weightUnit}` : "Bodyweight"}</Text>
           <Text style={styles.linkText}>{weight > 0 ? "Change" : "Add weight"}</Text>
         </Pressable>
       )}
@@ -1814,7 +1846,8 @@ function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }
 // - Log: what happened — reps (or seconds) per side, one effort, Done.
 
 type Side = "left" | "right"
-type Step = "brief" | "timer" | "log"
+// Edge Lifts with a max, round 1: brief → warmup ⇄ warmupRest (× 4) → timer.
+type Step = "brief" | "warmup" | "warmupRest" | "timer" | "log"
 
 interface LoggedExerciseUIProps {
   exercise: RepExercise | BothSidesExercise
@@ -1833,6 +1866,8 @@ interface LoggedExerciseUIProps {
   setting?: ExerciseSetting  // adjustable setting: the coach's hints
   initialHardest?: boolean   // the "hardest setting" switch to start on
   startOnBrief: boolean    // false in round 2+ unless something changed
+  warmup?: WarmupSet[]     // Edge Lifts, round 1: the warm-up holds before it
+  noMax?: boolean          // Edge Lifts, round 1, and the athlete has no max yet
   showSwitchCard: boolean  // timed both-sides: first switch of the block only
   onSwitchCardShown: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
@@ -1840,7 +1875,7 @@ interface LoggedExerciseUIProps {
 
 function LoggedExerciseUI({
   exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, suggestionNote, suggestionDetail,
-  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, showSwitchCard, onSwitchCardShown, onDone,
+  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const sides = exercise.type === "both_sides"
   const isTimed = exercise.unit === "seconds"
@@ -1867,6 +1902,13 @@ function LoggedExerciseUI({
   // Timer step, both-sides: whose hold is up, and the switch card.
   const [timerSide, setTimerSide] = useState<Side>("left")
   const [switching, setSwitching] = useState(false)
+  // Warm-up: which hold is up (or which one the rest leads to), and whether
+  // it's all done (a note on the first set).
+  const [warmIdx, setWarmIdx] = useState(0)
+  const [warmSide, setWarmSide] = useState<Side>("left")   // both sides: left, then right
+  const [warmedUp, setWarmedUp] = useState(false)
+  const hasWarmup = !!warmup && warmup.length > 0
+  const firstSetStep: Step = isTimed ? "timer" : "log"
 
   const [dropUndone, setDropUndone] = useState(false)
   const activeDrop = roundDrop && !dropUndone ? roundDrop : undefined
@@ -1922,11 +1964,19 @@ function LoggedExerciseUI({
     return (
       <ExerciseScreen
         scrollKey="brief"
-        footer={<PillButton title={isTimed ? "Start timer" : "Log reps"} icon={isTimed ? "timer-outline" : "arrow-forward"} onPress={() => setStep(isTimed ? "timer" : "log")} />}
+        footer={hasWarmup && !warmedUp
+          ? <PillButton title="Start warm-up" icon="timer-outline" onPress={() => { setWarmIdx(0); setStep("warmup") }} />
+          : <PillButton title={isTimed ? "Start timer" : "Log reps"} icon={isTimed ? "timer-outline" : "arrow-forward"} onPress={() => setStep(firstSetStep)} />}
       >
         <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
         <ExerciseHeader name={displayName} exercise={exercise} />
-        <FocusCue exercise={exercise} />
+        {hasWarmup && !warmedUp ? <WarmupList sets={warmup!} unit={weightUnit} /> : <FocusCue exercise={exercise} />}
+        {!!noMax && (
+          <View style={styles.noMaxCard}>
+            <Text style={styles.noMaxTitle}>No max yet</Text>
+            <Text style={styles.noMaxText}>Warm up by feel today. Your coach will set up a test.</Text>
+          </View>
+        )}
         {!!activeDrop && <RoundDropBanner drop={activeDrop} onUndo={undoDrop} onPickEasier={onPickEasier} />}
         {!!swapNote && !!onUndoSwap && <SwapBanner note={swapNote} onUndo={onUndoSwap} />}
         <LoadControl
@@ -1935,10 +1985,71 @@ function LoggedExerciseUI({
           suggestedLevelId={initialLevel?.exerciseId}
           suggestionNote={activeSuggestionNote}
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
+          prefix={hasWarmup && !warmedUp ? "Then" : undefined}
         />
         {!!setting && <SettingCard setting={setting} hardest={hardest} onChange={setHardest} />}
         {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
       </ExerciseScreen>
+    )
+  }
+
+  // ── Warm-up hold ──
+  if (step === "warmup" && hasWarmup) {
+    const set = warmup![warmIdx]
+    // Both sides: the left hold, then the right one, then the rest.
+    const holdDone = () => {
+      if (sides && warmSide === "left") {
+        setWarmSide("right")
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
+      } else {
+        setWarmSide("left")
+        setStep("warmupRest")
+      }
+    }
+    return (
+      <ExerciseScreen
+        background={sides ? <SideGlow side={warmSide} /> : undefined}
+        scrollKey={`warmup-${warmIdx}-${warmSide}`}
+        footer={<PillButton title="Finish the hold first" icon="arrow-forward" onPress={() => {}} disabled />}
+      >
+        {header}
+        <View style={{ gap: 4 }}>
+          <Text style={[styles.sectionLabel, { color: C.yellow }]}>Warm-up {warmIdx + 1} of {warmup!.length}</Text>
+          <Text style={[styles.timedBig, { color: C.textPrimary }]}>
+            {set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text>
+          </Text>
+        </View>
+        {sides && <Text style={styles.timerSideTitle}>{warmSide === "left" ? "Left side" : "Right side"}</Text>}
+        <TimedAmountControl key={`${warmIdx}-${warmSide}`} target={set.secs} fixed onChange={holdDone} />
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Rest after a warm-up hold ──
+  if (step === "warmupRest" && hasWarmup) {
+    const last = warmIdx === warmup!.length - 1
+    const next = last ? undefined : warmup![warmIdx + 1]
+    const done = () => {
+      if (last) {
+        setWarmedUp(true)
+        setStep(firstSetStep)
+      } else {
+        setWarmIdx((i) => i + 1)
+        setStep("warmup")
+      }
+    }
+    return (
+      <WarmupRest
+        key={warmIdx}
+        secs={last ? EDGE_WARMUP.lastRestSecs : EDGE_WARMUP.restSecs}
+        title={last ? "Main set next" : `Warm-up ${warmIdx + 2} of ${warmup!.length} next`}
+        upNext={<ExerciseRow
+          exercise={exercise}
+          name={last ? displayName : `${displayName} · warm-up ${warmIdx + 2}`}
+          load={last ? loadLabel : `${next!.weight} ${weightUnit} · ${next!.secs} s`}
+        />}
+        onDone={done}
+      />
     )
   }
 
@@ -1974,6 +2085,7 @@ function LoggedExerciseUI({
         />}
       >
         {header}
+        {warmedUp && <WarmedUpNote />}
         <View style={styles.inputSection}>
           {sides
             ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
@@ -1995,6 +2107,7 @@ function LoggedExerciseUI({
       footer={<PillButton title={complete ? "Done" : lockedTitle} icon="checkmark" onPress={handleSave} disabled={!complete} />}
     >
       {header}
+      {warmedUp && !isTimed && <WarmedUpNote />}
       {logSides.map((s) => (
         <View key={s} style={styles.inputSection}>
           <Text style={styles.sectionLabel}>
@@ -2011,6 +2124,128 @@ function LoggedExerciseUI({
           <EffortChips value={effort} onChange={setEffort} />
         </View>
       )}
+    </ExerciseScreen>
+  )
+}
+
+// ─── Edge Lifts warm-up and max test (utils/edgeWarmup.ts) ────────────────────
+
+// The brief's warm-up: one line per hold, weight and seconds only.
+function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
+  return (
+    <View style={styles.inputSection}>
+      <Text style={styles.sectionLabel}>Warm-up first</Text>
+      <View style={{ gap: 6 }}>
+        {sets.map((s, i) => (
+          <View key={i} style={styles.warmupRow}>
+            <Text style={styles.warmupRowNum}>{i + 1}</Text>
+            <Text style={styles.warmupRowWeight}>{s.weight} {unit}</Text>
+            <Text style={styles.warmupRowSecs}>{s.secs} s</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.warmupRowNote}>{formatRest(EDGE_WARMUP.restSecs)} rest between sets</Text>
+    </View>
+  )
+}
+
+// Rest after a warm-up hold: the same ring as the rest between rounds. Goes
+// on by itself when it runs out.
+function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: string; upNext: React.ReactNode; onDone: () => void }) {
+  const [remaining, setRemaining] = useState(secs)
+  const doneRef = useRef(onDone)
+  doneRef.current = onDone
+  useEffect(() => {
+    const end = Date.now() + secs * 1000
+    const id = setInterval(() => {
+      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      setRemaining(r)
+      if (r <= 0) {
+        clearInterval(id)
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+        doneRef.current()
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [secs])
+  const urgent = remaining <= 10
+  return (
+    <ExerciseScreen
+      scrollKey="warmup-rest"
+      footer={<PillButton title="Skip rest" icon="play-skip-forward" variant="secondary" onPress={onDone} />}
+    >
+      <View style={{ gap: 4, marginTop: 16 }}>
+        <Text style={styles.exKicker}>Rest</Text>
+        <Text style={styles.introTitle}>{title}</Text>
+      </View>
+      <View style={styles.restCircle}>
+        <AnimatedCircularProgress
+          size={220} width={10} fill={(remaining / secs) * 100}
+          tintColor={urgent ? C.red : C.green} backgroundColor={C.surface} rotation={0}
+        >
+          {() => <Text style={[styles.restTimerText, { fontSize: 56 }]}>{`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}</Text>}
+        </AnimatedCircularProgress>
+      </View>
+      <Text style={styles.sectionLabel}>Up next</Text>
+      {upNext}
+    </ExerciseScreen>
+  )
+}
+
+function WarmedUpNote() {
+  return (
+    <View style={styles.suggestionBanner}>
+      <Text style={styles.suggestionBannerText}>Warm-up done</Text>
+    </View>
+  )
+}
+
+// The max test (homework the coach sends, done together): the athlete logs
+// the heaviest weight held and it becomes their max.
+function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone }: {
+  exercise: RepExercise | BothSidesExercise
+  userId?: string
+  currentMaxKg: number | null | undefined
+  weightUnit: WeightUnit
+  onSaved: (kg: number) => void
+  onDone: (log: Omit<ExerciseLog, "round">) => void
+}) {
+  const start = currentMaxKg ? convertWeight(currentMaxKg, "kg", weightUnit) : 0
+  const [weight, setWeight] = useState(start)
+  const [saving, setSaving] = useState(false)
+  const secs = EDGE_WARMUP.testHoldSecs
+  function finish() {
+    onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit })
+  }
+  async function save() {
+    if (!(weight > 0) || !userId) return
+    const kg = weightUnit === "kg" ? weight : convertWeight(weight, "lb", "kg")
+    setSaving(true)
+    try {
+      await setEdgeLiftMax(userId, kg, "test")
+      onSaved(kg)
+      finish()
+    } catch (e: any) {
+      setSaving(false)
+      Alert.alert("Max not saved", `${e?.message ?? "Couldn't reach the server."} Tell your coach: ${weight} ${weightUnit}.`, [
+        { text: "Try again", onPress: () => { void save() } },
+        { text: "Continue", style: "cancel", onPress: finish },
+      ])
+    }
+  }
+  return (
+    <ExerciseScreen
+      scrollKey="max-test"
+      footer={<PillButton title={saving ? "Saving…" : weight > 0 ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !(weight > 0)} />}
+    >
+      <View style={{ marginTop: 16 }}>
+        <ExerciseRow exercise={exercise} name={`${exercise.name} · max test`} />
+      </View>
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>Heaviest weight held {secs} s</Text>
+        <Stepper value={weight} onChange={setWeight} step={DEFAULT_LOAD_STEP[weightUnit]} suffix={` ${weightUnit}`} />
+        {!!currentMaxKg && <Text style={styles.warmupRowNote}>Last max: {start} {weightUnit}</Text>}
+      </View>
     </ExerciseScreen>
   )
 }
@@ -2401,6 +2636,14 @@ const styles = StyleSheet.create({
   exRowDetail: { flexShrink: 1, fontSize: 12.5, color: C.textSecondary },
   exRowLoad: { fontSize: 13, fontWeight: "700", color: C.textPrimary, marginTop: 2 },
   focusCue: { fontSize: 15, lineHeight: 21, color: C.textSecondary, borderLeftWidth: 3, paddingLeft: 12 },
+  warmupRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.surface, borderRadius: 14, height: 44, paddingHorizontal: 14 },
+  warmupRowNum: { width: 22, fontSize: 14, fontWeight: "700", color: C.textSecondary },
+  warmupRowWeight: { flex: 1, fontSize: 17, fontWeight: "800", color: C.textPrimary },
+  warmupRowSecs: { fontSize: 17, fontWeight: "700", color: C.textSecondary },
+  warmupRowNote: { fontSize: 14, color: C.textSecondary },
+  noMaxCard: { gap: 6, backgroundColor: "rgba(254,215,102,0.12)", borderRadius: 14, padding: 12 },
+  noMaxTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  noMaxText: { fontSize: 14, lineHeight: 20, color: C.textSecondary },
   timerSideTitle: { fontSize: 28, fontWeight: "800", color: C.side, letterSpacing: -0.5 },
 
   exHeader: { gap: 4, marginTop: -36 },
