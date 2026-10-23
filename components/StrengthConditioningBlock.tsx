@@ -60,6 +60,7 @@ export interface RepExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
+  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
 }
 
 export interface BothSidesExercise {
@@ -77,6 +78,7 @@ export interface BothSidesExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
+  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
 }
 
 export interface SevenThreesExercise {

@@ -3,7 +3,8 @@ import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
 import type { Focus, LevelStep } from "@/utils/scProgression"
-import { DEFAULT_START_TYPE, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
+import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
+import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -139,6 +140,10 @@ export interface AppUser {
   // flashes — set by the coach. Constraint warmups pick their colour range
   // relative to it (see docs/progression-spec.md §3.5).
   flashLevel?: string | null
+  // Edge Lifts max (kg) and every change to it, newest first (JSON text) —
+  // set by the max test or the coach. See utils/edgeWarmup.ts.
+  edgeLiftMax?: number | null
+  edgeLiftMaxLog?: string | null
   [key: string]: any
 }
 
@@ -611,6 +616,19 @@ export async function setUserRole(userId: string, role: UserRole) {
 // than silently dropping the value like savePushToken does.
 export async function setFlashLevel(userId: string, flashLevel: string | null) {
   return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { flashLevel } })
+}
+
+// Saves a new Edge Lifts max and adds it to the athlete's log. Throws when
+// the `edgeLiftMax` / `edgeLiftMaxLog` columns don't exist on `users` yet
+// (added by hand in the Appwrite console, like flashLevel).
+export async function setEdgeLiftMax(userId: string, kg: number, source: MaxSource): Promise<AppUser> {
+  const row: any = await getUsers(userId)
+  const log = withNewMax(parseMaxLog(row?.edgeLiftMaxLog), { kg, date: localDateStr(new Date()), source })
+  const updated = await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId,
+    data: { edgeLiftMax: kg, edgeLiftMaxLog: JSON.stringify(log) },
+  })
+  return updated as unknown as AppUser
 }
 
 export async function deleteAthlete(userId: string): Promise<void> {

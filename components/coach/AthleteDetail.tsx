@@ -130,7 +130,7 @@ export function AthleteDetail({
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
-  const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} />
+  const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const templatesCard = <TemplatesCard athlete={athlete} roster={roster} wide={wide} />
   const videos = <AthleteVideos athlete={athlete} />
 

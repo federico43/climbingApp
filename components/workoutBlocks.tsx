@@ -141,6 +141,9 @@ export interface Exercise {
   // Programmed fresh each time this exercise is placed in a block — the same
   // exercise can be max force this cycle and hypertrophy next cycle.
   focus?: Focus
+  // Edge Lifts in the max test homework (utils/edgeWarmup.ts): the athlete
+  // logs the heaviest weight held and it becomes their max.
+  maxTest?: boolean
 }
 
 export interface StrengthConditioningBlock extends BaseBlock {
