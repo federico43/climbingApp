@@ -5,8 +5,8 @@ import { FeatureIntro } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
-  AddClassProblem, CAPACITY, CLASS_HOURS, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
-  WEEK_DAYS, mondayOf, restDayOk, startFromOffset, weekDates, weekdayOf,
+  AddClassProblem, CAPACITY, CLASS_HOURS, GRID_END, GRID_START, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
+  mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, useClassSchedule } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
@@ -42,6 +42,8 @@ export default function ScheduleScreen() {
   const week = athleteWeek(st.classes, st.mine, st.changes, st.extra)
   const [mode, setMode] = useState<Mode>(null)
   const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
+  // The time picked for a proposal, still to be adjusted and sent.
+  const [draft, setDraft] = useState<{ day: number; start: number } | null>(null)
 
   const cantId = sheet?.kind === "cant" ? sheet.id : null
   const cantClass = cantId ? st.classes.find((c) => c.id === cantId) ?? null : null
@@ -72,24 +74,41 @@ export default function ScheduleScreen() {
         )
       })}
       {week.filter((e) => e.proposal && e.cls.day === day).map((e) => (
-        <GridBlock key={e.cls.id} start={e.cls.start} tone="pending" text={`${formatTime(e.cls.start)} proposed`} />
+        <GridBlock
+          key={e.cls.id}
+          start={e.cls.start}
+          tone="pending"
+          text={`${formatTime(e.cls.start)} proposed`}
+          onPress={() => e.from && setSheet({ kind: "class", id: e.from })}
+        />
       ))}
+      {draft?.day === day && <GridBlock start={draft.start} tone="pick" text={formatTime(draft.start)} />}
     </>
   )
 
   const proposingFrom = mode?.kind === "propose" ? mode.from : null
   const movingFrom = mode?.kind === "move" ? mode.from : null
+  // Days a class can still go to, keeping a rest day around the others.
+  const daysFor = (from: string) => openDays(busyDays(week, from), today)
+  const proposeDays = proposingFrom ? daysFor(proposingFrom) : []
   const proposeAt = (day: number, y: number) => {
     if (!proposingFrom) return
     if (day < today) return Alert.alert("That day already passed")
-    if (!restDayOk(busyDays(week, proposingFrom), day)) return Alert.alert("Leave a rest day between classes")
-    const start = startFromOffset(y, HOUR_HEIGHT)
-    const problem = addClassProblem(st.classes, st.blocks, day, start)
-    if (problem) return Alert.alert("The class doesn't fit there", NO_FIT[problem])
-    changeClass(proposingFrom, { status: "propose", day, start })
-    setMode(null)
-    Alert.alert("Proposal sent", `${WEEK_DAYS[day]} ${formatTime(start)}. Your coach answers before the class.`)
+    if (!proposeDays.includes(day)) return Alert.alert("Leave a rest day between classes")
+    // A tap only gets close; the time is fine-tuned in the sheet before sending.
+    setDraft({ day, start: startFromOffset(y, HOUR_HEIGHT) })
   }
+  const draftProblem = draft ? addClassProblem(st.classes, st.blocks, draft.day, draft.start) : null
+  const sendDraft = () => {
+    if (!proposingFrom || !draft) return
+    changeClass(proposingFrom, { status: "propose", ...draft })
+    setDraft(null)
+    setMode(null)
+    Alert.alert("Proposal sent", `${classLabel(draft)}. Your coach answers before the class.`)
+  }
+  // The "I can't go" options that still have somewhere to go.
+  const canMove = !!cantId && st.classes.some((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c, cantId))
+  const canPropose = !!cantId && daysFor(cantId).length > 0
 
   return (
     <ScreenGradient>
@@ -107,9 +126,9 @@ export default function ScheduleScreen() {
           {mode && (
             <View style={s.banner}>
               <Text style={s.bannerText}>
-                {mode.kind === "move" ? "Pick a class with the yellow outline" : "Tap a free time where a whole class fits"}
+                {mode.kind === "move" ? "Pick a class with the yellow outline" : "Tap a bright day near the time you want"}
               </Text>
-              <Pressable hitSlop={8} onPress={() => setMode(null)}>
+              <Pressable hitSlop={8} onPress={() => { setMode(null); setDraft(null) }}>
                 <Text style={s.bannerCancel}>Cancel</Text>
               </Pressable>
             </View>
@@ -119,6 +138,7 @@ export default function ScheduleScreen() {
           dates={dates}
           today={nextWeek ? -1 : today}
           dimPast
+          dimDays={proposingFrom ? [0, 1, 2, 3, 4, 5, 6].filter((d) => d >= today && !proposeDays.includes(d)) : []}
           onPressTime={proposingFrom ? proposeAt : undefined}
           renderDay={renderDay}
         />
@@ -159,12 +179,14 @@ export default function ScheduleScreen() {
             </Text>
             <SheetOption
               title="Move to another class"
-              detail="Your coach approves the change"
+              detail={canMove ? "Your coach approves the change" : "No class left this week with a rest day around it"}
+              disabled={!canMove}
               onPress={() => { setMode({ kind: "move", from: cantId }); setSheet(null) }}
             />
             <SheetOption
               title="Propose another time"
-              detail="If no class fits, your coach decides"
+              detail={canPropose ? "If no class fits, your coach decides" : "No day left this week with a rest day around it"}
+              disabled={!canPropose}
               onPress={() => { setMode({ kind: "propose", from: cantId }); setSheet(null) }}
             />
             <SheetOption
@@ -172,6 +194,38 @@ export default function ScheduleScreen() {
               detail="It moves to a later week, up to 2 of your 8. After that you lose it. Your coach is told"
               onPress={() => { changeClass(cantId, { status: "skip" }); setSheet(null) }}
             />
+          </>
+        )}
+      </Sheet>
+
+      <Sheet
+        visible={!!draft}
+        title={draft ? `Propose ${classLabel(draft)} – ${formatTime(draft.start + CLASS_HOURS)}` : ""}
+        subtitle="Adjust the time in half-hour steps"
+        onClose={() => setDraft(null)}
+      >
+        {draft && (
+          <>
+            <View style={s.stepper}>
+              <Pressable
+                style={s.step}
+                disabled={draft.start <= GRID_START}
+                onPress={() => setDraft({ ...draft, start: draft.start - 0.5 })}
+              >
+                <Text style={[s.stepText, draft.start <= GRID_START && { opacity: 0.3 }]}>−30 min</Text>
+              </Pressable>
+              <Text style={s.stepTime}>{formatTime(draft.start)}</Text>
+              <Pressable
+                style={s.step}
+                disabled={draft.start + CLASS_HOURS >= GRID_END}
+                onPress={() => setDraft({ ...draft, start: draft.start + 0.5 })}
+              >
+                <Text style={[s.stepText, draft.start + CLASS_HOURS >= GRID_END && { opacity: 0.3 }]}>+30 min</Text>
+              </Pressable>
+            </View>
+            {draftProblem && <Text style={s.hint}>{NO_FIT[draftProblem]}</Text>}
+            <SheetButton label="Send proposal" disabled={!!draftProblem} onPress={sendDraft} />
+            <SheetButton kind="line" label="Pick another time" onPress={() => setDraft(null)} />
           </>
         )}
       </Sheet>
@@ -263,6 +317,10 @@ const s = StyleSheet.create({
   },
   note: { fontSize: 13, color: C.textSecondary, fontWeight: "600" },
   hint: { fontSize: 12, color: C.yellow, marginTop: -4 },
+  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  step: { borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  stepText: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+  stepTime: { color: C.textPrimary, fontSize: 28, fontWeight: "800" },
   person: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 13, fontWeight: "800", color: C.textSecondary },
