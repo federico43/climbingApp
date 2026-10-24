@@ -9,7 +9,7 @@ import {
   addClassProblem, formatTime, mondayOf, startFromOffset, weekDates,
 } from "@/utils/classSchedule"
 import {
-  addNextClass, answerRequest, blockDay, blockTime, moveBlock, moveNextClass, pendingRequests, publishWeek, removeNextClass, unblock,
+  addNextClass, answerRequest, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
@@ -70,6 +70,9 @@ export default function ClassesScreen() {
               const problem = moveBlock(b, to, start)
               if (problem) Alert.alert("Can't move it there", problem === "class" ? "There's a class at that time." : "That day is blocked.")
             }}
+            onResize={(start, end) => {
+              if (resizeBlock(b, start, end)) Alert.alert("Can't stretch it there", "There's a class at that time.")
+            }}
           />
         ))}
         {st.nextClasses.filter((c) => c.day === day).map((c) => (
@@ -104,7 +107,7 @@ export default function ClassesScreen() {
           id="coach-classes"
           pages={[
             { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
-            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it. Athletes can't propose times there." },
+            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
             { icon: "chatbubbles", title: "Answer requests", text: "Athletes ask to move, propose a time or add an extra class. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
           ]}

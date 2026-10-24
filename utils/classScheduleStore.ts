@@ -145,6 +145,13 @@ export function moveBlock(block: BlockedTime, day: number, start: number): "clas
   return null
 }
 
+// Make a blocked time longer or shorter. Returns "class" when it would cover one.
+export function resizeBlock(block: BlockedTime, start: number, end: number): "class" | null {
+  if (state.nextClasses.some((c) => c.day === block.day && c.start < end && start < c.start + CLASS_HOURS)) return "class"
+  set({ blocks: state.blocks.map((b) => (b === block ? { ...b, start, end } : b)), published: false })
+  return null
+}
+
 export function removeNextClass(id: string) {
   set({ nextClasses: state.nextClasses.filter((c) => c.id !== id), published: false })
 }

@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native"
 import { Gesture, GestureDetector, ScrollView } from "react-native-gesture-handler"
 
 export const HOUR_HEIGHT = 46
+const HANDLE = 14 // height of the resize handles on a block's edges
 const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i)
 const LETTERS = ["M", "T", "W", "T", "F", "S", "S"]
 
@@ -82,7 +83,8 @@ type Tone = "mine" | "other" | "full" | "pending" | "skip" | "pick" | "blocked"
 
 // A block on the grid, from `start` for `hours`. With `onDrop` it can be
 // long-pressed and dragged; it reports how many days and hours it moved,
-// snapped to the half hour.
+// snapped to the half hour. With `onResize` it also gets handles on its top
+// and bottom edges to make it longer or shorter.
 export function GridBlock({
   start,
   hours = CLASS_HOURS,
@@ -90,6 +92,7 @@ export function GridBlock({
   text,
   onPress,
   onDrop,
+  onResize,
 }: {
   start: number
   hours?: number
@@ -97,8 +100,9 @@ export function GridBlock({
   text: string
   onPress?: () => void
   onDrop?: (days: number, hours: number) => void
+  onResize?: (start: number, end: number) => void
 }) {
-  if (onDrop) return <DraggableBlock start={start} hours={hours} tone={tone} text={text} onPress={onPress} onDrop={onDrop} />
+  if (onDrop) return <DraggableBlock start={start} hours={hours} tone={tone} text={text} onPress={onPress} onDrop={onDrop} onResize={onResize} />
   return (
     <Pressable
       onPress={onPress}
@@ -115,7 +119,7 @@ export function GridBlock({
 export const blockTime = (start: number) => formatTime(start)
 
 function DraggableBlock({
-  start, hours, tone, text, onPress, onDrop,
+  start, hours, tone, text, onPress, onDrop, onResize,
 }: {
   start: number
   hours: number
@@ -123,15 +127,17 @@ function DraggableBlock({
   text: string
   onPress?: () => void
   onDrop: (days: number, hours: number) => void
+  onResize?: (start: number, end: number) => void
 }) {
   const setDragDay = useContext(DragDay)
   const day = useContext(ColumnDay)
   const colWidth = useRef(0)
   const [drag, setDrag] = useState<{ days: number; hours: number } | null>(null)
+  const [resize, setResize] = useState<{ start: number; end: number } | null>(null)
   // The grid re-renders while dragging (new callbacks each time); keep the
   // same gesture so the drag isn't cut off.
-  const handlers = useRef({ onPress, onDrop })
-  handlers.current = { onPress, onDrop }
+  const handlers = useRef({ onPress, onDrop, onResize })
+  handlers.current = { onPress, onDrop, onResize }
 
   // Snapped to whole days and half hours, kept inside the grid.
   const snap = (dx: number, dy: number) => ({
@@ -154,6 +160,9 @@ function DraggableBlock({
       })
       .onEnd((e) => {
         const moved = snap(e.translationX, e.translationY)
+        // Reset first: an alert from onDrop can swallow onFinalize.
+        setDrag(null)
+        setDragDay(null)
         if (moved.days || moved.hours) handlers.current.onDrop(moved.days, moved.hours)
       })
       .onFinalize(() => {
@@ -161,27 +170,87 @@ function DraggableBlock({
         setDragDay(null)
       })
     const tap = Gesture.Tap().runOnJS(true).onEnd((_e, ok) => { if (ok) handlers.current.onPress?.() })
-    return Gesture.Exclusive(pan, tap)
+
+    // Edge handles: drag right away (no long press), half an hour at a time,
+    // at least half an hour long and inside the grid.
+    const end = start + hours
+    const edge = (which: "top" | "bottom") => {
+      const span = (dy: number) => {
+        const d = Math.round(dy / (HOUR_HEIGHT / 2)) / 2
+        return which === "top"
+          ? { start: Math.max(GRID_START, Math.min(end - 0.5, start + d)), end }
+          : { start, end: Math.min(GRID_END, Math.max(start + 0.5, end + d)) }
+      }
+      return Gesture.Pan()
+        .runOnJS(true)
+        .minDistance(1)
+        .onStart(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
+          setDragDay(day)
+          setResize({ start, end })
+        })
+        .onUpdate((e) => {
+          const next = span(e.translationY)
+          setResize((r) => {
+            if (r && r.start === next.start && r.end === next.end) return r
+            Haptics.selectionAsync().catch(() => {})
+            return next
+          })
+        })
+        .onEnd((e) => {
+          const next = span(e.translationY)
+          setResize(null)
+          setDragDay(null)
+          if (next.start !== start || next.end !== end) handlers.current.onResize?.(next.start, next.end)
+        })
+        .onFinalize(() => {
+          setResize(null)
+          setDragDay(null)
+        })
+    }
+    const top = edge("top")
+    const bottom = edge("bottom")
+    return { block: Gesture.Exclusive(pan, tap), top, bottom }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, start, hours])
 
+  const shownStart = resize?.start ?? start
+  const shownHours = resize ? resize.end - resize.start : hours
+  const top = (shownStart - GRID_START) * HOUR_HEIGHT + 1
+  const height = shownHours * HOUR_HEIGHT - 3
+
   return (
-    <GestureDetector gesture={gesture}>
-      <View
-        onLayout={(e) => { colWidth.current = e.nativeEvent.layout.width + 2 }}
-        // Keep the tap from also reaching the day column underneath.
-        onStartShouldSetResponder={() => true}
-        style={[
-          s.block, tones[tone], { top: (start - GRID_START) * HOUR_HEIGHT + 1, height: hours * HOUR_HEIGHT - 3 },
-          drag && s.dragging,
-          drag && { transform: [{ translateX: drag.days * colWidth.current }, { translateY: drag.hours * HOUR_HEIGHT }] },
-        ]}
-      >
-        <Text style={[s.blockText, toneText[tone]]}>
-          {drag ? formatTime(start + drag.hours) : text}
-        </Text>
-      </View>
-    </GestureDetector>
+    <>
+      <GestureDetector gesture={gesture.block}>
+        <View
+          onLayout={(e) => { colWidth.current = e.nativeEvent.layout.width + 2 }}
+          // Keep the tap from also reaching the day column underneath.
+          onStartShouldSetResponder={() => true}
+          style={[
+            s.block, tones[tone], { top, height },
+            onResize && { paddingTop: 12 },
+            (drag || resize) && s.dragging,
+            drag && { transform: [{ translateX: drag.days * colWidth.current }, { translateY: drag.hours * HOUR_HEIGHT }] },
+          ]}
+        >
+          <Text style={[s.blockText, toneText[tone]]}>
+            {drag ? formatTime(start + drag.hours) : resize ? `${formatTime(resize.start)}\n${formatTime(resize.end)}` : text}
+          </Text>
+        </View>
+      </GestureDetector>
+      {/* Siblings on top of the block, not inside it, so a touch on an edge
+          never reaches the block's own move and tap gestures. */}
+      {onResize && !drag && (
+        <>
+          <GestureDetector gesture={gesture.top}>
+            <View style={[s.handle, { top }]}><View style={s.grip} /></View>
+          </GestureDetector>
+          <GestureDetector gesture={gesture.bottom}>
+            <View style={[s.handle, { top: top + height - HANDLE }]}><View style={s.grip} /></View>
+          </GestureDetector>
+        </>
+      )}
+    </>
   )
 }
 
@@ -219,6 +288,8 @@ const s = StyleSheet.create({
   col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
   line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.05)" },
   block: { position: "absolute", left: 1, right: 1, borderRadius: 5, padding: 3, overflow: "hidden" },
+  handle: { position: "absolute", left: 1, right: 1, height: HANDLE, alignItems: "center", justifyContent: "center" },
+  grip: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.textMuted },
   dragging: { opacity: 0.9, borderWidth: 2, borderColor: C.green, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   blockText: { fontSize: 9, fontWeight: "700", lineHeight: 11 },
 })
