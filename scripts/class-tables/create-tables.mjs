@@ -109,7 +109,7 @@ for (const t of TABLES) {
   const { indexes = [] } = await api("GET", `${db}/${t.id}/indexes`)
   for (const ix of t.indexes) {
     if (indexes.some((h) => h.key === ix.key)) { console.log(`  index ${ix.key}: already there`); continue }
-    await api("POST", `${db}/${t.id}/indexes`, { ...ix, type: "key", lengths: ix.columns.map(() => 36) })
+    await api("POST", `${db}/${t.id}/indexes`, { ...ix, type: "key" })
     console.log(`  index ${ix.key}: created`)
   }
 }
