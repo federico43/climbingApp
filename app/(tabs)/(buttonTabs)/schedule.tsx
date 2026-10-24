@@ -63,12 +63,14 @@ export default function ScheduleScreen() {
     </>
   )
 
+  const proposingFrom = mode?.kind === "propose" ? mode.from : null
+  const movingFrom = mode?.kind === "move" ? mode.from : null
   const proposeAt = (day: number, y: number) => {
-    if (mode?.kind !== "propose") return
+    if (!proposingFrom) return
     if (day < today) return Alert.alert("That day already passed")
-    if (!restDayOk(busyDays(week, mode.from), day)) return Alert.alert("Leave a rest day between classes")
+    if (!restDayOk(busyDays(week, proposingFrom), day)) return Alert.alert("Leave a rest day between classes")
     const start = startFromOffset(y, HOUR_HEIGHT)
-    changeClass(mode.from, { status: "propose", day, start })
+    changeClass(proposingFrom, { status: "propose", day, start })
     setMode(null)
     Alert.alert("Proposal sent", `${WEEK_DAYS[day]} ${formatTime(start)}. Your coach answers before the class.`)
   }
@@ -102,7 +104,7 @@ export default function ScheduleScreen() {
           dates={dates}
           today={today}
           dimPast
-          onPressTime={mode?.kind === "propose" ? proposeAt : undefined}
+          onPressTime={proposingFrom ? proposeAt : undefined}
           renderDay={renderDay}
         />
       </SafeAreaView>
@@ -114,12 +116,13 @@ export default function ScheduleScreen() {
         today={today}
         mode={mode}
         extraUsed={!!st.extra}
+        changedAway={sheet?.kind === "class" && ["move", "propose"].includes(st.changes[sheet.id]?.status ?? "")}
         fits={fits}
         onClose={() => setSheet(null)}
         onCant={(id) => setSheet({ kind: "cant", id })}
         onUndoSkip={(id) => { changeClass(id, null); setSheet(null) }}
         onMoveHere={(to) => {
-          if (mode) changeClass(mode.from, { status: "move", to })
+          if (movingFrom) changeClass(movingFrom, { status: "move", to })
           setMode(null)
           setSheet(null)
         }}
@@ -160,7 +163,7 @@ export default function ScheduleScreen() {
 }
 
 function ClassSheet({
-  cls, me, week, today, mode, extraUsed, fits, onClose, onCant, onUndoSkip, onMoveHere, onExtra,
+  cls, me, week, today, mode, extraUsed, changedAway, fits, onClose, onCant, onUndoSkip, onMoveHere, onExtra,
 }: {
   cls: GymClass | null
   me: string
@@ -168,6 +171,7 @@ function ClassSheet({
   today: number
   mode: Mode
   extraUsed: boolean
+  changedAway: boolean // the athlete asked to move this class somewhere else
   fits: (c: GymClass, except?: string) => boolean
   onClose: () => void
   onCant: (id: string) => void
@@ -181,11 +185,23 @@ function ClassSheet({
   const full = !e && headcount(cls, week) >= CAPACITY
   let actions: React.ReactNode = null
   if (e?.extra && cls.day >= today) {
-    actions = <SheetButton kind="red" label="Cancel extra class" onPress={() => { cancelExtra(); onClose() }} />
+    actions = <SheetButton kind="red" label={e.state === "pending" ? "Cancel request" : "Cancel extra class"} onPress={() => { cancelExtra(); onClose() }} />
   } else if (e?.state === "on" && cls.day >= today) {
     actions = <SheetButton kind="red" label="I can't go" onPress={() => onCant(cls.id)} />
   } else if (e?.state === "pending") {
-    actions = <Text style={s.note}>Waiting for your coach. If they don&apos;t answer before the class, it stays as it was.</Text>
+    actions = (
+      <>
+        <Text style={s.note}>Waiting for your coach. If they don&apos;t answer before the class, it stays as it was.</Text>
+        <SheetButton kind="line" label="Cancel request" onPress={() => onUndoSkip(e.from ?? cls.id)} />
+      </>
+    )
+  } else if (changedAway) {
+    actions = (
+      <>
+        <Text style={s.note}>You asked to move this class. Waiting for your coach.</Text>
+        <SheetButton kind="line" label="Keep this class" onPress={() => onUndoSkip(cls.id)} />
+      </>
+    )
   } else if (e?.state === "skip") {
     actions = <SheetButton kind="line" label="I can go after all" onPress={() => onUndoSkip(cls.id)} />
   } else if (mode?.kind === "move") {
