@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
+import { handleClassAction, runClassCron } from "./classes.js"
 
 // Model. Haiku is cheap and plenty for turning a sentence into a structured
 // protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
@@ -14,6 +15,8 @@ const USERS_TABLE = process.env.USERS_TABLE || "users"
 const PROTOCOLS_TABLE = process.env.PROTOCOLS_TABLE || "protocol"
 const TRAINING_PLANS_TABLE = process.env.TRAINING_PLANS_TABLE || "training_plans"
 const EXERCISES_TABLE = process.env.EXERCISES_TABLE || "exercises"
+// The gym's time zone: class times are its wall clock.
+const GYM_TZ = process.env.GYM_TZ || "UTC"
 
 async function appwriteFetch(path, log) {
   const apiKey = process.env.APPWRITE_API_KEY
@@ -91,6 +94,55 @@ async function listRowsEqual(table, attribute, value, log) {
   if (viaTables) return viaTables.rows ?? []
   const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents?queries[]=${query}&queries[]=${limit}`, log)
   return viaDocs?.documents ?? []
+}
+
+// Rows matching Appwrite query objects ({ method, attribute, values }), one
+// page of up to 500.
+async function listRows(table, queries, log) {
+  const qs = [...queries, { method: "limit", values: [500] }]
+    .map((q) => `queries[]=${encodeURIComponent(JSON.stringify(q))}`).join("&")
+  const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${table}/rows?${qs}`, log)
+  if (viaTables) return viaTables.rows ?? []
+  const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents?${qs}`, log)
+  return viaDocs?.documents ?? []
+}
+
+// A new row (`id` or a unique one) through the server key. Returns it, or null.
+async function createRow(table, data, id, log) {
+  const apiKey = process.env.APPWRITE_API_KEY
+  if (!apiKey) return null
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey, "Content-Type": "application/json" }
+  const rowId = id || "unique()"
+  for (const [path, body] of [
+    [`/tablesdb/${DATABASE_ID}/tables/${table}/rows`, { rowId, data }],
+    [`/databases/${DATABASE_ID}/collections/${table}/documents`, { documentId: rowId, data }],
+  ]) {
+    try {
+      const r = await fetch(`${ENDPOINT}${path}`, { method: "POST", headers, body: JSON.stringify(body) })
+      if (r.ok) return await r.json()
+      log?.(`Appwrite POST ${path} → ${r.status} ${await r.text().catch(() => "")}`)
+    } catch (e) {
+      log?.(`Appwrite POST ${path} failed: ${e?.message ?? e}`)
+    }
+  }
+  return null
+}
+
+async function deleteRow(table, id, log) {
+  const apiKey = process.env.APPWRITE_API_KEY
+  if (!apiKey) return false
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey }
+  const rid = encodeURIComponent(id)
+  for (const path of [`/tablesdb/${DATABASE_ID}/tables/${table}/rows/${rid}`, `/databases/${DATABASE_ID}/collections/${table}/documents/${rid}`]) {
+    try {
+      const r = await fetch(`${ENDPOINT}${path}`, { method: "DELETE", headers })
+      if (r.ok) return true
+      log?.(`Appwrite DELETE ${path} → ${r.status}`)
+    } catch (e) {
+      log?.(`Appwrite DELETE ${path} failed: ${e?.message ?? e}`)
+    }
+  }
+  return false
 }
 
 // Best-effort Expo push to user rows: `build(user)` is the message minus
@@ -199,6 +251,29 @@ async function isCoach(userId, log) {
   return row?.role === "coach"
 }
 
+// What classes.js needs from here.
+function classContext(log, error) {
+  return {
+    db: {
+      get: (table, id) => (id ? getRow(table, id, log) : null),
+      list: (table, queries) => listRows(table, queries, log),
+      create: (table, data, id) => createRow(table, data, id, log),
+      update: (table, id, data) => updateRow(table, id, data, log),
+      remove: (table, id) => deleteRow(table, id, log),
+    },
+    q: {
+      equal: (attribute, value) => ({ method: "equal", attribute, values: [value] }),
+      contains: (attribute, value) => ({ method: "contains", attribute, values: [value] }),
+      gte: (attribute, value) => ({ method: "greaterThanEqual", attribute, values: [value] }),
+    },
+    getUserRow: (id) => getUserRow(id, log),
+    listCoachRows: () => listCoachRows(log),
+    listUsers: () => listRows(USERS_TABLE, [], log),
+    push: (users, build) => pushToUsers(users, build, log, error),
+    log, error, tz: GYM_TZ,
+  }
+}
+
 export default async ({ req, res, log, error }) => {
   // ── Parse input ─────────────────────────────────────────────────────────────
   let body = {}
@@ -207,10 +282,23 @@ export default async ({ req, res, log, error }) => {
   } catch {
     return res.json({ error: "Invalid JSON body." }, 400)
   }
+  // ── The hourly schedule: class reminders and expired requests ───────────────
+  if (req.headers["x-appwrite-trigger"] === "schedule") {
+    const report = await runClassCron(classContext(log, error))
+    log(`Class cron: ${JSON.stringify(report)}`)
+    return res.json({ ok: true, ...report }, 200)
+  }
+
   // ── Auth: must be signed in ─────────────────────────────────────────────────
   const userId = req.headers["x-appwrite-user-id"]
   if (!userId) {
     return res.json({ error: "Not authenticated." }, 401)
+  }
+
+  // ── Actions: weekly classes (classes.js) ────────────────────────────────────
+  if (typeof body.action === "string" && body.action.startsWith("class")) {
+    const out = await handleClassAction(body.action, userId, body, classContext(log, error))
+    if (out) return res.json(out.json, out.status)
   }
 
   // ── Action: notify the coach(es) that an athlete finished a workout ──────────
