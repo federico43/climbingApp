@@ -76,7 +76,7 @@ const users = [
 ]
 for (const u of users) t("users").set(u.$id, { ...u })
 
-const call = (action: string, who: string, body: any = {}) => handleClassAction(action, who, body, ctx)
+const call = async (action: string, who: string, body: any = {}) => (await handleClassAction(action, who, body, ctx))!
 
 // Next week, so every class is still ahead.
 const week = addDays(mondayOfYmd(new Date().toISOString().slice(0, 10)), 7)

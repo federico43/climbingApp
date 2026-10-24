@@ -1,6 +1,7 @@
 // Weekly classes: the coach sets them up each week, athletes keep fixed ones
-// and ask for changes. Pure rules here; the screens keep the state
-// (utils/classScheduleStore.ts). UI only for now: example data, no backend.
+// and ask for changes. Pure rules here; the state lives in
+// utils/classScheduleStore.ts and the server checks the same rules
+// (functions/aiProtocol/src/classRules.js).
 
 export interface GymClass {
   id: string
@@ -153,19 +154,80 @@ export function weekDates(monday: Date): Date[] {
   })
 }
 
-// Classes the coach runs most weeks (example data until classes live in Appwrite).
-export const EXAMPLE_CLASSES: GymClass[] = [
-  { id: "c1", day: 0, start: 9.5, roster: ["lu_crimps", "jp_slab", "sofi_k"] },
-  { id: "c2", day: 0, start: 15.5, roster: ["mari_dyno", "vale_r", "diego_m", "cami_p"] },
-  { id: "c3", day: 1, start: 9.5, roster: ["ana_v", "nico_h"] },
-  { id: "c4", day: 1, start: 15.5, roster: ["lu_crimps", "jp_slab", "sofi_k", "diego_m"] },
-  { id: "c6", day: 2, start: 9.5, roster: ["mari_dyno"] },
-  { id: "c7", day: 2, start: 15.5, roster: ["vale_r", "ana_v", "jp_slab"] },
-  { id: "c8", day: 3, start: 9.5, roster: ["lu_crimps", "sofi_k", "diego_m"] },
-  { id: "c9", day: 3, start: 15.5, roster: ["nico_h", "tomas_b"] },
-  { id: "c10", day: 4, start: 7, roster: ["mari_dyno", "rocio_t"] },
-  { id: "c11", day: 4, start: 9.5, roster: ["cami_p", "vale_r", "ana_v", "jp_slab"] },
-  { id: "c13", day: 5, start: 9.5, roster: ["tomas_b", "nico_h"] },
-]
-// The example athlete's default classes: Monday and Thursday at 9:30.
-export const EXAMPLE_MINE = ["c1", "c8"]
+// "YYYY-MM-DD" of a local date (the week's key on the server is its Monday).
+export function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+export function dateOf(ymdStr: string): Date {
+  const [y, m, d] = ymdStr.split("-").map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// When a class starts, as a local Date.
+export function classDate(weekStart: string, c: { day: number; start: number }): Date {
+  const d = dateOf(weekStart)
+  d.setDate(d.getDate() + c.day)
+  d.setMinutes(Math.round(c.start * 60))
+  return d
+}
+
+// An athlete's usual class, as saved on their user row: "0@9.5" = Monday 9:30.
+export const slotKey = (c: { day: number; start: number }) => `${c.day}@${c.start}`
+export function parseSlot(s: string): { day: number; start: number } | null {
+  const [d, h] = s.split("@").map(Number)
+  return Number.isInteger(d) && d >= 0 && d <= 6 && Number.isFinite(h) ? { day: d, start: h } : null
+}
+
+// Missed sessions that can move to a later week, per package.
+export const MAX_CARRY = 2
+
+// Sessions left: `done` = classes the athlete was in that have ended since
+// the package started; skips past the first MAX_CARRY are lost.
+export const sessionsLeft = (total: number, done: number, skips: number) =>
+  Math.max(0, total - done - Math.max(0, skips - MAX_CARRY))
+
+// A request row from the server (table class_requests).
+export interface ClassRequestRow {
+  $id: string
+  athleteId: string
+  weekStart: string
+  kind: "move" | "propose" | "extra" | "skip"
+  status: "pending" | "accepted" | "rejected" | "expired"
+  fromClassId?: string | null
+  toClassId?: string | null
+  day?: number | null
+  start?: number | null
+}
+
+// The server's week (rosters hold everyone, by id) as the athlete screens
+// see it: rosters as names without the athlete, their classes, and this
+// week's changes from their requests.
+export function athleteView(
+  classes: GymClass[],
+  requests: ClassRequestRow[],
+  me: string,
+  names: Record<string, string>,
+): { classes: GymClass[]; mine: string[]; changes: Record<string, ClassChange>; extra: ExtraClass | null } {
+  const mine = classes.filter((c) => c.roster.includes(me)).map((c) => c.id)
+  const changes: Record<string, ClassChange> = {}
+  let extra: ExtraClass | null = null
+  for (const r of requests) {
+    if (r.athleteId !== me) continue
+    const from = r.fromClassId ?? ""
+    if (r.kind === "skip" && r.status === "accepted" && classes.some((c) => c.id === from)) {
+      if (!mine.includes(from)) mine.push(from)
+      changes[from] = { status: "skip" }
+    }
+    if (r.status !== "pending") continue
+    if (r.kind === "move" && r.toClassId) changes[from] = { status: "move", to: r.toClassId }
+    if (r.kind === "propose" && r.day != null && r.start != null) changes[from] = { status: "propose", day: r.day, start: r.start }
+    if (r.kind === "extra" && r.toClassId) extra = { to: r.toClassId, approved: false }
+  }
+  return {
+    classes: classes.map((c) => ({ ...c, roster: c.roster.filter((u) => u !== me).map((u) => names[u] ?? "athlete") })),
+    mine,
+    changes,
+    extra,
+  }
+}

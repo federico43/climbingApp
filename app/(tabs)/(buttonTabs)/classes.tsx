@@ -1,4 +1,3 @@
-import { useAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
 import { FeatureIntro } from "@/components/schedule/FeatureIntro"
@@ -6,15 +5,16 @@ import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid
 import { SettingsButton } from "@/components/SettingsButton"
 import {
   AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  addClassProblem, formatTime, mondayOf, startFromOffset, weekDates,
+  addClassProblem, dateOf, formatTime, startFromOffset, weekDates, ymd,
 } from "@/utils/classSchedule"
 import {
-  addNextClass, answerRequest, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type Slot,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
-import { useMemo, useState } from "react"
+import { useFocusEffect } from "expo-router"
+import { useCallback, useMemo, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -33,27 +33,30 @@ type SheetState =
   | { kind: "block"; block: BlockedTime }
   | { kind: "requests" }
   | { kind: "request"; key: string }
+  | { kind: "packages" }
+  | { kind: "package"; athleteId: string }
   | null
 
 // Coach tab: plan next week's classes (max 2 a day), block the times you
-// can't teach, answer athletes' requests. UI only for now: example data.
+// can't teach, answer athletes' requests, add packages. The week is a draft
+// on the phone until it's published.
 export default function ClassesScreen() {
-  const { userName } = useAuth()
   const st = useClassSchedule()
-  const dates = useMemo(() => {
-    const monday = mondayOf(new Date())
-    monday.setDate(monday.getDate() + 7)
-    return weekDates(monday)
-  }, [])
+  useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
+  const dates = useMemo(() => weekDates(dateOf(st.nextWeekStart || "2000-01-03")), [st.nextWeekStart])
   const [sheet, setSheet] = useState<SheetState>(null)
-  const requests = pendingRequests(st, userName || "athlete")
+  // A new package: sessions and weeks to use them.
+  const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
+  const requests = pendingRequests(st)
+  // This week's requests only show in the list; the grid is next week.
+  const gridRequests = requests.filter((r) => r.weekStart === st.nextWeekStart)
   const dayBlocked = (d: number) => st.blocks.some((b) => b.day === d && b.all)
   // Requests drawn on the grid: who's asking to join a class (or a new time)
   // and who's asking to leave one.
   const at = (c: Slot, s?: Slot) => !!s && c.day === s.day && c.start === s.start
-  const joining = (c: GymClass) => requests.filter((r) => at(c, r.to))
-  const leaving = (c: GymClass) => requests.filter((r) => at(c, r.from))
-  const newTimes = requests.filter((r) => !st.nextClasses.some((c) => at(c, r.to)))
+  const joining = (c: GymClass) => gridRequests.filter((r) => at(c, r.to))
+  const leaving = (c: GymClass) => gridRequests.filter((r) => at(c, r.from))
+  const newTimes = gridRequests.filter((r) => !st.nextClasses.some((c) => at(c, r.to)))
   const range = `${MONTHS[dates[0].getMonth()]} ${dates[0].getDate()} – ${MONTHS[dates[6].getMonth()]} ${dates[6].getDate()}`
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
 
@@ -158,6 +161,10 @@ export default function ClassesScreen() {
           <SettingsButton />
         </View>
         <View style={s.top}>
+          <Pressable style={s.pkgRow} onPress={() => setSheet({ kind: "packages" })}>
+            <Text style={s.pkgRowText}>Packages</Text>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+          </Pressable>
           {requests.length > 0 && (
             <Pressable style={s.requests} onPress={() => setSheet({ kind: "requests" })}>
               <Text style={s.requestsText}>
@@ -179,8 +186,8 @@ export default function ClassesScreen() {
         />
         <View style={s.footer}>
           <SheetButton
-            label={st.published ? "Published · athletes notified" : "Publish week"}
-            disabled={st.published}
+            label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : "Publish week"}
+            disabled={st.published || st.busy || st.status !== "ready"}
             onPress={publishWeek}
           />
         </View>
@@ -268,6 +275,68 @@ export default function ClassesScreen() {
       >
         {req && requestRow(req)}
       </Sheet>
+
+      <Sheet
+        visible={sheet?.kind === "packages"}
+        title="Packages"
+        subtitle="Sessions each athlete paid for"
+        onClose={() => setSheet(null)}
+      >
+        {st.athletes.map((a) => {
+          const latest = st.packages.filter((p) => p.athleteId === a.id).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
+          return (
+            <View key={a.id} style={s.req}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>{a.name}</Text>
+                <Text style={s.reqText}>{latest ? `${latest.total} sessions · use by ${latest.useBy}` : "No package"}</Text>
+              </View>
+              <Pressable
+                style={[s.reqBtn, s.reqNo]}
+                onPress={() => {
+                  setSheet(null)
+                  // iOS won't present a sheet while the previous one is still closing.
+                  setTimeout(() => setSheet({ kind: "package", athleteId: a.id }), 400)
+                }}
+              >
+                <Text style={s.reqNoText}>Add package</Text>
+              </Pressable>
+            </View>
+          )
+        })}
+        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
+      </Sheet>
+
+      <Sheet
+        visible={sheet?.kind === "package"}
+        title={sheet?.kind === "package" ? `Package for ${st.names[sheet.athleteId] ?? "athlete"}` : ""}
+        subtitle="Starts today"
+        onClose={() => setSheet(null)}
+      >
+        {[
+          { label: "Sessions", value: `${pkgForm.total}`, step: (n: number) => setPkgForm({ ...pkgForm, total: Math.max(1, pkgForm.total + n) }) },
+          { label: "Use within", value: `${pkgForm.weeks} weeks`, step: (n: number) => setPkgForm({ ...pkgForm, weeks: Math.max(1, pkgForm.weeks + n) }) },
+        ].map((row) => (
+          <View key={row.label} style={s.stepRow}>
+            <Text style={s.reqWho}>{row.label}</Text>
+            <View style={s.stepper}>
+              <Pressable style={s.step} onPress={() => row.step(-1)}><Text style={s.reqNoText}>−</Text></Pressable>
+              <Text style={s.stepValue}>{row.value}</Text>
+              <Pressable style={s.step} onPress={() => row.step(1)}><Text style={s.reqNoText}>+</Text></Pressable>
+            </View>
+          </View>
+        ))}
+        <SheetButton
+          label={st.busy ? "Saving…" : "Add package"}
+          disabled={st.busy}
+          onPress={async () => {
+            if (sheet?.kind !== "package") return
+            const today = new Date()
+            const useBy = new Date(today)
+            useBy.setDate(today.getDate() + pkgForm.weeks * 7)
+            if (await addAthletePackage(sheet.athleteId, pkgForm.total, ymd(today), ymd(useBy))) setSheet(null)
+          }}
+        />
+      </Sheet>
     </ScreenGradient>
   )
 }
@@ -286,6 +355,15 @@ const s = StyleSheet.create({
     borderRadius: 12, padding: 12,
   },
   requestsText: { color: C.yellow, fontSize: 14, fontWeight: "700" },
+  pkgRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 12,
+  },
+  pkgRowText: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+  stepRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  stepper: { flexDirection: "row", alignItems: "center", gap: 12 },
+  step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
+  stepValue: { minWidth: 70, textAlign: "center", fontSize: 15, fontWeight: "800", color: C.textPrimary },
   footer: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },
