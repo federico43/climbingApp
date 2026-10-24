@@ -39,7 +39,11 @@ function blockPreviews(p: ProtocolRow): { name: string; timeLimit?: number }[] {
 
 // The athlete's coach-assigned templates: Test / Edit / ⋮ (copy, delete) and
 // + Add. Block chips only when there's room (`wide`).
-export function TemplatesCard({ athlete, roster, wide }: { athlete: AppUser; roster: AppUser[]; wide: boolean }) {
+// `onHomeworkChanged`: a save may split blocks (or the whole workout) off
+// into homework, which the athlete's homework card must pick up.
+export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
+  athlete: AppUser; roster: AppUser[]; wide: boolean; onHomeworkChanged?: () => void
+}) {
   const workoutCtx = useWorkoutContext()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -160,7 +164,7 @@ export function TemplatesCard({ athlete, roster, wide }: { athlete: AppUser; ros
           roster={roster}
           protocol={editProtocol}
           onClose={() => setBuilding(false)}
-          onSaved={load}
+          onSaved={() => { load(); onHomeworkChanged?.() }}
         />
       </Modal>
 
