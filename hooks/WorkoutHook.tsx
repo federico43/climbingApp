@@ -1,3 +1,4 @@
+import { useRestNotification } from "@/hooks/useRestNotification"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -56,6 +57,9 @@ export function useWorkout(protocolInput: Block[]) {
   const [status, setStatus] = useState<WorkoutStatus>("idle")
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
+  // When the running rest ends (ms since the epoch), null when none — lets a
+  // notification say so while the athlete is out of the app.
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
   const [blockDurations, setBlockDurations] = useState<Record<number, number>>({})
   const [blockStartTime, setBlockStartTime] = useState<number | null>(null)
   // When the whole workout started — drives the summary's total time. Persisted
@@ -68,6 +72,8 @@ export function useWorkout(protocolInput: Block[]) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
+
+  useRestNotification(restEndsAt)
 
   const currentBlock = protocol[currentBlockIndex] ?? null
   const totalBlocks = protocol.length
@@ -181,6 +187,7 @@ export function useWorkout(protocolInput: Block[]) {
     setWorkoutStartTime(saved.workoutStartTime ?? Date.now())
     setTimeRemaining(null)
     setRestTimeRemaining(null)
+    setRestEndsAt(null)
     setStatus("running")
   }, [])
 
@@ -192,6 +199,7 @@ export function useWorkout(protocolInput: Block[]) {
     setAttempts([])
     setTimeRemaining(null)
     setRestTimeRemaining(null)
+    setRestEndsAt(null)
     setBlockDurations({})
     setBlockStartTime(null)
     setWorkoutStartTime(null)
@@ -264,6 +272,7 @@ export function useWorkout(protocolInput: Block[]) {
   const endTime = Date.now() + duration * 1000
   restEndTimeRef.current = endTime
   setRestTimeRemaining(duration)
+  setRestEndsAt(duration > 0 ? endTime : null)
 
   restTimerRef.current = setInterval(() => {
     const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
@@ -271,6 +280,7 @@ export function useWorkout(protocolInput: Block[]) {
       clearInterval(restTimerRef.current!)
       restTimerRef.current = null
       setRestTimeRemaining(0)
+      setRestEndsAt(null)
     } else {
       setRestTimeRemaining(remaining)
     }
