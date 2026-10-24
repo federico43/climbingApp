@@ -136,7 +136,7 @@ export function AthleteDetail({
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
   const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
-  const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} />
+  const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const videos = <AthleteVideos athlete={athlete} />
 
   return (
