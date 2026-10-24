@@ -564,6 +564,13 @@ export function AthleteWorkoutBuilder({
               These blocks become a workout of their own. {athleteName ?? "The athlete"} picks the day to do it, before the deadline.
             </Text>
             <View style={s.copyPills}>
+              {/* One tap to send the whole workout. */}
+              <Pressable
+                style={[s.copyPill, kept.length === 0 && s.copyPillSel]}
+                onPress={() => setHomeworkIds(kept.length === 0 ? new Set() : new Set(blocks.map((b) => b.id)))}
+              >
+                <Text style={[s.copyPillText, kept.length === 0 && s.copyPillTextSel]}>Whole workout</Text>
+              </Pressable>
               {blocks.map((b) => {
                 const sel = homeworkIds.has(b.id)
                 return (
