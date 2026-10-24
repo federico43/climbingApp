@@ -67,6 +67,10 @@ export const adjacentDays = (a: number, b: number) => Math.abs(a - b) === 1 || M
 export const restDayOk = (taken: number[], day: number) =>
   !taken.includes(day) && !taken.some((d) => adjacentDays(d, day))
 
+// Days from `from` on that still leave a rest day around the athlete's other classes.
+export const openDays = (taken: number[], from: number) =>
+  Array.from({ length: 7 - Math.max(0, from) }, (_, i) => from + i).filter((d) => restDayOk(taken, d))
+
 // The athlete's week: their classes with this week's changes, plus the extra.
 export function athleteWeek(
   classes: GymClass[],

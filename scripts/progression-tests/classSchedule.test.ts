@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   EXAMPLE_CLASSES, GRID_END, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
-  headcount, isBlocked, mondayOf, restDayOk, startFromOffset, weekDates, weekdayOf,
+  headcount, isBlocked, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 
 assert.equal(formatTime(9.5), "9:30")
@@ -23,6 +23,11 @@ assert.ok(restDayOk([0, 3], 5))
 assert.ok(!restDayOk([0, 3], 4))
 assert.ok(!restDayOk([0, 3], 6))
 assert.ok(!restDayOk([0, 3], 3))
+
+// Days still free for a make-up class, from today on
+assert.deepEqual(openDays([0], 0), [2, 3, 4, 5])
+assert.deepEqual(openDays([0], 4), [4, 5])
+assert.deepEqual(openDays([5], 4), []) // Sat taken, Fri/Sun next to it
 
 const mine = ["c1", "c8"] // Mon 9:30, Thu 9:30
 const plain = athleteWeek(EXAMPLE_CLASSES, mine, {}, null)

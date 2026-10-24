@@ -21,6 +21,7 @@ export function WeekGrid({
   today = -1,
   dimPast = false,
   offDays = [],
+  dimDays = [],
   onPressDay,
   onPressTime,
   renderDay,
@@ -29,6 +30,7 @@ export function WeekGrid({
   today?: number                  // highlighted day, -1 for none
   dimPast?: boolean               // fade the days before `today`
   offDays?: number[]              // struck-through day numbers (blocked days)
+  dimDays?: number[]              // faded days (e.g. ones the athlete can't pick)
   onPressDay?: (day: number) => void
   onPressTime?: (day: number, y: number) => void
   renderDay: (day: number) => React.ReactNode
@@ -61,7 +63,7 @@ export function WeekGrid({
           {dates.map((_, day) => (
             <Pressable
               key={day}
-              style={[s.col, dimPast && day < today && { opacity: 0.45 }, dragDay === day && { zIndex: 10 }]}
+              style={[s.col, ((dimPast && day < today) || dimDays.includes(day)) && { opacity: 0.45 }, dragDay === day && { zIndex: 10 }]}
               disabled={!onPressTime}
               onPress={(e) => onPressTime?.(day, e.nativeEvent.locationY)}
             >
