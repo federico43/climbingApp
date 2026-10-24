@@ -57,7 +57,7 @@ if (SCHEDULE_ON) {
 }
 
 if (tzVar) await api("PUT", `/functions/${FUNCTION_ID}/variables/${tzVar.$id}`, { key: "GYM_TZ", value: tz })
-else await api("POST", `/functions/${FUNCTION_ID}/variables`, { key: "GYM_TZ", value: tz })
+else await api("POST", `/functions/${FUNCTION_ID}/variables`, { variableId: "unique()", key: "GYM_TZ", value: tz })
 console.log(`GYM_TZ = ${tz}`)
 
 const dep = await api("POST", `/functions/${FUNCTION_ID}/deployments/vcs`, { type: "branch", reference: branch, activate: true })
