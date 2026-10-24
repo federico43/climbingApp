@@ -1740,6 +1740,12 @@ function SideGlow({ side, strong }: { side: Side; strong?: boolean }) {
   )
 }
 
+// Text on a both-sides screen sits on the side being worked: left on the
+// left side, right on the right.
+function sideAlign(side?: Side) {
+  return side === "right" ? styles.alignRight : undefined
+}
+
 // The moment athletes used to miss: switching sides. A full-screen card for
 // ~1.5 s (tap to skip), the glow already on the new side, so the change
 // can't go unnoticed. First switch of the block only — later switches get
@@ -1780,12 +1786,16 @@ function targetLine(ex: Exercise): { label?: string; color?: string; amount: str
 // thumb (or an icon), name, and the same focus · target line as the header.
 // With `onPress` it's the compact header on the Timer / Log steps: `name` is
 // the level actually done, `load` the weight, and tapping goes to the brief.
-function ExerciseRow({ exercise, name, load, onPress }: { exercise: Exercise; name?: string; load?: string; onPress?: () => void }) {
+// `side` "right" mirrors it (thumb and text on the right) to follow the side
+// being worked.
+function ExerciseRow({ exercise, name, load, onPress, side }: { exercise: Exercise; name?: string; load?: string; onPress?: () => void; side?: Side }) {
   const { label, color, amount } = targetLine(exercise)
   const icon = exercise.type === "7/3s" ? "hand-left-outline"
     : exercise.movementType === "mobility" ? "body-outline" : "barbell-outline"
+  const mirror = side === "right"
+  const align = mirror ? styles.alignRight : undefined
   return (
-    <Pressable style={({ pressed }) => [styles.exRow, pressed && { opacity: 0.8 }]} onPress={onPress} disabled={!onPress}>
+    <Pressable style={({ pressed }) => [styles.exRow, mirror && styles.rowReverse, pressed && { opacity: 0.8 }]} onPress={onPress} disabled={!onPress}>
       {exercise.photoUri ? (
         <Image source={{ uri: exercise.photoUri }} style={styles.exRowThumb} contentFit="cover" />
       ) : (
@@ -1794,18 +1804,18 @@ function ExerciseRow({ exercise, name, load, onPress }: { exercise: Exercise; na
         </View>
       )}
       <View style={{ flex: 1 }}>
-        <Text style={styles.exRowName} numberOfLines={2}>{name ?? exercise.name}</Text>
-        <View style={styles.exTargetRow}>
+        <Text style={[styles.exRowName, align]} numberOfLines={2}>{name ?? exercise.name}</Text>
+        <View style={[styles.exTargetRow, mirror && styles.rowReverse]}>
           {!!label && <View style={[styles.exFocusDot, { backgroundColor: color }]} />}
-          <Text style={styles.exRowDetail} numberOfLines={1}>
+          <Text style={[styles.exRowDetail, align]} numberOfLines={1}>
             {!!label && <Text style={{ color }}>{label}</Text>}
             {!!label && !!amount ? " · " : ""}
             {amount}
           </Text>
         </View>
-        {!!load && <Text style={styles.exRowLoad}>{load}</Text>}
+        {!!load && <Text style={[styles.exRowLoad, align]}>{load}</Text>}
       </View>
-      {!!onPress && <Ionicons name="chevron-forward" size={18} color={C.textSecondary} />}
+      {!!onPress && <Ionicons name={mirror ? "chevron-back" : "chevron-forward"} size={18} color={C.textSecondary} />}
     </Pressable>
   )
 }
@@ -1959,9 +1969,13 @@ function LoggedExerciseUI({
   }
 
   // Timer + Log: the exercise as one tappable row (→ back to the brief).
+  // Both-sides timer: it follows the side being worked.
   const header = (
     <View style={{ marginTop: 16 }}>
-      <ExerciseRow exercise={exercise} name={displayName} load={loadLabel} onPress={() => setStep("brief")} />
+      <ExerciseRow
+        exercise={exercise} name={displayName} load={loadLabel} onPress={() => setStep("brief")}
+        side={sides && step === "timer" ? timerSide : undefined}
+      />
     </View>
   )
 
@@ -2019,13 +2033,13 @@ function LoggedExerciseUI({
         footer={<PillButton title="Finish the hold first" icon="arrow-forward" onPress={() => {}} disabled />}
       >
         {header}
-        <View style={{ gap: 4 }}>
-          <Text style={[styles.sectionLabel, { color: C.yellow }]}>Warm-up {warmIdx + 1} of {warmup!.length}</Text>
-          <Text style={[styles.timedBig, { color: C.textPrimary }]}>
+        <View style={[{ gap: 4 }, sideAlign(sides ? warmSide : undefined)]}>
+          <Text style={[styles.sectionLabel, { color: C.yellow }, sideAlign(sides ? warmSide : undefined)]}>Warm-up {warmIdx + 1} of {warmup!.length}</Text>
+          <Text style={[styles.timedBig, { color: C.textPrimary }, sideAlign(sides ? warmSide : undefined)]}>
             {set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text>
           </Text>
         </View>
-        {sides && <Text style={styles.timerSideTitle}>{warmSide === "left" ? "Left side" : "Right side"}</Text>}
+        {sides && <Text style={[styles.timerSideTitle, sideAlign(warmSide)]}>{warmSide === "left" ? "Left side" : "Right side"}</Text>}
         <TimedAmountControl key={`${warmIdx}-${warmSide}`} target={set.secs} fixed onChange={holdDone} />
       </ExerciseScreen>
     )
@@ -2094,7 +2108,7 @@ function LoggedExerciseUI({
         {warmedUp && <WarmedUpNote />}
         <View style={styles.inputSection}>
           {sides
-            ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+            ? <Text style={[styles.timerSideTitle, sideAlign(side)]}>{side === "left" ? "Left side" : "Right side"}</Text>
             : <Text style={styles.sectionLabel}>Hold timer</Text>}
           <TimedAmountControl key={side} target={timerTarget} onChange={setAmount(side)} />
           <Pressable onPress={enterManually} hitSlop={6}>
@@ -2366,7 +2380,7 @@ function MobilityExerciseUI({ exercise, showSwitchCard, onSwitchCardShown, onCha
       {isTimed && (
         <View style={styles.inputSection}>
           {sides
-            ? <Text style={styles.timerSideTitle}>{side === "left" ? "Left side" : "Right side"}</Text>
+            ? <Text style={[styles.timerSideTitle, sideAlign(side)]}>{side === "left" ? "Left side" : "Right side"}</Text>
             : <Text style={styles.sectionLabel}>Hold timer</Text>}
           <TimedAmountControl key={side} target={target} onChange={(v) => setHeld((prev) => ({ ...prev, [side]: v }))} />
         </View>
@@ -2657,6 +2671,8 @@ const styles = StyleSheet.create({
   noMaxTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   noMaxText: { fontSize: 14, lineHeight: 20, color: C.textSecondary },
   timerSideTitle: { fontSize: 28, fontWeight: "800", color: C.side, letterSpacing: -0.5 },
+  alignRight: { textAlign: "right", alignItems: "flex-end" },
+  rowReverse: { flexDirection: "row-reverse" },
 
   exHeader: { gap: 4, marginTop: -36 },
   exKicker: { fontSize: 12, fontWeight: "700", color: C.green, textTransform: "uppercase", letterSpacing: 0.8 },
