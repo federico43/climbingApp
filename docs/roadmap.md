@@ -1,12 +1,13 @@
 # Roadmap — new parts of the app to build
 
-Last updated 2026-10-21. A running list of features that don't exist yet.
+Last updated 2026-10-24. A running list of features that don't exist yet.
 Each entry is an idea + a first design; when one gets built it moves to its
 own doc (like [`training-plan.md`](training-plan.md)) and is ticked here.
 
 | # | Feature | Status |
 | --- | --- | --- |
 | 1 | [Automatic workout scheduling](#1-automatic-workout-scheduling) | Idea |
+| 2 | [Live rest countdown outside the app](#2-live-rest-countdown-outside-the-app) | Idea |
 
 ---
 
@@ -117,3 +118,44 @@ Example (plan starts Mon 1, strength → PE → power…):
 - Should the coach be able to move a single date by hand (an override that
   the algorithm keeps)?
 - Does a non-plan session (free climbing) count as a workout for rest?
+
+---
+
+## 2. Live rest countdown outside the app
+
+### 2.1 The idea
+
+PR #19 shows a notification when the athlete leaves the app mid-rest:
+"Resting · ends at 14:32:10", replaced by "Rest's over" when it ends. It
+doesn't tick down: a notification can't update itself without native code.
+
+The next step is a countdown that runs on its own on the lock screen and in
+the notification shade, like the iOS timer: `1:29`, `1:28`…
+
+### 2.2 How
+
+- **iOS: Live Activity** (lock screen + Dynamic Island). Needs a widget
+  extension target (SwiftUI) and ActivityKit. Its `Text(timerInterval:)`
+  counts down by itself, so the app only starts it with the end time and ends
+  it, no updates while in the background. Options: a config plugin such as
+  `expo-live-activity`, or a small local Expo module + `@bacons/apple-targets`.
+- **Android: ongoing notification with a chronometer**
+  (`setUsesChronometer(true)` + `setChronometerCountDown(true)` +
+  `setWhen(endsAt)`). Not exposed by `expo-notifications`; needs a small
+  native module (or a library like Notifee).
+- Same hook as today (`hooks/useRestNotification.ts`): on leaving the app
+  start the countdown with `endsAt`, on return / skip / end stop it. The
+  "Rest's over" alert from #19 stays.
+
+### 2.3 Cost
+
+- New native code → a **new build** (EAS build + TestFlight / APK), not an
+  `eas update`. Bump `runtimeVersion` so old binaries don't get the update.
+- Only testable on a real phone for the lock screen / Dynamic Island; add it
+  to "Pruebas en teléfono real".
+
+### 2.4 Open questions
+
+- Also for the Intervals block timer (work/rest phases), or only rests?
+- Show the next exercise / attempt in the Live Activity?
+- Worth it on Android too, or iOS first?
