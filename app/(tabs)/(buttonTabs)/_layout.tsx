@@ -88,6 +88,16 @@ function TabsWithPlan() {
           }}
         />
         <Tabs.Screen
+          name="classes"
+          options={{
+            title: "Classes",
+            href: role === "coach" ? undefined : null,
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="design"
           options={{
             title: "Design",
