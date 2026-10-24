@@ -5,7 +5,7 @@ import { FeatureIntro } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
-  CAPACITY, CLASS_HOURS, GymClass, athleteWeek, busyDays, classLabel, formatTime, headcount,
+  AddClassProblem, CAPACITY, CLASS_HOURS, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
   WEEK_DAYS, mondayOf, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, useClassSchedule } from "@/utils/classScheduleStore"
@@ -13,6 +13,14 @@ import { C } from "@/utils/theme"
 import { useMemo, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+
+// Why a proposed time doesn't work: the whole 2h 30m class has to fit.
+const NO_FIT: Record<AddClassProblem, string> = {
+  max: "That day already has 2 classes.",
+  overlap: "It runs into another class. Pick a free time.",
+  blocked: "Your coach can't teach then.",
+  late: "Classes have to end by 18:00.",
+}
 
 type Mode = { kind: "move" | "propose"; from: string } | null
 
@@ -76,6 +84,8 @@ export default function ScheduleScreen() {
     if (day < today) return Alert.alert("That day already passed")
     if (!restDayOk(busyDays(week, proposingFrom), day)) return Alert.alert("Leave a rest day between classes")
     const start = startFromOffset(y, HOUR_HEIGHT)
+    const problem = addClassProblem(st.classes, st.blocks, day, start)
+    if (problem) return Alert.alert("The class doesn't fit there", NO_FIT[problem])
     changeClass(proposingFrom, { status: "propose", day, start })
     setMode(null)
     Alert.alert("Proposal sent", `${WEEK_DAYS[day]} ${formatTime(start)}. Your coach answers before the class.`)
@@ -97,7 +107,7 @@ export default function ScheduleScreen() {
           {mode && (
             <View style={s.banner}>
               <Text style={s.bannerText}>
-                {mode.kind === "move" ? "Pick a class with the yellow outline" : "Tap a free time to propose it"}
+                {mode.kind === "move" ? "Pick a class with the yellow outline" : "Tap a free time where a whole class fits"}
               </Text>
               <Pressable hitSlop={8} onPress={() => setMode(null)}>
                 <Text style={s.bannerCancel}>Cancel</Text>
