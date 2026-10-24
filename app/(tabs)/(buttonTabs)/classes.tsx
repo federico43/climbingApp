@@ -130,17 +130,21 @@ export default function ClassesScreen() {
         title={slot ? `${dayName(slot.day)} · ${formatTime(slot.start)} – ${formatTime(slot.start + CLASS_HOURS)}` : ""}
         onClose={() => setSheet(null)}
       >
-        <SheetOption
-          title="Add a class"
-          detail={slotProblem ? PROBLEM[slotProblem] : "Athletes can sign up for it"}
-          disabled={!!slotProblem}
-          onPress={() => { addNextClass(slot!.day, slot!.start); setSheet(null) }}
-        />
-        <SheetOption
-          title="Block this time"
-          detail="No classes or proposals here"
-          onPress={() => { blockTime(slot!.day, slot!.start); setSheet(null) }}
-        />
+        {slot && (
+          <>
+            <SheetOption
+              title="Add a class"
+              detail={slotProblem ? PROBLEM[slotProblem] : "Athletes can sign up for it"}
+              disabled={!!slotProblem}
+              onPress={() => { addNextClass(slot.day, slot.start); setSheet(null) }}
+            />
+            <SheetOption
+              title="Block this time"
+              detail="No classes or proposals here"
+              onPress={() => { blockTime(slot.day, slot.start); setSheet(null) }}
+            />
+          </>
+        )}
       </Sheet>
 
       <Sheet visible={!!dayS} title={dayS ? dayName(dayS.day) : ""} onClose={() => setSheet(null)}>

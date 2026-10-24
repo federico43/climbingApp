@@ -29,6 +29,8 @@ export default function ScheduleScreen() {
   const [mode, setMode] = useState<Mode>(null)
   const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
 
+  const cantId = sheet?.kind === "cant" ? sheet.id : null
+  const cantClass = cantId ? st.classes.find((c) => c.id === cantId) ?? null : null
   const entryFor = (id: string) => week.find((e) => e.cls.id === id)
   const fits = (c: { day: number }, except?: string) => c.day >= today && restDayOk(busyDays(week, except), c.day)
 
@@ -125,29 +127,33 @@ export default function ScheduleScreen() {
       />
 
       <Sheet
-        visible={sheet?.kind === "cant"}
-        title={sheet?.kind === "cant" ? `Can't make ${classLabel(st.classes.find((c) => c.id === sheet.id)!)}?` : ""}
+        visible={!!cantClass}
+        title={cantClass ? `Can't make ${classLabel(cantClass)}?` : ""}
         onClose={() => setSheet(null)}
       >
-        <Text style={s.warn}>
-          Let your coach know early: each class has {CAPACITY} spots, and yours can go to someone who can come.
-          Make it up this week, or move it to a later week (2 per package).
-        </Text>
-        <SheetOption
-          title="Move to another class"
-          detail="Your coach approves the change"
-          onPress={() => { setMode({ kind: "move", from: sheet!.id }); setSheet(null) }}
-        />
-        <SheetOption
-          title="Propose another time"
-          detail="If no class fits, your coach decides"
-          onPress={() => { setMode({ kind: "propose", from: sheet!.id }); setSheet(null) }}
-        />
-        <SheetOption
-          title="I won't go this week"
-          detail="It moves to a later week, up to 2 of your 8. After that you lose it. Your coach is told"
-          onPress={() => { changeClass(sheet!.id, { status: "skip" }); setSheet(null) }}
-        />
+        {cantId && (
+          <>
+            <Text style={s.warn}>
+              Let your coach know early: each class has {CAPACITY} spots, and yours can go to someone who can come.
+              Make it up this week, or move it to a later week (2 per package).
+            </Text>
+            <SheetOption
+              title="Move to another class"
+              detail="Your coach approves the change"
+              onPress={() => { setMode({ kind: "move", from: cantId }); setSheet(null) }}
+            />
+            <SheetOption
+              title="Propose another time"
+              detail="If no class fits, your coach decides"
+              onPress={() => { setMode({ kind: "propose", from: cantId }); setSheet(null) }}
+            />
+            <SheetOption
+              title="I won't go this week"
+              detail="It moves to a later week, up to 2 of your 8. After that you lose it. Your coach is told"
+              onPress={() => { changeClass(cantId, { status: "skip" }); setSheet(null) }}
+            />
+          </>
+        )}
       </Sheet>
     </ScreenGradient>
   )
