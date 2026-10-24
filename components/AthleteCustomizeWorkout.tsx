@@ -12,7 +12,7 @@ import {
   injectLocalIds,
   stripLocalIds,
 } from "@/components/workoutBlocks"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Modal,
@@ -26,6 +26,10 @@ import {
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+
+// Narrow screens: share of the window the S&C exercise library takes as a
+// bottom sheet, leaving the workout visible above it.
+const LIB_SHEET_FRACTION = 0.5
 
 // Lets an athlete fork a library workout (or edit a copy they already saved)
 // into their own "From the Library" list. A trimmed-down sibling of
@@ -62,8 +66,18 @@ export function AthleteCustomizeWorkout({
   const [saving, setSaving] = useState(false)
   const [libraryBlockId, setLibraryBlockId] = useState<string | null>(null)
   const insets = useSafeAreaInsets()
-  const { width } = useWindowDimensions()
+  const { width, height } = useWindowDimensions()
   const wide = width >= 900
+  // Narrow: keep the S&C block being filled in view above the library
+  // sheet — its newest exercise and Add button at the bottom of the list.
+  const listRef = useRef<any>(null)  // the list's FlatList (typed as RNGH's)
+  useEffect(() => {
+    if (wide || !libraryBlockId) return
+    const index = blocks.findIndex((b) => b.id === libraryBlockId)
+    if (index < 0) return
+    const t = setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: 1, animated: true }), 120)
+    return () => clearTimeout(t)
+  }, [wide, libraryBlockId, blocks])
   const [pickerOpen, setPickerOpen] = useState(false)
 
   function addBlock(b: Block) { setBlocks((p) => [...p, b]); setExpandedId(b.id) }
@@ -154,6 +168,8 @@ export function AthleteCustomizeWorkout({
               <View style={s.blockList}><Text style={s.empty}>{wide ? "Add blocks from the right →" : "Tap “Add block” below"}</Text></View>
             ) : (
               <DraggableFlatList
+                ref={listRef}
+                onScrollToIndexFailed={() => {}}
                 data={blocks}
                 containerStyle={{ flex: 1 }}
                 keyExtractor={(item) => item.id}
@@ -166,16 +182,17 @@ export function AthleteCustomizeWorkout({
             )}
           </GestureHandlerRootView>
 
-          {!wide && (
+          {!wide && !libraryBlockId && (
             <Pressable style={s.addBlockBtn} onPress={() => setPickerOpen(true)}>
               <Text style={s.addBlockBtnText}>+ Add block</Text>
             </Pressable>
           )}
 
-          {/* On wide screens the library takes over the right pane instead
-              (below), since that space is already dedicated to picking things. */}
+          {/* Narrow: the library opens as a bottom sheet under the shrunk list.
+              On wide screens it takes over the right pane instead (below),
+              since that space is already dedicated to picking things. */}
           {!wide && libraryBlockId && (
-            <View style={s.libOverlay}>
+            <View style={[s.libSheet, { height: Math.round(height * LIB_SHEET_FRACTION) }]}>
               <ExerciseLibraryPane
                 variant="overlay"
                 onClose={() => setLibraryBlockId(null)}
@@ -242,7 +259,10 @@ const s = StyleSheet.create({
   leftPane: { flex: 1 },
   rightPane: { width: 420, borderLeftWidth: 1, borderLeftColor: C.border },
 
-  libOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: C.surface, zIndex: 30 },
+  libSheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderTopWidth: 1, borderColor: C.border, overflow: "hidden",
+  },
 
   leftHeader: {
     flexDirection: "row", alignItems: "center", gap: 8,
