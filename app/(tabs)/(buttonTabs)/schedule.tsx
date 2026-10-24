@@ -79,11 +79,10 @@ export default function ScheduleScreen() {
     <ScreenGradient>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <FeatureIntro
-          id="class-week"
+          id="class-week-v2"
           pages={[
             { icon: "people", title: "See who's going", text: "Your classes are green. Tap any class to see who's in it. Each class has room for 4." },
-            { icon: "swap-horizontal", title: "Can't make it?", text: "Tell your coach early so someone else can take your spot. Move to another class or propose a new time. If you can't make it up this week, you can move it to a later week, up to 2 per package." },
-            { icon: "add-circle", title: "One extra a week", text: "Tap a class that isn't yours to add it as an extra. Never on the day before or after another class." },
+            { icon: "swap-horizontal", title: "Missed a class? Make it up", text: "Tell your coach early so someone else can take your spot. Then pick another class this week, or propose a new time (never the day before or after another class). If you can't make it up this week, move it to a later week, up to 2 per package." },
             { icon: "checkmark-done", title: "Your coach approves", text: "Changes show in yellow until your coach answers. No answer before the class means no change." },
           ]}
         />
