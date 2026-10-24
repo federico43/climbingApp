@@ -283,6 +283,22 @@ For each pattern, in order:
 
 "Used for" is set per exercise in the exercise editor (none = all three).
 
+### 7.4b Edge Lifts warm-up and max (2026-10-23)
+
+Max force Edge Lifts start from the athlete's **edge lift max** (kg, on the
+`users` row: `edgeLiftMax` + `edgeLiftMaxLog`). Round 1 begins with a
+warm-up of 4 holds — 10 s at 40 %, 8 s at 55 %, 6 s at 70 %, 4 s at 85 %
+of the max, rounded to the load step — 1 min rest between them and 2 min
+before the main set; the rounds are at 100 %. The plan puts Edge Lifts
+first in its block so the warm-up comes before the other exercise. Warm-up
+holds aren't logged, and Edge Lifts' weight doesn't follow the
+progression rule while there is a max.
+
+The max only changes through the **max test** (homework the coach sends
+from the athlete card; done together, the athlete logs the heaviest weight
+held 5 s) or when the coach types it. No max yet: the athlete warms up by
+feel and the coach's card says "Needs a test". See `utils/edgeWarmup.ts`.
+
 ### 7.5 Split S&C (removed 2026-10-14)
 
 The builder's **"Save the S&C as its own workout"** option is gone: a plan
