@@ -9,13 +9,13 @@ import {
   addClassProblem, formatTime, mondayOf, startFromOffset, weekDates,
 } from "@/utils/classSchedule"
 import {
-  addNextClass, answerRequest, blockDay, blockTime, pendingRequests, publishWeek, removeNextClass, unblock,
+  addNextClass, answerRequest, blockDay, blockTime, moveBlock, moveNextClass, pendingRequests, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useMemo, useState } from "react"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -57,7 +57,20 @@ export default function ClassesScreen() {
     return (
       <>
         {st.blocks.filter((b) => b.day === day).map((b, i) => (
-          <GridBlock key={`b${i}`} start={b.start} hours={b.end - b.start} tone="blocked" text="Blocked" onPress={() => setSheet({ kind: "block", block: b })} />
+          <GridBlock
+            key={`b${i}`}
+            start={b.start}
+            hours={b.end - b.start}
+            tone="blocked"
+            text="Blocked"
+            onPress={() => setSheet({ kind: "block", block: b })}
+            onDrop={(days, hours) => {
+              const to = clampDay(b.day + days)
+              const start = Math.max(GRID_START, Math.min(GRID_END - (b.end - b.start), b.start + hours))
+              const problem = moveBlock(b, to, start)
+              if (problem) Alert.alert("Can't move it there", problem === "class" ? "There's a class at that time." : "That day is blocked.")
+            }}
+          />
         ))}
         {st.nextClasses.filter((c) => c.day === day).map((c) => (
           <GridBlock
@@ -66,6 +79,11 @@ export default function ClassesScreen() {
             tone="other"
             text={`${formatTime(c.start)}\n${c.roster.length}/${CAPACITY}`}
             onPress={() => setSheet({ kind: "class", id: c.id })}
+            onDrop={(days, hours) => {
+              const start = Math.max(GRID_START, Math.min(GRID_END - CLASS_HOURS, c.start + hours))
+              const problem = moveNextClass(c.id, clampDay(c.day + days), start)
+              if (problem) Alert.alert("Can't move it there", PROBLEM[problem])
+            }}
           />
         ))}
       </>
@@ -85,8 +103,8 @@ export default function ClassesScreen() {
         <FeatureIntro
           id="coach-classes"
           pages={[
-            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
-            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Athletes can't propose times there." },
+            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
+            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it. Athletes can't propose times there." },
             { icon: "chatbubbles", title: "Answer requests", text: "Athletes ask to move, propose a time or add an extra class. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
           ]}
@@ -212,6 +230,7 @@ export default function ClassesScreen() {
 }
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6]
+const clampDay = (d: number) => Math.max(0, Math.min(6, d))
 
 const s = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },

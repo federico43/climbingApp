@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react"
 import {
-  BlockedTime, ClassChange, EXAMPLE_CLASSES, EXAMPLE_MINE, ExtraClass, GRID_END, GRID_START, GymClass,
+  AddClassProblem, BlockedTime, ClassChange, addClassProblem, EXAMPLE_CLASSES, EXAMPLE_MINE, ExtraClass, GRID_END, GRID_START, GymClass,
   CLASS_HOURS, classLabel, formatTime, WEEK_DAYS,
 } from "@/utils/classSchedule"
 
@@ -124,6 +124,25 @@ export function answerRequest(key: string, accept: boolean) {
 
 export function addNextClass(day: number, start: number) {
   set({ nextClasses: [...state.nextClasses, { id: `new${nextId++}`, day, start, roster: [] }], published: false })
+}
+
+// Drag a class or a blocked time to another day or time. Returns why it
+// can't go there, or null once it's moved.
+export function moveNextClass(id: string, day: number, start: number): AddClassProblem | null {
+  const others = state.nextClasses.filter((c) => c.id !== id)
+  const problem = addClassProblem(others, state.blocks, day, start)
+  if (problem) return problem
+  set({ nextClasses: state.nextClasses.map((c) => (c.id === id ? { ...c, day, start } : c)), published: false })
+  return null
+}
+
+export function moveBlock(block: BlockedTime, day: number, start: number): "class" | "blocked" | null {
+  const end = start + (block.end - block.start)
+  const others = state.blocks.filter((b) => b !== block)
+  if (state.nextClasses.some((c) => c.day === day && c.start < end && start < c.start + CLASS_HOURS)) return "class"
+  if (others.some((b) => b.day === day && b.all)) return "blocked"
+  set({ blocks: [...others, { day, start, end }], published: false })
+  return null
 }
 
 export function removeNextClass(id: string) {
