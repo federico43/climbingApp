@@ -4,7 +4,7 @@
 // Dry run by default — prints the function's current settings.
 //
 // Usage:
-//   node --env-file=.env.local scripts/class-tables/deploy-test.mjs <branch> <time zone> [--apply]
+//   node --env-file=.env.local scripts/class-tables/deploy-test.mjs <branch> <time zone> [--no-schedule] [--apply]
 //   e.g. ... deploy-test.mjs claude/project-thread-xp1ixc America/Santiago --apply
 // (.env.local: APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY)
 // To go back: activate the latest main deployment in the console (the
@@ -15,6 +15,8 @@ const FUNCTION_ID = "6a1c2e850024e1f59fc3" // climbingApp
 const SCHEDULE = "0 * * * *"
 const [branch, tz] = process.argv.slice(2).filter((a) => !a.startsWith("--"))
 const APPLY = process.argv.includes("--apply")
+// Appwrite's free plan has no cron schedules: skip it with --no-schedule.
+const SCHEDULE_ON = !process.argv.includes("--no-schedule")
 
 for (const [name, value] of Object.entries({ APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY })) {
   if (!value) { console.error(`Missing env var: ${name}`); process.exit(1) }
@@ -39,7 +41,7 @@ const tzVar = variables.find((v) => v.key === "GYM_TZ")
 console.log(`Function: ${fn.name} · active deployment ${fn.deploymentId ?? fn.deployment} · schedule "${fn.schedule || ""}" · GYM_TZ ${tzVar?.value ?? "(not set)"}`)
 console.log(`Git: branch ${fn.providerBranch}, root ${fn.providerRootDirectory}`)
 if (!APPLY) {
-  console.log(`\nWould deploy ${branch}, set schedule "${SCHEDULE}" and GYM_TZ=${tz}. Pass --apply.`)
+  console.log(`\nWould deploy ${branch}${SCHEDULE_ON ? `, set schedule "${SCHEDULE}"` : ""} and GYM_TZ=${tz}. Pass --apply.`)
   process.exit(0)
 }
 
@@ -48,9 +50,11 @@ const keep = [
   "name", "runtime", "execute", "events", "timeout", "enabled", "logging", "entrypoint", "commands", "scopes",
   "installationId", "providerRepositoryId", "providerBranch", "providerSilentMode", "providerRootDirectory", "specification",
 ]
-const update = Object.fromEntries(keep.filter((k) => fn[k] !== undefined).map((k) => [k, fn[k]]))
-await api("PUT", `/functions/${FUNCTION_ID}`, { ...update, schedule: SCHEDULE })
-console.log(`Schedule set to "${SCHEDULE}"`)
+if (SCHEDULE_ON) {
+  const update = Object.fromEntries(keep.filter((k) => fn[k] !== undefined).map((k) => [k, fn[k]]))
+  await api("PUT", `/functions/${FUNCTION_ID}`, { ...update, schedule: SCHEDULE })
+  console.log(`Schedule set to "${SCHEDULE}"`)
+}
 
 if (tzVar) await api("PUT", `/functions/${FUNCTION_ID}/variables/${tzVar.$id}`, { key: "GYM_TZ", value: tz })
 else await api("POST", `/functions/${FUNCTION_ID}/variables`, { key: "GYM_TZ", value: tz })
