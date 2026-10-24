@@ -78,7 +78,7 @@ export default function ScheduleScreen() {
           id="class-week"
           pages={[
             { icon: "people", title: "See who's going", text: "Your classes are green. Tap any class to see who's in it. Each class has room for 4." },
-            { icon: "swap-horizontal", title: "Can't make it?", text: "Tell your coach early so someone else can take your spot. Move to another class or propose a new time. If you don't make it up this week, you lose the session." },
+            { icon: "swap-horizontal", title: "Can't make it?", text: "Tell your coach early so someone else can take your spot. Move to another class or propose a new time. If you can't make it up this week, you can move it to a later week, up to 2 per package." },
             { icon: "add-circle", title: "One extra a week", text: "Tap a class that isn't yours to add it as an extra. Never on the day before or after another class." },
             { icon: "checkmark-done", title: "Your coach approves", text: "Changes show in yellow until your coach answers. No answer before the class means no change." },
           ]}
@@ -131,7 +131,7 @@ export default function ScheduleScreen() {
       >
         <Text style={s.warn}>
           Let your coach know early: each class has {CAPACITY} spots, and yours can go to someone who can come.
-          Make this class up this week or you lose the session.
+          Make it up this week, or move it to a later week (2 per package).
         </Text>
         <SheetOption
           title="Move to another class"
@@ -145,7 +145,7 @@ export default function ScheduleScreen() {
         />
         <SheetOption
           title="I won't go this week"
-          detail="You lose this session. Your coach is told"
+          detail="It moves to a later week, up to 2 of your 8. After that you lose it. Your coach is told"
           onPress={() => { changeClass(sheet!.id, { status: "skip" }); setSheet(null) }}
         />
       </Sheet>
