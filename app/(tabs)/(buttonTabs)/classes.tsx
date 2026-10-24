@@ -5,12 +5,12 @@ import { FeatureIntro } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import {
-  AddClassProblem, BlockedTime, CAPACITY, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   addClassProblem, formatTime, mondayOf, startFromOffset, weekDates,
 } from "@/utils/classSchedule"
 import {
   addNextClass, answerRequest, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
-  unblockDay, useClassSchedule,
+  unblockDay, useClassSchedule, type ClassRequest, type Slot,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
@@ -32,6 +32,7 @@ type SheetState =
   | { kind: "class"; id: string }
   | { kind: "block"; block: BlockedTime }
   | { kind: "requests" }
+  | { kind: "request"; key: string }
   | null
 
 // Coach tab: plan next week's classes (max 2 a day), block the times you
@@ -47,6 +48,12 @@ export default function ClassesScreen() {
   const [sheet, setSheet] = useState<SheetState>(null)
   const requests = pendingRequests(st, userName || "athlete")
   const dayBlocked = (d: number) => st.blocks.some((b) => b.day === d && b.all)
+  // Requests drawn on the grid: who's asking to join a class (or a new time)
+  // and who's asking to leave one.
+  const at = (c: Slot, s?: Slot) => !!s && c.day === s.day && c.start === s.start
+  const joining = (c: GymClass) => requests.filter((r) => at(c, r.to))
+  const leaving = (c: GymClass) => requests.filter((r) => at(c, r.from))
+  const newTimes = requests.filter((r) => !st.nextClasses.some((c) => at(c, r.to)))
   const range = `${MONTHS[dates[0].getMonth()]} ${dates[0].getDate()} – ${MONTHS[dates[6].getMonth()]} ${dates[6].getDate()}`
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
 
@@ -75,12 +82,26 @@ export default function ClassesScreen() {
             }}
           />
         ))}
+        {newTimes.filter((r) => r.to.day === day).map((r) => (
+          <GridBlock
+            key={`r${r.key}`}
+            start={r.to.start}
+            tone="pending"
+            text={`${formatTime(r.to.start)}?\n${r.who}`}
+            onPress={() => setSheet({ kind: "request", key: r.key })}
+          />
+        ))}
         {st.nextClasses.filter((c) => c.day === day).map((c) => (
           <GridBlock
             key={c.id}
             start={c.start}
-            tone="other"
-            text={`${formatTime(c.start)}\n${c.roster.length}/${CAPACITY}`}
+            tone={joining(c).length || leaving(c).length ? "pick" : "other"}
+            text={[
+              formatTime(c.start),
+              `${c.roster.length}/${CAPACITY}`,
+              ...joining(c).map((r) => `+${r.who}`),
+              ...leaving(c).map((r) => `−${r.who}`),
+            ].join("\n")}
             onPress={() => setSheet({ kind: "class", id: c.id })}
             onDrop={(days, hours) => {
               const start = Math.max(GRID_START, Math.min(GRID_END - CLASS_HOURS, c.start + hours))
@@ -99,6 +120,23 @@ export default function ClassesScreen() {
   const slotHasClass = !!slot && st.nextClasses.some((c) => c.day === slot.day && c.start < slot.start + CLASS_HOURS && slot.start < c.start + CLASS_HOURS)
   const dayS = sheet?.kind === "day" ? sheet : null
   const cls = sheet?.kind === "class" ? st.nextClasses.find((c) => c.id === sheet.id) ?? null : null
+  const clsRequests = cls ? [...joining(cls), ...leaving(cls)] : []
+  const req = sheet?.kind === "request" ? requests.find((r) => r.key === sheet.key) ?? null : null
+
+  const requestRow = (r: ClassRequest) => (
+    <View key={r.key} style={s.req}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.reqWho}>{r.who}</Text>
+        <Text style={s.reqText}>{r.text}</Text>
+      </View>
+      <Pressable style={[s.reqBtn, s.reqNo]} onPress={() => answerRequest(r, false)}>
+        <Text style={s.reqNoText}>Decline</Text>
+      </Pressable>
+      <Pressable style={[s.reqBtn, s.reqYes]} onPress={() => answerRequest(r, true)}>
+        <Text style={s.reqYesText}>Accept</Text>
+      </Pressable>
+    </View>
+  )
 
   return (
     <ScreenGradient>
@@ -108,7 +146,7 @@ export default function ClassesScreen() {
           pages={[
             { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
             { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
-            { icon: "chatbubbles", title: "Answer requests", text: "Athletes ask to move, propose a time or add an extra class. Requests you don't answer before the class are declined." },
+            { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
           ]}
         />
@@ -202,6 +240,12 @@ export default function ClassesScreen() {
         {cls && (cls.roster.length
           ? <Text style={s.names}>{cls.roster.join(", ")}</Text>
           : <Text style={s.names}>No one yet.</Text>)}
+        {clsRequests.length > 0 && (
+          <View>
+            <Text style={s.reqTitle}>Requests</Text>
+            {clsRequests.map(requestRow)}
+          </View>
+        )}
         <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />
         {cls && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
       </Sheet>
@@ -212,21 +256,17 @@ export default function ClassesScreen() {
         subtitle="Declined on their own if you don't answer before the class."
         onClose={() => setSheet(null)}
       >
-        {requests.map((r) => (
-          <View key={r.key} style={s.req}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.reqWho}>{r.who}</Text>
-              <Text style={s.reqText}>{r.text}</Text>
-            </View>
-            <Pressable style={[s.reqBtn, s.reqNo]} onPress={() => answerRequest(r.key, false)}>
-              <Text style={s.reqNoText}>Decline</Text>
-            </Pressable>
-            <Pressable style={[s.reqBtn, s.reqYes]} onPress={() => answerRequest(r.key, true)}>
-              <Text style={s.reqYesText}>Accept</Text>
-            </Pressable>
-          </View>
-        ))}
+        {requests.map(requestRow)}
         {requests.length === 0 && <Text style={s.names}>All answered.</Text>}
+      </Sheet>
+
+      <Sheet
+        visible={!!req}
+        title={req ? `${dayName(req.to.day)} · ${formatTime(req.to.start)} – ${formatTime(req.to.start + CLASS_HOURS)}` : ""}
+        subtitle="Proposed time · no class here yet. Accepting adds one."
+        onClose={() => setSheet(null)}
+      >
+        {req && requestRow(req)}
       </Sheet>
     </ScreenGradient>
   )
@@ -250,6 +290,7 @@ const s = StyleSheet.create({
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },
   req: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
+  reqTitle: { fontSize: 12, fontWeight: "800", color: C.yellow, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 },
   reqWho: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
   reqText: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   reqBtn: { borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },

@@ -8,10 +8,15 @@ import {
 // so the Plan card and the week stay in step. UI only: starts from example
 // data and resets when the app restarts.
 
+// A time on the week grid.
+export interface Slot { day: number; start: number }
+
 export interface ClassRequest {
   key: string
   who: string
   text: string
+  from?: Slot  // the class they'd leave (none for an extra class)
+  to: Slot     // where they want to go: another class or a new time
 }
 
 interface State {
@@ -39,7 +44,7 @@ let state: State = {
   nextClasses: EXAMPLE_CLASSES.map((c) => ({ ...c, id: `n${c.id}` })),
   blocks: [{ day: 4, start: 12.5, end: GRID_END }],
   published: false,
-  othersRequests: [{ key: "sofi_k", who: "sofi_k", text: "New time: Wed 12:30" }],
+  othersRequests: [{ key: "sofi_k", who: "sofi_k", text: "Mon 9:30 → new time: Wed 12:30", from: { day: 0, start: 9.5 }, to: { day: 2, start: 12.5 } }],
 }
 const listeners = new Set<() => void>()
 let nextId = 1
@@ -85,22 +90,38 @@ export function pendingRequests(s: State, me: string): ClassRequest[] {
     if (!from) continue
     if (ch.status === "move") {
       const to = byId(ch.to)
-      if (to) out.push({ key: id, who: me, text: `${classLabel(from)} → ${classLabel(to)}` })
+      if (to) out.push({ key: id, who: me, text: `${classLabel(from)} → ${classLabel(to)}`, from, to })
     }
     if (ch.status === "propose") {
-      out.push({ key: id, who: me, text: `New time: ${WEEK_DAYS[ch.day]} ${formatTime(ch.start)}` })
+      out.push({ key: id, who: me, text: `${classLabel(from)} → new time: ${WEEK_DAYS[ch.day]} ${formatTime(ch.start)}`, from, to: { day: ch.day, start: ch.start } })
     }
   }
   if (s.extra && !s.extra.approved) {
     const to = byId(s.extra.to)
-    if (to) out.push({ key: "extra", who: me, text: `Extra class: ${classLabel(to)}` })
+    if (to) out.push({ key: "extra", who: me, text: `Extra class: ${classLabel(to)}`, to })
   }
   return [...out, ...s.othersRequests]
 }
 
 // ── Coach ───────────────────────────────────────────────────────────────────
 
-export function answerRequest(key: string, accept: boolean) {
+const at = (c: Slot, s: Slot) => c.day === s.day && c.start === s.start
+
+// Accepting also updates the coach's grid: the athlete joins the class they
+// asked for (a new one for a new time) and leaves the one they had.
+export function answerRequest(req: ClassRequest, accept: boolean) {
+  if (accept) {
+    const { who, from, to } = req
+    let nextClasses = state.nextClasses.map((c) =>
+      from && at(c, from) ? { ...c, roster: c.roster.filter((u) => u !== who) }
+      : at(c, to) && !c.roster.includes(who) ? { ...c, roster: [...c.roster, who] }
+      : c)
+    if (!nextClasses.some((c) => at(c, to))) {
+      nextClasses = [...nextClasses, { id: `new${nextId++}`, day: to.day, start: to.start, roster: [who] }]
+    }
+    set({ nextClasses })
+  }
+  const key = req.key
   if (state.othersRequests.some((r) => r.key === key)) {
     set({ othersRequests: state.othersRequests.filter((r) => r.key !== key) })
     return
