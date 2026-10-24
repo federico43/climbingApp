@@ -19,7 +19,7 @@ export const EDGE_WARMUP = {
   ],
   restSecs: 60,       // between warm-up sets
   lastRestSecs: 120,  // after the last one, before round 1
-  testHoldSecs: 5,    // the max: heaviest weight held this long
+  testHoldSecs: 10,   // the max: heaviest weight held this long
 } as const
 
 export interface WarmupSet {
