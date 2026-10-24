@@ -13,6 +13,7 @@ import {
 } from "@/utils/workoutPersistence"
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake"
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { AppState } from "react-native"
 
 const KEEP_AWAKE_TAG = "workout-active"
 
@@ -74,11 +75,34 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const workout = useWorkout(protocol)
 
   // Keep the screen awake for the entire duration of an active workout —
-  // including when it's minimized (rest timers, etc. keep running).
+  // including when it's minimized (rest timers, etc. keep running) and the
+  // summary screen (workoutActive stays true until it closes).
+  //
+  // One activation at the start isn't enough: on Android it fails silently
+  // when there's no current Activity yet, and nothing else turns it back on
+  // (the native module only touches the window flag when its tag set goes
+  // from empty to non-empty). So it's re-asserted every time the app comes
+  // back to the foreground — deactivate first, so the native side really
+  // sets the flag / idle timer again — and retried once if it fails.
   useEffect(() => {
-    if (workoutActive) {
-      activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {/* best effort */})
-      return () => { deactivateKeepAwake(KEEP_AWAKE_TAG) }
+    if (!workoutActive) return
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const assertAwake = () => {
+      clearTimeout(retry)
+      deactivateKeepAwake(KEEP_AWAKE_TAG)
+        .then(() => activateKeepAwakeAsync(KEEP_AWAKE_TAG))
+        .catch(() => {
+          retry = setTimeout(() => {
+            activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {/* best effort */})
+          }, 1000)
+        })
+    }
+    assertAwake()
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") assertAwake() })
+    return () => {
+      sub.remove()
+      clearTimeout(retry)
+      deactivateKeepAwake(KEEP_AWAKE_TAG)
     }
   }, [workoutActive])
 
