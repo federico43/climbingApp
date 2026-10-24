@@ -2206,8 +2206,10 @@ function WarmedUpNote() {
   )
 }
 
-// The max test (homework the coach sends, done together): the athlete logs
-// the heaviest weight held and it becomes their max.
+// The max test (homework the coach sends, done together): each try runs on
+// the usual hold timer (fixed to the test's length; "Redo hold" for the
+// next try), then the athlete logs the heaviest weight held and it becomes
+// their max.
 function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone }: {
   exercise: RepExercise | BothSidesExercise
   userId?: string
@@ -2246,6 +2248,10 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
     >
       <View style={{ marginTop: 16 }}>
         <ExerciseRow exercise={exercise} name={`${exercise.name} · max test`} />
+      </View>
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>Hold timer</Text>
+        <TimedAmountControl target={secs} fixed onChange={() => {}} />
       </View>
       <View style={styles.inputSection}>
         <Text style={styles.sectionLabel}>Heaviest weight held {secs} s</Text>
