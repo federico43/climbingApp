@@ -14,6 +14,7 @@ import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
 import { isPlanPick, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
 import { useWorkoutLink } from "@/contexts/WorkoutContext"
+import { useRestNotification } from "@/hooks/useRestNotification"
 import { useAuth } from "@/components/auth-context"
 import { planForWorkout, swapExerciseInPlan } from "@/services/planSwap"
 import { Audio } from "expo-av"
@@ -315,6 +316,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   const [restTimeRemaining, setRestTimeRemaining] = useState<number | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
+  useRestNotification(restEndsAt)
 
   useEffect(() => {
     return () => {
@@ -384,6 +387,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     const end = Date.now() + duration * 1000
     restEndTimeRef.current = end
     setRestTimeRemaining(duration)
+    setRestEndsAt(duration > 0 ? end : null)
 
     restTimerRef.current = setInterval(() => {
       const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
@@ -391,6 +395,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         clearInterval(restTimerRef.current!)
         restTimerRef.current = null
         setRestTimeRemaining(0)
+        setRestEndsAt(null)
         onDone()
       } else {
         setRestTimeRemaining(remaining)
@@ -578,6 +583,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
     const skipRest = () => {
       if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
+      setRestEndsAt(null)
       setCurrentRound((r) => r + 1)
       setCurrentExerciseIndex(0)
       setPhase("circuit")
