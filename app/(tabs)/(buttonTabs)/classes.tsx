@@ -74,6 +74,8 @@ export default function ClassesScreen() {
 
   const slot = sheet?.kind === "slot" ? sheet : null
   const slotProblem = slot ? addClassProblem(st.nextClasses, st.blocks, slot.day, slot.start) : null
+  // A class already sits in (part of) this time: remove it before blocking.
+  const slotHasClass = !!slot && st.nextClasses.some((c) => c.day === slot.day && c.start < slot.start + CLASS_HOURS && slot.start < c.start + CLASS_HOURS)
   const dayS = sheet?.kind === "day" ? sheet : null
   const cls = sheet?.kind === "class" ? st.nextClasses.find((c) => c.id === sheet.id) ?? null : null
 
@@ -140,7 +142,8 @@ export default function ClassesScreen() {
             />
             <SheetOption
               title="Block this time"
-              detail="No classes or proposals here"
+              detail={slotHasClass ? "Remove the class here first" : "No classes or proposals here"}
+              disabled={slotHasClass}
               onPress={() => { blockTime(slot.day, slot.start); setSheet(null) }}
             />
           </>

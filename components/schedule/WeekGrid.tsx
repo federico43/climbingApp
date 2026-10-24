@@ -86,6 +86,8 @@ export function GridBlock({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
+      // Without an action, taps go through to the day column (e.g. to pick a time).
+      pointerEvents={onPress ? "auto" : "none"}
       style={[s.block, tones[tone], { top: (start - GRID_START) * HOUR_HEIGHT + 1, height: hours * HOUR_HEIGHT - 3 }]}
     >
       <Text style={[s.blockText, toneText[tone]]}>{text}</Text>

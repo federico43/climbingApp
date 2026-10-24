@@ -119,7 +119,11 @@ export default function ScheduleScreen() {
         changedAway={sheet?.kind === "class" && ["move", "propose"].includes(st.changes[sheet.id]?.status ?? "")}
         fits={fits}
         onClose={() => setSheet(null)}
-        onCant={(id) => setSheet({ kind: "cant", id })}
+        onCant={(id) => {
+          // iOS won't present a sheet while the previous one is still closing.
+          setSheet(null)
+          setTimeout(() => setSheet({ kind: "cant", id }), 400)
+        }}
         onUndoSkip={(id) => { changeClass(id, null); setSheet(null) }}
         onMoveHere={(to) => {
           if (movingFrom) changeClass(movingFrom, { status: "move", to })
