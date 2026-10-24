@@ -88,6 +88,16 @@ function TabsWithPlan() {
           }}
         />
         <Tabs.Screen
+          name="classes"
+          options={{
+            title: "Classes",
+            href: role === "coach" ? undefined : null,
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="design"
           options={{
             title: "Design",
@@ -112,6 +122,7 @@ function TabsWithPlan() {
         <Tabs.Screen name="past-projects" options={{ href: null }} />
         <Tabs.Screen name="workout-log" options={{ href: null }} />
         <Tabs.Screen name="workout-library" options={{ href: null }} />
+        <Tabs.Screen name="schedule" options={{ href: null }} />
       </Tabs>
 
       {/* Workout modal lives at the layout level so it overlays everything */}
