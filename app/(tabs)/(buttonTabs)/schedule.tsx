@@ -23,8 +23,14 @@ export default function ScheduleScreen() {
   const me = userName || "you"
   const st = useClassSchedule()
   const now = new Date()
-  const today = weekdayOf(now)
-  const dates = useMemo(() => weekDates(mondayOf(new Date())), [])
+  // From Saturday the coach has published next week, so that's the one to plan.
+  const nextWeek = weekdayOf(now) >= 5
+  const today = nextWeek ? 0 : weekdayOf(now)
+  const dates = useMemo(() => {
+    const monday = mondayOf(new Date())
+    if (nextWeek) monday.setDate(monday.getDate() + 7)
+    return weekDates(monday)
+  }, [nextWeek])
   const week = athleteWeek(st.classes, st.mine, st.changes, st.extra)
   const [mode, setMode] = useState<Mode>(null)
   const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
@@ -86,7 +92,7 @@ export default function ScheduleScreen() {
             { icon: "checkmark-done", title: "Your coach approves", text: "Changes show in yellow until your coach answers. No answer before the class means no change." },
           ]}
         />
-        <SubScreenHeader title="This week" subtitle={`${st.sessionsLeft} sessions left · use by ${st.useBy}`} />
+        <SubScreenHeader title={nextWeek ? "Next week" : "This week"} subtitle={`${st.sessionsLeft} sessions left · use by ${st.useBy}`} />
         <View style={s.top}>
           {mode && (
             <View style={s.banner}>
@@ -101,7 +107,7 @@ export default function ScheduleScreen() {
         </View>
         <WeekGrid
           dates={dates}
-          today={today}
+          today={nextWeek ? -1 : today}
           dimPast
           onPressTime={proposingFrom ? proposeAt : undefined}
           renderDay={renderDay}
