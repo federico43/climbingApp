@@ -53,7 +53,7 @@ the roster screen on a phone. On a phone the detail is shown in place
 │                      │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘      │
 │ ┌──────────────────┐ │  (tapping a KPI applies the matching roster filter)                   │
 │ │(A) Ana        ●2 │ ├────────────────────────────────────────────┬──────────────────────────┤
-│ │    Wk 3/6 · 1d   │ │ Ana                       [Log session] ⋮  │ HOMEWORK            2 ⚠  │
+│ │    Wk 3/6 · 1d   │ │ Ana                       [New workout] ⋮  │ HOMEWORK            2 ⚠  │
 │ ├──────────────────┤ │ Power endurance plan · Week 3 of 6         │ ▸ Density test           │
 │ │(B) Bruno         │ │                                            │   Due Fri · Overdue  ›   │
 │ │    No plan · 12d │ │ ┌ PLAN ──────────────────────────────────┐ │ ▸ Hangboard 7/3          │
@@ -168,8 +168,10 @@ Derived:
 
 ### 4.4 Detail header
 
-Avatar, name, plan subtitle ("Autumn block · week 3 of 6"); **Log session**
-(→ `workout-log`, as before; icon-only on a phone). No ⋮ menu.
+Avatar, name, plan subtitle ("Autumn block · week 3 of 6"); **New workout**
+(opens the workout builder for this athlete, same as Templates' + Add; "New"
+on a phone). It replaced Log session (→ `workout-log`) on 2026-10-24: building
+a workout matters more to a coach than logging a past class. No ⋮ menu.
 
 ### 4.5 Plan card (from `AthleteAnalytics`'s "Training plan" section)
 

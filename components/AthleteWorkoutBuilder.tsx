@@ -38,6 +38,10 @@ import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flat
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
 
+// Narrow screens: share of the window the S&C exercise library takes as a
+// bottom sheet, leaving the workout visible above it.
+const LIB_SHEET_FRACTION = 0.5
+
 // Per-athlete workout builder (big screen). Two card panes: the workout (left)
 // and the available blocks (right). Saving creates a protocol and assigns it to
 // the athlete. The left pane's ⋮ menu copies the workout to other athletes.
@@ -126,8 +130,18 @@ export function AthleteWorkoutBuilder({
   // overlay on the list on narrow).
   const [libraryBlockId, setLibraryBlockId] = useState<string | null>(null)
   const insets = useSafeAreaInsets()
-  const { width } = useWindowDimensions()
+  const { width, height } = useWindowDimensions()
   const wide = width >= 900  // narrow → single pane + block picker as a sheet
+  // Narrow: keep the S&C block being filled in view above the library
+  // sheet — its newest exercise and Add button at the bottom of the list.
+  const listRef = useRef<any>(null)  // the list's FlatList (typed as RNGH's)
+  useEffect(() => {
+    if (wide || !libraryBlockId) return
+    const index = blocks.findIndex((b) => b.id === libraryBlockId)
+    if (index < 0) return
+    const t = setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: 1, animated: true }), 120)
+    return () => clearTimeout(t)
+  }, [wide, libraryBlockId, blocks])
   const [pickerOpen, setPickerOpen] = useState(false)
 
   // Right pane (block picker/library) width — user-resizable by dragging the
@@ -427,6 +441,8 @@ export function AthleteWorkoutBuilder({
               </ScrollView>
             ) : (
               <DraggableFlatList
+                ref={listRef}
+                onScrollToIndexFailed={() => {}}
                 data={blocks}
                 containerStyle={{ flex: 1 }}
                 keyExtractor={(item) => item.id}
@@ -440,15 +456,16 @@ export function AthleteWorkoutBuilder({
           </GestureHandlerRootView>
 
           {/* Narrow screens: the block picker opens as a sheet instead of a side pane */}
-          {!wide && (
+          {!wide && !libraryBlockId && (
             <Pressable style={s.addBlockBtn} onPress={() => setPickerOpen(true)}>
               <Text style={s.addBlockBtnText}>+ Add block</Text>
             </Pressable>
           )}
 
-          {/* Narrow: the S&C exercise library covers the list while open. */}
+          {/* Narrow: the S&C exercise library opens as a bottom sheet; the
+              list shrinks above it so each added exercise shows up there. */}
           {!wide && libraryBlockId && (
-            <View style={s.libOverlay}>
+            <View style={[s.libSheet, { height: Math.round(height * LIB_SHEET_FRACTION) }]}>
               <ExerciseLibraryPane
                 variant="overlay"
                 onClose={() => setLibraryBlockId(null)}
@@ -681,8 +698,11 @@ const s = StyleSheet.create({
   panes: { flex: 1, flexDirection: "row" },
   leftPane: { flex: 1, minWidth: 280 },
 
-  // Library overlay fills the left pane.
-  libOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: C.surface, zIndex: 30 },
+  // Narrow: the library is a bottom sheet under the (shrunk) block list.
+  libSheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderTopWidth: 1, borderColor: C.border, overflow: "hidden",
+  },
   // Width is user-controlled via the drag divider (default set in state).
   rightPane: { minWidth: RIGHT_PANE_MIN },
   paneDivider: { width: PANE_DIVIDER_W, alignItems: "center", justifyContent: "center" },

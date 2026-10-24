@@ -1,16 +1,18 @@
 import { C } from "@/utils/theme"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { card } from "@/components/coach/styles"
+import { EdgeLiftMaxSection } from "@/components/coach/EdgeLiftMaxSection"
 import { AppUser, CheckinRow, getCheckinForToday, getUsers, setFlashLevel } from "@/services/BoulderGraphService"
 import { useEffect, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 
-// Today's readiness check-in and the athlete's flash level (constraint
-// warmups pick their colour range relative to it).
-export function AthleteCard({ athlete, flashLevel, onPickFlashLevel }: {
+// Today's readiness check-in, the athlete's flash level (constraint
+// warmups pick their colour range relative to it) and Edge Lifts max.
+export function AthleteCard({ athlete, flashLevel, onPickFlashLevel, onHomeworkChanged }: {
   athlete: AppUser
   flashLevel: string | null
   onPickFlashLevel: (value: string) => void
+  onHomeworkChanged?: () => void
 }) {
   const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
 
@@ -50,6 +52,7 @@ export function AthleteCard({ athlete, flashLevel, onPickFlashLevel }: {
           })}
         </View>
       </View>
+      <EdgeLiftMaxSection athlete={athlete} onHomeworkChanged={onHomeworkChanged} />
     </View>
   )
 }

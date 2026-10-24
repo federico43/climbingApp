@@ -2,6 +2,7 @@ import type { Exercise, StrengthConditioningBlock } from "@/components/workoutBl
 import type { ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
 import { coreFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
+import { needsWarmup } from "@/utils/edgeWarmup"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
@@ -167,7 +168,11 @@ export function buildScBlocks(
     const row = exerciseForPattern(p, spec, f, byId, exercises, warnings)
     return row ? withFocus(exerciseDraftFromLibrary(row), f) : null
   })
-  const pair = (i: number) => [main[i], main[i + 1]].filter((e): e is ExerciseDraft => !!e)
+  // Edge Lifts (max force) go first in their block: their warm-up runs
+  // before the block's first round (utils/edgeWarmup.ts).
+  const pair = (i: number) => [main[i], main[i + 1]]
+    .filter((e): e is ExerciseDraft => !!e)
+    .sort((a, b) => Number(needsWarmup(b)) - Number(needsWarmup(a)))
 
   const block = (name: string, exs: ExerciseDraft[], rest: number): ScBlockDraft => ({
     type: "strength_conditioning",

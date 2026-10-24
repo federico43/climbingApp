@@ -141,6 +141,9 @@ export interface Exercise {
   // Programmed fresh each time this exercise is placed in a block — the same
   // exercise can be max force this cycle and hypertrophy next cycle.
   focus?: Focus
+  // Edge Lifts in the max test homework (utils/edgeWarmup.ts): the athlete
+  // logs the heaviest weight held and it becomes their max.
+  maxTest?: boolean
 }
 
 export interface StrengthConditioningBlock extends BaseBlock {
@@ -1914,6 +1917,13 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
   const [loading, setLoading] = useState(true)
   const [createType, setCreateType] = useState<"reps" | "both_sides" | "7/3s" | null>(null)
   const [search, setSearch] = useState("")
+  // Times each exercise was added while this pane is open — the chip turns
+  // into "✓ ×n" so a single tap visibly worked (no second tap "to be sure").
+  const [added, setAdded] = useState<Record<string, number>>({})
+  function add(ex: ExerciseRow) {
+    setAdded((prev) => ({ ...prev, [ex.$id]: (prev[ex.$id] ?? 0) + 1 }))
+    onAdd(ex)
+  }
   const overlay = variant === "overlay"
   const containerStyle = overlay ? styles.libOverlayInner : [styles.libPane, wide && styles.libPaneWide]
   const query = search.trim().toLowerCase()
@@ -1932,7 +1942,7 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
           title={`New ${EXERCISE_TYPE_LABEL[createType]} exercise`}
           saveLabel="Create & add"
           onCancel={() => setCreateType(null)}
-          onCreated={(ex) => { setCreateType(null); reload(); onAdd(ex) }}
+          onCreated={(ex) => { setCreateType(null); reload(); add(ex) }}
         />
       </View>
     )
@@ -1996,12 +2006,20 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
                   <Text style={styles.libEmpty}>None yet</Text>
                 ) : (
                   <View style={styles.libChips}>
-                    {items.map((ex) => (
-                      <Pressable key={ex.$id} style={styles.libChip} onPress={() => onAdd(ex)}>
-                        <Ionicons name="add" size={15} color={C.green} />
-                        <Text style={styles.libChipText}>{ex.name}</Text>
-                      </Pressable>
-                    ))}
+                    {items.map((ex) => {
+                      const n = added[ex.$id] ?? 0
+                      return (
+                        <Pressable
+                          key={ex.$id}
+                          style={({ pressed }) => [styles.libChip, n > 0 && styles.libChipAdded, pressed && { opacity: 0.6 }]}
+                          onPress={() => add(ex)}
+                        >
+                          <Ionicons name={n > 0 ? "checkmark" : "add"} size={15} color={C.green} />
+                          <Text style={styles.libChipText}>{ex.name}</Text>
+                          {n > 1 && <Text style={styles.libChipCount}>×{n}</Text>}
+                        </Pressable>
+                      )
+                    })}
                   </View>
                 )}
               </View>
@@ -3799,6 +3817,8 @@ const styles = StyleSheet.create({
     paddingLeft: 8, paddingRight: 12, paddingVertical: 7,
   },
   libChipText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
+  libChipAdded: { borderColor: C.green },
+  libChipCount: { fontSize: 12, fontWeight: "800", color: C.green, marginLeft: 2 },
   exercisePickerButton: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, backgroundColor: C.surfaceHigh },
   exercisePickerName: { fontSize: 15, color: C.textPrimary, fontWeight: "500" },
   exercisePickerPlaceholder: { fontSize: 15, color: C.textMuted },
