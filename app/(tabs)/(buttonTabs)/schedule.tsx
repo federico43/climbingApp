@@ -8,7 +8,7 @@ import {
   CAPACITY, CLASS_HOURS, GymClass, athleteWeek, busyDays, classLabel, formatTime, headcount,
   WEEK_DAYS, mondayOf, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
-import { cancelExtra, changeClass, requestExtra, useClassSchedule } from "@/utils/classScheduleStore"
+import { cancelExtra, changeClass, useClassSchedule } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { useMemo, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
@@ -114,7 +114,6 @@ export default function ScheduleScreen() {
         week={week}
         today={today}
         mode={mode}
-        extraUsed={!!st.extra}
         changedAway={sheet?.kind === "class" && ["move", "propose"].includes(st.changes[sheet.id]?.status ?? "")}
         fits={fits}
         onClose={() => setSheet(null)}
@@ -129,7 +128,6 @@ export default function ScheduleScreen() {
           setMode(null)
           setSheet(null)
         }}
-        onExtra={(id) => { requestExtra(id); setSheet(null) }}
       />
 
       <Sheet
@@ -166,21 +164,19 @@ export default function ScheduleScreen() {
 }
 
 function ClassSheet({
-  cls, me, week, today, mode, extraUsed, changedAway, fits, onClose, onCant, onUndoSkip, onMoveHere, onExtra,
+  cls, me, week, today, mode, changedAway, fits, onClose, onCant, onUndoSkip, onMoveHere,
 }: {
   cls: GymClass | null
   me: string
   week: ReturnType<typeof athleteWeek>
   today: number
   mode: Mode
-  extraUsed: boolean
   changedAway: boolean // the athlete asked to move this class somewhere else
   fits: (c: GymClass, except?: string) => boolean
   onClose: () => void
   onCant: (id: string) => void
   onUndoSkip: (id: string) => void
   onMoveHere: (id: string) => void
-  onExtra: (id: string) => void
 }) {
   if (!cls) return <Sheet visible={false} title="" onClose={onClose} />
   const e = week.find((x) => x.cls.id === cls.id)
@@ -213,18 +209,6 @@ function ClassSheet({
       <>
         <SheetButton label="Move here" disabled={!ok} onPress={() => onMoveHere(cls.id)} />
         {!ok && <Text style={s.hint}>{full ? "This class is full." : "Leave a rest day between classes."}</Text>}
-      </>
-    )
-  } else if (!e && cls.day >= today && !full) {
-    const ok = !extraUsed && fits(cls)
-    actions = (
-      <>
-        <SheetButton kind="line" label="Add as an extra class" disabled={!ok} onPress={() => onExtra(cls.id)} />
-        <Text style={s.hint}>
-          {extraUsed
-            ? "You already have an extra class this week."
-            : !fits(cls) ? "Leave a rest day between classes." : "One extra a week. Your coach approves it and it uses a session."}
-        </Text>
       </>
     )
   }
