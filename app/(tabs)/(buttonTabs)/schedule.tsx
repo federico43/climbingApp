@@ -5,7 +5,7 @@ import { FeatureIntro } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
-  AddClassProblem, CAPACITY, CLASS_HOURS, GRID_END, GRID_START, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
+  AddClassProblem, CAPACITY, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
   mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, useClassSchedule } from "@/utils/classScheduleStore"
@@ -88,13 +88,19 @@ export default function ScheduleScreen() {
 
   const proposingFrom = mode?.kind === "propose" ? mode.from : null
   const movingFrom = mode?.kind === "move" ? mode.from : null
-  // Days a class can still go to, keeping a rest day around the others.
-  const daysFor = (from: string) => openDays(busyDays(week, from), today)
+  // Days a class can still go to: a rest day around the others, and not a
+  // day that already has its 2 classes.
+  const daysFor = (from: string) =>
+    openDays(busyDays(week, from), today).filter((d) => st.classes.filter((c) => c.day === d).length < MAX_CLASSES_PER_DAY)
   const proposeDays = proposingFrom ? daysFor(proposingFrom) : []
   const proposeAt = (day: number, y: number) => {
     if (!proposingFrom) return
     if (day < today) return Alert.alert("That day already passed")
-    if (!proposeDays.includes(day)) return Alert.alert("Leave a rest day between classes")
+    if (!proposeDays.includes(day)) {
+      return restDayOk(busyDays(week, proposingFrom), day)
+        ? Alert.alert("That day is full", NO_FIT.max)
+        : Alert.alert("Leave a rest day between classes")
+    }
     // A tap only gets close; the time is fine-tuned in the sheet before sending.
     setDraft({ day, start: startFromOffset(y, HOUR_HEIGHT) })
   }
@@ -185,7 +191,7 @@ export default function ScheduleScreen() {
             />
             <SheetOption
               title="Propose another time"
-              detail={canPropose ? "If no class fits, your coach decides" : "No day left this week with a rest day around it"}
+              detail={canPropose ? "If no class fits, your coach decides" : "No day left this week with room and a rest day around it"}
               disabled={!canPropose}
               onPress={() => { setMode({ kind: "propose", from: cantId }); setSheet(null) }}
             />
