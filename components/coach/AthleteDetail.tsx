@@ -1,4 +1,5 @@
 import { C } from "@/utils/theme"
+import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
@@ -23,7 +24,7 @@ import { localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 
 // One athlete on the coach dashboard (docs/coach-dashboard.md §4.4–4.10).
 // `split`: two columns (main + side) on the widest layout, else one.
@@ -52,6 +53,10 @@ export function AthleteDetail({
   const [planWorkouts, setPlanWorkouts] = useState<ProtocolRow[]>([])
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [flashLevel, pickFlashLevel] = useFlashLevel(athlete)
+  // Header's "New workout": the same builder as Templates' + Add. Bumping
+  // the key reloads the Templates card so the new one shows up.
+  const [building, setBuilding] = useState(false)
+  const [templatesKey, setTemplatesKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -131,7 +136,7 @@ export function AthleteDetail({
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
   const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} />
-  const templatesCard = <TemplatesCard athlete={athlete} roster={roster} wide={wide} />
+  const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} />
   const videos = <AthleteVideos athlete={athlete} />
 
   return (
@@ -152,16 +157,9 @@ export function AthleteDetail({
           </View>
           <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
         </View>
-        <Pressable
-          style={card.outlineBtn}
-          accessibilityLabel="Log a session"
-          onPress={() => router.push({
-            pathname: "/(tabs)/(buttonTabs)/workout-log",
-            params: { athleteId: athlete.$id, athleteName: athlete.username },
-          })}
-        >
-          <Ionicons name="checkmark-circle-outline" size={wide ? 15 : 18} color={C.green} />
-          {wide && <Text style={card.outlineBtnText}>Log session</Text>}
+        <Pressable style={[card.primaryBtn, { alignSelf: "center" }]} accessibilityLabel="New workout" onPress={() => setBuilding(true)}>
+          <Ionicons name="add" size={wide ? 15 : 18} color={C.bg} />
+          <Text style={card.primaryBtnText}>{wide ? "New workout" : "New"}</Text>
         </Pressable>
       </View>
 
@@ -194,6 +192,15 @@ export function AthleteDetail({
         )}
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      <Modal visible={building} transparent animationType="fade" onRequestClose={() => setBuilding(false)}>
+        <AthleteWorkoutBuilder
+          athlete={athlete}
+          roster={roster}
+          onClose={() => setBuilding(false)}
+          onSaved={() => setTemplatesKey((k) => k + 1)}
+        />
+      </Modal>
 
       <SessionDetailModal
         date={openDay}
