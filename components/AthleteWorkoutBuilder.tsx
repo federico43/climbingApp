@@ -247,12 +247,29 @@ export function AthleteWorkoutBuilder({
   const homework = canHomework ? blocks.filter((b) => homeworkIds.has(b.id)) : []
   const kept = homework.length ? blocks.filter((b) => !homeworkIds.has(b.id)) : blocks
 
-  async function handleSave() {
+  // Every block of an existing workout marked homework: the workout itself
+  // becomes the homework — saved as a homework row, then the original is
+  // deleted (an empty workout can't stay). Confirmed first, since it leaves
+  // the athlete's workout list.
+  const wholeToHomework = editing && homework.length > 0 && kept.length === 0
+
+  function handleSave() {
     if (!validate()) return
-    if (editing && homework.length > 0 && kept.length === 0) {
-      Alert.alert("Nothing left", "Leave at least one block in this workout, or make a new workout for the homework.")
+    if (wholeToHomework) {
+      Alert.alert(
+        "Move the whole workout to homework?",
+        `"${name.trim()}" becomes homework due ${shortDay(dueBy)} and leaves the athlete's workouts.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Move", onPress: () => { void save() } },
+        ],
+      )
       return
     }
+    void save()
+  }
+
+  async function save() {
     setSaving(true)
     // No athlete selected → this is a global library workout.
     const source = athlete ? undefined : "library"
@@ -282,7 +299,9 @@ export function AthleteWorkoutBuilder({
     }
 
     try {
-      if (editing) {
+      if (wholeToHomework) {
+        await deleteProtocol(protocol!.$id)
+      } else if (editing) {
         await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(kept), source })
       } else if (kept.length === 0) {
         // The whole workout is homework.
