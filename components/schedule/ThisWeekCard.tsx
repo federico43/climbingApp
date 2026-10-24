@@ -17,9 +17,7 @@ export function ThisWeekCard() {
   const router = useRouter()
   const { role } = useAuth()
   const st = useClassSchedule()
-  // TEMPORARY: coaches see the card too, marked as a preview, so the athlete
-  // side can be tried from a coach account. Remove before shipping.
-  const preview = role === "coach"
+  if (role === "coach") return null
 
   const now = new Date()
   const today = weekdayOf(now)
@@ -32,7 +30,6 @@ export function ThisWeekCard() {
 
   return (
     <View style={{ gap: 10 }}>
-      {preview && <Text style={s.preview}>Athlete preview (temporary, only for testing)</Text>}
       <FeatureIntro
         id="class-card"
         pages={[
@@ -94,7 +91,6 @@ function Row({ e, today, label }: { e: WeekEntry; today: number; label: string }
 }
 
 const s = StyleSheet.create({
-  preview: { fontSize: 12, fontWeight: "700", color: C.yellow, textTransform: "uppercase", letterSpacing: 0.6 },
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, gap: 14 },
   top: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 },
