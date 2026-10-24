@@ -1,202 +1,245 @@
+import { useAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
+import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
+import { FeatureIntro } from "@/components/schedule/FeatureIntro"
+import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
-import { SessionDraft, WeekSessionSheet } from "@/components/WeekSessionSheet"
-import { C } from "@/utils/theme"
 import {
-  DEFAULT_HOURS, EXAMPLE_WEEK, GRID_END, GRID_START, WEEK_DAYS, WeekSession, clampHours,
-  formatHours, formatTime, startFromOffset, weekSummary,
-} from "@/utils/weekSchedule"
-import { Ionicons } from "@expo/vector-icons"
-import { useEffect, useRef, useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+  CAPACITY, CLASS_HOURS, GymClass, athleteWeek, busyDays, classLabel, formatTime, headcount,
+  WEEK_DAYS, mondayOf, restDayOk, startFromOffset, weekDates, weekdayOf,
+} from "@/utils/classSchedule"
+import { cancelExtra, changeClass, requestExtra, useClassSchedule } from "@/utils/classScheduleStore"
+import { C } from "@/utils/theme"
+import { useMemo, useState } from "react"
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 
-const HOUR = 48
-const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i)
+type Mode = { kind: "move" | "propose"; from: string } | null
 
-// Settings › My week: the athlete's default week, Google-Calendar style.
-// UI only for now: starts from example data and "Save" doesn't reach the backend.
+// The athlete's week of classes, Google-Calendar style, opened from the
+// "This week" card on Plan. UI only for now: example data, nothing saved.
 export default function ScheduleScreen() {
-  const insets = useSafeAreaInsets()
-  const [sessions, setSessions] = useState<WeekSession[]>(EXAMPLE_WEEK)
-  const [saved, setSaved] = useState<WeekSession[]>(EXAMPLE_WEEK)
-  const [draft, setDraft] = useState<SessionDraft | null>(null)
-  // The new session as it's being set up in the sheet, drawn on the grid.
-  const [preview, setPreview] = useState<SessionDraft | null>(null)
-  const [justSaved, setJustSaved] = useState(false)
-  const nextId = useRef(1)
+  const { userName } = useAuth()
+  const me = userName || "you"
+  const st = useClassSchedule()
+  const now = new Date()
+  const today = weekdayOf(now)
+  const dates = useMemo(() => weekDates(mondayOf(new Date())), [])
+  const week = athleteWeek(st.classes, st.mine, st.changes, st.extra)
+  const [mode, setMode] = useState<Mode>(null)
+  const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
 
-  useEffect(() => {
-    if (!justSaved) return
-    const t = setTimeout(() => setJustSaved(false), 1800)
-    return () => clearTimeout(t)
-  }, [justSaved])
+  const entryFor = (id: string) => week.find((e) => e.cls.id === id)
+  const fits = (c: { day: number }, except?: string) => c.day >= today && restDayOk(busyDays(week, except), c.day)
 
-  const dirty = JSON.stringify(sessions) !== JSON.stringify(saved)
-  const { days, hours } = weekSummary(sessions)
+  const toneFor = (c: GymClass) => {
+    const e = entryFor(c.id)
+    if (e) return e.state === "skip" ? "skip" : e.state === "pending" ? "pending" : "mine"
+    if (headcount(c, week) >= CAPACITY) return "full"
+    if (mode?.kind === "move" && fits(c, mode.from)) return "pick"
+    return "other"
+  }
 
-  const saveDraft = (d: SessionDraft) => {
-    if (d.id) {
-      setSessions((all) => all.map((x) => (x.id === d.id ? { ...x, day: d.days[0], start: d.start, hours: d.hours } : x)))
-    } else {
-      const added = d.days.map((day) => ({ id: `new${nextId.current++}`, day, start: d.start, hours: d.hours }))
-      setSessions((all) => [...all, ...added])
-    }
-    setDraft(null)
+  const renderDay = (day: number) => (
+    <>
+      {st.classes.filter((c) => c.day === day).map((c) => {
+        const e = entryFor(c.id)
+        const names = [...(e && e.state !== "skip" ? [me] : []), ...c.roster]
+        return (
+          <GridBlock
+            key={c.id}
+            start={c.start}
+            tone={toneFor(c)}
+            text={names.join(", ") || "—"}
+            onPress={() => setSheet({ kind: "class", id: c.id })}
+          />
+        )
+      })}
+      {week.filter((e) => e.proposal && e.cls.day === day).map((e) => (
+        <GridBlock key={e.cls.id} start={e.cls.start} tone="pending" text={`${formatTime(e.cls.start)} proposed`} />
+      ))}
+    </>
+  )
+
+  const proposeAt = (day: number, y: number) => {
+    if (mode?.kind !== "propose") return
+    if (day < today) return Alert.alert("That day already passed")
+    if (!restDayOk(busyDays(week, mode.from), day)) return Alert.alert("Leave a rest day between classes")
+    const start = startFromOffset(y, HOUR_HEIGHT)
+    changeClass(mode.from, { status: "propose", day, start })
+    setMode(null)
+    Alert.alert("Proposal sent", `${WEEK_DAYS[day]} ${formatTime(start)}. Your coach answers before the class.`)
   }
 
   return (
     <ScreenGradient>
-      <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <SubScreenHeader
-          title="My week"
-          subtitle="Default training days"
-          right={
-            <Pressable
-              style={s.addBtn}
-              hitSlop={6}
-              onPress={() => setDraft({ id: null, days: [], start: 8, hours: DEFAULT_HOURS })}
-            >
-              <Ionicons name="add" size={22} color="#10251A" />
-            </Pressable>
-          }
+      <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        <FeatureIntro
+          id="class-week"
+          pages={[
+            { icon: "people", title: "See who's going", text: "Your classes are green. Tap any class to see who's in it. Each class has room for 4." },
+            { icon: "swap-horizontal", title: "Can't make it?", text: "Tell your coach early so someone else can take your spot. Move to another class or propose a new time. If you don't make it up this week, you lose the session." },
+            { icon: "add-circle", title: "One extra a week", text: "Tap a class that isn't yours to add it as an extra. Never on the day before or after another class." },
+            { icon: "checkmark-done", title: "Your coach approves", text: "Changes show in yellow until your coach answers. No answer before the class means no change." },
+          ]}
         />
-
-        <View style={s.dayRow}>
-          <View style={s.gutter} />
-          {WEEK_DAYS.map((name, i) => {
-            const on = sessions.some((x) => x.day === i)
-            return (
-              <View key={name} style={s.dayHead}>
-                <Text style={[s.dayName, on && { color: C.textPrimary }]}>{name}</Text>
-                <View style={[s.dayDot, on && { backgroundColor: C.green }]} />
-              </View>
-            )
-          })}
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={[s.grid, { height: HOURS.length * HOUR }]}>
-            <View style={s.gutter}>
-              {HOURS.slice(1).map((h) => (
-                <Text key={h} style={[s.hourLabel, { top: (h - GRID_START) * HOUR - 6 }]}>{h}:00</Text>
-              ))}
-            </View>
-            {WEEK_DAYS.map((name, day) => (
-              <Pressable
-                key={name}
-                style={s.col}
-                onPress={(e) =>
-                  setDraft({ id: null, days: [day], start: startFromOffset(e.nativeEvent.locationY, HOUR), hours: DEFAULT_HOURS })
-                }
-              >
-                {HOURS.map((h) => (
-                  <View key={h} pointerEvents="none" style={[s.hourLine, { top: (h - GRID_START) * HOUR }]} />
-                ))}
-                {sessions.filter((x) => x.day === day).map((x) => (
-                  <Pressable
-                    key={x.id}
-                    onPress={() => setDraft({ id: x.id, days: [x.day], start: x.start, hours: x.hours })}
-                    style={[
-                      s.block,
-                      {
-                        top: (x.start - GRID_START) * HOUR,
-                        height: x.hours * HOUR - 2,
-                      },
-                    ]}
-                  >
-                    <Text style={s.blockTitle} numberOfLines={1}>Training</Text>
-                    <Text style={s.blockTime} numberOfLines={1}>{formatTime(x.start)}</Text>
-                    <Text style={s.blockTime} numberOfLines={1}>{formatHours(x.hours)}</Text>
-                  </Pressable>
-                ))}
-                {preview && !preview.id && preview.days.includes(day) && (
-                  <View
-                    pointerEvents="none"
-                    style={[s.block, s.preview, { top: (preview.start - GRID_START) * HOUR, height: clampHours(preview.start, preview.hours) * HOUR - 2 }]}
-                  >
-                    <Text style={s.previewTime} numberOfLines={1}>{formatTime(preview.start)}</Text>
-                    <Text style={s.blockTime} numberOfLines={1}>{formatTime(preview.start + clampHours(preview.start, preview.hours))}</Text>
-                  </View>
-                )}
+        <SubScreenHeader title="This week" subtitle={`${st.sessionsLeft} sessions left · use by ${st.useBy}`} />
+        <View style={s.top}>
+          {mode && (
+            <View style={s.banner}>
+              <Text style={s.bannerText}>
+                {mode.kind === "move" ? "Pick a class with the yellow outline" : "Tap a free time to propose it"}
+              </Text>
+              <Pressable hitSlop={8} onPress={() => setMode(null)}>
+                <Text style={s.bannerCancel}>Cancel</Text>
               </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-
-        <View style={[s.footer, { paddingBottom: 14 + insets.bottom }]}>
-          <View style={s.summary}>
-            <Text style={s.summaryText}><Text style={s.summaryStrong}>{days}</Text> days a week</Text>
-            <Text style={s.summaryText}><Text style={s.summaryStrong}>{formatHours(hours)}</Text> total</Text>
-          </View>
-          <Pressable
-            disabled={!dirty}
-            style={({ pressed }) => [s.saveBtn, !dirty && s.saveOff, pressed && { opacity: 0.85 }]}
-            onPress={() => {
-              setSaved(sessions)
-              setJustSaved(true)
-            }}
-          >
-            <Text style={[s.saveText, !dirty && { color: C.textMuted }]}>
-              {justSaved ? "Saved as your default week" : "Save as default"}
-            </Text>
-          </Pressable>
+            </View>
+          )}
         </View>
+        <WeekGrid
+          dates={dates}
+          today={today}
+          dimPast
+          onPressTime={mode?.kind === "propose" ? proposeAt : undefined}
+          renderDay={renderDay}
+        />
       </SafeAreaView>
 
-      <WeekSessionSheet
-        draft={draft}
-        onSave={saveDraft}
-        onDelete={(id) => {
-          setSessions((all) => all.filter((x) => x.id !== id))
-          setDraft(null)
+      <ClassSheet
+        cls={sheet?.kind === "class" ? st.classes.find((c) => c.id === sheet.id) ?? null : null}
+        me={me}
+        week={week}
+        today={today}
+        mode={mode}
+        extraUsed={!!st.extra}
+        fits={fits}
+        onClose={() => setSheet(null)}
+        onCant={(id) => setSheet({ kind: "cant", id })}
+        onUndoSkip={(id) => { changeClass(id, null); setSheet(null) }}
+        onMoveHere={(to) => {
+          if (mode) changeClass(mode.from, { status: "move", to })
+          setMode(null)
+          setSheet(null)
         }}
-        onClose={() => setDraft(null)}
-        onChange={setPreview}
+        onExtra={(id) => { requestExtra(id); setSheet(null) }}
       />
+
+      <Sheet
+        visible={sheet?.kind === "cant"}
+        title={sheet?.kind === "cant" ? `Can't make ${classLabel(st.classes.find((c) => c.id === sheet.id)!)}?` : ""}
+        onClose={() => setSheet(null)}
+      >
+        <Text style={s.warn}>
+          Let your coach know early: each class has {CAPACITY} spots, and yours can go to someone who can come.
+          Make this class up this week or you lose the session.
+        </Text>
+        <SheetOption
+          title="Move to another class"
+          detail="Your coach approves the change"
+          onPress={() => { setMode({ kind: "move", from: sheet!.id }); setSheet(null) }}
+        />
+        <SheetOption
+          title="Propose another time"
+          detail="If no class fits, your coach decides"
+          onPress={() => { setMode({ kind: "propose", from: sheet!.id }); setSheet(null) }}
+        />
+        <SheetOption
+          title="I won't go this week"
+          detail="You lose this session. Your coach is told"
+          onPress={() => { changeClass(sheet!.id, { status: "skip" }); setSheet(null) }}
+        />
+      </Sheet>
     </ScreenGradient>
   )
 }
 
+function ClassSheet({
+  cls, me, week, today, mode, extraUsed, fits, onClose, onCant, onUndoSkip, onMoveHere, onExtra,
+}: {
+  cls: GymClass | null
+  me: string
+  week: ReturnType<typeof athleteWeek>
+  today: number
+  mode: Mode
+  extraUsed: boolean
+  fits: (c: GymClass, except?: string) => boolean
+  onClose: () => void
+  onCant: (id: string) => void
+  onUndoSkip: (id: string) => void
+  onMoveHere: (id: string) => void
+  onExtra: (id: string) => void
+}) {
+  if (!cls) return <Sheet visible={false} title="" onClose={onClose} />
+  const e = week.find((x) => x.cls.id === cls.id)
+  const roster = [...(e && e.state !== "skip" ? [me] : []), ...cls.roster]
+  const full = !e && headcount(cls, week) >= CAPACITY
+  let actions: React.ReactNode = null
+  if (e?.extra && cls.day >= today) {
+    actions = <SheetButton kind="red" label="Cancel extra class" onPress={() => { cancelExtra(); onClose() }} />
+  } else if (e?.state === "on" && cls.day >= today) {
+    actions = <SheetButton kind="red" label="I can't go" onPress={() => onCant(cls.id)} />
+  } else if (e?.state === "pending") {
+    actions = <Text style={s.note}>Waiting for your coach. If they don&apos;t answer before the class, it stays as it was.</Text>
+  } else if (e?.state === "skip") {
+    actions = <SheetButton kind="line" label="I can go after all" onPress={() => onUndoSkip(cls.id)} />
+  } else if (mode?.kind === "move") {
+    const ok = !full && fits(cls, mode.from)
+    actions = (
+      <>
+        <SheetButton label="Move here" disabled={!ok} onPress={() => onMoveHere(cls.id)} />
+        {!ok && <Text style={s.hint}>{full ? "This class is full." : "Leave a rest day between classes."}</Text>}
+      </>
+    )
+  } else if (!e && cls.day >= today && !full) {
+    const ok = !extraUsed && fits(cls)
+    actions = (
+      <>
+        <SheetButton kind="line" label="Add as an extra class" disabled={!ok} onPress={() => onExtra(cls.id)} />
+        <Text style={s.hint}>
+          {extraUsed
+            ? "You already have an extra class this week."
+            : !fits(cls) ? "Leave a rest day between classes." : "One extra a week. Your coach approves it and it uses a session."}
+        </Text>
+      </>
+    )
+  }
+  return (
+    <Sheet
+      visible
+      title={`${classLabel(cls)} – ${formatTime(cls.start + CLASS_HOURS)}`}
+      subtitle={`${roster.length} of ${CAPACITY} climbers${full ? " · Full" : ""}`}
+      onClose={onClose}
+    >
+      <View>
+        {roster.length ? roster.map((u) => (
+          <View key={u} style={s.person}>
+            <View style={s.avatar}><Text style={s.avatarText}>{u[0]?.toUpperCase()}</Text></View>
+            <Text style={s.personName}>{u}</Text>
+          </View>
+        )) : <Text style={s.note}>No one yet.</Text>}
+      </View>
+      {actions}
+    </Sheet>
+  )
+}
+
 const s = StyleSheet.create({
-  addBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: C.green,
-    alignItems: "center", justifyContent: "center",
+  top: { paddingHorizontal: 16, gap: 8, marginBottom: 10 },
+  banner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
+    backgroundColor: "rgba(254,215,102,0.10)", borderWidth: 1, borderColor: "rgba(254,215,102,0.35)",
+    borderRadius: 12, padding: 12,
   },
-  dayRow: {
-    flexDirection: "row", paddingRight: 8,
-    borderBottomWidth: 1, borderBottomColor: C.border,
+  bannerText: { flex: 1, color: C.yellow, fontSize: 13, fontWeight: "600" },
+  bannerCancel: { color: C.textSecondary, fontSize: 13, fontWeight: "700" },
+  warn: {
+    fontSize: 13, lineHeight: 19, color: C.yellow, backgroundColor: "rgba(254,215,102,0.08)",
+    borderRadius: 12, padding: 12, overflow: "hidden",
   },
-  gutter: { width: 40 },
-  dayHead: { flex: 1, alignItems: "center", gap: 4, paddingTop: 4, paddingBottom: 8 },
-  dayName: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: C.textSecondary },
-  dayDot: { width: 6, height: 6, borderRadius: 3 },
-  grid: { flexDirection: "row", paddingRight: 8 },
-  hourLabel: {
-    position: "absolute", right: 6, fontSize: 10, color: C.textMuted, fontVariant: ["tabular-nums"],
-  },
-  col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
-  hourLine: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.05)" },
-  block: {
-    position: "absolute", left: 2, right: 2, borderRadius: 8, borderLeftWidth: 3,
-    borderLeftColor: C.green, backgroundColor: C.green + "2B",
-    paddingHorizontal: 4, paddingVertical: 4, overflow: "hidden",
-  },
-  preview: { borderWidth: 1.5, borderStyle: "dashed", borderColor: C.green, backgroundColor: C.green + "1A" },
-  previewTime: { fontSize: 11, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
-  blockTitle: { fontSize: 11, fontWeight: "800", color: C.textPrimary },
-  blockTime: { fontSize: 10, color: C.textSecondary, fontVariant: ["tabular-nums"] },
-  footer: {
-    borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg,
-    paddingHorizontal: 20, paddingTop: 12, gap: 10,
-  },
-  summary: { flexDirection: "row", justifyContent: "space-between" },
-  summaryText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
-  summaryStrong: { color: C.textPrimary },
-  saveBtn: { borderRadius: 14, paddingVertical: 15, alignItems: "center", backgroundColor: C.green },
-  saveOff: { backgroundColor: C.surfaceHigh },
-  saveText: { fontSize: 16, fontWeight: "800", color: "#10251A" },
+  note: { fontSize: 13, color: C.textSecondary, fontWeight: "600" },
+  hint: { fontSize: 12, color: C.yellow, marginTop: -4 },
+  person: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 13, fontWeight: "800", color: C.textSecondary },
+  personName: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
 })

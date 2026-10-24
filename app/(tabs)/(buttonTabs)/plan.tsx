@@ -8,6 +8,7 @@ import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkout
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
+import { ThisWeekCard } from "@/components/schedule/ThisWeekCard"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
@@ -186,6 +187,7 @@ export default function PlanScreen() {
                 />
               }
             >
+              <ThisWeekCard />
               {error ? (
                 <Empty icon="cloud-offline-outline" title="Couldn't load your plan" text="Pull down to try again." />
               ) : !plan ? (
