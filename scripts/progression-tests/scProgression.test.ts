@@ -28,8 +28,13 @@ assert.deepEqual([d([{ amount: 5 }, { amount: 6 }]).direction, d([{ amount: 5 }]
 assert.deepEqual([d([{ amount: 6 }, { amount: 6 }, { amount: 2 }]).direction, d([{ amount: 2 }]).reason], ["decrease", "under_floor"])
 // RPE is optional: no RPE still judged
 assert.equal(d([{ amount: 6 }, { amount: 6 }]).direction, "increase")
-// Most rated sets above the band → down, even in range
-assert.equal(d([{ amount: 5, rpe: 10 }, { amount: 5, rpe: 10 }, { amount: 5, rpe: 8 }]).reason, "effort_too_high")
+// Max force is meant to be heavy: max effort with reps in range holds, never lowers
+assert.deepEqual(
+  [d([{ amount: 5, rpe: 10 }, { amount: 5, rpe: 10 }, { amount: 5, rpe: 8 }]).direction, d([{ amount: 5, rpe: 10 }]).reason],
+  ["hold", "max_effort"],
+)
+// Other focuses: most rated sets above the band → down, even in range
+assert.equal(decideNext(targetFor("hypertrophy", "")!, [{ amount: 10, rpe: 10 }, { amount: 10, rpe: 10 }], "hypertrophy").reason, "effort_too_high")
 // Top of the range but one set above the band → hold
 assert.equal(d([{ amount: 6, rpe: 10 }, { amount: 6, rpe: 9 }, { amount: 6, rpe: 9 }]).reason, "max_effort")
 // RPE below the band no longer pushes up on its own (reps drive it)
@@ -69,6 +74,11 @@ assert.equal(describeWeight(d([{ amount: 5 }]), 20, 20, "kg"), "Same weight — 
 // Bodyweight never says "add weight"
 assert.ok(!/weight/i.test(describeWeight(up, 0, 0, "kg")))
 assert.equal(describeWeight(d([]), 20, 20, "kg"), "")
+// Effort comments follow the focus: max is right for max force, too close
+// to failure for hypertrophy, too slow for explosiveness
+assert.equal(describeWeight(d([{ amount: 5, rpe: 10 }]), 20, 20, "kg"), "Same weight — heavy enough last time, stay here until it feels solid")
+assert.equal(describeWeight(decideNext(targetFor("hypertrophy", "")!, [{ amount: 10, rpe: 10 }], "hypertrophy"), 20, 19, "kg"), "▼ 20 → 19 kg — too close to failure last time (stop about 2 reps short)")
+assert.equal(describeWeight(decideNext(targetFor("explosiveness", "")!, [{ amount: 5, rpe: 8 }], "explosiveness"), 20, 19, "kg"), "▼ 20 → 19 kg — too heavy to move fast last time")
 
 const chain = [{ exerciseId: "k", name: "Knee push-up" }, { exerciseId: "p", name: "Push-up" }]
 assert.equal(describeLevel(up, chain[0], stepLevel(chain, 0, "increase")!), "▲ Knee push-up → Push-up — 6 reps on every set")
@@ -147,8 +157,9 @@ assert.deepEqual(["easy", "solid", "max"].map((e) => effortToRpe(e as any, "max_
 assert.deepEqual(["easy", "solid", "max"].map((e) => effortToRpe(e as any, "hypertrophy")), [6, 8, 9])
 assert.deepEqual(["easy", "solid", "max"].map((e) => effortToRpe(e as any, "explosiveness")), [3, 5, 6.5])
 assert.deepEqual(["easy", "solid", "max"].map((e) => effortToRpe(e as any)), [6, 8, 9.5])
-// …and the engine reads them as intended: Max on every set = effort too high
-assert.equal(d([{ amount: 5, rpe: effortToRpe("max", "max_force") }]).reason, "effort_too_high")
+// …and the engine reads them as intended: Max holds for max force, steps down otherwise
+assert.equal(d([{ amount: 5, rpe: effortToRpe("max", "max_force") }]).direction, "hold")
+assert.equal(decideNext(hyp, [{ amount: 10, rpe: effortToRpe("max", "hypertrophy") }], "hypertrophy").direction, "decrease")
 assert.equal(d([{ amount: 6, rpe: effortToRpe("solid", "max_force") }]).direction, "increase")
 assert.equal(d([{ amount: 6, rpe: effortToRpe("easy", "max_force") }]).direction, "increase")
 // Rep buttons: one under the floor to one over the top

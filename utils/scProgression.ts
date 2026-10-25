@@ -101,8 +101,9 @@ export type DecisionReason =
   | "top_of_range"     // every set at the top → step up
   | "in_range"         // hold, add a rep
   | "max_effort"       // every set at the top, but effort was above the band → hold
+                       // (max force: any max effort with reps in range)
   | "under_floor"      // a set under the floor → step down
-  | "effort_too_high"  // most rated sets above the band → step down
+  | "effort_too_high"  // most rated sets above the band → step down (not max force)
   | "dropped_in_session" // would step up, but the load was lowered mid-session → hold
   | "speed_focus"      // explosiveness: more reps isn't progress → hold (speed is up to the athlete)
   | "no_data"
@@ -111,6 +112,7 @@ export interface Decision {
   direction: Direction
   reason: DecisionReason
   target: Target
+  focus?: Focus   // what it was judged at — the wording follows it
 }
 
 // `droppedInSession`: the session had an automatic easier round (see
@@ -118,14 +120,18 @@ export interface Decision {
 // straight back up — next time holds there instead.
 export function decideNext(target: Target, sets: WorkingSet[], focus?: Focus, opts: { droppedInSession?: boolean } = {}): Decision {
   const judged = sets.filter((s) => Number.isFinite(s.amount))
-  const decision = (direction: Direction, reason: DecisionReason): Decision => ({ direction, reason, target })
+  const decision = (direction: Direction, reason: DecisionReason): Decision => ({ direction, reason, target, ...(focus ? { focus } : {}) })
   if (judged.length === 0) return decision("hold", "no_data")
   if (judged.some((s) => s.amount < target.low)) return decision("decrease", "under_floor")
 
   const band = focus ? FOCUS_RPE_BAND[focus] : undefined
   const rated = band ? judged.filter((s) => s.rpe != null && Number.isFinite(s.rpe)) : []
   const overBand = rated.filter((s) => s.rpe! > band!.high).length
-  if (rated.length > 0 && overBand > rated.length / 2) return decision("decrease", "effort_too_high")
+  // Max force is meant to be heavy: a max effort with every rep in range
+  // holds the weight rather than lowering it — only missing the floor
+  // does. Hypertrophy (should stop short of failure) and explosiveness
+  // (too heavy to move fast) still step down.
+  if (focus !== "max_force" && rated.length > 0 && overBand > rated.length / 2) return decision("decrease", "effort_too_high")
 
   // Explosiveness progresses by speed, which the app can't measure — the
   // athlete moves every rep as fast as they can. More reps isn't progress,
@@ -138,7 +144,7 @@ export function decideNext(target: Target, sets: WorkingSet[], focus?: Focus, op
     if (overBand > 0) return decision("hold", "max_effort")
     return opts.droppedInSession ? decision("hold", "dropped_in_session") : decision("increase", "top_of_range")
   }
-  return decision("hold", "in_range")
+  return decision("hold", focus === "max_force" && overBand > 0 ? "max_effort" : "in_range")
 }
 
 // ─── Logging helpers (docs/sc-progression-plan.md Phase 4) ──────────────────
@@ -266,13 +272,22 @@ export function planRoundDrop(target: Target | null, amount: number | undefined,
 // at the end of the block.
 export type When = "last time" | "today" | "that day"
 
+// Worded for the focus the session was judged at: a max effort is right
+// for max force, too close to failure for hypertrophy, too slow for
+// explosiveness.
 export function reasonText(d: Decision, when: When): string {
   const noun = d.target.unit === "seconds" ? "s" : " reps"
   switch (d.reason) {
     case "top_of_range":    return `${d.target.high}${noun} on every set`
-    case "max_effort":      return "top of the range, but effort was max"
+    case "max_effort":
+      if (d.focus === "max_force") return `heavy enough ${when}, stay here until it feels solid`
+      if (d.focus === "hypertrophy") return "top of the range, but close to failure, stay here until it feels solid"
+      return "top of the range, but effort was max"
     case "under_floor":     return `under ${d.target.low}${noun} ${when}`
-    case "effort_too_high": return `effort above target ${when}`
+    case "effort_too_high":
+      if (d.focus === "hypertrophy") return `too close to failure ${when} (stop about 2 reps short)`
+      if (d.focus === "explosiveness") return `too heavy to move fast ${when}`
+      return `effort above target ${when}`
     case "dropped_in_session": return `the weight was lowered mid-session ${when}`
     case "speed_focus":     return "keep every rep as fast as you can"
     case "in_range":        return d.target.unit === "seconds" ? "aim for a few more seconds" : "aim for one more rep"
