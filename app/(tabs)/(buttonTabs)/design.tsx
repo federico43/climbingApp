@@ -4,11 +4,9 @@ import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { SettingsButton } from "@/components/SettingsButton"
 import { AthleteDetail } from "@/components/coach/AthleteDetail"
-import { KpiRow } from "@/components/coach/KpiRow"
 import { RosterList } from "@/components/coach/RosterList"
 import { useCoachRoster } from "@/hooks/useCoachRoster"
-import { filterRoster, INACTIVE_STEPS, rosterKpis, type RosterFilter } from "@/utils/coachRoster"
-import { localDateStr } from "@/utils/planRotation"
+import { filterRoster, INACTIVE_STEPS, type RosterFilter } from "@/utils/coachRoster"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
@@ -16,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-// Coach dashboard (docs/coach-dashboard.md): roster + KPIs + athlete detail.
+// Coach dashboard (docs/coach-dashboard.md): roster + athlete detail.
 // ≥1200: roster · detail main · detail side; 900–1199: roster · detail;
 // <900: roster screen → detail screen.
 
@@ -85,11 +83,6 @@ export default function DesignScreen() {
     else { setFilter(null); setInactiveDays(INACTIVE_STEPS[0]) }
   }
 
-  const today = localDateStr(new Date())
-  const kpis = useMemo(
-    () => rosterKpis(roster.summaries, roster.sessions, today, inactiveDays),
-    [roster.summaries, roster.sessions, today, inactiveDays],
-  )
   const counts = useMemo(() => ({
     homework: filterRoster(roster.summaries, "", "homework", inactiveDays).length,
     no_plan: filterRoster(roster.summaries, "", "no_plan", inactiveDays).length,
@@ -106,9 +99,6 @@ export default function DesignScreen() {
     try { await refresh() } finally { setRefreshing(false) }
   }
 
-  const kpiRow = (
-    <KpiRow kpis={kpis} inactiveDays={inactiveDays} activeFilter={filter} onFilter={toggleFilter} scroll={!isWide} />
-  )
   const rosterList = (
     <RosterList
       list={list}
@@ -120,7 +110,6 @@ export default function DesignScreen() {
       inactiveDays={inactiveDays}
       selectedId={selectedId}
       onSelect={select}
-      header={isWide ? undefined : kpiRow}
       showChevron={!isWide}
       refreshing={refreshing}
       onRefresh={pullRefresh}
@@ -173,7 +162,6 @@ export default function DesignScreen() {
             <View style={styles.wide}>
               <View style={[styles.rosterPane, { width: split ? 300 : 280 }]}>{rosterList}</View>
               <View style={styles.detailPane}>
-                <View style={styles.kpiWrap}>{kpiRow}</View>
                 {detail ?? (
                   <View style={styles.center}>
                     <Ionicons name="people-outline" size={32} color={C.textMuted} />
@@ -210,7 +198,6 @@ const styles = StyleSheet.create({
   wide: { flex: 1, flexDirection: "row" },
   rosterPane: { borderRightWidth: 1, borderRightColor: C.border, paddingTop: 10 },
   detailPane: { flex: 1, minWidth: 0 },
-  kpiWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 2 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   centerText: { fontSize: 14, color: C.textMuted, textAlign: "center" },
 })
