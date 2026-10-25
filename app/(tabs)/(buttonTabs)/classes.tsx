@@ -4,7 +4,7 @@ import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import {
-  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   addClassProblem, dateOf, formatTime, startFromOffset, weekDates, ymd,
 } from "@/utils/classSchedule"
 import {
@@ -15,12 +15,13 @@ import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useMemo, useState } from "react"
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PROBLEM: Record<AddClassProblem, string> = {
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
+  bigDays: `Only ${MAX_BIG_DAYS} days a week can have ${MAX_CLASSES_PER_DAY} classes`,
   overlap: "Overlaps another class",
   blocked: "You blocked this time",
   late: `Classes end by ${GRID_END}:00`,
@@ -37,7 +38,7 @@ type SheetState =
   | { kind: "package"; athleteId: string }
   | null
 
-// Coach tab: plan next week's classes (max 2 a day), block the times you
+// Coach tab: plan next week's classes (2 a day, 3 on up to 2 days), block the times you
 // can't teach, answer athletes' requests, add packages. The week is a draft
 // on the phone until it's published.
 export default function ClassesScreen() {
@@ -47,6 +48,7 @@ export default function ClassesScreen() {
   const [sheet, setSheet] = useState<SheetState>(null)
   // A new package: sessions and weeks to use them.
   const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
+  const [pkgQuery, setPkgQuery] = useState("")
   const requests = pendingRequests(st)
   // This week's requests only show in the list; the grid is next week.
   const gridRequests = requests.filter((r) => r.weekStart === st.nextWeekStart)
@@ -147,7 +149,7 @@ export default function ClassesScreen() {
         <FeatureIntro
           id="coach-classes"
           pages={[
-            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
+            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
             { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
             { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
@@ -156,7 +158,7 @@ export default function ClassesScreen() {
         <View style={s.header}>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>Next week</Text>
-            <Text style={s.subtitle}>{range} · max {MAX_CLASSES_PER_DAY} classes a day</Text>
+            <Text style={s.subtitle}>{range} · {CLASSES_PER_DAY} classes a day, {MAX_CLASSES_PER_DAY} on up to {MAX_BIG_DAYS} days</Text>
           </View>
           <IntroButton id="coach-classes" />
           <SettingsButton />
@@ -284,7 +286,20 @@ export default function ClassesScreen() {
         subtitle="Sessions each athlete paid for"
         onClose={() => setSheet(null)}
       >
-        {st.athletes.map((a) => {
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={pkgQuery}
+            onChangeText={setPkgQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {st.athletes.filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())).map((a) => {
           const latest = st.packages.filter((p) => p.athleteId === a.id).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
           return (
             <View key={a.id} style={s.req}>
@@ -306,6 +321,9 @@ export default function ClassesScreen() {
           )
         })}
         {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
+        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
+          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
+        )}
       </Sheet>
 
       <Sheet
@@ -347,6 +365,11 @@ const DAYS = [0, 1, 2, 3, 4, 5, 6]
 const clampDay = (d: number) => Math.max(0, Math.min(6, d))
 
 const s = StyleSheet.create({
+  search: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 12, height: 40,
+  },
+  searchInput: { flex: 1, color: C.textPrimary, fontSize: 14.5, height: 40 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
   subtitle: { fontSize: 13, fontWeight: "500", color: C.textSecondary, marginTop: 2 },

@@ -5,7 +5,8 @@ import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
-  AddClassProblem, CAPACITY, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, GymClass, addClassProblem, athleteWeek, busyDays, classLabel, formatTime, headcount,
+  AddClassProblem, CAPACITY, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classLabel, formatTime,
+  headcount, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, refreshClassSchedule, saveUsualClasses, useClassSchedule } from "@/utils/classScheduleStore"
@@ -18,7 +19,8 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 // Why a proposed time doesn't work: the whole 2h 30m class has to fit.
 const NO_FIT: Record<AddClassProblem, string> = {
-  max: "That day already has 2 classes.",
+  max: `That day already has ${CLASSES_PER_DAY} classes. Pick one of them instead.`,
+  bigDays: `That day already has ${CLASSES_PER_DAY} classes. Pick one of them instead.`,
   overlap: "It runs into another class. Pick a free time.",
   blocked: "Your coach can't teach then.",
   late: `Classes have to end by ${GRID_END}:00.`,
@@ -100,10 +102,10 @@ export default function ScheduleScreen() {
 
   const proposingFrom = mode?.kind === "propose" ? mode.from : null
   const movingFrom = mode?.kind === "move" ? mode.from : null
-  // Days a class can still go to: a rest day around the others, and not a
-  // day that already has its 2 classes.
+  // Days a new time can go to: a rest day around the others, and fewer than
+  // 2 classes that day (a third is the coach's call; pick an existing class).
   const daysFor = (from: string) =>
-    openDays(busyDays(week, from), today).filter((d) => wk.classes.filter((c) => c.day === d).length < MAX_CLASSES_PER_DAY)
+    openDays(busyDays(week, from), today).filter((d) => wk.classes.filter((c) => c.day === d).length < CLASSES_PER_DAY)
   const proposeDays = proposingFrom ? daysFor(proposingFrom) : []
   const proposeAt = (day: number, y: number) => {
     if (!proposingFrom) return
@@ -116,7 +118,7 @@ export default function ScheduleScreen() {
     // A tap only gets close; the time is fine-tuned in the sheet before sending.
     setDraft({ day, start: startFromOffset(y, HOUR_HEIGHT) })
   }
-  const draftProblem = draft ? addClassProblem(wk.classes, wk.blocks, draft.day, draft.start) : null
+  const draftProblem = draft ? proposeProblem(wk.classes, wk.blocks, draft.day, draft.start) : null
   const sendDraft = async () => {
     if (!proposingFrom || !draft) return
     const sent = draft

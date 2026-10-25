@@ -16,7 +16,7 @@ const PACKAGES_TABLE = "packages"
 
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
 export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[] }
-export interface ClassPackage { $id: string; athleteId: string; total: number; startsOn: string; useBy: string }
+export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string }
 
 const toClass = (r: any): GymClass => ({ id: r.$id, day: r.day, start: r.start, roster: r.roster ?? [] })
 
@@ -47,10 +47,10 @@ export async function loadPackages(athleteId?: string): Promise<ClassPackage[]> 
 }
 
 // The athlete's classes and skips since `weekStart`, to count sessions used.
-export async function loadHistory(athleteId: string, weekStart: string): Promise<{ classes: (GymClass & { weekStart: string })[]; requests: ClassRequestRow[] }> {
+export async function loadHistory(athleteId: string, weekStart: string): Promise<{ classes: (GymClass & { weekStart: string })[]; requests: (ClassRequestRow & { $createdAt?: string })[] }> {
   const [classes, requests] = await Promise.all([
     listAllRows<any>(CLASSES_TABLE, [Query.contains("roster", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
-    listAllRows<ClassRequestRow>(REQUESTS_TABLE, [Query.equal("athleteId", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
+    listAllRows<ClassRequestRow & { $createdAt?: string }>(REQUESTS_TABLE, [Query.equal("athleteId", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
   ])
   return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests }
 }

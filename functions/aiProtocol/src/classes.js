@@ -1,13 +1,15 @@
 import {
-  CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem, gymNow,
-  mondayOfYmd, parseSlot, restDayOk, sessionsLeft, slotKey,
+  CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
+  currentPackage, gymNow, mondayOfYmd, packageLocked, parseSlot, proposeProblem, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
 import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
 
 // Weekly classes (Plan › This week for athletes, the Classes tab for
 // coaches). Everyone reads the tables; every write goes through here so the
-// rules hold: 4 per class, 2 classes a day, a rest day between an athlete's
-// classes, nothing over the coach's blocked times. `ctx` carries the
+// rules hold: 4 per class, 2 classes a day (3 on up to 2 days, set by the
+// coach; athletes only propose on days with fewer than 2), a rest day
+// between an athlete's classes, nothing over the coach's blocked times,
+// nothing for an athlete whose package is used up or expired. `ctx` carries the
 // Appwrite helpers from main.js: { db, q, getUserRow, listCoachRows,
 // listUsers, push, log, error, tz }.
 
@@ -82,6 +84,9 @@ async function setRoster(ctx, cls, roster) {
 async function request(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   if (!KINDS.includes(body.kind)) return fail(400, "Bad request.")
+  if (body.kind !== "skip" && (await athletePackage(ctx, userId, now)).locked) {
+    return fail(409, "Your package is used up or expired. Ask your coach to renew it.")
+  }
   const from = body.kind === "extra" ? null : await ctx.db.get(CLASSES, String(body.classId ?? ""))
   const to = ["move", "extra"].includes(body.kind) ? await ctx.db.get(CLASSES, String(body.toClassId ?? "")) : null
   if (body.kind !== "extra" && !from) return fail(404, "No such class.")
@@ -126,7 +131,7 @@ async function request(ctx, userId, body) {
     const day = Number(body.day)
     const start = Number(body.start)
     const blocks = parseBlocks((await weekRow(ctx, weekStart))?.blocks)
-    const problem = classProblem(classes, blocks, day, start)
+    const problem = proposeProblem(classes, blocks, day, start)
     if (problem) return fail(409, PROBLEM_TEXT[problem])
     if (classMs({ weekStart, day, start }) <= now.ms) return fail(409, "That time already passed.")
     if (!restDayOk(busy, day)) return fail(409, "Leave a rest day between classes.")
@@ -201,15 +206,18 @@ async function answer(ctx, userId, body) {
   return ok({ request: updated })
 }
 
-// Put athletes in the classes they usually take, where there's room, they
-// aren't in any class that week yet and their plan isn't paused that day.
-// Returns the athletes added.
+// Put athletes in the classes they usually take, where
+// there's room, they aren't in any class that week yet, their plan isn't
+// paused that day and their package isn't used up or expired. Returns the
+// athletes added.
 async function fillFromDefaults(ctx, classes, users, onlyUser, paused) {
   const added = new Set()
+  const now = gymNow(new Date(), ctx.tz)
   for (const u of users) {
     if (onlyUser && u.$id !== onlyUser) continue
     const slots = (u.defaultClasses ?? []).map(parseSlot).filter(Boolean)
     if (!slots.length || classes.some((c) => (c.roster ?? []).includes(u.$id))) continue
+    if ((await athletePackage(ctx, u.$id, now)).locked) continue
     for (const s of slots) {
       const c = classes.find((x) => x.day === s.day && x.start === s.start)
       if (!c || (c.roster ?? []).length >= CAPACITY) continue
@@ -403,23 +411,30 @@ async function addPackage(ctx, userId, body) {
   }
   const row = await ctx.db.create(PACKAGES, { athleteId: body.athleteId, total, startsOn: body.startsOn, useBy: body.useBy })
   if (!row) return fail(502, "Could not save.")
+  // A renewal unlocks the athlete: back into their usual classes still ahead.
+  const athlete = await ctx.getUserRow(body.athleteId)
+  if (athlete) await joinUsualClasses(ctx, athlete, await pausesByAthlete(ctx))
   await pushUser(ctx, body.athleteId, "Package ready", `${total} sessions, use them by ${body.useBy}.`, { type: "class_package" })
   return ok({ package: row })
 }
 
-// Sessions left for an athlete right now, or null without a package.
-async function athleteSessionsLeft(ctx, athleteId, now) {
-  const pkgs = (await ctx.db.list(PACKAGES, [ctx.q.equal("athleteId", athleteId)]))
-    .filter((p) => p.startsOn <= now.ymd)
-    .sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))
-  const pkg = pkgs[0]
-  if (!pkg) return null
+// The athlete's package right now: sessions left (null without a package)
+// and whether they're locked out. Classes count from when the package was
+// added (a renewal right after a class doesn't pay for it twice).
+async function athletePackage(ctx, athleteId, now) {
+  const pkg = currentPackage(await ctx.db.list(PACKAGES, [ctx.q.equal("athleteId", athleteId)]), now.ymd)
+  if (!pkg) return { left: null, locked: false }
   const from = mondayOfYmd(pkg.startsOn)
+  const since = pkg.$createdAt ? gymNow(new Date(pkg.$createdAt), ctx.tz).ms : 0
   const classes = await ctx.db.list(CLASSES, [ctx.q.contains("roster", athleteId), ctx.q.gte("weekStart", from)])
-  const done = classes.filter((c) => addDays(c.weekStart, c.day) >= pkg.startsOn && classMs(c, CLASS_HOURS) <= now.ms).length
+  const done = classes.filter((c) => {
+    const end = classMs(c, CLASS_HOURS)
+    return addDays(c.weekStart, c.day) >= pkg.startsOn && end > since && end <= now.ms
+  }).length
   const skips = (await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("weekStart", from)]))
-    .filter((r) => r.kind === "skip" && r.status === "accepted").length
-  return sessionsLeft(pkg.total, done, skips)
+    .filter((r) => r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
+  const left = sessionsLeft(pkg.total, done, skips)
+  return { left, locked: packageLocked(pkg, left, now.ymd) }
 }
 
 export async function handleClassAction(action, userId, body, ctx) {
@@ -497,7 +512,7 @@ export async function runClassCron(ctx, date = new Date()) {
     const end = classMs(c, CLASS_HOURS)
     if (end > now.ms || end <= now.ms - 3600000) continue
     for (const a of c.roster ?? []) {
-      const left = await athleteSessionsLeft(ctx, a, now)
+      const { left } = await athletePackage(ctx, a, now)
       if (left !== LOW_SESSIONS && left !== 0) continue
       report.low++
       const u = await ctx.getUserRow(a)

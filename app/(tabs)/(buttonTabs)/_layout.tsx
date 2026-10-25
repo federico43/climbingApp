@@ -1,5 +1,6 @@
 import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
+import { PackageLock } from "@/components/schedule/PackageLock"
 import { WorkOutState } from "@/components/workOutState"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
@@ -129,6 +130,7 @@ function TabsWithPlan() {
       <WorkoutModalHost />
       {/* Tapped homework notifications → the homework card on home */}
       <HomeworkNotificationRouter hasPlan={hasPlan} />
+      <PackageLock />
     </WorkoutProvider>
   )
 }
