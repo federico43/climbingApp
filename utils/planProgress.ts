@@ -3,6 +3,7 @@
 // (docs/redesign.md §4, docs/training-plan.md §3 `workoutsession`).
 
 import { addDays, localDateStr, planWeek } from "@/utils/planRotation"
+import { pauseOn, type PlanPause } from "@/utils/planPauses"
 
 export interface ProgressSession {
   $createdAt: string
@@ -103,16 +104,17 @@ export function trainedDaysIn(windowStart: string, windowEnd: string, sessions: 
 }
 
 // Plan workouts done in the plan week `today` falls in.
-export function doneThisWeek(windowStart: string, done: Map<number, string>, today: string): number {
-  const week = planWeek(windowStart, today)
+export function doneThisWeek(windowStart: string, done: Map<number, string>, today: string, pauses?: PlanPause[]): number {
+  const week = planWeek(windowStart, today, pauses)
   let n = 0
-  for (const date of done.values()) if (planWeek(windowStart, date) === week) n++
+  for (const date of done.values()) if (planWeek(windowStart, date, pauses) === week) n++
   return n
 }
 
-// Days from today to the plan's end, today included (0 once it's over).
-export function daysLeft(windowStart: string, windowEnd: string, today: string): number {
+// Training days from today to the plan's end, today included (0 once it's
+// over). Paused days don't count.
+export function daysLeft(windowStart: string, windowEnd: string, today: string, pauses?: PlanPause[]): number {
   const from = today < windowStart ? windowStart : today
   if (from > windowEnd) return 0
-  return planDays(from, windowEnd).length
+  return planDays(from, windowEnd).filter((d) => !pauseOn(pauses, d)).length
 }

@@ -58,6 +58,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `scPatterns` | string (JSON) | `[{ movementType, exerciseIds: [id1, id2?] }]` × 4, in pick order. Fingers has `[]` |
 | `movementTypeFocus` | string (JSON) | Pre-v2 only — read, never written |
 | `startType` | string, optional | Main type of workout 1: `strength` \| `power_endurance` \| `power`. Missing / null = strength. Only written when not strength (or to clear it) |
+| `pauses` | string (JSON), optional | `[{ start, end, reason? }]`, `YYYY-MM-DD`, inclusive. Written only by the climbingApp function (`classPause`), which also moves `windowEnd`. See §4.1 |
 
 **`protocol`** (workouts) — plan fields, set only on workouts built from a plan:
 
@@ -101,6 +102,35 @@ in Appwrite but no longer read.
   shows "Start a new plan".
 - **Pre-v2 plans** (no `focus`) can't be rotated; the card asks the coach to
   edit the plan and set a focus.
+
+### 4.1 Pauses (2026-10-25)
+
+The coach can pause a plan (holidays, an injury) from the Training plan card:
+**+ Add pause** → start date, 1–4 weeks, optional reason. A pause can also
+be removed (not started yet) or ended early (**End now**: its last day
+becomes yesterday). Rules in `utils/planPauses.ts`, mirrored on the server
+in `functions/aiProtocol/src/planPauses.js`.
+
+- The plan keeps 6 weeks of training: `windowEnd` = start + 42 days − 1 +
+  paused days. `planWeek(start, date, pauses)` skips paused days, so
+  "week X of 6" stands still during a pause; days left skip them too.
+- The rotation doesn't change (it counts built workouts). The coach can
+  still build ahead while paused. The week-6 Density test uses the paused
+  week count.
+- Athlete: Plan shows **Plan paused** (back on …) instead of Up next, or
+  **Pause coming up** a week before; the timeline greys the paused days.
+- The `classPause` action (coach only, the plan's whole list each time)
+  moves the athlete's current package's `useBy` by the change in paused
+  days, takes them out of classes on paused days still ahead, drops pending
+  requests into paused days and puts them back into their usual classes for
+  days no longer paused. Pending homework due on or after a new pause's
+  start gets its `dueBy` moved by the pause's length (a day picked inside
+  the pause is cleared); removing a pause doesn't pull deadlines back. Publishing a week skips paused athletes when
+  filling usual classes, and doesn't send them "Next week's classes are up"
+  if the whole week is paused. Requests into a paused day are refused.
+- Pushes: "Training paused" when one is added, "Pause changed" when one is
+  removed or ended early, and "Your plan restarts tomorrow" at 20:00 on the
+  pause's last day (class cron).
 
 ## 5. The rotation
 

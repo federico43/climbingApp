@@ -175,4 +175,47 @@ report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d, 12, 30)))
 assert.equal(report.low, 1)
 assert.ok(pushes.some((p) => p.to === "coach" && p.body === "ana has 2 sessions left."))
 
+// ── Plan pauses ──────────────────────────────────────────────────────────────
+// ana's plan started this coming Monday; the coach pauses its second week.
+const week2 = addDays(week, 7)
+const plan = await ctx.db.create("training_plans", { athleteId: "ana", status: "active", windowStart: week, windowEnd: addDays(week, 41) })
+const pkg = [...t("packages").values()].find((p) => p.athleteId === "ana")!
+const useBy = pkg.useBy
+const pause = { start: week2, end: addDays(week2, 6), reason: "Holidays" }
+assert.equal((await call("classPause", "ana", { planId: plan.$id, pauses: [pause] })).status, 403)
+assert.equal((await call("classPause", "coach", { planId: plan.$id, pauses: [{ start: week2, end: addDays(week2, 29) }] })).status, 409)
+// Homework: due inside the pause (day picked in it), due before it, already overdue
+const [py, pm, pd] = week2.split("-").map(Number)
+const hwIn = await ctx.db.create("protocol", {
+  athleteId: "ana", planPart: "homework", dueBy: addDays(week2, 2), scheduledFor: new Date(Date.UTC(py, pm - 1, pd + 1, 15)).toISOString(),
+})
+const hwBefore = await ctx.db.create("protocol", { athleteId: "ana", planPart: "homework", dueBy: addDays(week2, -1), scheduledFor: null })
+const hwOld = await ctx.db.create("protocol", { athleteId: "ana", planPart: "homework", dueBy: "2020-01-01", scheduledFor: null })
+pushes.length = 0
+const paused = await call("classPause", "coach", { planId: plan.$id, pauses: [pause] })
+assert.equal(paused.status, 200)
+assert.equal(paused.json.homeworkMoved, 1)
+assert.equal(t("protocol").get(hwIn.$id)!.dueBy, addDays(week2, 9))
+assert.equal(t("protocol").get(hwIn.$id)!.scheduledFor, null)
+assert.equal(t("protocol").get(hwBefore.$id)!.dueBy, addDays(week2, -1))
+assert.equal(t("protocol").get(hwOld.$id)!.dueBy, "2020-01-01")
+assert.equal(t("training_plans").get(plan.$id)!.windowEnd, addDays(week, 48))
+assert.equal(t("packages").get(pkg.$id)!.useBy, addDays(useBy, 7))
+assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Training paused" && p.body.includes("(Holidays)") && p.body.includes("homework")))
+// Publishing the paused week leaves her out of her usual classes
+assert.equal((await call("classPublish", "coach", { weekStart: week2, classes: [{ day: 0, start: 9.5 }, { day: 3, start: 9.5 }] })).status, 200)
+const mon2 = [...t("classes").values()].find((c) => c.weekStart === week2 && c.day === 0)!
+assert.deepEqual(mon2.roster, ["bea"])
+assert.equal((await call("classRequest", "ana", { kind: "extra", toClassId: mon2.$id })).status, 409)
+// The night the pause ends
+const [y2, m2, d2] = week2.split("-").map(Number)
+report = await runClassCron(ctx, new Date(Date.UTC(y2, m2 - 1, d2 + 6, 20, 5)))
+assert.equal(report.resumed, 1)
+// Taking the pause off gives the days back
+pushes.length = 0
+assert.equal((await call("classPause", "coach", { planId: plan.$id, pauses: [] })).status, 200)
+assert.equal(t("training_plans").get(plan.$id)!.windowEnd, addDays(week, 41))
+assert.equal(t("packages").get(pkg.$id)!.useBy, useBy)
+assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
+
 console.log("classes: all tests passed")

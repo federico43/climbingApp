@@ -50,6 +50,8 @@ const TABLES = [
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).
 const USER_COLUMNS = [str("defaultClasses", 8, { array: true })]
+// Plan pauses, JSON [{ start, end, reason? }] (utils/planPauses.ts).
+const PLAN_COLUMNS = [str("pauses", 2000)]
 
 async function api(method, path, body) {
   const res = await fetch(`${APPWRITE_ENDPOINT}${path}`, {
@@ -115,4 +117,6 @@ for (const t of TABLES) {
 }
 console.log("users")
 await ensureColumns("users", USER_COLUMNS)
+console.log("training_plans")
+await ensureColumns("training_plans", PLAN_COLUMNS)
 if (!APPLY) console.log("\nDry run — pass --apply to create them.")

@@ -3,11 +3,12 @@ import { ProtocolRow, SessionRow, TrainingPlanRow } from "@/services/BoulderGrap
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { daysLeft, planDays, trainedDaysIn } from "@/utils/planProgress"
 import { localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
+import { pauseOn, type PlanPause } from "@/utils/planPauses"
 import { Ionicons } from "@expo/vector-icons"
 import { StyleSheet, Text, View } from "react-native"
 
 // The plan's timeline: start → end, status, days left and the 6-week day
-// grid (trained / today / to come / homework days). The athlete sees it on
+// grid (trained / today / to come / homework / paused days). The athlete sees it on
 // their Plan page; the coach sees the very same card on the dashboard
 // (docs/coach-dashboard.md §4.6).
 
@@ -43,11 +44,12 @@ export function PlanTimelineCard({
   homework: ProtocolRow[]
 }) {
   const today = localDateStr(new Date())
-  const { windowStart, windowEnd } = plan
+  const { windowStart, windowEnd, pauses } = plan
   const notStarted = today < windowStart
   const over = today > windowEnd
-  const week = Math.min(Math.max(planWeek(windowStart, today), 1), PLAN_WEEKS)
-  const left = daysLeft(windowStart, windowEnd, today)
+  const week = Math.min(Math.max(planWeek(windowStart, today, pauses), 1), PLAN_WEEKS)
+  const left = daysLeft(windowStart, windowEnd, today, pauses)
+  const pausedNow = pauseOn(pauses, today)
 
   const days = planDays(windowStart, windowEnd)
   const trained = trainedDaysIn(windowStart, windowEnd, sessions)
@@ -62,7 +64,9 @@ export function PlanTimelineCard({
     ? `Starts ${shortDate(windowStart)}`
     : over
       ? "Plan finished"
-      : `Week ${week} of ${PLAN_WEEKS}`
+      : pausedNow
+        ? `Paused until ${shortDate(pausedNow.end)} · week ${week} of ${PLAN_WEEKS}`
+        : `Week ${week} of ${PLAN_WEEKS}`
 
   return (
     <View style={styles.card}>
@@ -84,19 +88,23 @@ export function PlanTimelineCard({
         <Text style={[styles.statusPillText, { color: focusColor }]}>{statusLine}</Text>
       </View>
       <View style={styles.timelineDivider} />
-      <DaysGrid days={days} trained={trained} homework={homeworkDays} today={today} />
+      <DaysGrid days={days} trained={trained} homework={homeworkDays} today={today} pauses={pauses} windowStart={windowStart} />
       <View style={styles.legend}>
         <LegendDot style={styles.cellTrained} label="Trained" />
         <LegendDot style={[styles.cellFuture, styles.cellToday]} label="Today" />
         <LegendDot style={styles.cellFuture} label="To come" />
         {homeworkDays.size > 0 && <LegendDot style={[styles.cellFuture, styles.cellHomework]} label="Homework" />}
+        {pauses.length > 0 && <LegendDot style={styles.cellPaused} label="Paused" />}
       </View>
     </View>
   )
 }
 
-// One row per plan week, one cell per day, starting on the plan's first day.
-function DaysGrid({ days, trained, homework, today }: { days: string[]; trained: Set<string>; homework: Set<string>; today: string }) {
+// One row per calendar week, one cell per day, starting on the plan's first
+// day. A row is labelled with its plan week, or "–" when it's all paused.
+function DaysGrid({ days, trained, homework, today, pauses, windowStart }: {
+  days: string[]; trained: Set<string>; homework: Set<string>; today: string; pauses: PlanPause[]; windowStart: string
+}) {
   const weeks: string[][] = []
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
   return (
@@ -109,12 +117,13 @@ function DaysGrid({ days, trained, homework, today }: { days: string[]; trained:
       </View>
       {weeks.map((week, w) => (
         <View key={w} style={styles.gridRow}>
-          <Text style={styles.gridWeekLabel}>W{w + 1}</Text>
+          <Text style={styles.gridWeekLabel}>{rowLabel(week, pauses, windowStart)}</Text>
           {week.map((d) => {
             const isTrained = trained.has(d)
             const style = isTrained
               ? styles.cellTrained
-              : d < today ? styles.cellPast : styles.cellFuture
+              : pauseOn(pauses, d) ? styles.cellPaused
+                : d < today ? styles.cellPast : styles.cellFuture
             return (
               <View key={d} style={styles.gridCellWrap}>
                 <View style={[styles.cell, style, homework.has(d) && !isTrained && styles.cellHomework, d === today && styles.cellToday]}>
@@ -127,6 +136,11 @@ function DaysGrid({ days, trained, homework, today }: { days: string[]; trained:
       ))}
     </View>
   )
+}
+
+function rowLabel(week: string[], pauses: PlanPause[], windowStart: string): string {
+  const active = week.find((d) => !pauseOn(pauses, d))
+  return active ? `W${planWeek(windowStart, active, pauses)}` : "–"
 }
 
 function DateBlock({ label, dateStr, alignEnd }: { label: string; dateStr: string; alignEnd?: boolean }) {
@@ -181,6 +195,7 @@ const styles = StyleSheet.create({
   cellTrained: { backgroundColor: C.green },
   cellPast: { backgroundColor: C.surfaceHigh },
   cellFuture: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.16)" },
+  cellPaused: { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderStyle: "dashed", borderColor: "rgba(255,255,255,0.22)" },
   cellToday: { borderWidth: 2, borderColor: C.green },
   cellHomework: { borderWidth: 2, borderColor: ADAPTATION_COLOR.test },
   cellHomeworkDot: { position: "absolute", top: 8, left: 8, width: 6, height: 6, borderRadius: 3, backgroundColor: ADAPTATION_COLOR.test },
