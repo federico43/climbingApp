@@ -8,6 +8,7 @@ import { HomeworkCard } from "@/components/coach/HomeworkCard"
 import { PlanCard } from "@/components/coach/PlanCard"
 import { RecentActivityCard } from "@/components/coach/RecentActivityCard"
 import { RolePill } from "@/components/coach/RolePill"
+import { StatsCard } from "@/components/coach/StatsCard"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
 import { card } from "@/components/coach/styles"
 import {
@@ -137,6 +138,7 @@ export function AthleteDetail({
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
   const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
+  const statsCard = <StatsCard columns={wide ? 3 : 2} />
   const videos = <AthleteVideos athlete={athlete} />
 
   return (
@@ -169,6 +171,7 @@ export function AthleteDetail({
             <View style={styles.mainCol}>
               {planCard}
               {timelineCard}
+              {statsCard}
               {templatesCard}
               {videos}
             </View>
@@ -184,6 +187,7 @@ export function AthleteDetail({
             {homeworkCard}
             {planCard}
             {timelineCard}
+            {statsCard}
             {activityCard}
             {athleteCard}
             {templatesCard}
