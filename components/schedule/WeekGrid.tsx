@@ -2,8 +2,9 @@ import { CLASS_HOURS, GRID_END, GRID_START, formatTime } from "@/utils/classSche
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
 import React, { createContext, useContext, useMemo, useRef, useState } from "react"
-import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native"
-import { Gesture, GestureDetector, ScrollView } from "react-native-gesture-handler"
+// RefreshControl from gesture-handler: the react-native one never fires inside its ScrollView.
+import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Gesture, GestureDetector, RefreshControl, ScrollView } from "react-native-gesture-handler"
 
 // The smallest hour row; rows grow to fill the screen when there's room.
 // Screens read taps on this scale (see onPressTime).

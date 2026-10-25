@@ -291,6 +291,14 @@ export default async ({ req, res, log, error }) => {
 
   // ── Auth: must be signed in ─────────────────────────────────────────────────
   const userId = req.headers["x-appwrite-user-id"]
+  // The same hourly run, started by .github/workflows/class-cron.yml with the
+  // server key (Appwrite's free plan has no schedules). Execute access is
+  // "users", so a call with no user behind it came with an API key.
+  if (!userId && body.action === "classCron") {
+    const report = await runClassCron(classContext(log, error))
+    log(`Class cron (GitHub): ${JSON.stringify(report)}`)
+    return res.json({ ok: true, ...report }, 200)
+  }
   if (!userId) {
     return res.json({ error: "Not authenticated." }, 401)
   }
