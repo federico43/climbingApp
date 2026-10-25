@@ -11,6 +11,7 @@ import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { ThisWeekCard } from "@/components/schedule/ThisWeekCard"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
+import { refreshClassSchedule } from "@/utils/classScheduleStore"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
   getActiveTrainingPlan,
@@ -140,6 +141,7 @@ export default function PlanScreen() {
     useCallback(() => {
       if (!User) return
       load()
+      refreshClassSchedule()
     }, [User, load])
   )
 
@@ -179,7 +181,8 @@ export default function PlanScreen() {
                   refreshing={refreshing}
                   onRefresh={async () => {
                     setRefreshing(true)
-                    try { await load() }
+                    // The This week card reads the class store, not this screen's state.
+                    try { await Promise.all([load(), refreshClassSchedule()]) }
                     finally { setRefreshing(false) }
                   }}
                   tintColor={C.green}

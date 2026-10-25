@@ -1,0 +1,30 @@
+# Every hour: the weekly-classes reminders on the climbingApp function
+# (expire unanswered requests, "class tomorrow" at 20:00, Saturday planning
+# reminder, low-package warnings). Appwrite's free plan has no cron.
+# Needs repository secrets APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID and
+# APPWRITE_API_KEY (a key with the executions.write scope).
+name: Class reminders
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run the class cron
+        env:
+          ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+          PROJECT: ${{ secrets.APPWRITE_PROJECT_ID }}
+          KEY: ${{ secrets.APPWRITE_API_KEY }}
+        run: |
+          curl -sS --fail-with-body -X POST "$ENDPOINT/functions/6a1c2e850024e1f59fc3/executions" \
+            -H "Content-Type: application/json" \
+            -H "X-Appwrite-Project: $PROJECT" \
+            -H "X-Appwrite-Key: $KEY" \
+            -d '{"body":"{\"action\":\"classCron\"}","async":false}' \
+            | tee out.json
+          grep -q '"responseStatusCode":200' out.json

@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import React from "react"
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Bottom sheet for the class screens. Hidden when `visible` is false.
@@ -23,9 +24,17 @@ export function Sheet({
       <Pressable style={s.scrim} onPress={onClose} />
       <View style={[s.sheet, { paddingBottom: 20 + insets.bottom }]}>
         <View style={s.grab} />
-        <Text style={s.title}>{title}</Text>
+        <View style={s.head}>
+          <Text style={[s.title, { flex: 1 }]}>{title}</Text>
+          <Pressable hitSlop={10} onPress={onClose} accessibilityLabel="Close">
+            <Ionicons name="close" size={22} color={C.textSecondary} />
+          </Pressable>
+        </View>
         {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
-        {children}
+        {/* Long lists (e.g. every athlete's package) scroll inside the sheet. */}
+        <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+          {children}
+        </ScrollView>
       </View>
     </Modal>
   )
@@ -88,8 +97,9 @@ const s = StyleSheet.create({
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)" },
   sheet: {
     backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingTop: 10, gap: 12,
+    paddingHorizontal: 20, paddingTop: 10, gap: 12, maxHeight: "85%",
   },
+  head: { flexDirection: "row", alignItems: "center", gap: 12 },
   grab: { width: 40, height: 4, borderRadius: 2, backgroundColor: C.surfaceHigh, alignSelf: "center", marginBottom: 4 },
   title: { fontSize: 20, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
   subtitle: { fontSize: 13, color: C.textSecondary, marginTop: -6 },

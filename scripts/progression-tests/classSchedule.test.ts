@@ -3,14 +3,23 @@
 
 import assert from "node:assert/strict"
 import {
-  EXAMPLE_CLASSES, GRID_END, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
+  GRID_END, type GymClass, athleteView, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
   headcount, isBlocked, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
+
+// A week of classes to test against
+const EXAMPLE_CLASSES: GymClass[] = [
+  { id: "c1", day: 0, start: 9.5, roster: ["lu_crimps", "jp_slab", "sofi_k"] },
+  { id: "c2", day: 0, start: 15.5, roster: ["mari_dyno", "vale_r", "diego_m", "cami_p"] },
+  { id: "c3", day: 1, start: 9.5, roster: ["ana_v", "nico_h"] },
+  { id: "c8", day: 3, start: 9.5, roster: ["lu_crimps", "sofi_k", "diego_m"] },
+  { id: "c13", day: 5, start: 9.5, roster: ["tomas_b", "nico_h"] },
+]
 
 assert.equal(formatTime(9.5), "9:30")
 assert.equal(formatTime(7), "7:00")
 
-// 46 px per hour: 50 px down → third half hour → 7:00; the class must end by 18:00
+// 46 px per hour: 50 px down → third half hour → 7:00; the class must end by 20:00
 assert.equal(startFromOffset(50, 46), GRID_START + 1)
 assert.equal(startFromOffset(-5, 46), GRID_START)
 assert.equal(startFromOffset(10_000, 46), GRID_END - 2.5)
@@ -58,12 +67,12 @@ const c8 = EXAMPLE_CLASSES.find((c) => c.id === "c8")!
 assert.equal(headcount(c8, plain), c8.roster.length + 1)
 assert.equal(headcount(c8, skipped), c8.roster.length)
 
-// Coach: max 2 a day, no overlaps, nothing in blocked time, nothing past 18:00
+// Coach: max 2 a day, no overlaps, nothing in blocked time, nothing past 20:00
 const blocks = [{ day: 4, start: 12.5, end: GRID_END }]
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 0, 12.5), "max")       // Mon has 9:30 and 15:30
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 10), "overlap")     // Sat 9:30 runs to 12:00
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 12), null)
-assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 16), "late")
+assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 18), "late")
 assert.equal(addClassProblem([], blocks, 4, 13), "blocked")
 assert.ok(isBlocked([{ day: 2, start: 6, end: 18, all: true }], 2, 9))
 assert.ok(!isBlocked(blocks, 4, 9.5))                                         // 9:30–12:00 ends before 12:30
@@ -73,5 +82,31 @@ const sat = new Date(2026, 9, 31, 15, 0)
 assert.equal(weekdayOf(sat), 5)
 assert.equal(mondayOf(sat).getDate(), 26)
 assert.deepEqual(weekDates(mondayOf(sat)).map((d) => d.getDate()), [26, 27, 28, 29, 30, 31, 1])
+
+// The server's week as the athlete sees it
+const server: GymClass[] = [
+  { id: "a", day: 0, start: 9.5, roster: ["me", "u1"] },
+  { id: "b", day: 3, start: 9.5, roster: ["me"] },
+  { id: "c", day: 5, start: 9.5, roster: ["u1"] },
+]
+const req = (r: Partial<Parameters<typeof athleteView>[1][number]>) => ({ $id: "r", athleteId: "me", weekStart: "w", kind: "move", status: "pending", ...r }) as any
+const view = athleteView(server, [
+  req({ kind: "move", fromClassId: "b", toClassId: "c" }),
+  req({ kind: "move", status: "rejected", fromClassId: "a", toClassId: "c" }),
+  req({ athleteId: "u1", kind: "skip", status: "accepted", fromClassId: "a" }),
+], "me", { u1: "Lu" })
+assert.deepEqual(view.mine, ["a", "b"])
+assert.deepEqual(view.changes, { b: { status: "move", to: "c" } })
+assert.deepEqual(view.classes[0].roster, ["Lu"])
+// A skipped class isn't in the roster any more but stays one of theirs
+const skippedView = athleteView([{ ...server[0], roster: ["u1"] }, server[1]], [req({ kind: "skip", status: "accepted", fromClassId: "a" })], "me", {})
+assert.deepEqual(skippedView.mine, ["b", "a"])
+assert.deepEqual(skippedView.changes, { a: { status: "skip" } })
+assert.equal(athleteView(server, [req({ kind: "extra", toClassId: "c" })], "me", {}).extra?.to, "c")
+
+assert.deepEqual(parseSlot(slotKey({ day: 3, start: 9.5 })), { day: 3, start: 9.5 })
+assert.equal(parseSlot("9@1"), null)
+assert.equal(classDate("2026-10-26", { day: 3, start: 9.5 }).getTime(), new Date(2026, 9, 29, 9, 30).getTime())
+assert.equal(sessionsLeft(8, 2, 3), 5)
 
 console.log("classSchedule tests passed")

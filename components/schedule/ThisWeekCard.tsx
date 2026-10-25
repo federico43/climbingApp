@@ -17,22 +17,21 @@ export function ThisWeekCard() {
   const router = useRouter()
   const { role } = useAuth()
   const st = useClassSchedule()
-  // TEMPORARY: coaches see the card too, marked as a preview, so the athlete
-  // side can be tried from a coach account. Remove before shipping.
-  const preview = role === "coach"
+  if (role === "coach") return null
 
   const now = new Date()
   const today = weekdayOf(now)
   const dates = weekDates(mondayOf(now))
-  const week = athleteWeek(st.classes, st.mine, st.changes, st.extra)
+  const wk = st.thisWeek
+  const week = athleteWeek(wk.classes, wk.mine, wk.changes, wk.extra)
   const todays = week.find((e) => e.cls.day === today && e.state === "on")
   const next = week.find((e) => e.cls.day > today && e.state !== "skip")
   const dayLabel = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
-  const low = st.sessionsLeft <= LOW_SESSIONS
+  const left = st.pkg?.left ?? 0
+  const low = !!st.pkg && left <= LOW_SESSIONS
 
   return (
     <View style={{ gap: 10 }}>
-      {preview && <Text style={s.preview}>Athlete preview (temporary, only for testing)</Text>}
       <FeatureIntro
         id="class-card"
         pages={[
@@ -55,16 +54,18 @@ export function ThisWeekCard() {
             </Text>
           </View>
           <View style={[s.left, low && s.leftLow]}>
-            <Text style={[s.leftN, low && { color: C.yellow }]}>{st.sessionsLeft}</Text>
+            <Text style={[s.leftN, low && { color: C.yellow }]}>{st.pkg ? left : "–"}</Text>
             <Text style={s.leftL}>sessions{"\n"}left</Text>
           </View>
         </View>
-        {low && <Text style={s.lowLine}>Only {st.sessionsLeft} sessions left. Talk to your coach to renew your package.</Text>}
+        {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."} Talk to your coach to renew your package.</Text>}
+        {!st.pkg && st.status === "ready" && <Text style={s.lowLine}>No package yet. Ask your coach to add one.</Text>}
+        {st.status === "ready" && !st.defaults.length && <Text style={s.lowLine}>Set your weekly schedule: tap to pick your usual classes.</Text>}
         <View style={s.list}>
           {week.map((e) => <Row key={e.cls.id} e={e} today={today} label={dayLabel(e.cls.day)} />)}
         </View>
         <View style={s.foot}>
-          <Text style={s.footText}>Use them by {st.useBy}</Text>
+          <Text style={s.footText}>{st.pkg ? `Use them by ${st.pkg.useBy}` : ""}</Text>
           <View style={s.see}>
             <Text style={s.seeText}>See the week</Text>
             <Ionicons name="chevron-forward" size={14} color={C.green} />
@@ -94,7 +95,6 @@ function Row({ e, today, label }: { e: WeekEntry; today: number; label: string }
 }
 
 const s = StyleSheet.create({
-  preview: { fontSize: 12, fontWeight: "700", color: C.yellow, textTransform: "uppercase", letterSpacing: 0.6 },
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, gap: 14 },
   top: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 },
