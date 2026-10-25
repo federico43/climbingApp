@@ -2,7 +2,7 @@ import {
   CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem, gymNow,
   mondayOfYmd, parseSlot, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
-import { parsePauses, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
+import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
 
 // Weekly classes (Plan › This week for athletes, the Classes tab for
 // coaches). Everyone reads the tables; every write goes through here so the
@@ -17,6 +17,7 @@ const REQUESTS = "class_requests"
 const PACKAGES = "packages"
 const USERS = "users"
 const PLANS = "training_plans"
+const PROTOCOLS = "protocol"
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const KINDS = ["move", "propose", "extra", "skip"]
@@ -317,7 +318,10 @@ async function joinUsualClasses(ctx, user, paused) {
 // so adding, removing and ending one early are the same call. The plan's end
 // date and the package's use-by date move by the paused days; the athlete
 // leaves their classes on paused days still ahead (and goes back into their
-// usual ones for days no longer paused).
+// usual ones for days no longer paused). Pending homework due during or
+// after a new pause gets its deadline moved by the pause's length, and a day
+// picked inside the pause is cleared. Taking a pause off doesn't pull
+// homework deadlines back (the extra days stay).
 async function setPauses(ctx, userId, body) {
   const plan = await ctx.db.get(PLANS, String(body.planId ?? ""))
   if (!plan || plan.status !== "active") return fail(404, "No such plan.")
@@ -360,15 +364,34 @@ async function setPauses(ctx, userId, body) {
 
   const same = (a, b) => a.start === b.start && a.end === b.end
   const added = pauses.filter((p) => !before.some((b) => same(b, p)))
+
+  let homeworkMoved = 0
+  if (added.length) {
+    const homework = await ctx.db.list(PROTOCOLS, [ctx.q.equal("athleteId", athleteId), ctx.q.equal("planPart", "homework")])
+    for (const hw of homework) {
+      if (!DAY_RE.test(hw.dueBy ?? "") || hw.dueBy < now.ymd) continue
+      let dueBy = hw.dueBy
+      let scheduledFor = hw.scheduledFor ?? null
+      for (const p of added) {
+        if (dueBy < p.start) continue
+        dueBy = addDays(dueBy, pauseLength(p))
+        if (scheduledFor && pauseOn([p], gymNow(new Date(scheduledFor), ctx.tz).ymd)) scheduledFor = null
+      }
+      if (dueBy === hw.dueBy) continue
+      await ctx.db.update(PROTOCOLS, hw.$id, { dueBy, scheduledFor })
+      homeworkMoved++
+    }
+  }
+
   const data = { type: "plan_pause", planId: plan.$id }
   for (const p of added) {
     await pushUser(ctx, athleteId, "Training paused",
-      `Your coach paused your plan from ${dayLabel(p.start)} to ${dayLabel(p.end)}${p.reason ? ` (${p.reason})` : ""}. No classes on those days.`, data)
+      `Your coach paused your plan from ${dayLabel(p.start)} to ${dayLabel(p.end)}${p.reason ? ` (${p.reason})` : ""}. No classes on those days${homeworkMoved ? ", and your homework is due later" : ""}.`, data)
   }
   if (!added.length && before.some((b) => !pauses.some((p) => same(b, p)))) {
     await pushUser(ctx, athleteId, "Pause changed", `Your plan now ends ${dayLabel(windowEnd)}.`, data)
   }
-  return ok({ plan: saved, removedFromClasses: removed })
+  return ok({ plan: saved, removedFromClasses: removed, homeworkMoved })
 }
 
 // ── Coach: a new package for an athlete ──────────────────────────────────────

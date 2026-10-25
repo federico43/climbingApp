@@ -421,7 +421,7 @@ function PauseCard({ pause, now }: { pause: PlanPause; now: boolean }) {
       </Text>
       <Text style={styles.pauseText}>
         {now
-          ? "Your plan is on hold and its end date moved back. No classes until then, and your package lasts longer too."
+          ? "Your plan is on hold and its end date moved back. No classes until then, and your package and homework deadlines moved too."
           : "Your coach set a pause. Your plan and package will wait for you."}
       </Text>
     </View>

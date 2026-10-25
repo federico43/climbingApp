@@ -13,7 +13,7 @@ import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput
 // Coach: the plan's pauses (holidays, an injury) on the Training plan card,
 // and the form to add one (utils/planPauses.ts). Saved through the
 // climbingApp function, which also moves the plan's end date, the package's
-// use-by date and the athlete's classes.
+// use-by date, homework deadlines and the athlete's classes.
 
 const REASONS = ["Holidays", "Injury", "Illness"]
 const WEEKS = Array.from({ length: MAX_PAUSE_WEEKS }, (_, i) => i + 1)
@@ -22,7 +22,11 @@ function formatDay(dateStr: string): string {
   return new Date(dateStr + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
 
-export function PlanPauses({ plan, onPlanChanged }: { plan: TrainingPlanRow; onPlanChanged: (plan: TrainingPlanRow) => void }) {
+export function PlanPauses({ plan, onPlanChanged, onHomeworkChanged }: {
+  plan: TrainingPlanRow
+  onPlanChanged: (plan: TrainingPlanRow) => void
+  onHomeworkChanged: () => void // homework deadlines may have moved
+}) {
   const today = localDateStr(new Date())
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -33,6 +37,7 @@ export function PlanPauses({ plan, onPlanChanged }: { plan: TrainingPlanRow; onP
       await savePlanPauses(plan.$id, pauses)
       const fresh = await getActiveTrainingPlan(plan.athleteId)
       if (fresh) onPlanChanged(fresh)
+      onHomeworkChanged()
       return true
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save the pause.")
@@ -127,7 +132,7 @@ function AddPauseModal({ visible, plan, saving, onClose, onSave }: {
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
           <Text style={styles.title}>Pause the plan</Text>
-          <Text style={styles.sub}>The plan stops and its end date moves back. No classes on those days, and the package lasts that much longer.</Text>
+          <Text style={styles.sub}>The plan stops and its end date moves back. No classes on those days, and the package and pending homework last that much longer.</Text>
 
           <Text style={styles.label}>From</Text>
           <Pressable style={styles.input} onPress={() => setPickerOpen(true)}>

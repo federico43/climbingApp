@@ -123,7 +123,9 @@ in `functions/aiProtocol/src/planPauses.js`.
   moves the athlete's current package's `useBy` by the change in paused
   days, takes them out of classes on paused days still ahead, drops pending
   requests into paused days and puts them back into their usual classes for
-  days no longer paused. Publishing a week skips paused athletes when
+  days no longer paused. Pending homework due on or after a new pause's
+  start gets its `dueBy` moved by the pause's length (a day picked inside
+  the pause is cleared); removing a pause doesn't pull deadlines back. Publishing a week skips paused athletes when
   filling usual classes, and doesn't send them "Next week's classes are up"
   if the whole week is paused. Requests into a paused day are refused.
 - Pushes: "Training paused" when one is added, "Pause changed" when one is

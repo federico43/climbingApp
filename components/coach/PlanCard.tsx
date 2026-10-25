@@ -281,7 +281,7 @@ export function PlanCard({
             <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
             {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
           </View>
-          {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} />}
+          {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
 
           {planEnded ? (
             <View style={styles.box}>
