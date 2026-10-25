@@ -27,14 +27,18 @@ export interface WarmupSet {
   secs: number
 }
 
+// "Edge Lift" (singular) too — a block typed by hand may say it that way.
 export function isEdgeLift(ex: { name?: string }): boolean {
-  return (ex.name ?? "").trim().toLowerCase() === EDGE_LIFT_NAME.toLowerCase()
+  const name = (ex.name ?? "").trim().toLowerCase()
+  const full = EDGE_LIFT_NAME.toLowerCase()
+  return name === full || name === full.replace(/s$/, "")
 }
 
 // Edge Lifts trained for max force get the ramp; repeaters / explosiveness
-// days don't.
+// days don't. A block made by hand with no focus picked counts as max force
+// (what Edge Lifts are for — see SPECIAL_CASE_EXERCISES).
 export function needsWarmup(ex: { name?: string; focus?: Focus }): boolean {
-  return isEdgeLift(ex) && ex.focus === "max_force"
+  return isEdgeLift(ex) && (ex.focus === "max_force" || !ex.focus)
 }
 
 function roundTo(w: number, step: number): number {
