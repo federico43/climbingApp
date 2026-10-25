@@ -5,6 +5,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
 import { getSessions, getUsers, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
+import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
 import {
   Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
@@ -343,12 +344,11 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       withTimeout(getSessions(), PREFILL_TIMEOUT_MS).catch(() => null),
       withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
       loadWeightUnit(),
-      User?.$id ? withTimeout(getUsers(User.$id), PREFILL_TIMEOUT_MS).catch(() => null) : Promise.resolve(null),
+      User?.$id ? readEdgeMax(User.$id) : Promise.resolve(undefined),
     ])
-      .then(([sessions, library, unit, me]) => {
+      .then(([sessions, library, unit, max]) => {
         if (cancelled) return
         setWeightUnitState(unit)
-        const max = me ? currentMax(me as any) : undefined
         setEdgeMax(max)
         const resolved: Record<number, ResolvedChain> = {}
         const weights: Record<number, string> = {}
@@ -706,7 +706,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             userId={User?.$id}
             currentMaxKg={edgeMax}
             weightUnit={weightUnit}
-            onSaved={setEdgeMax}
+            onSaved={(kg) => { setEdgeMax(kg); if (User?.$id) saveCachedEdgeMax(User.$id, kg) }}
             onDone={(log) => handleExerciseDone(log)}
           />
         ) : exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
@@ -2149,6 +2149,17 @@ function LoggedExerciseUI({
 }
 
 // ─── Edge Lifts warm-up and max test (utils/edgeWarmup.ts) ────────────────────
+
+// The athlete's max from their `users` row (kg; null = none yet), kept on
+// the device too; when the row can't be read, the device's copy
+// (undefined = no copy either).
+async function readEdgeMax(userId: string): Promise<number | null | undefined> {
+  const me = await withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null)
+  if (!me) return loadCachedEdgeMax(userId)
+  const max = currentMax(me as any)
+  saveCachedEdgeMax(userId, max)
+  return max
+}
 
 // The brief's warm-up: one line per hold, weight and seconds only.
 function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
