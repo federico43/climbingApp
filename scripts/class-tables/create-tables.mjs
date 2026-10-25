@@ -49,7 +49,8 @@ const TABLES = [
   },
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).
-const USER_COLUMNS = [str("defaultClasses", 8, { array: true })]
+// The Edge Lifts max (kg) and its log, JSON newest first (utils/edgeWarmup.ts).
+const USER_COLUMNS = [str("defaultClasses", 8, { array: true }), float("edgeLiftMax"), str("edgeLiftMaxLog", 4000)]
 // Plan pauses, JSON [{ start, end, reason? }] (utils/planPauses.ts).
 const PLAN_COLUMNS = [str("pauses", 2000)]
 
