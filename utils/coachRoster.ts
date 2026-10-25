@@ -1,4 +1,5 @@
 import { addDays, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
+import type { PlanPause } from "@/utils/planPauses"
 import { dueByOf, homeworkStatus, type HomeworkRow } from "@/utils/homework"
 import { sessionLocalDate, type ProgressSession } from "@/utils/planProgress"
 
@@ -12,7 +13,7 @@ export const INACTIVE_STEPS = [7, 14, 30] as const
 
 export interface RosterAthlete { $id: string; username?: string | null }
 export interface RosterHomework extends HomeworkRow { athleteId?: string | null }
-export interface RosterPlan { $id: string; athleteId: string; name: string; windowStart: string; windowEnd: string }
+export interface RosterPlan { $id: string; athleteId: string; name: string; windowStart: string; windowEnd: string; pauses?: PlanPause[] }
 export interface RosterSession extends ProgressSession { userId: string }
 
 export type PlanStatus = "none" | "upcoming" | "active" | "ended"
@@ -90,7 +91,7 @@ export function summarizeRoster(
       urgentHomework: urgent,
       plan,
       planStatus,
-      planWeek: plan && planStatus === "active" ? Math.min(Math.max(planWeek(plan.windowStart, today), 1), PLAN_WEEKS) : null,
+      planWeek: plan && planStatus === "active" ? Math.min(Math.max(planWeek(plan.windowStart, today, plan.pauses), 1), PLAN_WEEKS) : null,
       lastSessionDay: last,
       daysSinceLast: last ? Math.max(dayDiff(last, today), 0) : null,
     }

@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
 import type { Focus, LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
+import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
@@ -398,7 +399,9 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // — still read for old plans, no longer written. startType (string, MainType,
 // optional) is the main type of workout 1 — missing/null = strength; only
 // written when a plan starts with something else (or had one already), so
-// strength plans save even before the column exists.
+// strength plans save even before the column exists. pauses (string, JSON
+// PlanPause[], optional) are the weeks the coach paused the plan; written
+// only by the climbingApp function (classPause), which also moves windowEnd.
 
 export interface TrainingPlanRow {
   $id: string
@@ -413,6 +416,7 @@ export interface TrainingPlanRow {
   hasMobility: boolean
   scPatterns: ScPattern[]
   startType: MainType | null  // null = strength (the default cycle)
+  pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
 }
 
@@ -434,6 +438,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
+    pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
   }
 }

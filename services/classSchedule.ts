@@ -2,6 +2,7 @@ import { functions } from "@/components/AppWrite"
 import { AI_PROTOCOL_FUNCTION_ID } from "@/services/aiProtocol"
 import { USERS_TABLE, listAllRows } from "@/services/BoulderGraphService"
 import type { BlockedTime, ClassRequestRow, GymClass } from "@/utils/classSchedule"
+import type { PlanPause } from "@/utils/planPauses"
 import { ExecutionMethod, Query } from "appwrite"
 
 // Weekly classes on the server: tables read straight from Appwrite, every
@@ -83,3 +84,6 @@ export const publishWeek = (weekStart: string, classes: { id?: string; day: numb
   call("classPublish", { weekStart, classes, blocks })
 export const addPackage = (athleteId: string, total: number, startsOn: string, useBy: string) =>
   call("classPackage", { athleteId, total, startsOn, useBy })
+// The plan's whole list of pauses (utils/planPauses.ts); the server moves the
+// plan's end date and the package's use-by date, and the athlete's classes.
+export const savePlanPauses = (planId: string, pauses: PlanPause[]) => call("classPause", { planId, pauses })
