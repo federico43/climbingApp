@@ -3,7 +3,8 @@ import * as api from "@/services/classSchedule"
 import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedule"
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
-  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, dateOf, formatTime, mondayOf, sessionsLeft, WEEK_DAYS, weekdayOf, ymd,
+  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
+  WEEK_DAYS, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -38,7 +39,8 @@ export interface AthleteWeek {
   blocks: BlockedTime[]
 }
 
-export interface PackageInfo { total: number; left: number; useBy: string }
+// `locked`: used up or past its use-by date; the app is locked until the coach renews.
+export interface PackageInfo { total: number; left: number; useBy: string; locked: boolean }
 
 interface State {
   status: "idle" | "loading" | "ready" | "error"
@@ -147,19 +149,23 @@ function weekFor(w: ClassWeek, requests: ClassRequestRow[], me: string, names: R
   return { weekStart: w.weekStart, published: w.published, blocks: w.blocks, ...view }
 }
 
+// Same count as the server (athletePackage in functions/aiProtocol/src/classes.js):
+// classes count from when the package was added.
 async function packageInfo(me: string, now: Date): Promise<PackageInfo | null> {
   const today = ymd(now)
-  const pkg = (await api.loadPackages(me))
-    .filter((p) => p.startsOn <= today)
-    .sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0]
+  const pkg = currentPackage(await api.loadPackages(me), today)
   if (!pkg) return null
+  const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
   const { classes, requests } = await api.loadHistory(me, ymd(mondayOf(dateOf(pkg.startsOn))))
   const done = classes.filter((c) => {
     const at = classDate(c.weekStart, c)
-    return ymd(at) >= pkg.startsOn && at.getTime() + CLASS_HOURS * 3600000 <= now.getTime()
+    const end = at.getTime() + CLASS_HOURS * 3600000
+    return ymd(at) >= pkg.startsOn && end > since && end <= now.getTime()
   }).length
-  const skips = requests.filter((r) => r.kind === "skip" && r.status === "accepted").length
-  return { total: pkg.total, left: sessionsLeft(pkg.total, done, skips), useBy: pkg.useBy }
+  const skips = requests.filter((r) =>
+    r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
+  const left = sessionsLeft(pkg.total, done, skips)
+  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, today) }
 }
 
 async function load() {
