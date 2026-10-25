@@ -405,12 +405,25 @@ async function setPauses(ctx, userId, body) {
 // ── Coach: a new package for an athlete ──────────────────────────────────────
 async function addPackage(ctx, userId, body) {
   const total = Number(body.total)
-  if (typeof body.athleteId !== "string" || !Number.isInteger(total) || total < 1 || total > 100
+  if (typeof body.athleteId !== "string" || !Number.isInteger(total) || total < 0 || total > 100
     || !DAY_RE.test(body.startsOn ?? "") || !DAY_RE.test(body.useBy ?? "") || body.useBy < body.startsOn) {
     return fail(400, "Bad package.")
   }
   const row = await ctx.db.create(PACKAGES, { athleteId: body.athleteId, total, startsOn: body.startsOn, useBy: body.useBy })
   if (!row) return fail(502, "Could not save.")
+  // 0 sessions ends their classes: out of the ones still ahead, pending
+  // requests dropped, and the app locks (packageLocked) until a new package.
+  if (total === 0) {
+    const now = gymNow(new Date(), ctx.tz)
+    const thisWeek = mondayOfYmd(now.ymd)
+    for (const c of await ctx.db.list(CLASSES, [ctx.q.contains("roster", body.athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+      if (classMs(c) > now.ms) await setRoster(ctx, c, (c.roster ?? []).filter((u) => u !== body.athleteId))
+    }
+    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", body.athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+      if (r.status === "pending") await ctx.db.remove(REQUESTS, r.$id)
+    }
+    return ok({ package: row })
+  }
   // A renewal unlocks the athlete: back into their usual classes still ahead.
   const athlete = await ctx.getUserRow(body.athleteId)
   if (athlete) await joinUsualClasses(ctx, athlete, await pausesByAthlete(ctx))

@@ -205,6 +205,13 @@ assert.ok(r.json.error.includes("renew"))
 pushes.length = 0
 assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 8, startsOn: week, useBy: addDays(week, 30) })).status, 200)
 assert.ok(at(3, 9.5).roster.includes("dani"))
+// 0 sessions: out of the classes still ahead and locked again
+pushes.length = 0
+assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 0, startsOn: week, useBy: addDays(week, 30) })).status, 200)
+assert.ok(!at(3, 9.5).roster.includes("dani"))
+assert.equal((await call("classRequest", "dani", { kind: "extra", toClassId: at(3, 9.5).$id })).status, 409)
+assert.ok(!pushes.some((p) => p.to === "dani"))
+assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: -1, startsOn: week, useBy: addDays(week, 30) })).status, 400)
 globalThis.Date = RealDate
 Date.now = realNow
 at(3, 9.5).roster = at(3, 9.5).roster.filter((u: string) => u !== "dani")

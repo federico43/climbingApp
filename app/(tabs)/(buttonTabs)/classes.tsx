@@ -333,7 +333,7 @@ export default function ClassesScreen() {
         onClose={() => setSheet(null)}
       >
         {[
-          { label: "Sessions", value: `${pkgForm.total}`, step: (n: number) => setPkgForm({ ...pkgForm, total: Math.max(1, pkgForm.total + n) }) },
+          { label: "Sessions", value: `${pkgForm.total}`, step: (n: number) => setPkgForm({ ...pkgForm, total: Math.max(0, pkgForm.total + n) }) },
           { label: "Use within", value: `${pkgForm.weeks} weeks`, step: (n: number) => setPkgForm({ ...pkgForm, weeks: Math.max(1, pkgForm.weeks + n) }) },
         ].map((row) => (
           <View key={row.label} style={s.stepRow}>
@@ -345,15 +345,26 @@ export default function ClassesScreen() {
             </View>
           </View>
         ))}
+        {pkgForm.total === 0 && (
+          <Text style={s.names}>0 sessions takes them out of their classes and locks the app until you add a new package.</Text>
+        )}
         <SheetButton
-          label={st.busy ? "Saving…" : "Add package"}
+          label={st.busy ? "Saving…" : pkgForm.total === 0 ? "Set to 0 sessions" : "Add package"}
           disabled={st.busy}
           onPress={async () => {
             if (sheet?.kind !== "package") return
+            const athleteId = sheet.athleteId
             const today = new Date()
             const useBy = new Date(today)
             useBy.setDate(today.getDate() + pkgForm.weeks * 7)
-            if (await addAthletePackage(sheet.athleteId, pkgForm.total, ymd(today), ymd(useBy))) setSheet(null)
+            const save = async () => {
+              if (await addAthletePackage(athleteId, pkgForm.total, ymd(today), ymd(useBy))) setSheet(null)
+            }
+            if (pkgForm.total > 0) return save()
+            Alert.alert("Set to 0 sessions?", `${st.names[athleteId] ?? "This athlete"} leaves their classes and can't use the app until you add a new package.`, [
+              { text: "Cancel", style: "cancel" },
+              { text: "Set to 0", style: "destructive", onPress: save },
+            ])
           }}
         />
       </Sheet>
