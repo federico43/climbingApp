@@ -2,6 +2,7 @@ import {
   CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem, gymNow,
   mondayOfYmd, parseSlot, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
+import { parsePauses, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
 
 // Weekly classes (Plan › This week for athletes, the Classes tab for
 // coaches). Everyone reads the tables; every write goes through here so the
@@ -15,6 +16,7 @@ const WEEKS = "class_weeks"
 const REQUESTS = "class_requests"
 const PACKAGES = "packages"
 const USERS = "users"
+const PLANS = "training_plans"
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const KINDS = ["move", "propose", "extra", "skip"]
@@ -35,6 +37,26 @@ async function weekRow(ctx, weekStart) {
 }
 
 const name = (u) => u?.username || "An athlete"
+
+// "Nov 2" for a "YYYY-MM-DD".
+const dayLabel = (ymd) => {
+  const [y, m, d] = ymd.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+}
+
+const classDate = (c) => addDays(c.weekStart, c.day)
+
+// athleteId → the pauses in their active plan (utils/planPauses.ts): no
+// classes for them on those days.
+async function pausesByAthlete(ctx) {
+  const plans = await ctx.db.list(PLANS, [ctx.q.equal("status", "active")])
+  const map = new Map()
+  for (const p of plans) {
+    const pauses = parsePauses(p.pauses)
+    if (pauses.length) map.set(p.athleteId, pauses)
+  }
+  return map
+}
 
 // Classes the athlete is in this week, leaving out `except`.
 const busyDays = (classes, athleteId, except) =>
@@ -86,6 +108,8 @@ async function request(ctx, userId, body) {
   }
   const caller = await ctx.getUserRow(userId)
   const data = { athleteId: userId, weekStart, kind: body.kind, status: "pending", fromClassId: from?.$id ?? null }
+  const toDate = to ? classDate(to) : body.kind === "propose" ? addDays(weekStart, Number(body.day)) : null
+  if (toDate && pauseOn((await pausesByAthlete(ctx)).get(userId), toDate)) return fail(409, "Your plan is paused that day.")
 
   if (body.kind === "skip") {
     await setRoster(ctx, from, from.roster.filter((u) => u !== userId))
@@ -176,9 +200,10 @@ async function answer(ctx, userId, body) {
   return ok({ request: updated })
 }
 
-// Put athletes in the classes they usually take, where there's room and
-// they aren't in any class that week yet. Returns the athletes added.
-async function fillFromDefaults(ctx, classes, users, onlyUser) {
+// Put athletes in the classes they usually take, where there's room, they
+// aren't in any class that week yet and their plan isn't paused that day.
+// Returns the athletes added.
+async function fillFromDefaults(ctx, classes, users, onlyUser, paused) {
   const added = new Set()
   for (const u of users) {
     if (onlyUser && u.$id !== onlyUser) continue
@@ -187,6 +212,7 @@ async function fillFromDefaults(ctx, classes, users, onlyUser) {
     for (const s of slots) {
       const c = classes.find((x) => x.day === s.day && x.start === s.start)
       if (!c || (c.roster ?? []).length >= CAPACITY) continue
+      if (pauseOn(paused?.get(u.$id), classDate(c))) continue
       c.roster = [...(c.roster ?? []), u.$id]
       await setRoster(ctx, c, c.roster)
       added.add(u.$id)
@@ -242,8 +268,11 @@ async function publish(ctx, userId, body) {
 
   const users = await ctx.listUsers()
   if (firstTime) {
-    await fillFromDefaults(ctx, kept, users)
-    const athletes = users.filter((u) => u.role !== "coach")
+    const paused = await pausesByAthlete(ctx)
+    await fillFromDefaults(ctx, kept, users, undefined, paused)
+    // Athletes paused the whole week don't need to check it.
+    const offAllWeek = (u) => [0, 1, 2, 3, 4, 5, 6].every((d) => pauseOn(paused.get(u.$id), addDays(weekStart, d)))
+    const athletes = users.filter((u) => u.role !== "coach" && !offAllWeek(u))
     await ctx.push(athletes, () => ({
       sound: "default",
       title: "Next week's classes are up",
@@ -268,14 +297,78 @@ async function setDefaults(ctx, userId, body) {
   const saved = await ctx.db.update(USERS, userId, { defaultClasses: slots.map((s) => slotKey(s.day, s.start)) })
   if (!saved) return fail(502, "Could not save.")
   // Join this week's (and a published next week's) classes still ahead.
+  await joinUsualClasses(ctx, saved, await pausesByAthlete(ctx))
+  return ok({})
+}
+
+// Into their usual classes still ahead this week and in a published next week.
+async function joinUsualClasses(ctx, user, paused) {
   const now = gymNow(new Date(), ctx.tz)
   const thisWeek = mondayOfYmd(now.ymd)
   for (const weekStart of [thisWeek, addDays(thisWeek, 7)]) {
     if (!(await weekRow(ctx, weekStart))?.published) continue
     const ahead = (await weekClasses(ctx, weekStart)).filter((c) => classMs(c) > now.ms)
-    await fillFromDefaults(ctx, ahead, [saved], userId)
+    await fillFromDefaults(ctx, ahead, [user], user.$id, paused)
   }
-  return ok({})
+}
+
+// ── Coach: pause an athlete's plan (holidays, an injury) ────────────────────
+// body: { planId, pauses: [{ start, end, reason? }] } — the plan's whole list,
+// so adding, removing and ending one early are the same call. The plan's end
+// date and the package's use-by date move by the paused days; the athlete
+// leaves their classes on paused days still ahead (and goes back into their
+// usual ones for days no longer paused).
+async function setPauses(ctx, userId, body) {
+  const plan = await ctx.db.get(PLANS, String(body.planId ?? ""))
+  if (!plan || plan.status !== "active") return fail(404, "No such plan.")
+  const pauses = parsePauses(body.pauses)
+  if (!Array.isArray(body.pauses) || pauses.length !== body.pauses.length) return fail(400, "Bad pause.")
+  const problem = pausesProblem(pauses, plan.windowStart)
+  if (problem) return fail(409, problem)
+  const before = parsePauses(plan.pauses)
+  const windowEnd = planEndWith(plan.windowStart, pauses)
+  const saved = await ctx.db.update(PLANS, plan.$id, { pauses: JSON.stringify(pauses), windowEnd })
+  if (!saved) return fail(502, 'Could not save. Add the optional string column "pauses" to training_plans.')
+  const athleteId = plan.athleteId
+  const now = gymNow(new Date(), ctx.tz)
+
+  const shift = pausedDayCount(pauses) - pausedDayCount(before)
+  if (shift) {
+    const pkg = (await ctx.db.list(PACKAGES, [ctx.q.equal("athleteId", athleteId)]))
+      .filter((p) => p.useBy >= now.ymd)
+      .sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0]
+    if (pkg) await ctx.db.update(PACKAGES, pkg.$id, { useBy: addDays(pkg.useBy, shift) })
+  }
+
+  const thisWeek = mondayOfYmd(now.ymd)
+  let removed = 0
+  for (const c of await ctx.db.list(CLASSES, [ctx.q.contains("roster", athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+    if (classMs(c) <= now.ms || !pauseOn(pauses, classDate(c))) continue
+    await setRoster(ctx, c, (c.roster ?? []).filter((u) => u !== athleteId))
+    removed++
+  }
+  // Pending moves and extras into a paused day are dropped.
+  const classes = new Map((await ctx.db.list(CLASSES, [ctx.q.gte("weekStart", thisWeek)])).map((c) => [c.$id, c]))
+  for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+    if (r.status !== "pending") continue
+    const to = classes.get(r.toClassId)
+    const date = to ? classDate(to) : r.kind === "propose" ? addDays(r.weekStart, r.day) : null
+    if (date && pauseOn(pauses, date)) await ctx.db.remove(REQUESTS, r.$id)
+  }
+  const athlete = await ctx.getUserRow(athleteId)
+  if (athlete) await joinUsualClasses(ctx, athlete, new Map([[athleteId, pauses]]))
+
+  const same = (a, b) => a.start === b.start && a.end === b.end
+  const added = pauses.filter((p) => !before.some((b) => same(b, p)))
+  const data = { type: "plan_pause", planId: plan.$id }
+  for (const p of added) {
+    await pushUser(ctx, athleteId, "Training paused",
+      `Your coach paused your plan from ${dayLabel(p.start)} to ${dayLabel(p.end)}${p.reason ? ` (${p.reason})` : ""}. No classes on those days.`, data)
+  }
+  if (!added.length && before.some((b) => !pauses.some((p) => same(b, p)))) {
+    await pushUser(ctx, athleteId, "Pause changed", `Your plan now ends ${dayLabel(windowEnd)}.`, data)
+  }
+  return ok({ plan: saved, removedFromClasses: removed })
 }
 
 // ── Coach: a new package for an athlete ──────────────────────────────────────
@@ -317,6 +410,7 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classAnswer": return coach ? answer(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classPause": return coach ? setPauses(ctx, userId, body) : fail(403, "Coaches only.")
     default: return null
   }
 }
@@ -324,7 +418,8 @@ export async function handleClassAction(action, userId, body, ctx) {
 // ── Every hour (the function's schedule) ─────────────────────────────────────
 // Requests nobody answered before the class are declined; the night before,
 // athletes hear about tomorrow's class; on Saturday morning the coach is
-// reminded to publish next week; after a class, athletes with 2 or 0
+// reminded to publish next week; the night a pause ends, the athlete hears
+// their plan restarts; after a class, athletes with 2 or 0
 // sessions left (and the coach) hear about it.
 export async function runClassCron(ctx, date = new Date()) {
   const now = gymNow(date, ctx.tz)
@@ -332,7 +427,7 @@ export async function runClassCron(ctx, date = new Date()) {
   const nextWeek = addDays(thisWeek, 7)
   const classes = [...(await weekClasses(ctx, thisWeek)), ...(await weekClasses(ctx, nextWeek))]
   const byId = new Map(classes.map((c) => [c.$id, c]))
-  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false }
+  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0 }
 
   const pending = [
     ...(await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", thisWeek), ctx.q.equal("status", "pending")])),
@@ -360,6 +455,11 @@ export async function runClassCron(ctx, date = new Date()) {
         body: "Get there a little early. Can't make it? Tell your coach now so someone else can take your spot.",
         data: { type: "class_tomorrow", classId: c.$id },
       }))
+    }
+    for (const [athleteId, pauses] of await pausesByAthlete(ctx)) {
+      if (!pauses.some((p) => p.end === now.ymd)) continue
+      report.resumed++
+      await pushUser(ctx, athleteId, "Your plan restarts tomorrow", "Welcome back! Your next workout is waiting in Plan.", { type: "plan_pause" })
     }
   }
 
