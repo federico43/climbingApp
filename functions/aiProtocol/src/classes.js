@@ -1,14 +1,15 @@
 import {
-  CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, MAX_CLASSES_PER_WEEK, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
-  currentPackage, gymNow, mondayOfYmd, packageLocked, parseSlot, restDayOk, sessionsLeft, slotKey,
+  CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
+  currentPackage, gymNow, mondayOfYmd, packageLocked, parseSlot, proposeProblem, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
 import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
 
 // Weekly classes (Plan › This week for athletes, the Classes tab for
 // coaches). Everyone reads the tables; every write goes through here so the
-// rules hold: 4 per class, 2 classes a day (3 on up to 2 days), 2 classes a
-// week per athlete with a rest day between them, nothing over the coach's
-// blocked times, nothing for an athlete whose package is used up or expired. `ctx` carries the
+// rules hold: 4 per class, 2 classes a day (3 on up to 2 days, set by the
+// coach; athletes only propose on days with fewer than 2), a rest day
+// between an athlete's classes, nothing over the coach's blocked times,
+// nothing for an athlete whose package is used up or expired. `ctx` carries the
 // Appwrite helpers from main.js: { db, q, getUserRow, listCoachRows,
 // listUsers, push, log, error, tz }.
 
@@ -130,7 +131,7 @@ async function request(ctx, userId, body) {
     const day = Number(body.day)
     const start = Number(body.start)
     const blocks = parseBlocks((await weekRow(ctx, weekStart))?.blocks)
-    const problem = classProblem(classes, blocks, day, start)
+    const problem = proposeProblem(classes, blocks, day, start)
     if (problem) return fail(409, PROBLEM_TEXT[problem])
     if (classMs({ weekStart, day, start }) <= now.ms) return fail(409, "That time already passed.")
     if (!restDayOk(busy, day)) return fail(409, "Leave a rest day between classes.")
@@ -139,9 +140,6 @@ async function request(ctx, userId, body) {
   } else {
     if ((to.roster ?? []).includes(userId)) return fail(409, "You're already in that class.")
     if ((to.roster ?? []).length >= CAPACITY) return fail(409, "That class is full.")
-    if (body.kind === "extra" && classes.filter((c) => (c.roster ?? []).includes(userId)).length >= MAX_CLASSES_PER_WEEK) {
-      return fail(409, `Up to ${MAX_CLASSES_PER_WEEK} classes a week.`)
-    }
     if (!restDayOk(busy, to.day)) return fail(409, "Leave a rest day between classes.")
     data.toClassId = to.$id
     what = body.kind === "extra" ? `Extra class: ${classLabel(to)}` : `${classLabel(from)} → ${classLabel(to)}`
@@ -208,7 +206,7 @@ async function answer(ctx, userId, body) {
   return ok({ request: updated })
 }
 
-// Put athletes in the classes they usually take (the first 2), where
+// Put athletes in the classes they usually take, where
 // there's room, they aren't in any class that week yet, their plan isn't
 // paused that day and their package isn't used up or expired. Returns the
 // athletes added.
@@ -217,7 +215,7 @@ async function fillFromDefaults(ctx, classes, users, onlyUser, paused) {
   const now = gymNow(new Date(), ctx.tz)
   for (const u of users) {
     if (onlyUser && u.$id !== onlyUser) continue
-    const slots = (u.defaultClasses ?? []).map(parseSlot).filter(Boolean).slice(0, MAX_CLASSES_PER_WEEK)
+    const slots = (u.defaultClasses ?? []).map(parseSlot).filter(Boolean)
     if (!slots.length || classes.some((c) => (c.roster ?? []).includes(u.$id))) continue
     if ((await athletePackage(ctx, u.$id, now)).locked) continue
     for (const s of slots) {
@@ -299,7 +297,7 @@ async function publish(ctx, userId, body) {
 // ── Athlete: their usual classes ("day@start"), used for every new week ──────
 async function setDefaults(ctx, userId, body) {
   const slots = (Array.isArray(body.slots) ? body.slots : []).map(parseSlot).filter(Boolean)
-  if (slots.length < 1 || slots.length > MAX_CLASSES_PER_WEEK) return fail(400, `Pick 1 to ${MAX_CLASSES_PER_WEEK} classes.`)
+  if (slots.length < 1 || slots.length > 3) return fail(400, "Pick 1 to 3 classes.")
   const days = []
   for (const s of slots) {
     if (!restDayOk(days, s.day)) return fail(409, "Leave a rest day between classes.")

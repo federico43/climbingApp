@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict"
 import { handleClassAction, runClassCron } from "@/functions/aiProtocol/src/classes.js"
-import { addDays, classProblem, gymNow, mondayOfYmd, sessionsLeft } from "@/functions/aiProtocol/src/classRules.js"
+import { addDays, classProblem, gymNow, proposeProblem, mondayOfYmd, sessionsLeft } from "@/functions/aiProtocol/src/classRules.js"
 
 // ── Rules ────────────────────────────────────────────────────────────────────
 assert.equal(mondayOfYmd("2026-10-25"), "2026-10-19") // Sunday → its Monday
@@ -16,6 +16,9 @@ assert.equal(classProblem([...two, { day: 0, start: 6 }], [], 0, 12.5), "max")
 const bigMonWed = [0, 2].flatMap((day) => [6, 9, 12].map((start) => ({ day, start })))
 assert.equal(classProblem([...bigMonWed, { day: 3, start: 6 }, { day: 3, start: 9 }], [], 3, 12), "bigDays")
 assert.equal(classProblem([...bigMonWed, { day: 3, start: 6 }], [], 3, 12), null)
+// Athletes only propose on days with fewer than 2 classes
+assert.equal(proposeProblem(two, [], 0, 12.5), "proposeMax")
+assert.equal(proposeProblem([{ day: 0, start: 9.5 }], [], 0, 12.5), null)
 assert.equal(classProblem([{ day: 0, start: 9.5 }], [], 0, 11), "overlap")
 assert.equal(classProblem([], [{ day: 1, start: 12, end: 18 }], 1, 10), "blocked")
 assert.equal(classProblem([], [], 1, 18), "late")
@@ -142,10 +145,6 @@ assert.deepEqual(at(0, 9.5).roster, [])
 assert.equal((await call("classCancel", "ana", { requestId: r.json.request.$id })).status, 200)
 assert.deepEqual(at(0, 9.5).roster, ["ana"])
 
-// Usual classes: 2 a week at most
-assert.equal((await call("classDefaults", "cami", { slots: ["0@9.5", "2@9.5", "4@15"] })).status, 400)
-// No extra class past 2 a week: ana already has Mon and Wed
-assert.equal((await call("classRequest", "ana", { kind: "extra", toClassId: at(4, 15).$id })).status, 409)
 // An extra class, then a second one is refused
 r = await call("classRequest", "cami", { kind: "extra", toClassId: at(4, 15).$id })
 assert.equal(r.status, 200)

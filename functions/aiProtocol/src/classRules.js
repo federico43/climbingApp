@@ -8,8 +8,6 @@ export const CAPACITY = 4
 export const CLASSES_PER_DAY = 2
 export const MAX_CLASSES_PER_DAY = 3
 export const MAX_BIG_DAYS = 2
-// Classes an athlete takes a week.
-export const MAX_CLASSES_PER_WEEK = 2
 export const GRID_START = 6
 export const GRID_END = 20
 // Missed sessions an athlete can move to a later week, per package.
@@ -60,10 +58,18 @@ export function classProblem(classes, blocks, day, start) {
   return null
 }
 
+// Why an athlete can't propose this time: only on days with fewer than 2
+// classes (the third class of a day is the coach's call). Same as proposeProblem.
+export function proposeProblem(classes, blocks, day, start) {
+  if (Number.isInteger(day) && classes.filter((c) => c.day === day).length >= CLASSES_PER_DAY) return "proposeMax"
+  return classProblem(classes, blocks, day, start)
+}
+
 export const PROBLEM_TEXT = {
   day: "That's not a day of the week.",
   time: "Pick a time on the half hour.",
   max: `That day already has ${MAX_CLASSES_PER_DAY} classes.`,
+  proposeMax: `That day already has ${CLASSES_PER_DAY} classes. Pick one of them instead.`,
   bigDays: `Only ${MAX_BIG_DAYS} days a week can have ${MAX_CLASSES_PER_DAY} classes.`,
   late: `Classes have to end by ${GRID_END}:00.`,
   overlap: "It runs into another class.",

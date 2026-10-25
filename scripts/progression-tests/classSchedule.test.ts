@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  GRID_END, type GymClass, athleteView, currentPackage, packageLocked, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
+  GRID_END, type GymClass, athleteView, currentPackage, packageLocked, proposeProblem, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
   headcount, isBlocked, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 
@@ -75,6 +75,7 @@ assert.equal(addClassProblem(big(0), [], 0, 15), "max")
 const twoBig = [...big(0), ...big(2), { id: "t1", day: 3, start: 6, roster: [] }, { id: "t2", day: 3, start: 9, roster: [] }]
 assert.equal(addClassProblem(twoBig, [], 3, 12), "bigDays")                  // Mon and Wed already have 3
 assert.equal(addClassProblem(twoBig, [], 4, 12), null)                       // Fri has none
+assert.equal(proposeProblem(EXAMPLE_CLASSES, blocks, 0, 12.5), "max")        // athletes can't add a 3rd
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 10), "overlap")     // Sat 9:30 runs to 12:00
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 12), null)
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 18), "late")

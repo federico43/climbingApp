@@ -46,8 +46,6 @@ export const CAPACITY = 4
 export const CLASSES_PER_DAY = 2
 export const MAX_CLASSES_PER_DAY = 3
 export const MAX_BIG_DAYS = 2
-// Classes an athlete takes a week.
-export const MAX_CLASSES_PER_WEEK = 2
 // Sessions left at which the athlete and the coach get a heads-up.
 export const LOW_SESSIONS = 2
 
@@ -134,6 +132,14 @@ export function dayFullProblem(classes: { day: number }[], day: number): "max" |
   if (n < CLASSES_PER_DAY) return null
   const bigDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== day && count(d) >= MAX_CLASSES_PER_DAY).length
   return bigDays >= MAX_BIG_DAYS ? "bigDays" : null
+}
+
+// Why an athlete can't propose this time: only on days with fewer than 2
+// classes (the third class of a day is the coach's call), and the class has
+// to fit. Null when they can.
+export function proposeProblem(classes: GymClass[], blocks: BlockedTime[], day: number, start: number): AddClassProblem | null {
+  if (classes.filter((c) => c.day === day).length >= CLASSES_PER_DAY) return "max"
+  return addClassProblem(classes, blocks, day, start)
 }
 
 // Why the coach can't put a class at this time, or null when they can.
