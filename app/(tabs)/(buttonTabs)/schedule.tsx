@@ -1,7 +1,7 @@
 import { useAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro } from "@/components/schedule/FeatureIntro"
+import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, refreshClassSchedule, saveUsualClasses, useClassSchedule } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
+import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
@@ -20,7 +21,7 @@ const NO_FIT: Record<AddClassProblem, string> = {
   max: "That day already has 2 classes.",
   overlap: "It runs into another class. Pick a free time.",
   blocked: "Your coach can't teach then.",
-  late: "Classes have to end by 18:00.",
+  late: `Classes have to end by ${GRID_END}:00.`,
 }
 
 type Mode = { kind: "move" | "propose"; from: string } | { kind: "usual" } | null
@@ -61,6 +62,16 @@ export default function ScheduleScreen() {
 
   const renderDay = (day: number) => (
     <>
+      {/* The coach's blocked times: nothing can be proposed there. */}
+      {wk.blocks.filter((b) => b.day === day).map((b, i) => (
+        <GridBlock
+          key={`b${i}`}
+          start={b.all ? GRID_START : b.start}
+          hours={b.all ? GRID_END - GRID_START : b.end - b.start}
+          tone="blocked"
+          text="Blocked"
+        />
+      ))}
       {wk.classes.filter((c) => c.day === day).map((c) => {
         const e = entryFor(c.id)
         const names = [...(e && e.state !== "skip" ? [me] : []), ...c.roster]
@@ -145,6 +156,7 @@ export default function ScheduleScreen() {
         <SubScreenHeader
           title={nextWeek ? "Next week" : "This week"}
           subtitle={st.pkg ? `${st.pkg.left} sessions left · use by ${st.pkg.useBy}` : "No package yet. Ask your coach."}
+          right={<IntroButton id="class-week-v2" />}
         />
         <View style={s.top}>
           {st.status !== "ready" ? (
@@ -178,11 +190,15 @@ export default function ScheduleScreen() {
               <Text style={s.bannerSave}>Start</Text>
             </Pressable>
           ) : (
-            <Pressable hitSlop={8} onPress={() => { setUsual(st.defaults); setMode({ kind: "usual" }) }}>
-              <Text style={s.link}>
-                Usual classes: {st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(", ")} · Change
+            <View style={s.usualRow}>
+              <Text style={s.link} numberOfLines={1}>
+                Usual: {st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(", ")}
               </Text>
-            </Pressable>
+              <Pressable style={s.pill} hitSlop={6} onPress={() => { setUsual(st.defaults); setMode({ kind: "usual" }) }}>
+                <Ionicons name="create-outline" size={14} color={C.green} />
+                <Text style={s.pillText}>Change</Text>
+              </Pressable>
+            </View>
           )}
         </View>
         <WeekGrid
@@ -191,6 +207,7 @@ export default function ScheduleScreen() {
           dimPast
           dimDays={proposingFrom ? [0, 1, 2, 3, 4, 5, 6].filter((d) => d >= today && !proposeDays.includes(d)) : []}
           onPressTime={proposingFrom ? proposeAt : undefined}
+          onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
       </SafeAreaView>
@@ -363,7 +380,13 @@ const s = StyleSheet.create({
   bannerText: { flex: 1, color: C.yellow, fontSize: 13, fontWeight: "600" },
   bannerCancel: { color: C.textSecondary, fontSize: 13, fontWeight: "700" },
   bannerSave: { color: C.green, fontSize: 13, fontWeight: "800" },
-  link: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  link: { flex: 1, color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  usualRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pill: {
+    flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "rgba(111,207,151,0.45)",
+    backgroundColor: "rgba(111,207,151,0.10)", borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12,
+  },
+  pillText: { color: C.green, fontSize: 13, fontWeight: "800" },
   warn: {
     fontSize: 13, lineHeight: 19, color: C.yellow, backgroundColor: "rgba(254,215,102,0.08)",
     borderRadius: 12, padding: 12, overflow: "hidden",

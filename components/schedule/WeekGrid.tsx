@@ -2,9 +2,11 @@ import { CLASS_HOURS, GRID_END, GRID_START, formatTime } from "@/utils/classSche
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
 import React, { createContext, useContext, useMemo, useRef, useState } from "react"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native"
 import { Gesture, GestureDetector, ScrollView } from "react-native-gesture-handler"
 
+// The smallest hour row; rows grow to fill the screen when there's room.
+// Screens read taps on this scale (see onPressTime).
 export const HOUR_HEIGHT = 46
 const HANDLE = 14 // height of the resize handles on a block's edges
 const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i)
@@ -14,8 +16,9 @@ const LETTERS = ["M", "T", "W", "T", "F", "S", "S"]
 // above the columns to its right.
 const DragDay = createContext<(day: number | null) => void>(() => {})
 const ColumnDay = createContext(0)
+const HourHeight = createContext(HOUR_HEIGHT)
 
-// One week, Google-Calendar style: 7 day columns, 6:00 to 18:00.
+// One week, Google-Calendar style: 7 day columns, 6:00 to 20:00.
 export function WeekGrid({
   dates,
   today = -1,
@@ -24,6 +27,7 @@ export function WeekGrid({
   dimDays = [],
   onPressDay,
   onPressTime,
+  onRefresh,
   renderDay,
 }: {
   dates: Date[]
@@ -32,10 +36,17 @@ export function WeekGrid({
   offDays?: number[]              // struck-through day numbers (blocked days)
   dimDays?: number[]              // faded days (e.g. ones the athlete can't pick)
   onPressDay?: (day: number) => void
-  onPressTime?: (day: number, y: number) => void
+  onPressTime?: (day: number, y: number) => void   // y on the HOUR_HEIGHT scale
+  onRefresh?: () => Promise<unknown>               // pull down to reload
   renderDay: (day: number) => React.ReactNode
 }) {
   const [dragDay, setDragDay] = useState<number | null>(null)
+  const [hh, setHh] = useState(HOUR_HEIGHT)
+  const [refreshing, setRefreshing] = useState(false)
+  const refresh = onRefresh && (async () => {
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false) }
+  })
   return (
     <View style={{ flex: 1 }}>
       <View style={s.heads}>
@@ -53,11 +64,17 @@ export function WeekGrid({
           )
         })}
       </View>
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} scrollEnabled={dragDay === null}>
-        <View style={[s.body, { height: HOURS.length * HOUR_HEIGHT }]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={dragDay === null}
+        onLayout={(e) => setHh(Math.max(HOUR_HEIGHT, Math.floor(e.nativeEvent.layout.height / HOURS.length)))}
+        refreshControl={refresh ? <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={C.green} /> : undefined}
+      >
+        <View style={[s.body, { height: HOURS.length * hh }]}>
           <View style={s.gutter}>
             {HOURS.slice(1).map((h) => (
-              <Text key={h} style={[s.hour, { top: (h - GRID_START) * HOUR_HEIGHT - 6 }]}>{h}:00</Text>
+              <Text key={h} style={[s.hour, { top: (h - GRID_START) * hh - 6 }]}>{h}:00</Text>
             ))}
           </View>
           {dates.map((_, day) => (
@@ -65,13 +82,15 @@ export function WeekGrid({
               key={day}
               style={[s.col, ((dimPast && day < today) || dimDays.includes(day)) && { opacity: 0.45 }, dragDay === day && { zIndex: 10 }]}
               disabled={!onPressTime}
-              onPress={(e) => onPressTime?.(day, e.nativeEvent.locationY)}
+              onPress={(e) => onPressTime?.(day, (e.nativeEvent.locationY * HOUR_HEIGHT) / hh)}
             >
               {HOURS.map((h) => (
-                <View key={h} pointerEvents="none" style={[s.line, { top: (h - GRID_START) * HOUR_HEIGHT }]} />
+                <View key={h} pointerEvents="none" style={[s.line, { top: (h - GRID_START) * hh }]} />
               ))}
               <DragDay.Provider value={setDragDay}>
-                <ColumnDay.Provider value={day}>{renderDay(day)}</ColumnDay.Provider>
+                <HourHeight.Provider value={hh}>
+                  <ColumnDay.Provider value={day}>{renderDay(day)}</ColumnDay.Provider>
+                </HourHeight.Provider>
               </DragDay.Provider>
             </Pressable>
           ))}
@@ -104,6 +123,7 @@ export function GridBlock({
   onDrop?: (days: number, hours: number) => void
   onResize?: (start: number, end: number) => void
 }) {
+  const hh = useContext(HourHeight)
   if (onDrop) return <DraggableBlock start={start} hours={hours} tone={tone} text={text} onPress={onPress} onDrop={onDrop} onResize={onResize} />
   return (
     <Pressable
@@ -111,7 +131,7 @@ export function GridBlock({
       disabled={!onPress}
       // Without an action, taps go through to the day column (e.g. to pick a time).
       pointerEvents={onPress ? "auto" : "none"}
-      style={[s.block, tones[tone], { top: (start - GRID_START) * HOUR_HEIGHT + 1, height: hours * HOUR_HEIGHT - 3 }]}
+      style={[s.block, tones[tone], { top: (start - GRID_START) * hh + 1, height: hours * hh - 3 }]}
     >
       <Text style={[s.blockText, toneText[tone]]}>{text}</Text>
     </Pressable>
@@ -133,6 +153,7 @@ function DraggableBlock({
 }) {
   const setDragDay = useContext(DragDay)
   const day = useContext(ColumnDay)
+  const hh = useContext(HourHeight)
   const colWidth = useRef(0)
   const [drag, setDrag] = useState<{ days: number; hours: number } | null>(null)
   const [resize, setResize] = useState<{ start: number; end: number } | null>(null)
@@ -144,7 +165,7 @@ function DraggableBlock({
   // Snapped to whole days and half hours, kept inside the grid.
   const snap = (dx: number, dy: number) => ({
     days: Math.max(-day, Math.min(6 - day, colWidth.current ? Math.round(dx / colWidth.current) : 0)),
-    hours: Math.max(GRID_START - start, Math.min(GRID_END - hours - start, Math.round(dy / (HOUR_HEIGHT / 2)) / 2)),
+    hours: Math.max(GRID_START - start, Math.min(GRID_END - hours - start, Math.round(dy / (hh / 2)) / 2)),
   })
 
   const gesture = useMemo(() => {
@@ -178,7 +199,7 @@ function DraggableBlock({
     const end = start + hours
     const edge = (which: "top" | "bottom") => {
       const span = (dy: number) => {
-        const d = Math.round(dy / (HOUR_HEIGHT / 2)) / 2
+        const d = Math.round(dy / (hh / 2)) / 2
         return which === "top"
           ? { start: Math.max(GRID_START, Math.min(end - 0.5, start + d)), end }
           : { start, end: Math.min(GRID_END, Math.max(start + 0.5, end + d)) }
@@ -214,12 +235,12 @@ function DraggableBlock({
     const bottom = edge("bottom")
     return { block: Gesture.Exclusive(pan, tap), top, bottom }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, start, hours])
+  }, [day, start, hours, hh])
 
   const shownStart = resize?.start ?? start
   const shownHours = resize ? resize.end - resize.start : hours
-  const top = (shownStart - GRID_START) * HOUR_HEIGHT + 1
-  const height = shownHours * HOUR_HEIGHT - 3
+  const top = (shownStart - GRID_START) * hh + 1
+  const height = shownHours * hh - 3
 
   return (
     <>
@@ -232,7 +253,7 @@ function DraggableBlock({
             s.block, tones[tone], { top, height },
             onResize && { paddingTop: 12 },
             (drag || resize) && s.dragging,
-            drag && { transform: [{ translateX: drag.days * colWidth.current }, { translateY: drag.hours * HOUR_HEIGHT }] },
+            drag && { transform: [{ translateX: drag.days * colWidth.current }, { translateY: drag.hours * hh }] },
           ]}
         >
           <Text style={[s.blockText, toneText[tone]]}>

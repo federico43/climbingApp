@@ -19,7 +19,7 @@ const EXAMPLE_CLASSES: GymClass[] = [
 assert.equal(formatTime(9.5), "9:30")
 assert.equal(formatTime(7), "7:00")
 
-// 46 px per hour: 50 px down → third half hour → 7:00; the class must end by 18:00
+// 46 px per hour: 50 px down → third half hour → 7:00; the class must end by 20:00
 assert.equal(startFromOffset(50, 46), GRID_START + 1)
 assert.equal(startFromOffset(-5, 46), GRID_START)
 assert.equal(startFromOffset(10_000, 46), GRID_END - 2.5)
@@ -67,12 +67,12 @@ const c8 = EXAMPLE_CLASSES.find((c) => c.id === "c8")!
 assert.equal(headcount(c8, plain), c8.roster.length + 1)
 assert.equal(headcount(c8, skipped), c8.roster.length)
 
-// Coach: max 2 a day, no overlaps, nothing in blocked time, nothing past 18:00
+// Coach: max 2 a day, no overlaps, nothing in blocked time, nothing past 20:00
 const blocks = [{ day: 4, start: 12.5, end: GRID_END }]
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 0, 12.5), "max")       // Mon has 9:30 and 15:30
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 10), "overlap")     // Sat 9:30 runs to 12:00
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 12), null)
-assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 16), "late")
+assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 18), "late")
 assert.equal(addClassProblem([], blocks, 4, 13), "blocked")
 assert.ok(isBlocked([{ day: 2, start: 6, end: 18, all: true }], 2, 9))
 assert.ok(!isBlocked(blocks, 4, 9.5))                                         // 9:30–12:00 ends before 12:30

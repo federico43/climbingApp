@@ -1,6 +1,6 @@
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro } from "@/components/schedule/FeatureIntro"
+import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import {
@@ -158,6 +158,7 @@ export default function ClassesScreen() {
             <Text style={s.title}>Next week</Text>
             <Text style={s.subtitle}>{range} · max {MAX_CLASSES_PER_DAY} classes a day</Text>
           </View>
+          <IntroButton id="coach-classes" />
           <SettingsButton />
         </View>
         <View style={s.top}>
@@ -182,6 +183,7 @@ export default function ClassesScreen() {
             if (dayBlocked(day)) return setSheet({ kind: "day", day })
             setSheet({ kind: "slot", day, start: startFromOffset(y, HOUR_HEIGHT) })
           }}
+          onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
         <View style={s.footer}>

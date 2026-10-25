@@ -6,7 +6,7 @@ export const CLASS_HOURS = 2.5
 export const CAPACITY = 4
 export const MAX_CLASSES_PER_DAY = 2
 export const GRID_START = 6
-export const GRID_END = 18
+export const GRID_END = 20
 // Missed sessions an athlete can move to a later week, per package.
 export const MAX_CARRY = 2
 export const LOW_SESSIONS = 2

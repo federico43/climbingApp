@@ -11,17 +11,35 @@ export interface IntroPage {
 }
 
 const KEY = (id: string) => `feature-intro-seen:${id}`
+// Pop-ups asked to show again (the "i" button), by id.
+const replay = new Set<(id: string) => void>()
+
+// Small "i" button that opens the screen's pop-ups again.
+export function IntroButton({ id }: { id: string }) {
+  return (
+    <Pressable hitSlop={10} onPress={() => replay.forEach((l) => l(id))} accessibilityLabel="How this screen works">
+      <Ionicons name="information-circle-outline" size={24} color={C.textSecondary} />
+    </Pressable>
+  )
+}
 
 // A centered pop-up that explains a new feature the first time a screen opens
 // (like the ones Spotify shows): picture on top, title, short text, one button.
 // Several pages step through with "Next". Once closed it never shows again on
-// this device.
+// this device, unless its IntroButton is tapped.
 export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) {
   const [show, setShow] = useState(false)
   const [i, setI] = useState(0)
 
   useEffect(() => {
     AsyncStorage.getItem(KEY(id)).then((v) => setShow(v !== "1")).catch(() => {})
+    const l = (which: string) => {
+      if (which !== id) return
+      setI(0)
+      setShow(true)
+    }
+    replay.add(l)
+    return () => { replay.delete(l) }
   }, [id])
 
   const close = () => {

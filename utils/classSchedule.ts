@@ -37,9 +37,9 @@ export interface WeekEntry {
 }
 
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-// The calendar's visible hours: 6:00 to 18:00.
+// The calendar's visible hours: 6:00 to 20:00 (the last class starts at 17:30).
 export const GRID_START = 6
-export const GRID_END = 18
+export const GRID_END = 20
 export const CLASS_HOURS = 2.5
 export const CAPACITY = 4
 export const MAX_CLASSES_PER_DAY = 2
