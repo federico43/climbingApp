@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  GRID_END, type GymClass, athleteView, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
+  GRID_END, type GymClass, athleteView, currentPackage, packageLocked, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
   headcount, isBlocked, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 
@@ -67,9 +67,14 @@ const c8 = EXAMPLE_CLASSES.find((c) => c.id === "c8")!
 assert.equal(headcount(c8, plain), c8.roster.length + 1)
 assert.equal(headcount(c8, skipped), c8.roster.length)
 
-// Coach: max 2 a day, no overlaps, nothing in blocked time, nothing past 20:00
+// Coach: 2 a day (3 on up to 2 days), no overlaps, nothing in blocked time, nothing past 20:00
 const blocks = [{ day: 4, start: 12.5, end: GRID_END }]
-assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 0, 12.5), "max")       // Mon has 9:30 and 15:30
+assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 0, 12.5), null)        // Mon has 9:30 and 15:30: a 3rd fits
+const big = (day: number) => [6, 9, 12].map((start, i) => ({ id: `b${day}${i}`, day, start, roster: [] }))
+assert.equal(addClassProblem(big(0), [], 0, 15), "max")
+const twoBig = [...big(0), ...big(2), { id: "t1", day: 3, start: 6, roster: [] }, { id: "t2", day: 3, start: 9, roster: [] }]
+assert.equal(addClassProblem(twoBig, [], 3, 12), "bigDays")                  // Mon and Wed already have 3
+assert.equal(addClassProblem(twoBig, [], 4, 12), null)                       // Fri has none
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 10), "overlap")     // Sat 9:30 runs to 12:00
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 5, 12), null)
 assert.equal(addClassProblem(EXAMPLE_CLASSES, blocks, 6, 18), "late")
@@ -108,5 +113,19 @@ assert.deepEqual(parseSlot(slotKey({ day: 3, start: 9.5 })), { day: 3, start: 9.
 assert.equal(parseSlot("9@1"), null)
 assert.equal(classDate("2026-10-26", { day: 3, start: 9.5 }).getTime(), new Date(2026, 9, 29, 9, 30).getTime())
 assert.equal(sessionsLeft(8, 2, 3), 5)
+
+// Packages: the latest started one counts; used up or expired locks the app
+const pkgs = [
+  { startsOn: "2026-09-01", useBy: "2026-10-01", $createdAt: "2026-09-01T10:00:00Z" },
+  { startsOn: "2026-10-20", useBy: "2026-11-20", $createdAt: "2026-10-20T10:00:00Z" },
+  { startsOn: "2026-10-20", useBy: "2026-12-01", $createdAt: "2026-10-20T15:00:00Z" },
+  { startsOn: "2026-11-01", useBy: "2026-12-01" },
+]
+assert.equal(currentPackage(pkgs, "2026-10-25")?.useBy, "2026-12-01")
+assert.equal(currentPackage(pkgs, "2026-08-01"), null)
+assert.equal(packageLocked(null, 0, "2026-10-25"), false)
+assert.equal(packageLocked(pkgs[1], 0, "2026-10-25"), true)
+assert.equal(packageLocked(pkgs[1], 3, "2026-10-25"), false)
+assert.equal(packageLocked(pkgs[0], 3, "2026-10-25"), true)
 
 console.log("classSchedule tests passed")

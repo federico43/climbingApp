@@ -42,7 +42,12 @@ export const GRID_START = 6
 export const GRID_END = 20
 export const CLASS_HOURS = 2.5
 export const CAPACITY = 4
-export const MAX_CLASSES_PER_DAY = 2
+// Classes a day: 2, or 3 on at most MAX_BIG_DAYS days of the week.
+export const CLASSES_PER_DAY = 2
+export const MAX_CLASSES_PER_DAY = 3
+export const MAX_BIG_DAYS = 2
+// Classes an athlete takes a week.
+export const MAX_CLASSES_PER_WEEK = 2
 // Sessions left at which the athlete and the coach get a heads-up.
 export const LOW_SESSIONS = 2
 
@@ -118,7 +123,18 @@ export function isBlocked(blocks: BlockedTime[], day: number, start: number, end
   return blocks.some((b) => b.day === day && (b.all || (start < b.end && end > b.start)))
 }
 
-export type AddClassProblem = "max" | "overlap" | "blocked" | "late"
+export type AddClassProblem = "max" | "bigDays" | "overlap" | "blocked" | "late"
+
+// Why `day` can't take one more class: it has 3 already, or it has 2 and
+// two other days already have 3. Null when there's room.
+export function dayFullProblem(classes: { day: number }[], day: number): "max" | "bigDays" | null {
+  const count = (d: number) => classes.filter((c) => c.day === d).length
+  const n = count(day)
+  if (n >= MAX_CLASSES_PER_DAY) return "max"
+  if (n < CLASSES_PER_DAY) return null
+  const bigDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== day && count(d) >= MAX_CLASSES_PER_DAY).length
+  return bigDays >= MAX_BIG_DAYS ? "bigDays" : null
+}
 
 // Why the coach can't put a class at this time, or null when they can.
 export function addClassProblem(
@@ -128,7 +144,8 @@ export function addClassProblem(
   start: number,
 ): AddClassProblem | null {
   const sameDay = classes.filter((c) => c.day === day)
-  if (sameDay.length >= MAX_CLASSES_PER_DAY) return "max"
+  const full = dayFullProblem(classes, day)
+  if (full) return full
   if (start + CLASS_HOURS > GRID_END) return "late"
   if (sameDay.some((c) => overlaps(c.start, start))) return "overlap"
   if (isBlocked(blocks, day, start)) return "blocked"
@@ -186,6 +203,19 @@ export const MAX_CARRY = 2
 // the package started; skips past the first MAX_CARRY are lost.
 export const sessionsLeft = (total: number, done: number, skips: number) =>
   Math.max(0, total - done - Math.max(0, skips - MAX_CARRY))
+
+// The package in use on `today`: the latest one already started (the newest
+// row when two start the same day).
+export function currentPackage<P extends { startsOn: string; $createdAt?: string }>(pkgs: P[], today: string): P | null {
+  return pkgs
+    .filter((p) => p.startsOn <= today)
+    .sort((a, b) => (a.startsOn !== b.startsOn ? (a.startsOn < b.startsOn ? 1 : -1) : (a.$createdAt ?? "") < (b.$createdAt ?? "") ? 1 : -1))[0] ?? null
+}
+
+// An athlete is locked out when their package is used up or past its use-by
+// date, until the coach adds a new one. No package at all doesn't lock.
+export const packageLocked = (pkg: { useBy: string } | null, left: number, today: string) =>
+  !!pkg && (left <= 0 || pkg.useBy < today)
 
 // A request row from the server (table class_requests).
 export interface ClassRequestRow {

@@ -4,7 +4,7 @@ import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import {
-  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, GRID_END, GRID_START, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   addClassProblem, dateOf, formatTime, startFromOffset, weekDates, ymd,
 } from "@/utils/classSchedule"
 import {
@@ -21,6 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PROBLEM: Record<AddClassProblem, string> = {
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
+  bigDays: `Only ${MAX_BIG_DAYS} days a week can have ${MAX_CLASSES_PER_DAY} classes`,
   overlap: "Overlaps another class",
   blocked: "You blocked this time",
   late: `Classes end by ${GRID_END}:00`,
@@ -37,7 +38,7 @@ type SheetState =
   | { kind: "package"; athleteId: string }
   | null
 
-// Coach tab: plan next week's classes (max 2 a day), block the times you
+// Coach tab: plan next week's classes (2 a day, 3 on up to 2 days), block the times you
 // can't teach, answer athletes' requests, add packages. The week is a draft
 // on the phone until it's published.
 export default function ClassesScreen() {
@@ -147,7 +148,7 @@ export default function ClassesScreen() {
         <FeatureIntro
           id="coach-classes"
           pages={[
-            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${MAX_CLASSES_PER_DAY} classes a day. Every Saturday we remind you to do it.` },
+            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
             { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
             { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
@@ -156,7 +157,7 @@ export default function ClassesScreen() {
         <View style={s.header}>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>Next week</Text>
-            <Text style={s.subtitle}>{range} · max {MAX_CLASSES_PER_DAY} classes a day</Text>
+            <Text style={s.subtitle}>{range} · {CLASSES_PER_DAY} classes a day, {MAX_CLASSES_PER_DAY} on up to {MAX_BIG_DAYS} days</Text>
           </View>
           <IntroButton id="coach-classes" />
           <SettingsButton />
