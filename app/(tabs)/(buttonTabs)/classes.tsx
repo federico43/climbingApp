@@ -15,7 +15,7 @@ import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useMemo, useState } from "react"
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -48,6 +48,7 @@ export default function ClassesScreen() {
   const [sheet, setSheet] = useState<SheetState>(null)
   // A new package: sessions and weeks to use them.
   const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
+  const [pkgQuery, setPkgQuery] = useState("")
   const requests = pendingRequests(st)
   // This week's requests only show in the list; the grid is next week.
   const gridRequests = requests.filter((r) => r.weekStart === st.nextWeekStart)
@@ -285,7 +286,20 @@ export default function ClassesScreen() {
         subtitle="Sessions each athlete paid for"
         onClose={() => setSheet(null)}
       >
-        {st.athletes.map((a) => {
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={pkgQuery}
+            onChangeText={setPkgQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {st.athletes.filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())).map((a) => {
           const latest = st.packages.filter((p) => p.athleteId === a.id).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
           return (
             <View key={a.id} style={s.req}>
@@ -307,6 +321,9 @@ export default function ClassesScreen() {
           )
         })}
         {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
+        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
+          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
+        )}
       </Sheet>
 
       <Sheet
@@ -348,6 +365,11 @@ const DAYS = [0, 1, 2, 3, 4, 5, 6]
 const clampDay = (d: number) => Math.max(0, Math.min(6, d))
 
 const s = StyleSheet.create({
+  search: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 12, height: 40,
+  },
+  searchInput: { flex: 1, color: C.textPrimary, fontSize: 14.5, height: 40 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
   subtitle: { fontSize: 13, fontWeight: "500", color: C.textSecondary, marginTop: 2 },
