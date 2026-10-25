@@ -1,4 +1,6 @@
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
+import type { MovementType } from "@/utils/movementTypes"
+import type { Focus } from "@/utils/scProgression"
 
 // Coach dashboard Stats card (docs/athlete-stats.md): one tile per metric,
 // first point vs last point of the period. Pure — no React Native imports —
@@ -81,26 +83,169 @@ function round1(v: number): string {
   return String(Math.round(v * 10) / 10)
 }
 
+// ─── S&C by movement pattern ──────────────────────────────────────────────────
+// One chart per pattern; a pattern can hold several exercises, and each
+// exercise is tracked per focus — a hypertrophy set says nothing about a
+// max-force one, so they're never on the same line.
+
+export const FOCUS_ORDER: Focus[] = ["max_force", "hypertrophy", "explosiveness"]
+
+export interface ScExerciseStats {
+  id: string
+  name: string
+  unit: "kg" | "added_kg"
+  byFocus: Partial<Record<Focus, StatPoint[]>>   // points oldest first
+}
+
+export interface ScPatternStats {
+  pattern: MovementType
+  exercises: ScExerciseStats[]
+}
+
+// Patterns the card shows: mobility is left out, and so is any pattern with
+// nothing logged.
+export function visiblePatterns(patterns: ScPatternStats[]): ScPatternStats[] {
+  return patterns
+    .filter((p) => p.pattern !== "mobility")
+    .map((p) => ({ ...p, exercises: p.exercises.filter((e) => FOCUS_ORDER.some((f) => (e.byFocus[f]?.length ?? 0) > 0)) }))
+    .filter((p) => p.exercises.length > 0)
+}
+
+// The focuses an exercise was done at, in display order, as metrics
+// statChange can read.
+export function focusMetrics(e: ScExerciseStats): { focus: Focus; metric: StatMetric }[] {
+  return FOCUS_ORDER
+    .filter((f) => (e.byFocus[f]?.length ?? 0) > 0)
+    .map((f) => ({ focus: f, metric: { id: `${e.id}:${f}`, label: e.name, unit: e.unit, points: e.byFocus[f]! } }))
+}
+
+// ─── Blocks: project bouldering and 1 on 1 off ───────────────────────────────
+
+export interface ProjectSessionStat {
+  label: string     // session date ("Oct 7")
+  minutes: number   // time on the project (first → last attempt)
+  grade: string     // BoulderLevelOptions value worked
+  sent: boolean     // the project went down that session
+}
+
+export interface WarmupSessionStat {
+  label: string
+  minutes: number   // time on: rounds × work time
+}
+
+export interface PeriodStats {
+  metrics: StatMetric[]
+  sc: ScPatternStats[]
+  projects: ProjectSessionStat[]
+  warmups: WarmupSessionStat[]
+}
+
 // ─── Sample data (UI mockup only) ─────────────────────────────────────────────
 
 const weeks = (...values: number[]) => values.map((value, i) => ({ label: `W${i + 1}`, value }))
 const blocks = (...values: number[]) => values.map((value, i) => ({ label: `B${i + 1}`, value }))
 
-export const SAMPLE_STATS: Record<StatsPeriod, StatMetric[]> = {
-  block: [
-    { id: "edge_lift_max", label: "Edge lift max", unit: "kg", points: weeks(38, 39, 40.5, 42) },
-    { id: "four_by_four", label: "4×4", unit: "colour", points: weeks(2, 2, 3, 3) },
-    { id: "intervals", label: "Intervals", unit: "s", points: weeks(45, 45, 55, 60) },
-    { id: "sc_pull", label: "Pull-up", unit: "added_kg", points: weeks(12, 12, 12, 12) },
-    { id: "sc_split_squat", label: "Split squat", unit: "kg", points: weeks(30, 30, 28, 26) },
-    { id: "workouts", label: "Workouts", unit: "workouts", points: weeks(2, 2, 1, 2), planned: 8 },
-  ],
-  all: [
-    { id: "edge_lift_max", label: "Edge lift max", unit: "kg", points: blocks(33, 36, 38, 42) },
-    { id: "four_by_four", label: "4×4", unit: "colour", points: blocks(1, 2, 2, 3) },
-    { id: "intervals", label: "Intervals", unit: "s", points: blocks(30, 40, 45, 60) },
-    { id: "sc_pull", label: "Pull-up", unit: "added_kg", points: blocks(5, 8, 12, 12) },
-    { id: "sc_split_squat", label: "Split squat", unit: "kg", points: blocks(20, 26, 30, 26) },
-    { id: "workouts", label: "Workouts", unit: "workouts", points: blocks(11, 12, 10, 7), planned: 44 },
-  ],
+const dated = (labels: string[], values: number[]) => values.map((value, i) => ({ label: labels[i], value }))
+const blockDates = ["Oct 6", "Oct 13", "Oct 20", "Oct 27", "Nov 3"]
+const blockLabels = ["B1", "B2", "B3", "B4"]
+
+export const SAMPLE_STATS: Record<StatsPeriod, PeriodStats> = {
+  block: {
+    metrics: [
+      { id: "edge_lift_max", label: "Edge lift max", unit: "kg", points: weeks(38, 39, 40.5, 42) },
+      { id: "four_by_four", label: "4×4", unit: "colour", points: weeks(2, 2, 3, 3) },
+      { id: "intervals", label: "Intervals", unit: "s", points: weeks(45, 45, 55, 60) },
+      { id: "workouts", label: "Workouts", unit: "workouts", points: weeks(2, 2, 1, 2), planned: 8 },
+    ],
+    sc: [
+      { pattern: "pull_vertical", exercises: [
+        { id: "pullup", name: "Weighted pull-up", unit: "added_kg", byFocus: {
+          max_force: dated(blockDates, [10, 12, 14]),
+          hypertrophy: dated(blockDates.slice(1), [5, 5]),
+        } },
+        { id: "lat", name: "Lat pulldown", unit: "kg", byFocus: { hypertrophy: dated(blockDates, [40, 42.5, 45]) } },
+        { id: "pullup_expl", name: "Explosive pull-up", unit: "added_kg", byFocus: { explosiveness: dated(blockDates, [0, 2.5]) } },
+      ] },
+      { pattern: "push", exercises: [
+        { id: "dips", name: "Dips", unit: "added_kg", byFocus: {
+          max_force: dated(blockDates, [8, 10]),
+          hypertrophy: dated(blockDates.slice(1), [0, 0, 2]),
+        } },
+      ] },
+      { pattern: "hinge", exercises: [
+        { id: "rdl", name: "Romanian deadlift", unit: "kg", byFocus: {
+          max_force: dated(blockDates, [60, 65, 70]),
+          hypertrophy: dated(blockDates.slice(1), [40, 40]),
+        } },
+      ] },
+      { pattern: "squat", exercises: [
+        { id: "split", name: "Split squat", unit: "kg", byFocus: {
+          max_force: dated(blockDates, [30, 28, 26]),
+          explosiveness: dated(blockDates.slice(1), [10, 12]),
+        } },
+      ] },
+      { pattern: "mobility", exercises: [
+        { id: "pancake", name: "Pancake stretch", unit: "kg", byFocus: { hypertrophy: dated(blockDates, [0, 0]) } },
+      ] },
+    ],
+    projects: [
+      { label: "Oct 7", minutes: 20, grade: "green", sent: false },
+      { label: "Oct 14", minutes: 25, grade: "yellow", sent: false },
+      { label: "Oct 21", minutes: 30, grade: "yellow", sent: true },
+      { label: "Oct 28", minutes: 20, grade: "red", sent: false },
+      { label: "Nov 4", minutes: 35, grade: "red", sent: false },
+    ],
+    warmups: [
+      { label: "Oct 9", minutes: 8 },
+      { label: "Oct 16", minutes: 9 },
+      { label: "Oct 23", minutes: 10 },
+      { label: "Oct 30", minutes: 10 },
+    ],
+  },
+  all: {
+    metrics: [
+      { id: "edge_lift_max", label: "Edge lift max", unit: "kg", points: blocks(33, 36, 38, 42) },
+      { id: "four_by_four", label: "4×4", unit: "colour", points: blocks(1, 2, 2, 3) },
+      { id: "intervals", label: "Intervals", unit: "s", points: blocks(30, 40, 45, 60) },
+      { id: "workouts", label: "Workouts", unit: "workouts", points: blocks(11, 12, 10, 7), planned: 44 },
+    ],
+    sc: [
+      { pattern: "pull_vertical", exercises: [
+        { id: "pullup", name: "Weighted pull-up", unit: "added_kg", byFocus: {
+          max_force: dated(blockLabels, [4, 7, 10, 14]),
+          hypertrophy: dated(blockLabels, [0, 2.5, 5, 5]),
+        } },
+        { id: "lat", name: "Lat pulldown", unit: "kg", byFocus: { hypertrophy: dated(blockLabels, [32.5, 35, 40, 45]) } },
+      ] },
+      { pattern: "push", exercises: [
+        { id: "dips", name: "Dips", unit: "added_kg", byFocus: { max_force: dated(blockLabels, [0, 4, 8, 10]) } },
+      ] },
+      { pattern: "hinge", exercises: [
+        { id: "rdl", name: "Romanian deadlift", unit: "kg", byFocus: { max_force: dated(blockLabels, [45, 55, 60, 70]) } },
+      ] },
+      { pattern: "squat", exercises: [
+        { id: "split", name: "Split squat", unit: "kg", byFocus: { max_force: dated(blockLabels, [20, 26, 30, 26]) } },
+      ] },
+    ],
+    projects: [
+      { label: "Aug 5", minutes: 15, grade: "blue", sent: true },
+      { label: "Aug 19", minutes: 20, grade: "green", sent: false },
+      { label: "Sep 2", minutes: 20, grade: "green", sent: true },
+      { label: "Sep 16", minutes: 25, grade: "green", sent: false },
+      { label: "Sep 30", minutes: 25, grade: "yellow", sent: false },
+      { label: "Oct 14", minutes: 25, grade: "yellow", sent: false },
+      { label: "Oct 21", minutes: 30, grade: "yellow", sent: true },
+      { label: "Oct 28", minutes: 20, grade: "red", sent: false },
+      { label: "Nov 4", minutes: 35, grade: "red", sent: false },
+    ],
+    warmups: [
+      { label: "Aug 7", minutes: 6 },
+      { label: "Aug 21", minutes: 6 },
+      { label: "Sep 4", minutes: 7 },
+      { label: "Sep 18", minutes: 8 },
+      { label: "Oct 2", minutes: 8 },
+      { label: "Oct 16", minutes: 9 },
+      { label: "Oct 30", minutes: 10 },
+    ],
+  },
 }
