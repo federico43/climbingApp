@@ -5,7 +5,7 @@ import type { PeriodStats } from "@/utils/athleteStats"
 import { buildAllBlocksStats, buildBlockStats, parseSessions, type StatsLibraryExercise } from "@/utils/athleteStatsData"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { localDateStr } from "@/utils/planRotation"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 // The coach Stats card's data (docs/athlete-stats.md). This block comes
 // from what the athlete detail already loaded; every plan (for All blocks
@@ -30,23 +30,28 @@ export function useAthleteStats({ athlete, plan, sessions, planWorkouts }: {
     return () => { cancelled = true }
   }, [])
 
-  // A new athlete: forget the last one's plans.
+  // A new athlete: forget the last one's plans (and ignore a load still
+  // running for them).
+  const athleteRef = useRef(athlete.$id)
   useEffect(() => {
+    athleteRef.current = athlete.$id
     setPlans(null)
     setWorkoutsByPlan({})
   }, [athlete.$id])
 
   const loadPlans = useCallback(async () => {
     if (plans || loadingPlans) return
+    const id = athlete.$id
     setLoadingPlans(true)
     try {
-      const rows = await listTrainingPlans(athlete.$id)
+      const rows = await listTrainingPlans(id)
       const lists = await Promise.all(rows.map((p) => listPlanWorkouts(p.$id).catch(() => [] as ProtocolRow[])))
+      if (athleteRef.current !== id) return
       setWorkoutsByPlan(Object.fromEntries(rows.map((p, i) => [p.$id, lists[i]])))
       setPlans(rows)
     } catch (e) {
       console.error(e)
-      setPlans([])
+      if (athleteRef.current === id) setPlans([])
     } finally {
       setLoadingPlans(false)
     }
