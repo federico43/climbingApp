@@ -8,8 +8,11 @@ import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkout
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
+import { currentOrNextPause, pauseOn, type PlanPause } from "@/utils/planPauses"
+import { ThisWeekCard } from "@/components/schedule/ThisWeekCard"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
+import { refreshClassSchedule } from "@/utils/classScheduleStore"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
   getActiveTrainingPlan,
@@ -30,6 +33,7 @@ import {
   doneThisWeek,
 } from "@/utils/planProgress"
 import {
+  addDays,
   localDateStr,
   builtMainType,
   MAIN_CYCLE,
@@ -139,6 +143,7 @@ export default function PlanScreen() {
     useCallback(() => {
       if (!User) return
       load()
+      refreshClassSchedule()
     }, [User, load])
   )
 
@@ -178,7 +183,8 @@ export default function PlanScreen() {
                   refreshing={refreshing}
                   onRefresh={async () => {
                     setRefreshing(true)
-                    try { await load() }
+                    // The This week card reads the class store, not this screen's state.
+                    try { await Promise.all([load(), refreshClassSchedule()]) }
                     finally { setRefreshing(false) }
                   }}
                   tintColor={C.green}
@@ -186,6 +192,7 @@ export default function PlanScreen() {
                 />
               }
             >
+              <ThisWeekCard />
               {error ? (
                 <Empty icon="cloud-offline-outline" title="Couldn't load your plan" text="Pull down to try again." />
               ) : !plan ? (
@@ -242,7 +249,11 @@ function PlanBody({
 
   const done = donePlanWorkouts(plan.$id, workouts, sessions)
   const doneCount = done.size
-  const thisWeek = doneThisWeek(windowStart, done, today)
+  const thisWeek = doneThisWeek(windowStart, done, today, plan.pauses)
+  // A pause running now replaces "Up next"; one coming up soon gets a heads-up.
+  const pause = over ? null : currentOrNextPause(plan.pauses, today)
+  const pausedNow = !!pause && !!pauseOn([pause], today)
+  const pauseSoon = !!pause && !pausedNow && pause.start <= addDays(today, 7)
 
   // Built climbing workouts by slot (newest wins if a slot was rebuilt).
   const builtBySlot = new Map<number, ProtocolRow>()
@@ -307,14 +318,19 @@ function PlanBody({
         </View>
       )}
 
-      {latest && (
+      {pause && (pausedNow || pauseSoon) ? (
+        <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
+          <GroupLabel icon="pause" text={pausedNow ? "Plan paused" : "Pause coming up"} />
+          <PauseCard pause={pause} now={pausedNow} />
+        </View>
+      ) : latest && (
         <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
           <GroupLabel icon="flash" text="Up next" />
           <LatestWorkoutCard workout={latest} scPart={scPart} />
         </View>
       )}
 
-      <View style={[styles.group, (latest || homework.length > 0) && styles.groupSpaced]}>
+      <View style={[styles.group, (latest || pausedNow || pauseSoon || homework.length > 0) && styles.groupSpaced]}>
       <GroupLabel icon="calendar" text="Your training plan" />
 
       {/* ── Focus ─────────────────────────────────────────────────────────── */}
@@ -340,7 +356,7 @@ function PlanBody({
             <Text style={styles.workoutsLeft}>
               {Math.max(PLAN_WORKOUTS - doneCount, 0)} left
             </Text>
-            {!over && !notStarted && (
+            {!over && !notStarted && !pausedNow && (
               <Text style={styles.workoutsWeek}>
                 This week: {thisWeek} of {WORKOUTS_PER_WEEK} done
               </Text>
@@ -391,6 +407,23 @@ function ScSummary({ patterns, hasMobility }: { patterns: string[]; hasMobility:
         </View>
       )}
       </View>
+    </View>
+  )
+}
+
+// The coach paused the plan (holidays, an injury): until when, and why.
+function PauseCard({ pause, now }: { pause: PlanPause; now: boolean }) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.kicker}>{pause.reason ?? "Pause"}</Text>
+      <Text style={styles.pauseTitle}>
+        {now ? `Back on ${shortDate(addDays(pause.end, 1))}` : `${shortDate(pause.start)} – ${shortDate(pause.end)}`}
+      </Text>
+      <Text style={styles.pauseText}>
+        {now
+          ? "Your plan is on hold and its end date moved back. No classes until then, and your package and homework deadlines moved too."
+          : "Your coach set a pause. Your plan and package will wait for you."}
+      </Text>
     </View>
   )
 }
@@ -673,6 +706,8 @@ const styles = StyleSheet.create({
 
   // Page groups
   group: { gap: 12 },
+  pauseTitle: { fontSize: 20, fontWeight: "800", color: C.textPrimary },
+  pauseText: { fontSize: 13, lineHeight: 18, color: C.textSecondary },
   groupSpaced: { marginTop: 16 },
   groupLabel: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 },
   groupLabelText: { fontSize: 13, fontWeight: "800", color: C.textPrimary, textTransform: "uppercase", letterSpacing: 1 },

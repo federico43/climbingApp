@@ -1,5 +1,6 @@
 import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
+import { PackageLock } from "@/components/schedule/PackageLock"
 import { WorkOutState } from "@/components/workOutState"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
@@ -88,6 +89,16 @@ function TabsWithPlan() {
           }}
         />
         <Tabs.Screen
+          name="classes"
+          options={{
+            title: "Classes",
+            href: role === "coach" ? undefined : null,
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="design"
           options={{
             title: "Design",
@@ -112,12 +123,14 @@ function TabsWithPlan() {
         <Tabs.Screen name="past-projects" options={{ href: null }} />
         <Tabs.Screen name="workout-log" options={{ href: null }} />
         <Tabs.Screen name="workout-library" options={{ href: null }} />
+        <Tabs.Screen name="schedule" options={{ href: null }} />
       </Tabs>
 
       {/* Workout modal lives at the layout level so it overlays everything */}
       <WorkoutModalHost />
       {/* Tapped homework notifications → the homework card on home */}
       <HomeworkNotificationRouter hasPlan={hasPlan} />
+      <PackageLock />
     </WorkoutProvider>
   )
 }

@@ -12,6 +12,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const TRAINING_ROWS = [
+  { label: "My week", route: "/(tabs)/(buttonTabs)/schedule" },
   { label: "My workouts", route: "/(tabs)/(buttonTabs)/my-workouts" },
   { label: "My sequences", route: "/(tabs)/(buttonTabs)/my-sequences" },
   { label: "Past workouts", route: "/(tabs)/(buttonTabs)/past-workouts" },

@@ -104,8 +104,14 @@ and drop back to the floor.
 | Every set reached the **top** of the range, effort not "Max" | ▲ load |
 | Every set inside the range | Hold the weight and aim for +1 rep |
 | Any set **under the floor** | ▼ load |
-| Effort above the band on most sets, even with reps in range | ▼ load |
+| Effort above the band on most sets, even with reps in range | ▼ load (hypertrophy, explosiveness) |
+| Max force: "Max" effort with reps in range | Hold the weight: heavy is the point |
 | Effort not logged | Judged on reps alone. RPE only refines the call |
+
+> **Updated 2026-10-25:** max force no longer lowers the load for a "Max"
+> effort; only missing the floor does. The comments name the focus's
+> reason: "heavy enough" (max force), "too close to failure" (hypertrophy),
+> "too heavy to move fast" (explosiveness).
 
 **Step size:** `max(5 % of current, smallest increment)`. The smallest
 increment defaults to 1 kg / 2.5 lb (rounded to 0.5), with an optional

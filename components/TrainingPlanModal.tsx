@@ -82,7 +82,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     setPickerOpen(false)
   }, [visible, mode, current])
 
-  const windowEnd = planEndFor(windowStart)
+  // Editing keeps the plan's pauses, so its end stays pushed back by them.
+  const windowEnd = planEndFor(windowStart, mode === "edit" ? current?.pauses : undefined)
 
   const exercisesByPattern = useMemo(() => {
     const out = new Map<string, ExerciseRow[]>()

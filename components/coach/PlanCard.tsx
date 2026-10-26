@@ -1,11 +1,13 @@
 import { C } from "@/utils/theme"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
+import { PlanPauses } from "@/components/coach/PlanPauses"
 import { Block, injectLocalIds } from "@/components/workoutBlocks"
 import { card } from "@/components/coach/styles"
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
+import { pauseOn } from "@/utils/planPauses"
 import {
   alternateMainBlock, localDateStr, MAIN_BLOCK_COPIES, nextPlanIndex, planIsOver, planWeek, workoutSpec,
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
@@ -125,8 +127,9 @@ export function PlanCard({
   }
   // Same numbers the athlete sees on their Plan page.
   const done = plan ? donePlanWorkouts(plan.$id, planWorkouts, sessions) : new Map<number, string>()
-  const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today) : 0
-  const inWindow = !!plan && today >= plan.windowStart && today <= plan.windowEnd
+  const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today, plan.pauses) : 0
+  const pausedNow = plan ? pauseOn(plan.pauses, today) : null
+  const inWindow = !!plan && today >= plan.windowStart && today <= plan.windowEnd && !pausedNow
 
   // Re-reads sessions, the plan's workouts and both libraries first, so
   // anything done, built or edited since this page opened counts (e.g. an
@@ -278,6 +281,7 @@ export function PlanCard({
             <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
             {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
           </View>
+          {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
 
           {planEnded ? (
             <View style={styles.box}>
@@ -296,8 +300,11 @@ export function PlanCard({
               {created === nextSpec.index - 1 && (
                 <Text style={styles.sent}>✓ Workout {created} created — {athlete.username} can see it now.</Text>
               )}
+              {pausedNow && (
+                <Text style={styles.pausedLine}>Paused until {formatPlanDate(pausedNow.end)}. You can still build ahead.</Text>
+              )}
               <Text style={styles.nextTitle}>
-                Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today))}
+                Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today, plan.pauses))}
               </Text>
               {nextSpec.scFocus && (
                 <PickRow
@@ -415,6 +422,7 @@ const styles = StyleSheet.create({
   boxText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
   nextTitle: { fontSize: 13.5, fontWeight: "700", color: C.textPrimary },
   sent: { fontSize: 12.5, fontWeight: "600", color: C.green },
+  pausedLine: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
   pickRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },

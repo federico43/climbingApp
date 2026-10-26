@@ -22,6 +22,7 @@ import {
   TrainingPlanRow,
 } from "@/services/BoulderGraphService"
 import { localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
+import { pauseOn } from "@/utils/planPauses"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
@@ -109,7 +110,8 @@ export function AthleteDetail({
   const subtitle = loadingPlan ? " " : !plan ? "No training plan"
     : today < plan.windowStart ? `${plan.name} · starts soon`
       : today > plan.windowEnd ? `${plan.name} · ended`
-        : `${plan.name} · week ${Math.min(Math.max(planWeek(plan.windowStart, today), 1), PLAN_WEEKS)} of ${PLAN_WEEKS}`
+        : pauseOn(plan.pauses, today) ? `${plan.name} · paused`
+          : `${plan.name} · week ${Math.min(Math.max(planWeek(plan.windowStart, today, plan.pauses), 1), PLAN_WEEKS)} of ${PLAN_WEEKS}`
 
   const homeworkCard = (
     <HomeworkCard

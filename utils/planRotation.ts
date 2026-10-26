@@ -1,6 +1,7 @@
 import type { BlockType } from "@/components/workoutBlocks"
 import type { MovementType } from "@/utils/movementTypes"
 import type { Focus } from "@/utils/scProgression"
+import { pausedDayCount, planClockDate, type PlanPause } from "@/utils/planPauses"
 
 // The training plan's fixed rotation (docs/training-plan.md §9): what
 // workout n of a plan is — main type, main block, warm-up kind, S&C focus,
@@ -40,6 +41,8 @@ export interface PlanShape {
   // Main type of workout 1; the cycle carries on from it. Missing / null =
   // strength, so plans made before it existed keep their rotation.
   startType?: MainType | null
+  // Weeks the coach paused the plan (utils/planPauses.ts).
+  pauses?: PlanPause[]
 }
 
 // A workout already built from this plan (a protocol row with planId set).
@@ -123,19 +126,21 @@ export function addDays(dateStr: string, days: number): string {
   return new Date((dayNumber(dateStr) + days) * 86400000).toISOString().slice(0, 10)
 }
 
-// A plan's end date: PLAN_WEEKS full weeks from its start, inclusive.
-export function planEndFor(windowStart: string): string {
-  return addDays(windowStart, PLAN_WEEKS * 7 - 1)
+// A plan's end date: PLAN_WEEKS full weeks from its start, inclusive, plus
+// the days it's paused.
+export function planEndFor(windowStart: string, pauses?: PlanPause[]): string {
+  return addDays(windowStart, PLAN_WEEKS * 7 - 1 + pausedDayCount(pauses ?? []))
 }
 
 // 1-based week of the plan a date falls in (can be < 1 or > PLAN_WEEKS).
-export function planWeek(windowStart: string, dateStr: string): number {
-  return Math.floor((dayNumber(dateStr) - dayNumber(windowStart)) / 7) + 1
+// Paused days don't count: the week stands still during a pause.
+export function planWeek(windowStart: string, dateStr: string, pauses?: PlanPause[]): number {
+  return Math.floor((dayNumber(planClockDate(pauses, dateStr)) - dayNumber(windowStart)) / 7) + 1
 }
 
 // The plan's last week (week 6 for a standard plan).
 function lastWeek(plan: PlanShape): number {
-  return planWeek(plan.windowStart, plan.windowEnd)
+  return planWeek(plan.windowStart, plan.windowEnd, plan.pauses)
 }
 
 // ─── Rotation ────────────────────────────────────────────────────────────────
@@ -236,8 +241,9 @@ export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWork
   // Density test: the first workout, and the first one built in the plan's
   // last week — workout 12 may never happen, since the plan ends at its date.
   const final = lastWeek(plan)
-  const finalWeekTaken = built.some((w) => planWeek(plan.windowStart, localDateStr(new Date(w.createdAt))) >= final)
-  const withTest = index === 1 || (planWeek(plan.windowStart, today) >= final && !finalWeekTaken)
+  const weekOf = (date: string) => planWeek(plan.windowStart, date, plan.pauses)
+  const finalWeekTaken = built.some((w) => weekOf(localDateStr(new Date(w.createdAt))) >= final)
+  const withTest = index === 1 || (weekOf(today) >= final && !finalWeekTaken)
 
   return {
     index,
