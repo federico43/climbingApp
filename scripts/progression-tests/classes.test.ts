@@ -286,4 +286,19 @@ assert.equal(t("training_plans").get(plan.$id)!.windowEnd, addDays(week, 41))
 assert.equal(t("packages").get(pkg.$id)!.useBy, useBy)
 assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
 
+// ── Package used up or expired: out of the classes still ahead ──────────────
+// eli's single session went on Monday; fay's package ran out on Monday.
+for (const id of ["eli", "fay"]) t("users").set(id, { $id: id, role: "athlete", username: id })
+await ctx.db.create("packages", { athleteId: "eli", total: 1, startsOn: week, useBy: addDays(week, 30) })
+await ctx.db.create("packages", { athleteId: "fay", total: 8, startsOn: addDays(week, -30), useBy: week })
+at(0, 9.5).roster = [...at(0, 9.5).roster, "eli"]
+at(3, 9.5).roster = [...at(3, 9.5).roster, "ana", "eli", "fay", "gus"]
+const eliExtra = await ctx.db.create("class_requests", { athleteId: "eli", weekStart: week, kind: "extra", status: "pending", toClassId: at(4, 15).$id })
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 1, 12, 30)))
+assert.equal(report.dropped, 2)
+assert.ok(!at(3, 9.5).roster.includes("eli") && !at(3, 9.5).roster.includes("fay"))
+assert.ok(at(0, 9.5).roster.includes("eli")) // the class she took stays
+assert.ok(!t("class_requests").has(eliExtra.$id))
+assert.deepEqual(at(3, 9.5).roster, ["ana", "gus"]) // sessions left, or no package: they stay
+
 console.log("classes: all tests passed")

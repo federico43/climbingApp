@@ -437,14 +437,7 @@ async function addPackage(ctx, userId, body) {
   // 0 sessions ends their classes: out of the ones still ahead, pending
   // requests dropped, and the app locks (packageLocked) until a new package.
   if (total === 0) {
-    const now = gymNow(new Date(), ctx.tz)
-    const thisWeek = mondayOfYmd(now.ymd)
-    for (const c of await ctx.db.list(CLASSES, [ctx.q.contains("roster", body.athleteId), ctx.q.gte("weekStart", thisWeek)])) {
-      if (classMs(c) > now.ms) await setRoster(ctx, c, (c.roster ?? []).filter((u) => u !== body.athleteId))
-    }
-    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", body.athleteId), ctx.q.gte("weekStart", thisWeek)])) {
-      if (r.status === "pending") await ctx.db.remove(REQUESTS, r.$id)
-    }
+    await dropFromClassesAhead(ctx, body.athleteId, gymNow(new Date(), ctx.tz))
     return ok({ package: row })
   }
   // A renewal unlocks the athlete: back into their usual classes still ahead.
@@ -452,6 +445,22 @@ async function addPackage(ctx, userId, body) {
   if (athlete) await joinUsualClasses(ctx, athlete, await pausesByAthlete(ctx))
   await pushUser(ctx, body.athleteId, "Package ready", `${total} sessions, use them by ${body.useBy}.`, { type: "class_package" })
   return ok({ package: row })
+}
+
+// Out of every class still ahead, pending requests dropped (a locked athlete
+// holds no spots). Returns how many classes they left.
+async function dropFromClassesAhead(ctx, athleteId, now) {
+  const thisWeek = mondayOfYmd(now.ymd)
+  let n = 0
+  for (const c of await ctx.db.list(CLASSES, [ctx.q.contains("roster", athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+    if (classMs(c) <= now.ms) continue
+    await setRoster(ctx, c, (c.roster ?? []).filter((u) => u !== athleteId))
+    n++
+  }
+  for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("weekStart", thisWeek)])) {
+    if (r.status === "pending") await ctx.db.remove(REQUESTS, r.$id)
+  }
+  return n
 }
 
 // The athlete's package right now: sessions left (null without a package)
@@ -494,14 +503,15 @@ export async function handleClassAction(action, userId, body, ctx) {
 // athletes hear about tomorrow's class; on Saturday morning the coach is
 // reminded to publish next week; the night a pause ends, the athlete hears
 // their plan restarts; after a class, athletes with 2 or 0
-// sessions left (and the coach) hear about it.
+// sessions left (and the coach) hear about it; athletes whose package is
+// used up or expired leave the classes still ahead.
 export async function runClassCron(ctx, date = new Date()) {
   const now = gymNow(date, ctx.tz)
   const thisWeek = mondayOfYmd(now.ymd)
   const nextWeek = addDays(thisWeek, 7)
   const classes = [...(await weekClasses(ctx, thisWeek)), ...(await weekClasses(ctx, nextWeek))]
   const byId = new Map(classes.map((c) => [c.$id, c]))
-  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0 }
+  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0 }
 
   const pending = [
     ...(await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", thisWeek), ctx.q.equal("status", "pending")])),
@@ -553,10 +563,17 @@ export async function runClassCron(ctx, date = new Date()) {
       report.low++
       const u = await ctx.getUserRow(a)
       await pushUser(ctx, a, left ? `${left} sessions left` : "No sessions left",
-        left ? "Talk to your coach to renew your package." : "Your package is used up. Your coach can renew it.", { type: "class_package" })
+        left ? "Talk to your coach to renew your package." : "Your package is used up, so you're out of your next classes. Your coach can renew it.", { type: "class_package" })
       await pushCoaches(ctx, a, left ? "Package running low" : "Package used up",
         `${name(u)} has ${left} session${left === 1 ? "" : "s"} left.`, { type: "class_package", athleteId: a })
     }
+  }
+  // Package used up or past its use-by date: out of the classes still ahead
+  // (the coach renews before it runs out; a renewal puts them back).
+  const booked = new Set(classes.filter((c) => classMs(c) > now.ms).flatMap((c) => c.roster ?? []))
+  for (const a of booked) {
+    if (!(await athletePackage(ctx, a, now)).locked) continue
+    if (await dropFromClassesAhead(ctx, a, now)) report.dropped++
   }
   return report
 }
