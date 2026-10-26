@@ -270,6 +270,11 @@ assert.equal((await call("classPublish", "coach", { weekStart: week2, classes: [
 const mon2 = [...t("classes").values()].find((c) => c.weekStart === week2 && c.day === 0)!
 assert.deepEqual(mon2.roster, ["bea"])
 assert.equal((await call("classRequest", "ana", { kind: "extra", toClassId: mon2.$id })).status, 409)
+// …and "I can go after all" on a skip from before the pause doesn't sneak her back in
+const oldSkip = await ctx.db.create("class_requests", { athleteId: "ana", weekStart: week2, kind: "skip", status: "accepted", fromClassId: mon2.$id })
+assert.equal((await call("classCancel", "ana", { requestId: oldSkip.$id })).status, 409)
+assert.deepEqual(mon2.roster, ["bea"])
+t("class_requests").delete(oldSkip.$id)
 // The night the pause ends
 const [y2, m2, d2] = week2.split("-").map(Number)
 report = await runClassCron(ctx, new Date(Date.UTC(y2, m2 - 1, d2 + 6, 20, 5)))

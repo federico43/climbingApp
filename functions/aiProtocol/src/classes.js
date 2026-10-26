@@ -158,6 +158,7 @@ async function cancel(ctx, userId, body) {
     const cls = await ctx.db.get(CLASSES, r.fromClassId)
     if (!cls || classMs(cls) <= gymNow(new Date(), ctx.tz).ms) return fail(409, "That class already started.")
     if ((cls.roster ?? []).length >= CAPACITY) return fail(409, "Someone took your spot. The class is full.")
+    if (pauseOn((await pausesByAthlete(ctx)).get(userId), classDate(cls))) return fail(409, "Your plan is paused that day.")
     await setRoster(ctx, cls, [...new Set([...(cls.roster ?? []), userId])])
   } else if (r.status !== "pending") {
     return fail(409, "Your coach already answered.")
