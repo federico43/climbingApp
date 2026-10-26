@@ -1,12 +1,15 @@
 import { useAuth } from "@/components/auth-context"
 import { FeatureIntro } from "@/components/schedule/FeatureIntro"
+import { PlanPicker } from "@/components/schedule/PlanPicker"
 import {
   CLASS_HOURS, LOW_SESSIONS, WEEK_DAYS, WeekEntry, athleteWeek, formatTime, mondayOf, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
-import { useClassSchedule } from "@/utils/classScheduleStore"
+import { pendingPlan, useClassSchedule } from "@/utils/classScheduleStore"
+import { planById } from "@/utils/clientPlans"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
+import { useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -17,6 +20,7 @@ export function ThisWeekCard() {
   const router = useRouter()
   const { role } = useAuth()
   const st = useClassSchedule()
+  const [plans, setPlans] = useState(false)
   if (role === "coach") return null
 
   const now = new Date()
@@ -29,6 +33,9 @@ export function ThisWeekCard() {
   const dayLabel = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
   const left = st.pkg?.left ?? 0
   const low = !!st.pkg && left <= LOW_SESSIONS
+  const asked = pendingPlan(st)
+  // No package, or running out: offer the plans (or show the request sent).
+  const offer = st.status === "ready" && (!st.pkg || low)
 
   return (
     <View style={{ gap: 10 }}>
@@ -58,8 +65,18 @@ export function ThisWeekCard() {
             <Text style={s.leftL}>sessions{"\n"}left</Text>
           </View>
         </View>
-        {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."} Talk to your coach to renew your package.</Text>}
-        {!st.pkg && st.status === "ready" && <Text style={s.lowLine}>No package yet. Ask your coach to add one.</Text>}
+        {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."}</Text>}
+        {!st.pkg && st.status === "ready" && <Text style={s.lowLine}>No package yet.</Text>}
+        {offer && (asked ? (
+          <Pressable style={s.planRow} onPress={() => setPlans(true)}>
+            <Text style={[s.planText, { color: C.yellow }]}>Request sent: {planById(asked.plan)?.name}. Waiting for your coach.</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={[s.planRow, s.planRowGo]} onPress={() => setPlans(true)}>
+            <Text style={[s.planText, { color: C.green }]}>{st.pkg ? "Renew: choose your plan" : "Choose your plan"}</Text>
+            <Ionicons name="chevron-forward" size={14} color={C.green} />
+          </Pressable>
+        ))}
         {st.status === "ready" && !st.defaults.length && <Text style={s.lowLine}>Set your weekly schedule: tap to pick your usual classes.</Text>}
         <View style={s.list}>
           {week.map((e) => <Row key={e.cls.id} e={e} today={today} label={dayLabel(e.cls.day)} />)}
@@ -72,6 +89,7 @@ export function ThisWeekCard() {
           </View>
         </View>
       </Pressable>
+      <PlanPicker visible={plans} onClose={() => setPlans(false)} />
     </View>
   )
 }
@@ -105,6 +123,12 @@ const s = StyleSheet.create({
   leftN: { fontSize: 30, fontWeight: "800", color: C.green, lineHeight: 32, fontVariant: ["tabular-nums"] },
   leftL: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textAlign: "center", lineHeight: 13 },
   lowLine: { fontSize: 12, fontWeight: "600", color: C.yellow, marginTop: -4 },
+  planRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: -4,
+    borderWidth: 1, borderColor: "rgba(254,215,102,0.35)", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12,
+  },
+  planRowGo: { borderColor: "rgba(111,207,151,0.4)" },
+  planText: { flex: 1, fontSize: 13, fontWeight: "700" },
   list: { borderTopWidth: 1, borderTopColor: C.border },
   row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
   rowDay: { width: 70, fontSize: 15, fontWeight: "600", color: C.textSecondary, fontVariant: ["tabular-nums"] },

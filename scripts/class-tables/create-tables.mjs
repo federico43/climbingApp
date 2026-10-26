@@ -1,6 +1,6 @@
 // One-off script: the tables behind the weekly classes (Plan › This week,
-// the coach's Classes tab). Everyone signed in can read them; only the
-// climbingApp function (server key) writes. Skips tables, columns and
+// the coach's Classes tab) and the plan requests. Everyone signed in can
+// read them; only the climbingApp function (server key) writes. Skips tables, columns and
 // indexes that already exist. No dependencies — Appwrite's REST API directly.
 //
 // Usage (dry run by default — prints what it would create):
@@ -45,6 +45,15 @@ const TABLES = [
   {
     id: "packages", name: "Packages",
     columns: [str("athleteId", 36, req), int("total", { ...req, min: 1, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
+    indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
+  },
+  {
+    // The "Choose your plan" requests: plan and payment ids from
+    // functions/aiProtocol/src/clientPlans.js; status pending | active | declined.
+    id: "plan_requests", name: "Plan requests",
+    columns: [
+      str("athleteId", 36, req), str("plan", 20, req), str("payment", 12, req), str("status", 12, req), str("packageId", 36),
+    ],
     indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
   },
 ]

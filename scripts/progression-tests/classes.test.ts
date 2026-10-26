@@ -260,4 +260,42 @@ assert.equal(t("training_plans").get(plan.$id)!.windowEnd, addDays(week, 41))
 assert.equal(t("packages").get(pkg.$id)!.useBy, useBy)
 assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
 
+// ── Plan requests ("Choose your plan") ───────────────────────────────────────
+t("users").set("eli", { $id: "eli", role: "athlete", username: "eli", defaultClasses: ["2@9.5"] })
+assert.equal((await call("classPlanRequest", "coach", { plan: "flex", payment: "once" })).status, 403)
+assert.equal((await call("classPlanRequest", "eli", { plan: "flex", payment: "blocks3" })).status, 400)
+assert.equal((await call("classPlanRequest", "eli", { plan: "toString", payment: "once" })).status, 400)
+pushes.length = 0
+r = await call("classPlanRequest", "eli", { plan: "program6", payment: "twice" })
+assert.equal(r.status, 200)
+const planReq = r.json.request.$id
+assert.ok(pushes.some((p) => p.to === "coach" && p.body === "eli wants the 6-Week Program (2 payments, $360.000)."))
+// One waiting at a time
+assert.equal((await call("classPlanRequest", "eli", { plan: "flex", payment: "once" })).status, 409)
+// Only the coach answers, and only eli takes it back
+assert.equal((await call("classPlanAnswer", "eli", { requestId: planReq, accept: true })).status, 403)
+assert.equal((await call("classPlanCancel", "ana", { requestId: planReq })).status, 404)
+// Activating adds the plan's package from today and puts eli in her usual class
+pushes.length = 0
+r = await call("classPlanAnswer", "coach", { requestId: planReq, accept: true })
+assert.equal(r.status, 200)
+const today = gymNow(new Date(), "UTC").ymd
+const eliPkg = t("packages").get(r.json.package.$id)!
+assert.deepEqual([eliPkg.total, eliPkg.startsOn, eliPkg.useBy], [12, today, addDays(today, 42)])
+assert.equal(t("plan_requests").get(planReq)!.status, "active")
+assert.equal(t("plan_requests").get(planReq)!.packageId, eliPkg.$id)
+assert.ok(pushes.some((p) => p.to === "eli" && p.title === "6-Week Program active"))
+assert.equal((await call("classPlanAnswer", "coach", { requestId: planReq, accept: true })).status, 409)
+assert.equal((await call("classPlanCancel", "eli", { requestId: planReq })).status, 409)
+// A new request can be taken back, or declined
+r = await call("classPlanRequest", "eli", { plan: "fundamentals", payment: "once" })
+assert.equal((await call("classPlanCancel", "eli", { requestId: r.json.request.$id })).status, 200)
+assert.equal(t("plan_requests").has(r.json.request.$id), false)
+r = await call("classPlanRequest", "eli", { plan: "hybrid", payment: "once" })
+pushes.length = 0
+assert.equal((await call("classPlanAnswer", "coach", { requestId: r.json.request.$id, accept: false })).status, 200)
+assert.equal(t("plan_requests").get(r.json.request.$id)!.status, "declined")
+assert.ok(pushes.some((p) => p.to === "eli" && p.title === "Plan request declined"))
+assert.equal([...t("packages").values()].filter((p) => p.athleteId === "eli").length, 1)
+
 console.log("classes: all tests passed")

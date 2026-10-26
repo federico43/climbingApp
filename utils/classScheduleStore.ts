@@ -6,6 +6,7 @@ import {
   CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
   WEEK_DAYS, weekdayOf, ymd,
 } from "@/utils/classSchedule"
+import type { PaymentId, PlanId, PlanRequestRow } from "@/utils/clientPlans"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
 
@@ -62,6 +63,8 @@ interface State {
   blocks: BlockedTime[]
   published: boolean               // published and nothing changed since
   packages: ClassPackage[]
+  // Plan requests: the athlete's own, or all of them for the coach
+  planRequests: PlanRequestRow[]
 }
 
 const emptyWeek = (weekStart: string): AthleteWeek => ({
@@ -71,7 +74,7 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
   thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, defaults: [], pkg: null,
-  nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
+  nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], planRequests: [],
 }
 const listeners = new Set<() => void>()
 
@@ -186,16 +189,22 @@ async function load() {
     ])
     const names = Object.fromEntries(users.map((u) => [u.id, u.name]))
     const meRow = users.find((u) => u.id === me)
-    const [pkg, packages] = await Promise.all([
+    const [pkg, packages, planRequests] = await Promise.all([
       coach ? Promise.resolve(null) : packageInfo(me, now),
       coach ? api.loadPackages() : Promise.resolve([]),
+      // The table may not exist yet (scripts/class-tables/create-tables.mjs):
+      // the classes still load without it.
+      api.loadPlanRequests(coach ? undefined : me).catch((e) => {
+        console.log("Plan requests load failed", e)
+        return [] as PlanRequestRow[]
+      }),
     ])
     server = { next: nextWeek }
     if (coach) syncDraft(thisWeek, nextWeek)
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
-      status: "ready", error: null, me, names, requests, pkg, packages,
+      status: "ready", error: null, me, names, requests, pkg, packages, planRequests,
       athletes: users.filter((u) => u.role !== "coach"),
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
@@ -273,7 +282,28 @@ export function saveUsualClasses(slots: string[]): Promise<boolean> {
   return run(() => api.saveDefaults(slots))
 }
 
+// The athlete's plan request waiting for the coach, if any.
+export const pendingPlan = (s: State): PlanRequestRow | null =>
+  s.planRequests.find((r) => r.athleteId === s.me && r.status === "pending") ?? null
+
+export function requestPlan(plan: PlanId, payment: PaymentId): Promise<boolean> {
+  return run(() => api.requestPlan(plan, payment))
+}
+
+export function cancelPlanRequest(): Promise<boolean> {
+  const r = pendingPlan(state)
+  return r ? run(() => api.cancelPlanRequest(r.$id)) : Promise.resolve(true)
+}
+
 // ── Coach ───────────────────────────────────────────────────────────────────
+
+// Plan requests waiting for the coach, oldest first.
+export const pendingPlanRequests = (s: State): PlanRequestRow[] =>
+  s.planRequests.filter((r) => r.status === "pending").sort((a, b) => ((a.$createdAt ?? "") < (b.$createdAt ?? "") ? -1 : 1))
+
+export function answerPlanRequest(requestId: string, accept: boolean): Promise<boolean> {
+  return run(() => api.answerPlanRequest(requestId, accept))
+}
 
 // Requests waiting for the coach, both weeks.
 export function pendingRequests(s: State): ClassRequest[] {
