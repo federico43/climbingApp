@@ -5,7 +5,7 @@ import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid
 import { SettingsButton } from "@/components/SettingsButton"
 import {
   AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  addClassProblem, dateOf, formatTime, startFromOffset, weekDates, ymd,
+  addClassProblem, dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
   addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
@@ -38,37 +38,45 @@ type SheetState =
   | { kind: "package"; athleteId: string }
   | null
 
-// Coach tab: plan next week's classes (2 a day, 3 on up to 2 days), block the times you
-// can't teach, answer athletes' requests, add packages. The week is a draft
+// Coach tab: this week as it stands (who's in each class, read only), and
+// next week to plan (2 classes a day, 3 on up to 2 days), block the times you
+// can't teach, answer athletes' requests, add packages. Next week is a draft
 // on the phone until it's published.
 export default function ClassesScreen() {
   const st = useClassSchedule()
   useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
-  const dates = useMemo(() => weekDates(dateOf(st.nextWeekStart || "2000-01-03")), [st.nextWeekStart])
+  // Next week from Saturday, when the coach is reminded to plan it.
+  const [week, setWeek] = useState<"this" | "next">(() => (weekdayOf(new Date()) >= 5 ? "next" : "this"))
+  const live = week === "this"
+  const weekStart = live ? st.thisWeek.weekStart : st.nextWeekStart
+  const classes = live ? st.thisWeek.classes : st.nextClasses
+  const blocks = live ? st.thisWeek.blocks : st.blocks
+  const dates = useMemo(() => weekDates(dateOf(weekStart || "2000-01-03")), [weekStart])
   const [sheet, setSheet] = useState<SheetState>(null)
   // A new package: sessions and weeks to use them.
   const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
   const [pkgQuery, setPkgQuery] = useState("")
   const requests = pendingRequests(st)
-  // This week's requests only show in the list; the grid is next week.
-  const gridRequests = requests.filter((r) => r.weekStart === st.nextWeekStart)
-  const dayBlocked = (d: number) => st.blocks.some((b) => b.day === d && b.all)
+  const gridRequests = requests.filter((r) => r.weekStart === weekStart)
+  const dayBlocked = (d: number) => blocks.some((b) => b.day === d && b.all)
   // Requests drawn on the grid: who's asking to join a class (or a new time)
   // and who's asking to leave one.
   const at = (c: Slot, s?: Slot) => !!s && c.day === s.day && c.start === s.start
   const joining = (c: GymClass) => gridRequests.filter((r) => at(c, r.to))
   const leaving = (c: GymClass) => gridRequests.filter((r) => at(c, r.from))
-  const newTimes = gridRequests.filter((r) => !st.nextClasses.some((c) => at(c, r.to)))
+  const newTimes = gridRequests.filter((r) => !classes.some((c) => at(c, r.to)))
   const range = `${MONTHS[dates[0].getMonth()]} ${dates[0].getDate()} – ${MONTHS[dates[6].getMonth()]} ${dates[6].getDate()}`
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
 
   const renderDay = (day: number) => {
     if (dayBlocked(day)) {
-      return <GridBlock start={GRID_START} hours={GRID_END - GRID_START} tone="blocked" text="Blocked" onPress={() => setSheet({ kind: "day", day })} />
+      return <GridBlock start={GRID_START} hours={GRID_END - GRID_START} tone="blocked" text="Blocked" onPress={live ? undefined : () => setSheet({ kind: "day", day })} />
     }
     return (
       <>
-        {st.blocks.filter((b) => b.day === day).map((b, i) => (
+        {blocks.filter((b) => b.day === day).map((b, i) => live ? (
+          <GridBlock key={`b${i}`} start={b.start} hours={b.end - b.start} tone="blocked" text="Blocked" />
+        ) : (
           <GridBlock
             key={`b${i}`}
             start={b.start}
@@ -96,7 +104,7 @@ export default function ClassesScreen() {
             onPress={() => setSheet({ kind: "request", key: r.key })}
           />
         ))}
-        {st.nextClasses.filter((c) => c.day === day).map((c) => (
+        {classes.filter((c) => c.day === day).map((c) => (
           <GridBlock
             key={c.id}
             start={c.start}
@@ -108,7 +116,7 @@ export default function ClassesScreen() {
               ...leaving(c).map((r) => `−${r.who}`),
             ].join("\n")}
             onPress={() => setSheet({ kind: "class", id: c.id })}
-            onDrop={(days, hours) => {
+            onDrop={live ? undefined : (days, hours) => {
               const start = Math.max(GRID_START, Math.min(GRID_END - CLASS_HOURS, c.start + hours))
               const problem = moveNextClass(c.id, clampDay(c.day + days), start)
               if (problem) Alert.alert("Can't move it there", PROBLEM[problem])
@@ -124,7 +132,7 @@ export default function ClassesScreen() {
   // A class already sits in (part of) this time: remove it before blocking.
   const slotHasClass = !!slot && st.nextClasses.some((c) => c.day === slot.day && c.start < slot.start + CLASS_HOURS && slot.start < c.start + CLASS_HOURS)
   const dayS = sheet?.kind === "day" ? sheet : null
-  const cls = sheet?.kind === "class" ? st.nextClasses.find((c) => c.id === sheet.id) ?? null : null
+  const cls = sheet?.kind === "class" ? classes.find((c) => c.id === sheet.id) ?? null : null
   const clsRequests = cls ? [...joining(cls), ...leaving(cls)] : []
   const req = sheet?.kind === "request" ? requests.find((r) => r.key === sheet.key) ?? null : null
 
@@ -157,8 +165,18 @@ export default function ClassesScreen() {
         />
         <View style={s.header}>
           <View style={{ flex: 1 }}>
-            <Text style={s.title}>Next week</Text>
-            <Text style={s.subtitle}>{range} · {CLASSES_PER_DAY} classes a day, {MAX_CLASSES_PER_DAY} on up to {MAX_BIG_DAYS} days</Text>
+            <View style={s.tabs}>
+              {(["this", "next"] as const).map((w) => (
+                <Pressable key={w} onPress={() => { setWeek(w); setSheet(null) }} hitSlop={6}>
+                  <Text style={[s.title, week !== w && s.titleOff]}>{w === "this" ? "This week" : "Next week"}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={s.subtitle}>
+              {range} · {live
+                ? (st.thisWeek.published ? "who's in each class" : "not published")
+                : `${CLASSES_PER_DAY} classes a day, ${MAX_CLASSES_PER_DAY} on up to ${MAX_BIG_DAYS} days`}
+            </Text>
           </View>
           <IntroButton id="coach-classes" />
           <SettingsButton />
@@ -179,22 +197,26 @@ export default function ClassesScreen() {
         </View>
         <WeekGrid
           dates={dates}
+          today={live ? weekdayOf(new Date()) : -1}
+          dimPast={live}
           offDays={DAYS.filter(dayBlocked)}
-          onPressDay={(day) => setSheet({ kind: "day", day })}
-          onPressTime={(day, y) => {
+          onPressDay={live ? undefined : (day) => setSheet({ kind: "day", day })}
+          onPressTime={live ? undefined : (day, y) => {
             if (dayBlocked(day)) return setSheet({ kind: "day", day })
             setSheet({ kind: "slot", day, start: startFromOffset(y, HOUR_HEIGHT) })
           }}
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
-        <View style={s.footer}>
-          <SheetButton
-            label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : "Publish week"}
-            disabled={st.published || st.busy || st.status !== "ready"}
-            onPress={publishWeek}
-          />
-        </View>
+        {!live && (
+          <View style={s.footer}>
+            <SheetButton
+              label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : "Publish week"}
+              disabled={st.published || st.busy || st.status !== "ready"}
+              onPress={publishWeek}
+            />
+          </View>
+        )}
       </SafeAreaView>
 
       <Sheet
@@ -257,8 +279,8 @@ export default function ClassesScreen() {
             {clsRequests.map(requestRow)}
           </View>
         )}
-        <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />
-        {cls && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
+        {!live && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
+        {!live && cls && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
       </Sheet>
 
       <Sheet
@@ -382,7 +404,9 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, color: C.textPrimary, fontSize: 14.5, height: 40 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },
+  tabs: { flexDirection: "row", alignItems: "baseline", gap: 14 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
+  titleOff: { fontSize: 18, color: C.textMuted },
   subtitle: { fontSize: 13, fontWeight: "500", color: C.textSecondary, marginTop: 2 },
   top: { paddingHorizontal: 16, gap: 8, marginBottom: 10 },
   requests: {
