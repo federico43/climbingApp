@@ -11,15 +11,15 @@ const m = (unit: StatMetric["unit"], values: number[], planned?: number): StatMe
 })
 
 // kg: percentage change
-assert.deepEqual(statChange(m("kg", [38, 40, 42])), { trend: "up", value: "42 kg", from: "was 38 kg", delta: "▲ 11%" })
+assert.deepEqual(statChange(m("kg", [38, 40, 42])), { trend: "up", value: "42 kg", from: "was 38 kg", start: "38 kg", delta: "▲ 11%" })
 assert.equal(statChange(m("kg", [30, 26]))?.delta, "▼ 13%")
 // added kg: absolute change, signed values
-assert.deepEqual(statChange(m("added_kg", [12, 12])), { trend: "same", value: "+12 kg", from: "was +12 kg", delta: "= same" })
+assert.deepEqual(statChange(m("added_kg", [12, 12])), { trend: "same", value: "+12 kg", from: "was +12 kg", start: "+12 kg", delta: "= same" })
 assert.equal(statChange(m("added_kg", [-5, 0]))?.from, "was −5 kg")
 // seconds
 assert.equal(statChange(m("s", [45, 60]))?.delta, "▲ 15 s")
 // colours
-assert.deepEqual(statChange(m("colour", [2, 3])), { trend: "up", value: "Yellow", from: "was Green", delta: "▲ 1 colour" })
+assert.deepEqual(statChange(m("colour", [2, 3])), { trend: "up", value: "Yellow", from: "was Green", start: "Green", delta: "▲ 1 colour" })
 assert.equal(statChange(m("colour", [4, 2]))?.delta, "▼ 2 colours")
 // workouts: done vs planned
 assert.deepEqual(statChange(m("workouts", [2, 2, 1, 2], 8)), { trend: "down", value: "7 / 8", from: "done so far", delta: "1 missed" })

@@ -6,16 +6,16 @@ import type { Focus } from "@/utils/scProgression"
 // first point vs last point of the period. Pure — no React Native imports —
 // so the change rules can be tested in Node.
 //
-// For now the card only shows SAMPLE_STATS; reading the real numbers out of
-// sessions / users / training_plans is the next step (docs/athlete-stats.md §4).
+// The numbers are read out of sessions / users / training_plans by
+// utils/athleteStatsData.ts; SAMPLE_STATS is the card's preview data.
 
 export type StatsPeriod = "block" | "all"
-export type StatUnit = "kg" | "added_kg" | "s" | "colour" | "workouts"
+export type StatUnit = "kg" | "added_kg" | "s" | "colour" | "level" | "workouts"
 export type StatTrend = "up" | "down" | "same"
 
 export interface StatPoint {
   label: string   // x-axis: "W1"…"W6" in a block, "B1"… across blocks
-  value: number   // colour metrics: index on BoulderLevelOptions
+  value: number   // colour: index on BoulderLevelOptions (averages allowed); level: 1-based step
 }
 
 export interface StatMetric {
@@ -31,6 +31,7 @@ export interface StatChange {
   trend: StatTrend
   value: string   // last point, formatted ("42 kg", "Yellow", "7 / 8")
   from: string    // what it's compared with ("was 38 kg")
+  start?: string  // the first point alone ("38 kg"), when there's one to compare with
   delta: string   // the pill ("▲ 11%", "▼ 4 kg", "= same", "1 missed")
 }
 
@@ -39,7 +40,10 @@ export function formatStatValue(unit: StatUnit, v: number): string {
     case "kg": return `${round1(v)} kg`
     case "added_kg": return `${v >= 0 ? "+" : "−"}${round1(Math.abs(v))} kg`
     case "s": return `${round1(v)} s`
-    case "colour": return colourLabel(BoulderLevelOptions[Math.round(v)]?.value)
+    // An average of slots (Green, Green, Yellow, Yellow = 2.5) reads as the
+    // colour every slot has reached.
+    case "colour": return colourLabel(BoulderLevelOptions[Math.floor(v + 1e-9)]?.value)
+    case "level": return `Level ${Math.round(v)}`
     case "workouts": return `${round1(v)}`
   }
 }
@@ -67,7 +71,11 @@ export function statChange(m: StatMetric): StatChange | null {
   const arrow = trend === "up" ? "▲" : "▼"
   let delta: string
   if (trend === "same") delta = "= same"
-  else if (m.unit === "colour") delta = `${arrow} ${Math.abs(Math.round(diff))} colour${Math.abs(Math.round(diff)) === 1 ? "" : "s"}`
+  else if (m.unit === "colour" || m.unit === "level") {
+    const n = Math.abs(diff)
+    const noun = m.unit === "colour" ? "colour" : "level"
+    delta = `${arrow} ${round1(n)} ${noun}${n === 1 ? "" : "s"}`
+  }
   else if (m.unit === "kg" && first > 0) delta = `${arrow} ${Math.round(Math.abs(diff) / first * 100)}%`
   else delta = `${arrow} ${round1(Math.abs(diff))} ${m.unit === "s" ? "s" : "kg"}`
 
@@ -75,6 +83,7 @@ export function statChange(m: StatMetric): StatChange | null {
     trend,
     value: formatStatValue(m.unit, last),
     from: m.points.length === 1 ? "first record" : `was ${formatStatValue(m.unit, first)}`,
+    ...(m.points.length > 1 ? { start: formatStatValue(m.unit, first) } : {}),
     delta,
   }
 }
@@ -93,7 +102,7 @@ export const FOCUS_ORDER: Focus[] = ["max_force", "hypertrophy", "explosiveness"
 export interface ScExerciseStats {
   id: string
   name: string
-  unit: "kg" | "added_kg"
+  unit: "kg" | "added_kg" | "level"
   byFocus: Partial<Record<Focus, StatPoint[]>>   // points oldest first
 }
 
@@ -138,6 +147,81 @@ export interface PeriodStats {
   sc: ScPatternStats[]
   projects: ProjectSessionStat[]
   warmups: WarmupSessionStat[]
+}
+
+export function isEmptyPeriod(p: PeriodStats): boolean {
+  return p.metrics.every((m) => m.unit === "workouts" || m.points.length === 0)
+    && visiblePatterns(p.sc).length === 0 && p.projects.length === 0 && p.warmups.length === 0
+}
+
+// ─── Block review ─────────────────────────────────────────────────────────────
+// A finished (or running) block in one list: every measured thing, start of
+// the block → end, sorted better first. Only things measured at least twice
+// can say better or worse; the rest are left out.
+
+export interface ReviewRow {
+  id: string
+  name: string
+  detail?: string        // the focus, for S&C ("Max force")
+  focus?: Focus
+  change: StatChange
+}
+
+export interface BlockReview {
+  workouts: StatChange | null
+  rows: ReviewRow[]
+  better: number
+  same: number
+  worse: number
+  projectsSent: number
+  projectSessions: number
+}
+
+const TREND_ORDER: Record<StatTrend, number> = { up: 0, same: 1, down: 2 }
+
+// 1 on 1 off: minutes of work, first session → last.
+export function minutesChange(first: number, last: number): StatChange {
+  const diff = last - first
+  const trend: StatTrend = Math.abs(diff) < 1e-9 ? "same" : diff > 0 ? "up" : "down"
+  return {
+    trend,
+    value: `${round1(last)} min`,
+    from: `was ${round1(first)} min`,
+    start: `${round1(first)} min`,
+    delta: trend === "same" ? "= same" : `${trend === "up" ? "▲" : "▼"} ${round1(Math.abs(diff))} min`,
+  }
+}
+
+export function blockReview(p: PeriodStats, focusLabel: Record<Focus, string>): BlockReview {
+  const rows: ReviewRow[] = []
+  for (const m of p.metrics) {
+    if (m.unit === "workouts" || m.points.length < 2) continue
+    const change = statChange(m)
+    if (change) rows.push({ id: m.id, name: m.label, change })
+  }
+  for (const pattern of visiblePatterns(p.sc)) {
+    for (const e of pattern.exercises) {
+      for (const { focus, metric } of focusMetrics(e)) {
+        if (metric.points.length < 2) continue
+        const change = statChange(metric)
+        if (change) rows.push({ id: metric.id, name: e.name, detail: focusLabel[focus], focus, change })
+      }
+    }
+  }
+  if (p.warmups.length >= 2) {
+    rows.push({ id: "warmup", name: "1 on 1 off", change: minutesChange(p.warmups[0].minutes, p.warmups[p.warmups.length - 1].minutes) })
+  }
+  rows.sort((a, b) => TREND_ORDER[a.change.trend] - TREND_ORDER[b.change.trend])
+  const workoutsMetric = p.metrics.find((m) => m.unit === "workouts")
+  return {
+    workouts: workoutsMetric ? statChange(workoutsMetric) : null,
+    rows,
+    better: rows.filter((r) => r.change.trend === "up").length,
+    same: rows.filter((r) => r.change.trend === "same").length,
+    worse: rows.filter((r) => r.change.trend === "down").length,
+    projectsSent: p.projects.filter((s) => s.sent).length,
+    projectSessions: p.projects.length,
+  }
 }
 
 // ─── Sample data (UI mockup only) ─────────────────────────────────────────────
