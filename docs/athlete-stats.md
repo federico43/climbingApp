@@ -1,108 +1,101 @@
-# Stats de progreso (dashboard del coach)
+# Stats de progreso y review por bloque
 
-Estado 2026-10-25: **la UI está hecha con datos de ejemplo** (`SAMPLE_STATS`).
-Este documento describe la siguiente parte: la lógica que reemplaza los datos
-de ejemplo por los números reales del atleta. El review por bloque queda para
-después.
+Estado 2026-10-26: **hecho, con datos reales**. Todavía no se probó en el
+simulador. Rama `claude/project-thread-27smbw`, PR #27.
 
-## 1. Qué muestra
+## 1. Qué ve cada uno
 
-Una tarjeta **Stats** en el detalle del atleta (pantalla Design del coach),
-debajo del Timeline:
+**Coach**: una tarjeta **Stats** en el detalle del atleta (pantalla Design),
+debajo del Timeline. Tiene tres pestañas:
 
-- Dos pestañas: **This block** (semanas del plan activo) y **All blocks** (un
-  punto por plan de 6 semanas).
-- Una ficha por métrica: valor de ahora, "was X" (el valor al inicio del
-  período) y una píldora verde (mejoró), roja (bajó) o gris (igual).
-- Fichas arriba: Edge lift max, 4×4, Intervals y Workouts. Al tocar una, debajo aparece su gráfico.
-- **S&C por patrón de movimiento**: un panel por patrón (sin movilidad). Si el patrón tiene varios ejercicios, hay una fila de chips para elegir el ejercicio, y se desliza de lado cuando son muchos. Debajo va una fila por cada foco en que se hizo el ejercicio (Max force, Hypertrophy, Explosiveness), con su color, el valor de ahora, "was X", la píldora y su propia línea. Los focos nunca se mezclan en una misma línea.
-- **Blocks**: *Project bouldering*, con una barra por sesión: la altura es la duración, el color es el grado trabajado y lleva ✓ arriba si ese día se logró el proyecto. *1 on 1 off*, con una barra por sesión con los minutos de trabajo.
+- **This block**: el plan activo, semana por semana (W1…W6). Solo aparece si
+  hay un plan activo que ya empezó.
+- **All blocks**: un punto por plan (B1, B2…), del más viejo al más nuevo.
+- **Reviews**: un bloque a la vez, del inicio al final (o hasta hoy si sigue
+  corriendo). Hay chips para elegir el bloque.
 
-Pantalla grande: 4 fichas por fila y paneles de a dos. Teléfono: 2 fichas por fila y paneles uno debajo del otro. Los gráficos de barras se deslizan de lado cuando hay muchas sesiones.
+En This block y All blocks se ve:
+
+- **Fichas**: Edge lift max, 4×4, Intervals y Workouts. Cada una muestra el
+  valor de ahora, "was X" y una píldora verde, roja o gris. Al tocar una,
+  debajo aparece su gráfico. Las fichas sin datos no aparecen, salvo
+  Workouts.
+- **S&C por patrón de movimiento**, sin movilidad. Hay un panel por patrón,
+  con chips por ejercicio (el más registrado primero) y una fila por foco,
+  con su color y su línea. Los focos nunca se mezclan.
+- **Blocks**: en *Project bouldering*, una barra por sesión: la altura es la
+  duración, el color es el grado y lleva ✓ si se logró. En *1 on 1 off*, los
+  minutos de trabajo por sesión.
+
+Si no hay nada registrado, aparece "Nothing logged yet" con un botón **Preview
+with sample data**, que muestra los datos de ejemplo (marcados como "Sample
+data").
+
+**Atleta**: en la pantalla Plan, debajo del Timeline, una tarjeta plegada
+**How this block is going** (o **Block review** cuando el plan ya terminó).
+Muestra una línea ("4 better · 1 worse") y, al tocarla, la misma review que
+ve el coach.
+
+## 2. Archivos
 
 | Archivo | Rol |
 | --- | --- |
-| `components/coach/StatsCard.tsx` | UI: pestañas, fichas y gráfico |
-| `components/coach/AthleteDetail.tsx` | Pone la tarjeta debajo del Timeline |
-| `utils/athleteStats.ts` | Puro. Tipos, `statChange` (regla de mejora), `visiblePatterns` (quita movilidad y vacíos), `focusMetrics`, `SAMPLE_STATS` |
-| `scripts/progression-tests/athleteStats.test.ts` | Tests de `statChange` |
+| `utils/athleteStats.ts` | Puro. Tipos, `statChange` (regla de mejora), `blockReview`, `visiblePatterns`, `focusMetrics`, `SAMPLE_STATS` |
+| `utils/athleteStatsData.ts` | Puro. Lee sesiones, planes y el log de edge lift y arma `PeriodStats` (`buildBlockStats`, `buildAllBlocksStats`) |
+| `hooks/useAthleteStats.ts` | Coach: carga la biblioteca de ejercicios y, la primera vez que se abre All blocks o Reviews, todos los planes con sus workouts |
+| `components/coach/StatsCard.tsx` | Coach: pestañas, fichas, gráficos y review |
+| `components/BlockReviewView.tsx` | La review (coach y atleta) |
+| `components/BlockProgressCard.tsx` | Atleta: tarjeta plegada en Plan |
+| `scripts/progression-tests/athleteStats.test.ts`, `athleteStatsData.test.ts` | Tests |
 
-## 2. Regla de "mejoró / bajó" (ya hecha)
+## 3. Regla de "mejoró / bajó"
 
-`statChange(metric)` compara el **primer punto** del período con el **último**.
-En todas las métricas de hoy, más es mejor.
+Se compara el **primer punto** del período con el **último**. En todas las
+métricas, más es mejor.
 
 | Unidad | Valor | Píldora |
 | --- | --- | --- |
-| `kg` (edge lift, S&C con peso) | `42 kg` | % de cambio: `▲ 11%` |
-| `added_kg` (peso agregado, dominadas) | `+12 kg` | kg de cambio: `▲ 3 kg` |
-| `s` (intervals) | `60 s` | segundos: `▲ 15 s` |
-| `colour` (4×4) | `Yellow` | colores: `▲ 1 colour` |
-| `workouts` | `7 / 8` | `1 missed` (roja) o `All done` (verde) |
+| kg (edge lift, S&C) | `42 kg` | % de cambio: `▲ 11%` |
+| segundos (intervals) | `60 s` | `▲ 15 s` |
+| color (4×4) | el color que alcanzaron todos los slots | `▲ 0.5 colours` (promedio de slots) |
+| nivel (S&C por niveles) | `Level 3` | `▲ 1 level` |
+| minutos (1 on 1 off) | `10 min` | `▲ 2 min` |
+| workouts | `7 / 8` | `1 missed` o `All done` |
 
-## 3. Períodos
+## 4. De dónde sale cada número
 
-**This block.** Semanas del plan activo, desde `windowStart` hasta hoy:
-`W1`…`W6`. Cada semana es un punto. Si en una semana no hubo dato, se repite
-el de la semana anterior (el edge lift max sigue siendo el mismo aunque no se
-haya testeado). Una métrica que no tiene ningún dato en el bloque no aparece.
+Las fechas son el día real de la sesión (`sessionLocalDate`). Las semanas son
+las del plan: no avanzan durante una pausa, así que los días pausados quedan
+en la semana anterior.
 
-**All blocks.** Un punto por plan (`listTrainingPlans(athleteId)`, del más
-viejo al más nuevo): `B1`, `B2`… El valor de cada bloque es el de su última
-semana. El bloque activo cuenta hasta hoy.
-
-## 4. De dónde sale cada métrica
-
-| Métrica | Dato que ya se guarda | Valor de una semana |
+| Métrica | Dato | Un punto |
 | --- | --- | --- |
-| **Edge lift max** | `users.edgeLiftMaxLog` (`parseMaxLog` en `utils/edgeWarmup.ts`): `{ kg, date }` en cada cambio | El último max registrado hasta el fin de esa semana |
-| **4×4** | Intentos `four_by_four`: colores con que terminó cada slot (`runGrades` en `utils/progression/fourByFour.ts`) | Promedio de `colourIndex` de los slots en la mejor sesión de la semana. Se muestra el color redondeado hacia abajo |
-| **Intervals** (solo los de power endurance) | `intervalsLog(attempt)`: `workTime`, `series` | Tiempo de trabajo por ronda (`workTime`) de la última sesión de la semana |
-| **S&C**, un panel por patrón (`movementType` del ejercicio en la biblioteca; se omite `mobility`) | Rondas S&C (`readRound`, `setsAtFinalLoad` en `utils/scHistory.ts`) y su foco (`loggedFocus`) | Por ejercicio y por foco, un punto por sesión: el peso de la carga final. Con ejercicios por niveles, el nivel en la cadena (`levelChain.ts`). En All blocks, un punto por bloque (la mejor sesión) |
-| **Project bouldering** | Intentos `project_bouldering`: `timestamp`, `level`, `success` | Una barra por sesión: minutos del primer al último intento (si hay uno solo, el `timeLimit` del bloque), el grado (`level` o el `grade` del bloque) y logrado = algún intento con `success` |
-| **1 on 1 off** | Bloque intervals de warm-up ("1 on 1 off"): `intervalsLog` | Una barra por sesión: minutos de trabajo = `series` × `workTime` / 60 |
-| **Workouts** | `donePlanWorkouts(planId, planWorkouts, sessions)` en `utils/planProgress.ts` | Workouts hechos esa semana. Planeados = 2 × semanas transcurridas |
+| Edge lift max | `users.edgeLiftMaxLog` | El max vigente al final de cada semana |
+| 4×4 | Colores del último set (`attemptGrades`) | Promedio de los slots; la mejor sesión de la semana |
+| Intervals | Bloques intervals con `kind: power_endurance` | `workTime` de la última sesión de la semana |
+| S&C | Rondas S&C, foco con `loggedFocus`, patrón con `movementType` (bloque o biblioteca) | Por sesión: el peso de la carga final (`setsAtFinalLoad`, en kg), o el paso en la cadena de niveles. En All blocks, el mejor de cada bloque |
+| Project bouldering | Intentos del bloque | Minutos del primer al último intento (con uno solo, el tiempo límite del bloque); grado del último intento con color, o el del bloque; ✓ si algún intento fue logrado |
+| 1 on 1 off | Intervals con `kind: warmup` o llamados "1 on 1 off" | `series × workTime` en minutos |
+| Workouts | `donePlanWorkouts` | Hechos por semana; planeados = 2 × semanas que ya empezaron |
 
-`AthleteDetail` ya carga `sessions`, `plan` y `planWorkouts`, así que
-**This block** no necesita consultas nuevas. **All blocks** necesita
-`listTrainingPlans` y `listPlanWorkouts` por plan. Esas consultas se cargan
-solo cuando se toca la pestaña.
+En la **review**, solo entra lo que tiene al menos dos puntos en el bloque,
+ordenado mejor → igual → peor. Además muestra los workouts hechos y cuántas
+sesiones de proyecto se lograron.
 
-## 5. Funciones a crear (`utils/athleteStats.ts`, puras)
+## 5. Decisiones que tomé (cambiar si no convencen)
 
-```ts
-blockWeeks(plan, today): { label: string; start: string; end: string }[]
-edgeLiftSeries(maxLog: MaxEntry[], weeks): StatPoint[]
-fourByFourSeries(sessions: SessionRow[], weeks): StatPoint[]
-intervalsSeries(sessions: SessionRow[], weeks): StatPoint[]
-scPatternStats(sessions, library, range, unit): ScPatternStats[]   // por patrón → ejercicio → foco
-projectSessions(sessions, range): ProjectSessionStat[]
-warmupSessions(sessions, range): WarmupSessionStat[]
-workoutsSeries(plan, planWorkouts, sessions, weeks, today): { points: StatPoint[]; planned: number }
-buildBlockStats({ athlete, plan, planWorkouts, sessions, library, unit, today }): PeriodStats
-buildAllBlocksStats({ athlete, plans, workoutsByPlan, sessions, library, unit, today }): PeriodStats
-```
+- Intervals se mide por tiempo por ronda, no por tiempo total.
+- La duración del proyecto va del primer al último intento.
+- Las fichas sin datos se ocultan.
+- Los ejercicios S&C sin patrón de movimiento no aparecen.
+- La review del atleta muestra lo mismo que la del coach (sin notas del
+  coach, porque eso necesita una columna nueva en Appwrite).
+- Nada de esto escribe en Appwrite ni toca funciones: solo lee.
 
-Para fechas se usa `sessionLocalDate` (el día real de la sesión, no
-`$createdAt`). Las semanas se cuentan desde `windowStart`, igual que
-`planWeek`.
+## 6. Pendiente
 
-En la UI, `StatsCard` recibe `metrics` por props en vez de leer
-`SAMPLE_STATS`. `AthleteDetail` los calcula con `useMemo` a partir de lo que
-ya tiene cargado.
-
-## 6. Fases
-
-1. **UI con datos de ejemplo**: este PR.
-2. **This block real**: las funciones de §5 menos `buildAllBlocksStats`, con
-   tests para cada serie.
-3. **All blocks real**: carga de planes archivados.
-4. Después: review al terminar cada bloque y versión para el atleta.
-
-## 7. Preguntas abiertas
-
-- **Intervals:** ¿la mejora se mide por tiempo por ronda, o por tiempo total
-  (rondas × tiempo)? En power endurance, al llegar a 90 s se suma una ronda.
-- **Project bouldering:** ¿la duración se mide del primer al último intento, como propongo, o se usa el tiempo límite del bloque?
-- **Fichas sin datos:** ¿se ocultan, como propongo, o se muestran con "No data
-  yet"?
+- Probarlo en el simulador con atletas reales.
+- Nota del coach en la review: necesita una columna (por ejemplo,
+  `training_plans.reviewNote`).
+- Si Federico quiere el layout de 3 columnas que describió (Training plan y
+  perfil a la derecha), es un cambio aparte en `AthleteDetail`.
