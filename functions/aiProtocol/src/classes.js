@@ -267,9 +267,26 @@ async function publish(ctx, userId, body) {
       kept.push(made)
     }
   }
-  for (const old of existing.filter((e) => !kept.some((k) => k.$id === e.$id))) {
+  const gone = existing.filter((e) => !kept.some((k) => k.$id === e.$id))
+  for (const old of gone) {
     await ctx.db.remove(CLASSES, old.$id)
     for (const a of old.roster ?? []) changedFor.set(a, `${classLabel(old)} was cancelled. Pick another class.`)
+  }
+  // Requests about a cancelled class go too: pending ones can't be answered
+  // any more (and would block the athlete's next try), and a skip of a class
+  // that didn't happen doesn't cost a session.
+  if (gone.length) {
+    const goneIds = new Set(gone.map((c) => c.$id))
+    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", weekStart)])) {
+      const about = goneIds.has(r.fromClassId) || goneIds.has(r.toClassId)
+      if (about && (r.status === "pending" || (r.kind === "skip" && r.status === "accepted"))) {
+        await ctx.db.remove(REQUESTS, r.$id)
+        if (r.status === "pending" && !changedFor.has(r.athleteId)) {
+          const cls = gone.find((c) => c.$id === r.toClassId) ?? gone.find((c) => c.$id === r.fromClassId)
+          changedFor.set(r.athleteId, `${classLabel(cls)} was cancelled, so your request was dropped.`)
+        }
+      }
+    }
   }
   const weekData = { published: true, blocks: JSON.stringify(blocks) }
   const saved = week ? await ctx.db.update(WEEKS, weekStart, weekData) : await ctx.db.create(WEEKS, weekData, weekStart)

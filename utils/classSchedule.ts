@@ -89,8 +89,9 @@ export function athleteWeek(
     if (!cls) continue
     const ch = changes[id]
     if (ch?.status === "move") {
+      // A move into a class that's gone leaves the athlete where they were.
       const to = byId(ch.to)
-      if (to) out.push({ cls: to, state: "pending", from: id })
+      out.push(to ? { cls: to, state: "pending", from: id } : { cls, state: "on" })
     } else if (ch?.status === "propose") {
       out.push({ cls: { id: `prop-${id}`, day: ch.day, start: ch.start, roster: [] }, state: "pending", from: id, proposal: true })
     } else {

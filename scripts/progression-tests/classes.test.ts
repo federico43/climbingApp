@@ -157,10 +157,21 @@ assert.equal((await call("classRequest", "cami", { kind: "extra", toClassId: at(
 
 // ── Republish: a removed class tells its athletes ────────────────────────────
 pushes.length = 0
+// Requests about Wednesday: a pending move into it, a pending extra and a skip
+const wedId = at(2, 9.5).$id
+const intoWed = await ctx.db.create("class_requests", {
+  athleteId: "bea", weekStart: week, kind: "move", status: "pending", fromClassId: at(1, 12).$id, toClassId: wedId,
+})
+const extraWed = await ctx.db.create("class_requests", { athleteId: "cami", weekStart: week, kind: "extra", status: "pending", toClassId: wedId })
+const skipWed = await ctx.db.create("class_requests", { athleteId: "ana", weekStart: week, kind: "skip", status: "accepted", fromClassId: wedId })
 const keep = [...t("classes").values()].filter((c) => !(c.day === 2)).map((c) => ({ id: c.$id, day: c.day, start: c.start }))
 assert.equal((await call("classPublish", "coach", { weekStart: week, classes: keep })).status, 200)
 assert.ok(pushes.some((p) => p.to === "ana" && p.body.includes("Wed 9:30 was cancelled")))
 assert.ok(!pushes.some((p) => p.title.includes("Next week")))
+// …are dropped, so cami can ask for another extra and the skip costs nothing
+for (const id of [intoWed.$id, extraWed.$id, skipWed.$id]) assert.ok(!t("class_requests").has(id))
+assert.ok(pushes.some((p) => p.to === "cami" && p.body.includes("request was dropped")))
+assert.deepEqual(at(1, 12).roster, ["bea"])
 
 // ── Cron ─────────────────────────────────────────────────────────────────────
 // A pending request whose class has started expires
