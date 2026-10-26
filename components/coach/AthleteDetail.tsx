@@ -9,6 +9,7 @@ import { PlanCard } from "@/components/coach/PlanCard"
 import { RecentActivityCard } from "@/components/coach/RecentActivityCard"
 import { RolePill } from "@/components/coach/RolePill"
 import { StatsCard } from "@/components/coach/StatsCard"
+import { useAthleteStats } from "@/hooks/useAthleteStats"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
 import { card } from "@/components/coach/styles"
 import {
@@ -106,6 +107,8 @@ export function AthleteDetail({
     return () => { cancelled = true }
   }, [planId])
 
+  const stats = useAthleteStats({ athlete, plan, sessions, planWorkouts })
+
   const today = localDateStr(new Date())
   const subtitle = loadingPlan ? " " : !plan ? "No training plan"
     : today < plan.windowStart ? `${plan.name} · starts soon`
@@ -140,7 +143,7 @@ export function AthleteDetail({
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
   const athleteCard = <AthleteCard athlete={athlete} flashLevel={flashLevel} onPickFlashLevel={pickFlashLevel} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
-  const statsCard = <StatsCard columns={wide ? 3 : 2} />
+  const statsCard = <StatsCard key={athlete.$id} columns={wide ? 3 : 2} data={stats} />
   const videos = <AthleteVideos athlete={athlete} />
 
   return (

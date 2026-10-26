@@ -1,60 +1,166 @@
 import { C } from "@/utils/theme"
 import { card } from "@/components/coach/styles"
+import { BlockReviewView } from "@/components/BlockReviewView"
+import type { useAthleteStats } from "@/hooks/useAthleteStats"
+import type { TrainingPlanRow } from "@/services/BoulderGraphService"
 import {
-  focusMetrics, formatStatValue, SAMPLE_STATS, statChange, visiblePatterns,
-  type ProjectSessionStat, type ScPatternStats, type StatMetric, type StatsPeriod, type StatTrend,
+  focusMetrics, formatStatValue, isEmptyPeriod, SAMPLE_STATS, statChange, visiblePatterns,
+  type PeriodStats, type ProjectSessionStat, type ScPatternStats, type StatMetric, type StatsPeriod, type StatTrend,
   type WarmupSessionStat,
 } from "@/utils/athleteStats"
+import { shortDay } from "@/utils/athleteStatsData"
+import { localDateStr, PLAN_FOCUS_LABEL, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import { FOCUS_COLOR, FOCUS_LABEL } from "@/utils/scProgression"
 import { Ionicons } from "@expo/vector-icons"
-import { useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { useEffect, useState } from "react"
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { BarChart, LineChart } from "react-native-gifted-charts"
+
+type Tab = StatsPeriod | "review"
 
 // Coach dashboard: how the athlete is progressing (docs/athlete-stats.md).
 // Tiles for the headline numbers (tap one for its trend), then S&C by
-// movement pattern and the project / 1 on 1 off blocks. Sample data until
-// the logic in the doc is built.
-export function StatsCard({ columns }: { columns: 2 | 3 }) {
-  const [period, setPeriod] = useState<StatsPeriod>("block")
-  const [selectedId, setSelectedId] = useState("edge_lift_max")
+// movement pattern and the project / 1 on 1 off blocks; Reviews shows one
+// block start → end. With nothing logged yet, the sample data can be
+// previewed.
+export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<typeof useAthleteStats> }) {
+  const { blockStats, allStats, reviewPlans, statsForPlan, loadPlans, loadingPlans, plansLoaded } = data
+  // null = not picked yet: This block when there is one.
+  const [tab, setTab] = useState<Tab | null>(null)
+  const [sample, setSample] = useState(false)
+  const [reviewId, setReviewId] = useState<string | null>(null)
   const [width, setWidth] = useState(0)
-
-  const stats = SAMPLE_STATS[period]
-  const selected = stats.metrics.find((m) => m.id === selectedId) ?? stats.metrics[0]
-  const patterns = visiblePatterns(stats.sc)
   const wide = columns === 3
-  // Inner width of a panel: card padding 16, panel padding 12; two side by
-  // side on wide screens with a 10 gap.
-  const panelWidth = wide ? (width - 32 - 10) / 2 - 24 : width - 32 - 24
+
+  // No active block: start on All blocks. Every plan loads the first time
+  // All blocks or Reviews is opened.
+  const current: Tab = (tab ?? "block") === "block" && !blockStats ? "all" : tab ?? "block"
+  useEffect(() => {
+    if (current !== "block") loadPlans()
+  }, [current, loadPlans])
+
+  const reviewPlan = reviewPlans.find((p) => p.$id === reviewId) ?? reviewPlans[0]
 
   return (
     <View style={card.card} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <View style={card.headerRow}>
         <Text style={card.title}>Stats</Text>
-        <Text style={styles.sample}>Sample data</Text>
+        {sample && current !== "review" && (
+          <Pressable onPress={() => setSample(false)} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.sample}>Sample data · hide</Text>
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.periods}>
-        <PeriodPill label="This block" active={period === "block"} onPress={() => setPeriod("block")} />
-        <PeriodPill label="All blocks" active={period === "all"} onPress={() => setPeriod("all")} />
+        {blockStats && <PeriodPill label="This block" active={current === "block"} onPress={() => setTab("block")} />}
+        <PeriodPill label="All blocks" active={current === "all"} onPress={() => setTab("all")} />
+        <PeriodPill label="Reviews" active={current === "review"} onPress={() => setTab("review")} />
       </View>
 
+      {current === "review" ? (
+        loadingPlans || !plansLoaded ? <ActivityIndicator color={C.green} />
+          : !reviewPlan ? <Text style={card.empty}>No training plans yet.</Text>
+            : (
+              <>
+                {reviewPlans.length > 1 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                    {reviewPlans.map((p) => {
+                      const active = p.$id === reviewPlan.$id
+                      return (
+                        <Pressable
+                          key={p.$id}
+                          onPress={() => setReviewId(p.$id)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          style={[styles.chip, active && styles.chipActive]}
+                        >
+                          <Text style={[styles.chipText, active && styles.chipTextActive]}>{planChipLabel(p)}</Text>
+                        </Pressable>
+                      )
+                    })}
+                  </ScrollView>
+                )}
+                <BlockReviewView stats={statsForPlan(reviewPlan)} title={planTitle(reviewPlan)} subtitle={planStatus(reviewPlan)} />
+              </>
+            )
+      ) : (
+        <PeriodView
+          stats={sample ? SAMPLE_STATS[current] : current === "block" ? blockStats : allStats}
+          loading={current === "all" && !sample && (loadingPlans || !plansLoaded)}
+          wide={wide}
+          width={width}
+          periodKey={`${current}:${sample}`}
+          onSample={() => setSample(true)}
+        />
+      )}
+    </View>
+  )
+}
+
+function planTitle(p: TrainingPlanRow): string {
+  return p.focus ? `${PLAN_FOCUS_LABEL[p.focus]} block` : p.name
+}
+
+function planChipLabel(p: TrainingPlanRow): string {
+  return `${shortDay(p.windowStart)}${p.focus ? ` · ${PLAN_FOCUS_LABEL[p.focus]}` : ""}`
+}
+
+function planStatus(p: TrainingPlanRow): string {
+  const today = localDateStr(new Date())
+  const dates = `${shortDay(p.windowStart)} → ${shortDay(p.windowEnd)}`
+  if (today > p.windowEnd) return `${dates} · finished`
+  const week = Math.min(Math.max(planWeek(p.windowStart, today, p.pauses), 1), PLAN_WEEKS)
+  return `${dates} · week ${week} of ${PLAN_WEEKS}, so far`
+}
+
+function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
+  stats: PeriodStats | null
+  loading: boolean
+  wide: boolean
+  width: number
+  periodKey: string
+  onSample: () => void
+}) {
+  const [selectedId, setSelectedId] = useState("edge_lift_max")
+  if (loading) return <ActivityIndicator color={C.green} />
+  if (!stats || isEmptyPeriod(stats)) {
+    return (
+      <View style={{ gap: 10 }}>
+        <Text style={card.empty}>Nothing logged yet to compare.</Text>
+        <Pressable onPress={onSample} style={card.outlineBtn} accessibilityRole="button">
+          <Ionicons name="eye-outline" size={14} color={C.green} />
+          <Text style={card.outlineBtnText}>Preview with sample data</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
+  // Tiles with nothing logged are left out (Workouts always shows).
+  const metrics = stats.metrics.filter((m) => m.unit === "workouts" || m.points.length > 0)
+  const selected = metrics.find((m) => m.id === selectedId) ?? metrics[0]
+  const patterns = visiblePatterns(stats.sc)
+  // Inner width of a panel: card padding 16, panel padding 12; two side by
+  // side on wide screens with a 10 gap.
+  const panelWidth = wide ? (width - 32 - 10) / 2 - 24 : width - 32 - 24
+
+  return (
+    <>
       <View style={styles.grid}>
-        {stats.metrics.map((m) => (
-          <Tile key={m.id} metric={m} columns={wide ? 4 : 2} selected={m.id === selected.id} onPress={() => setSelectedId(m.id)} />
+        {metrics.map((m) => (
+          <Tile key={m.id} metric={m} columns={wide ? 4 : 2} selected={m.id === selected?.id} onPress={() => setSelectedId(m.id)} />
         ))}
       </View>
-      {width > 0 && <TrendChart metric={selected} width={width - 32} />}
+      {width > 0 && selected && selected.points.length > 0 && <TrendChart metric={selected} width={width - 32} />}
 
       {width > 0 && patterns.length > 0 && (
         <>
           <Text style={styles.section}>S&C · by movement pattern</Text>
           <View style={styles.panels}>
             {patterns.map((p) => (
-              <PatternPanel key={`${period}:${p.pattern}`} stats={p} wide={wide} width={panelWidth} />
+              <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} wide={wide} width={panelWidth} />
             ))}
           </View>
         </>
@@ -69,7 +175,7 @@ export function StatsCard({ columns }: { columns: 2 | 3 }) {
           </View>
         </>
       )}
-    </View>
+    </>
   )
 }
 
