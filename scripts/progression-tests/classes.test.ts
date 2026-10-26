@@ -222,6 +222,16 @@ assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 0,
 assert.ok(!at(3, 9.5).roster.includes("dani"))
 assert.equal((await call("classRequest", "dani", { kind: "extra", toClassId: at(3, 9.5).$id })).status, 409)
 assert.ok(!pushes.some((p) => p.to === "dani"))
+// She had said she'd skip Thursday: a renewal doesn't put her back in it
+const daniSkip = await ctx.db.create("class_requests", {
+  athleteId: "dani", weekStart: week, kind: "skip", status: "accepted", fromClassId: at(3, 9.5).$id,
+})
+assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 8, startsOn: week, useBy: addDays(week, 30) })).status, 200)
+assert.ok(!at(3, 9.5).roster.includes("dani"))
+// Nor do new usual classes
+assert.equal((await call("classDefaults", "dani", { slots: ["3@9.5"] })).status, 200)
+assert.ok(!at(3, 9.5).roster.includes("dani"))
+t("class_requests").delete(daniSkip.$id)
 assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: -1, startsOn: week, useBy: addDays(week, 30) })).status, 400)
 globalThis.Date = RealDate
 Date.now = realNow

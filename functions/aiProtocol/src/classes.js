@@ -208,9 +208,9 @@ async function answer(ctx, userId, body) {
 
 // Put athletes in the classes they usually take, where
 // there's room, they aren't in any class that week yet, their plan isn't
-// paused that day and their package isn't used up or expired. Returns the
-// athletes added.
-async function fillFromDefaults(ctx, classes, users, onlyUser, paused) {
+// paused that day, their package isn't used up or expired and it isn't one
+// of `stepsOut` (class ids they left this week). Returns the athletes added.
+async function fillFromDefaults(ctx, classes, users, onlyUser, paused, stepsOut) {
   const added = new Set()
   const now = gymNow(new Date(), ctx.tz)
   for (const u of users) {
@@ -220,7 +220,7 @@ async function fillFromDefaults(ctx, classes, users, onlyUser, paused) {
     if ((await athletePackage(ctx, u.$id, now)).locked) continue
     for (const s of slots) {
       const c = classes.find((x) => x.day === s.day && x.start === s.start)
-      if (!c || (c.roster ?? []).length >= CAPACITY) continue
+      if (!c || (c.roster ?? []).length >= CAPACITY || stepsOut?.has(c.$id)) continue
       if (pauseOn(paused?.get(u.$id), classDate(c))) continue
       c.roster = [...(c.roster ?? []), u.$id]
       await setRoster(ctx, c, c.roster)
@@ -333,8 +333,13 @@ async function joinUsualClasses(ctx, user, paused) {
   const thisWeek = mondayOfYmd(now.ymd)
   for (const weekStart of [thisWeek, addDays(thisWeek, 7)]) {
     if (!(await weekRow(ctx, weekStart))?.published) continue
+    // Not back into a class they skipped or moved out of (a renewal or new
+    // usual classes mid-week mustn't undo that).
+    const left = new Set((await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", user.$id), ctx.q.equal("weekStart", weekStart)]))
+      .filter((r) => r.fromClassId && ["pending", "accepted"].includes(r.status))
+      .map((r) => r.fromClassId))
     const ahead = (await weekClasses(ctx, weekStart)).filter((c) => classMs(c) > now.ms)
-    await fillFromDefaults(ctx, ahead, [user], user.$id, paused)
+    await fillFromDefaults(ctx, ahead, [user], user.$id, paused, left)
   }
 }
 
