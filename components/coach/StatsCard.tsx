@@ -165,7 +165,7 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
           <Text style={styles.section}>S&C · by movement pattern</Text>
           <View style={styles.panels}>
             {patterns.map((p) => (
-              <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} wide={wide} width={panelWidth} />
+              <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} wide={wide} width={panelWidth} startOpen={patterns.length === 1} />
             ))}
           </View>
         </>
@@ -302,15 +302,38 @@ function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
 
 // ─── S&C: one panel per movement pattern ─────────────────────────────────────
 
-// Exercise chips on top (many exercises scroll sideways), then one row per
-// focus the exercise was done at: its own line, now vs then.
-function PatternPanel({ stats, wide, width }: { stats: ScPatternStats; wide: boolean; width: number }) {
+// Folded to one line (how many exercises, how many got better or worse)
+// so many patterns stay short; tap to open. Open: exercise chips on top
+// (many exercises scroll sideways), then one row per focus the exercise was
+// done at: its own line, now vs then.
+function PatternPanel({ stats, wide, width, startOpen }: { stats: ScPatternStats; wide: boolean; width: number; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen)
   const [exerciseId, setExerciseId] = useState(stats.exercises[0].id)
   const exercise = stats.exercises.find((e) => e.id === exerciseId) ?? stats.exercises[0]
+  const trends = { up: 0, same: 0, down: 0 }
+  for (const e of stats.exercises) {
+    for (const { metric } of focusMetrics(e)) {
+      const change = metric.points.length > 1 ? statChange(metric) : null
+      if (change) trends[change.trend]++
+    }
+  }
+  const count = `${stats.exercises.length} exercise${stats.exercises.length === 1 ? "" : "s"}`
+  const summary = [count, trends.up && `${trends.up} better`, trends.down && `${trends.down} worse`].filter(Boolean).join(" · ")
   return (
     <View style={[styles.panel, wide && styles.panelHalf]}>
-      <Text style={styles.panelTitle}>{MOVEMENT_TYPE_LABEL[stats.pattern]}</Text>
-      {stats.exercises.length > 1 ? (
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        style={styles.panelToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+      >
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.panelTitle}>{MOVEMENT_TYPE_LABEL[stats.pattern]}</Text>
+          <Text style={styles.panelSub} numberOfLines={1}>{summary}</Text>
+        </View>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={C.textSecondary} />
+      </Pressable>
+      {!open ? null : stats.exercises.length > 1 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {stats.exercises.map((e) => {
             const active = e.id === exercise.id
@@ -330,7 +353,7 @@ function PatternPanel({ stats, wide, width }: { stats: ScPatternStats; wide: boo
       ) : (
         <Text style={styles.panelSub}>{exercise.name}</Text>
       )}
-      {focusMetrics(exercise).map(({ focus, metric }) => {
+      {open && focusMetrics(exercise).map(({ focus, metric }) => {
         const change = statChange(metric)
         if (!change) return null
         return (
@@ -521,12 +544,13 @@ const styles = StyleSheet.create({
   pointText: { fontSize: 11, color: C.textSecondary, marginBottom: 4 },
 
   section: { marginTop: 6, fontSize: 12, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  panels: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  panels: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 10 },
   panel: {
     width: "100%", gap: 10, padding: 12, borderRadius: 14,
     backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
   },
   panelHalf: { width: "48.8%" },
+  panelToggle: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 40 },
   panelHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   panelTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   panelSub: { fontSize: 13, color: C.textSecondary },

@@ -20,7 +20,7 @@ En This block y All blocks se ve:
   valor de ahora, "was X" y una píldora verde, roja o gris. Al tocar una,
   debajo aparece su gráfico. Las fichas sin datos no aparecen, salvo
   Workouts.
-- **S&C por patrón de movimiento**, sin movilidad. Hay un panel por patrón,
+- **S&C por patrón de movimiento**, sin movilidad. Hay un panel por patrón, plegado en una línea ("3 exercises · 2 better · 1 worse") que se abre al tocarlo (abierto si hay uno solo),
   con chips por ejercicio (el más registrado primero) y una fila por foco,
   con su color y su línea. Los focos nunca se mezclan.
 - **Blocks**: en *Project bouldering*, una barra por sesión: la altura es la
