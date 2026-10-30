@@ -61,6 +61,36 @@ assert.equal(donePlanWorkouts("p1", [...workouts,
   assert.deepEqual([...done.keys()], [1])
 }
 
+// ── unlinked sessions of saved workouts: no block ids (stripLocalIds) → matched on content ──
+{
+  const b = (type: string, blockName: string, exercises?: string[]) =>
+    ({ type, blockName, ...(exercises ? { exercises: exercises.map((name) => ({ name })) } : {}) })
+  const warmup = b("constraint_warmup", "Warm-up")
+  const saved = [
+    { $id: "x1", $createdAt: at("2026-10-05", 8), planIndex: 1,
+      blocks: JSON.stringify([warmup, b("four_by_four", "4x4"), b("strength_conditioning", "S&C", ["Pull-up", "Row"])]) },
+    { $id: "x2", $createdAt: at("2026-10-07", 8), planIndex: 2,
+      blocks: JSON.stringify([warmup, b("intervals", "Intervals"), b("strength_conditioning", "S&C", ["Squat"])]) },
+  ]
+  const done = donePlanWorkouts("p1", saved, [
+    // x1 as built, coached flag and all
+    session("2026-10-06", { protocol: JSON.stringify([{ ...warmup, coached: true }, b("four_by_four", "4x4"), b("strength_conditioning", "S&C", ["Pull-up", "Row"])]) }),
+    // x2 with its S&C skipped
+    session("2026-10-08", { protocol: JSON.stringify([warmup, b("intervals", "Intervals")]) }),
+  ])
+  assert.deepEqual([...done.entries()].sort(), [[1, "2026-10-06"], [2, "2026-10-08"]])
+
+  // Only the shared warm-up → under half of any workout → nothing
+  assert.equal(donePlanWorkouts("p1", saved, [session("2026-10-08", { protocol: JSON.stringify([warmup]) })]).size, 0)
+  // A tie goes to the latest built on or before the session
+  const twins = [
+    { $id: "t1", $createdAt: at("2026-10-05", 8), planIndex: 1, blocks: JSON.stringify([warmup, b("free_session", "Free")]) },
+    { $id: "t2", $createdAt: at("2026-10-07", 8), planIndex: 2, blocks: JSON.stringify([warmup, b("free_session", "Free")]) },
+  ]
+  assert.deepEqual([...donePlanWorkouts("p1", twins, [session("2026-10-08", { protocol: twins[0].blocks })]).keys()], [2])
+  assert.deepEqual([...donePlanWorkouts("p1", twins, [session("2026-10-06", { protocol: twins[0].blocks })]).keys()], [1])
+}
+
 // Done twice → earliest day counts
 assert.equal(
   donePlanWorkouts("p1", workouts, [
