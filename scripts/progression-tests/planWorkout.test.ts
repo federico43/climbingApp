@@ -10,6 +10,7 @@ import {
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
 import { focusesFor } from "@/utils/scProgression"
+import { planFromHistory } from "@/utils/scPrefill"
 
 // ── dates ──
 const start = "2026-10-05"
@@ -328,5 +329,38 @@ const lib2 = [...library, row("nr", "constraint_warmup", "No Re-Adjustment"), ro
 w = buildPlanWorkout(plan, spec(5), lib2, exercises, merged, "green")
 const next = w.blocks.filter((b: any) => b.type === "constraint_warmup").map((b: any) => b.libraryBlockId).sort()
 assert.deepEqual(next, ["nr", "rh", "sfnr"])
+
+// ── ladder exercises: the plan prescribes the step the workout will suggest ──
+// Knee push-up → Push-ups → Archer push-up; the plan's pick is Push-ups.
+const ladderLib: any[] = exercises.map((e) => e.$id === "p1"
+  ? { ...e, loadMode: "level", levels: [{ exerciseId: "ap", name: "Archer push-up" }] }
+  : e)
+ladderLib.push(
+  ex("kp", "Knee push-up", "push", { loadMode: "level", levels: [{ exerciseId: "p1", name: "Push-ups" }, { exerciseId: "ap", name: "Archer push-up" }] }),
+  ex("ap", "Archer push-up", "push", { loadMode: "level" }),
+)
+// One max force session with `rounds` logged at `level` (exercise id, name).
+const pushSession = (id: string, date: string, level: [string, string], reps: string[], rpe: string) => ({
+  $id: id, $createdAt: date, userId: "a",
+  protocol: JSON.stringify([{ type: "strength_conditioning", exercises: [{ name: "Push-ups", exerciseId: "p1", focus: "max_force", reps: "4-6" }] }]),
+  attempts: JSON.stringify(reps.map((r, i) => ({
+    type: "strength_conditioning", blockIndex: 0,
+    scData: { exerciseId: level[0], exerciseName: level[1], round: i + 1, rpe, repsCompleted: r, focus: "max_force" },
+  }))),
+})
+const pushOf = (sessions: any[]) => buildScBlocks(plan, spec(1), ladderLib, sessions).blocks
+  .flatMap((b) => b.exercises).find((e) => e.movementType === "push")!
+// no history → the plan's pick
+assert.equal(pushOf([]).name, "Push-ups")
+// the athlete is on Archer push-ups and holding there → the plan says Archer push-up
+const onArcher = [pushSession("s1", "2026-10-01T10:00:00Z", ["ap", "Archer push-up"], ["5", "5", "4"], "8")]
+assert.equal(pushOf(onArcher).exerciseId, "ap")
+// …and it's what the workout suggests for that block exercise (same rule)
+for (const sessions of [[], onArcher, [pushSession("s1", "2026-10-01T10:00:00Z", ["p1", "Push-ups"], ["6", "6", "6"], "6")],
+  [pushSession("s1", "2026-10-01T10:00:00Z", ["kp", "Knee push-up"], ["2", "1", "1"], "10")]]) {
+  const prescribed = pushOf(sessions)
+  const suggested = planFromHistory(prescribed, sessions as any, ladderLib, "kg").next?.level?.exerciseId
+  assert.ok(!suggested || suggested === prescribed.exerciseId, `workout suggests ${suggested}, plan says ${prescribed.exerciseId}`)
+}
 
 console.log("all plan-workout tests passed")
