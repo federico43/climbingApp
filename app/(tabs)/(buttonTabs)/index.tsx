@@ -9,7 +9,7 @@ import { HomeworkSection } from "@/components/HomeworkSection"
 import { SettingsButton } from "@/components/SettingsButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
-import { listAthleteTemplates, ProtocolRow } from "@/services/BoulderGraphService"
+import { getUsers, listAthleteTemplates, ProtocolRow } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
 import { Redirect, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
@@ -39,6 +39,7 @@ function HomeContent() {
   const { User, userName } = ConsumeAuth()
   const router = useRouter()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
+  const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -48,7 +49,13 @@ function HomeContent() {
 
   const load = useCallback(async () => {
     try {
-      setTemplates(await listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]))
+      const [rows, me] = await Promise.all([
+        listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]),
+        // Fresh each time: the coach may have picked another workout for Home.
+        getUsers(User!.$id).catch(() => null),
+      ])
+      setTemplates(rows)
+      setHomeWorkoutId((me as any)?.homeWorkoutId ?? null)
     } finally {
       setLoading(false)
     }
@@ -70,7 +77,7 @@ function HomeContent() {
   // The workout card mounts only after the launch intro so its entrance is
   // actually visible.
   const [introDone, setIntroDone] = useState(introAlreadyPlayed())
-  const { workout, scPart } = pickLatestWorkout(templates)
+  const { workout, scPart, picked } = pickLatestWorkout(templates, homeWorkoutId)
   const homework = templates.filter((t) => t.planPart === "homework")
   const ready = introDone && !loading
 
@@ -112,7 +119,7 @@ function HomeContent() {
                 </View>
               )}
               {workout ? (
-                <LatestWorkoutCard workout={workout} scPart={scPart} fill />
+                <LatestWorkoutCard workout={workout} scPart={scPart} picked={picked} fill />
               ) : (
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
                   <Ionicons name="barbell-outline" size={36} color={C.textMuted} />

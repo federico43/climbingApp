@@ -130,7 +130,8 @@ export function AthleteDetail({
       onPlanChanged={(p) => { setPlan(p); onChanged() }}
       onSessions={setSessions}
       onPlanWorkouts={setPlanWorkouts}
-      onHomeworkChanged={() => { reloadHomework(); onChanged() }}
+      // A created workout also takes Home over: Templates shows it there.
+      onHomeworkChanged={() => { reloadHomework(); onChanged(); setTemplatesKey((k) => k + 1) }}
     />
   )
   const timelineCard = plan && <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />

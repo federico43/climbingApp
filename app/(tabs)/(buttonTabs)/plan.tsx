@@ -18,6 +18,7 @@ import {
   getActiveTrainingPlan,
   BlockRow,
   getSessions,
+  getUsers,
   listAthleteTemplates,
   listBlocks,
   listPlanWorkouts,
@@ -102,6 +103,7 @@ export default function PlanScreen() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [library, setLibrary] = useState<BlockRow[]>([])
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
+  const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(null)
   const activePlan = useActivePlan()
   // Read through a ref so load() doesn't change (and re-fire) whenever the context re-renders.
   const activePlanRef = useRef(activePlan)
@@ -118,15 +120,18 @@ export default function PlanScreen() {
       // Keep the tab layout (Home shown or not) in step with what we found.
       if (!!active !== !!activePlanRef.current.plan) activePlanRef.current.refresh()
       if (!active) return
-      const [planWorkouts, sessionRows, blocks, templateRows] = await Promise.all([
+      const [planWorkouts, sessionRows, blocks, templateRows, me] = await Promise.all([
         listPlanWorkouts(active.$id),
         getSessions(),
         // Library blocks time the upcoming workouts' summaries.
         listBlocks().catch(() => [] as BlockRow[]),
         // For the latest-built-workout card (any coach workout, plan or not).
         listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]),
+        // …unless the coach picked another one for Home.
+        getUsers(User!.$id).catch(() => null),
       ])
       setTemplates(templateRows)
+      setHomeWorkoutId((me as any)?.homeWorkoutId ?? null)
       setLibrary(blocks)
       setWorkouts(planWorkouts)
       setSessions(sessionRows)
@@ -205,6 +210,7 @@ export default function PlanScreen() {
                 <PlanBody
                   plan={plan}
                   templates={templates}
+                  homeWorkoutId={homeWorkoutId}
                   workouts={workouts}
                   sessions={sessions}
                   library={library}
@@ -227,6 +233,7 @@ export default function PlanScreen() {
 function PlanBody({
   plan,
   templates,
+  homeWorkoutId,
   workouts,
   sessions,
   library,
@@ -235,6 +242,7 @@ function PlanBody({
 }: {
   plan: TrainingPlanRow
   templates: ProtocolRow[]
+  homeWorkoutId: string | null
   workouts: ProtocolRow[]
   sessions: SessionRow[]
   library: BlockRow[]
@@ -302,7 +310,7 @@ function PlanBody({
   // latest workout card at the top already covers what's next).
   const [selected, setSelected] = useState<number | null>(null)
   const shown = selected ? slots.find((s) => s.index === selected) ?? null : null
-  const { workout: latest, scPart } = pickLatestWorkout(templates)
+  const { workout: latest, scPart, picked } = pickLatestWorkout(templates, homeWorkoutId)
   // Homework rides on the athlete's templates (planPart "homework"); its
   // picked days show on the timeline like events.
   const homework = templates.filter((t) => t.planPart === "homework")
@@ -326,7 +334,7 @@ function PlanBody({
       ) : latest && (
         <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
           <GroupLabel icon="flash" text="Up next" />
-          <LatestWorkoutCard workout={latest} scPart={scPart} />
+          <LatestWorkoutCard workout={latest} scPart={scPart} picked={picked} />
         </View>
       )}
 

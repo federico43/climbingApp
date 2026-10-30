@@ -49,7 +49,8 @@ const TABLES = [
   },
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).
-const USER_COLUMNS = [str("defaultClasses", 8, { array: true })]
+// …and the workout the coach picked for their Home (a protocol id).
+const USER_COLUMNS = [str("defaultClasses", 8, { array: true }), str("homeWorkoutId", 36)]
 // Plan pauses, JSON [{ start, end, reason? }] (utils/planPauses.ts).
 const PLAN_COLUMNS = [str("pauses", 2000)]
 
