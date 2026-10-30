@@ -8,9 +8,10 @@ import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from
 import {
   Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
-import { findScSessions, readRound, setsAtFinalLoad } from "@/utils/scHistory"
-import { basisLine, planNextForFocus, type FocusEntry } from "@/utils/scNext"
-import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, usableAt, type ResolvedChain } from "@/utils/levelChain"
+import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
+import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
+import { planFromHistory, type ExerciseSetting } from "@/utils/scPrefill"
+import { chainIndexOf, findLibraryRow, usableAt, type ResolvedChain } from "@/utils/levelChain"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
 import { isPlanPick, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
@@ -928,18 +929,6 @@ function LevelPicker({ levelChain, value, suggested, onChange }: {
   )
 }
 
-// An exercise's adjustable-setting hints, if it has any.
-interface ExerciseSetting { harder?: string; easier?: string }
-function settingOf(x: { settingHarder?: string | null; settingEasier?: string | null }): ExerciseSetting | undefined {
-  const harder = x.settingHarder?.trim() || undefined
-  const easier = x.settingEasier?.trim() || undefined
-  return harder || easier ? { harder, easier } : undefined
-}
-
-// Sessions read per exercise, any focus: enough for three of one focus
-// (stall rule) while the plan rotates three focuses.
-const HISTORY_LOOKBACK = 10
-
 // A block exercise swapped for another library exercise (see utils/scSwap).
 interface ActiveSwap { row: LibraryExercise; reason: SwapReason; scope: SwapScope }
 
@@ -961,24 +950,8 @@ interface Prefill {
 // null for exercises that don't progress (mobility, 7/3s).
 function prefillFor(ex: Exercise, sessions: SessionRow[] | null, library: LibraryExercise[] | null, unit: WeightUnit): Prefill | null {
   if (ex.type === "7/3s" || ex.movementType === "mobility") return null
-  const out: Prefill = {}
-  const chain = resolveExerciseChain(ex, library)
-  if (chain) out.chain = chain
-  const row = library ? findLibraryRow(ex, library) : undefined
-  out.loadStep = row?.loadStep ?? ex.loadStep ?? undefined
-  const setting = settingOf(row ?? ex)
-  if (setting) out.setting = setting
-  if (!sessions) return out
-  // Search the whole family — every member of the full chain — since a
-  // round could have been logged under any of them.
-  const candidateIds = chain ? chainIds(chain, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
-  // Every focus: planNextForFocus picks today's focus's history, and
-  // explosiveness starts from max force (scNext.ts). Weights come back in
-  // the athlete's current unit.
-  const history = findScSessions(sessions, candidateIds, ex.name, { unit, limit: HISTORY_LOOKBACK })
-  if (history.length === 0) return out
-  out.past = history
-  const next = planNextForFocus({ ...ex, setting }, chain ?? undefined, out.loadStep, unit, history, "last time")
+  const { next, ...out }: Prefill & { next?: NextPlan } = planFromHistory(ex, sessions, library, unit)
+  if (!next) return out
   if (next.atHardest != null) out.hardest = next.atHardest
   if (next.level) out.level = next.level
   if (next.weight != null) out.weight = String(next.weight)
