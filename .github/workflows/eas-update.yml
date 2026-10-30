@@ -46,4 +46,4 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
           MESSAGE: ${{ inputs.message }}
-        run: eas update --channel "$CHANNEL" --message "$MESSAGE" --platform ios --non-interactive
+        run: eas update --channel "$CHANNEL" --message "$MESSAGE" --non-interactive
