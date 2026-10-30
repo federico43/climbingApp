@@ -102,7 +102,7 @@ const metric = (id: string) => block.metrics.find((m) => m.id === id)!
 assert.deepEqual(metric("four_by_four").points, [{ label: "W1", value: 2 }, { label: "W3", value: 2.5 }])
 assert.deepEqual(metric("intervals").points, [{ label: "W1", value: 45 }, { label: "W3", value: 55 }])
 assert.deepEqual(metric("workouts").points.map((p) => p.value), [1, 0, 0])
-assert.equal(metric("workouts").planned, 6)
+assert.equal(metric("workouts").planned, 4)   // W3 still running: not missed yet
 
 // ─── review ───
 const review = blockReview(block)
@@ -110,7 +110,7 @@ assert.equal(review.worse, 0)
 assert.ok(review.better >= 5)   // edge lift, 4×4, intervals, pull-up, push-up ladder, 1 on 1 off
 assert.equal(review.rows.find((r) => r.id === "warmup")?.change.delta, "▲ 2 min")
 assert.equal(review.rows.find((r) => r.name === "Push-up ladder")?.change.delta, "▲ 1 level")
-assert.equal(review.workouts?.value, "1 / 6")
+assert.equal(review.workouts?.value, "1 / 4")
 assert.equal(review.projectsSent, 1)
 
 // ─── all blocks ───
@@ -118,7 +118,7 @@ const old = { $id: "p0", windowStart: "2026-08-17", windowEnd: "2026-09-27", pau
 const all = buildAllBlocksStats({ ...input, plans: [plan, old], workoutsByPlan: { p1: workouts } })
 assert.deepEqual(all.metrics.find((m) => m.id === "four_by_four")!.points, [{ label: "B1", value: 4 }, { label: "B2", value: 2.5 }])
 assert.deepEqual(all.metrics.find((m) => m.id === "edge_lift_max")!.points, [{ label: "B2", value: 42 }])   // first max logged after B1 ended
-assert.equal(all.metrics.find((m) => m.id === "workouts")!.planned, 12 + 6)
+assert.equal(all.metrics.find((m) => m.id === "workouts")!.planned, 12 + 4)
 
 // ─── S&C a hand-built workout logs: no focus, no weight, no library id ───
 const handBuilt = { type: "strength_conditioning", exercises: [{ name: "Pull-up" }, { name: "Row", exerciseId: "row" }] }

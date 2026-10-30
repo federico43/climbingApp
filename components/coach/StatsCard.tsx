@@ -104,7 +104,8 @@ function planTitle(p: TrainingPlanRow): string {
 }
 
 function planChipLabel(p: TrainingPlanRow): string {
-  return `${shortDay(p.windowStart)}${p.focus ? ` · ${PLAN_FOCUS_LABEL[p.focus]}` : ""}`
+  const running = localDateStr(new Date()) <= p.windowEnd
+  return `${shortDay(p.windowStart)}${p.focus ? ` · ${PLAN_FOCUS_LABEL[p.focus]}` : ""}${running ? " · now" : ""}`
 }
 
 function planStatus(p: TrainingPlanRow): string {
@@ -156,6 +157,7 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
           <Tile key={m.id} metric={m} width={tileWidth} selected={m.id === selected?.id} onPress={() => setSelectedId(m.id)} />
         ))}
       </View>
+      {metrics.length > 1 && <Text style={styles.hint}>Tap a tile to see its trend.</Text>}
       {width > 0 && selected && selected.points.length > 0 && <TrendChart metric={selected} width={width - 32} />}
 
       {width > 0 && patterns.length > 0 && (
@@ -542,4 +544,5 @@ const styles = StyleSheet.create({
   focusFrom: { fontSize: 12, fontWeight: "400", color: C.textSecondary },
   legend: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendText: { fontSize: 11, color: C.textSecondary },
+  hint: { marginTop: -4, fontSize: 11, color: C.textMuted },
 })

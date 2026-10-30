@@ -77,7 +77,7 @@ en la semana anterior.
 | S&C | Rondas S&C, foco con `loggedFocus` (sin foco → "No focus"), patrón con `movementType` (bloque, o biblioteca por id o por nombre) | Por sesión: el peso de la carga final (kg); el paso en la cadena de niveles; o, sin peso (peso corporal), las reps o segundos máximos de un set, como "Ejercicio (bodyweight)". All blocks incluye todas las sesiones, con plan o sin plan |
 | Project bouldering | Intentos del bloque | Minutos del primer al último intento (con uno solo, el tiempo límite del bloque); grado del último intento con color, o el del bloque; ✓ si algún intento fue logrado |
 | 1 on 1 off | Intervals con `kind: warmup` o llamados "1 on 1 off" | `series × workTime` en minutos |
-| Workouts | `donePlanWorkouts` | Hechos por semana; planeados = 2 × semanas que ya empezaron |
+| Workouts | `donePlanWorkouts` | Hechos por semana; planeados = 2 por semana terminada; la semana en curso solo cuenta lo ya hecho (todavía no hay "missed") |
 
 En la **review**, solo entra lo que tiene al menos dos puntos en el bloque,
 ordenado mejor → igual → peor. Además muestra los workouts hechos y cuántas

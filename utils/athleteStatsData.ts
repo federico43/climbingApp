@@ -290,12 +290,14 @@ function pointCount(e: ScExerciseStats): number {
   return Object.values(e.byFocus).reduce((n, pts) => n + (pts?.length ?? 0), 0)
 }
 
-// Plan workouts done each week, against 2 a week planned so far.
+// Plan workouts done each week, against 2 a week planned so far. The week
+// still running can't be missed yet: it counts only what's already done.
 export function workoutsMetric(
   plan: StatsPlan,
   weeks: BlockWeek[],
   planWorkouts: ProgressWorkout[],
   sessions: SessionRow[],
+  today: string,
 ): StatMetric {
   const done = donePlanWorkouts(plan.$id, planWorkouts, sessions)
   const perWeek = new Map<number, number>()
@@ -304,12 +306,18 @@ export function workoutsMetric(
     const w = weekOf(plan, date)
     perWeek.set(w, (perWeek.get(w) ?? 0) + 1)
   }
+  const counted = weeks.slice(0, PLAN_WEEKS)
+  const running = counted.length > 0 && today <= counted[counted.length - 1].end
+  const planned = counted.reduce((n, w, i) => {
+    const isRunning = running && i === counted.length - 1
+    return n + (isRunning ? Math.min(perWeek.get(w.week) ?? 0, WORKOUTS_PER_WEEK) : WORKOUTS_PER_WEEK)
+  }, 0)
   return {
     id: "workouts",
     label: "Workouts",
     unit: "workouts",
     points: weeks.map((w) => ({ label: w.label, value: perWeek.get(w.week) ?? 0 })),
-    planned: Math.min(weeks.length, PLAN_WEEKS) * WORKOUTS_PER_WEEK,
+    planned,
   }
 }
 
@@ -326,7 +334,7 @@ export function buildBlockStats(input: StatsInput & { plan: StatsPlan; planWorko
       { id: "edge_lift_max", label: "Edge lift max", unit: "kg", points: edgeLiftSeries(input.athlete.edgeLiftMaxLog, weeks) },
       { id: "four_by_four", label: "4×4", unit: "colour", points: byWeek(plan, weeks, fourByFourValues(parsed, from, to), "max") },
       { id: "intervals", label: "Intervals", unit: "s", points: byWeek(plan, weeks, intervalsValues(parsed, from, to), "last") },
-      workoutsMetric(plan, weeks, input.planWorkouts, input.sessions),
+      workoutsMetric(plan, weeks, input.planWorkouts, input.sessions, today),
     ],
     sc: scPatternStats(parsed, input.library, from, to),
     projects: projectSessions(parsed, from, to),
