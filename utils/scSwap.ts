@@ -92,6 +92,14 @@ export function isPlanPick(patterns: PatternPicks[], exerciseId: string | undefi
   return !!exerciseId && patterns.some((p) => p.exerciseIds.includes(exerciseId))
 }
 
+// The plan pick a block exercise stands for: itself, or — for a ladder step
+// the plan prescribed from the athlete's history (scPlanBuilder) — the pick
+// on the same ladder (`ladderIds`). undefined when it's neither.
+export function planPickFor(patterns: PatternPicks[], exerciseId: string | undefined, ladderIds: string[] = []): string | undefined {
+  if (isPlanPick(patterns, exerciseId)) return exerciseId
+  return ladderIds.find((id) => isPlanPick(patterns, id))
+}
+
 // The plan's patterns with `fromId` replaced by `toId` in place (same
 // position, so "exercise 1 / 2 of the week" doesn't move). If `toId` was
 // already the pattern's other pick, the pattern keeps just that one. null

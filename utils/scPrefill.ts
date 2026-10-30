@@ -68,6 +68,8 @@ export function planFromHistory(ex: PrefillExercise, sessions: SessionRow[] | nu
 export function startingLevelRow(
   row: ExerciseRow, draft: (r: ExerciseRow) => PrefillExercise, sessions: SessionRow[], library: ExerciseRow[],
 ): ExerciseRow {
+  // Weight-mode exercises keep the pick — only their load comes from history.
+  if (!resolveExerciseChain(draft(row), library)) return row
   let current = row
   for (let i = 0; i < 3; i++) {
     const level = planFromHistory(draft(current), sessions, library, "kg").next?.level
