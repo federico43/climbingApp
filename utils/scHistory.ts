@@ -1,6 +1,17 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import { convertWeight, type Focus, type WeightUnit, type WorkingSet } from "@/utils/scProgression"
-import { swapReasonOf, type SwapReason } from "@/utils/scSwap"
+
+// "easier": the app offered it after the athlete missed the minimum with
+// nothing left to lower (RoundDrop.pickEasier) — the coach is told to add
+// an easier version to the ladder. "choice": the athlete replaced it
+// themselves (machine taken, injury, preference…). Logs written before the
+// reason existed are easier swaps (it was the only kind).
+export type SwapReason = "easier" | "choice"
+
+export function swapReasonOf(scData: { swappedFrom?: unknown; swapReason?: string } | null | undefined): SwapReason | null {
+  if (!scData?.swappedFrom) return null
+  return scData.swapReason === "choice" ? "choice" : "easier"
+}
 
 // Reads S&C progression state out of an athlete's own session history.
 // Shared by StrengthConditioningBlock.tsx (prefilling the athlete's next
