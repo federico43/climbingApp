@@ -1,6 +1,5 @@
 import { C } from "@/utils/theme"
-import { blockReview, type PeriodStats, type StatTrend } from "@/utils/athleteStats"
-import { FOCUS_COLOR, FOCUS_LABEL } from "@/utils/scProgression"
+import { blockReview, STAT_FOCUS_COLOR, type PeriodStats, type StatTrend } from "@/utils/athleteStats"
 import { Ionicons } from "@expo/vector-icons"
 import { StyleSheet, Text, View } from "react-native"
 
@@ -8,7 +7,7 @@ import { StyleSheet, Text, View } from "react-native"
 // got worse, then each of them (docs/athlete-stats.md §6). Shared by the
 // coach's Stats card and the athlete's Plan page.
 export function BlockReviewView({ stats, title, subtitle }: { stats: PeriodStats; title: string; subtitle: string }) {
-  const review = blockReview(stats, FOCUS_LABEL)
+  const review = blockReview(stats)
   return (
     <View style={styles.wrap}>
       <View style={{ gap: 2 }}>
@@ -50,7 +49,7 @@ export function BlockReviewView({ stats, title, subtitle }: { stats: PeriodStats
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {r.name}
-                  {r.detail && r.focus && <Text style={{ color: FOCUS_COLOR[r.focus] }}>{`  ${r.detail}`}</Text>}
+                  {r.detail && r.focus && <Text style={{ color: STAT_FOCUS_COLOR[r.focus] }}>{`  ${r.detail}`}</Text>}
                 </Text>
                 <Text style={styles.rowChange}>{r.change.start ? `${r.change.start} → ${r.change.value}` : r.change.value}</Text>
               </View>

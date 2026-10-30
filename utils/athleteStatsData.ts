@@ -1,7 +1,7 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import type {
-  PeriodStats, ProjectSessionStat, ScExerciseStats, ScPatternStats, StatMetric, StatPoint, WarmupSessionStat,
+  PeriodStats, ProjectSessionStat, ScExerciseStats, ScPatternStats, StatFocus, StatMetric, StatPoint, WarmupSessionStat,
 } from "@/utils/athleteStats"
 import { colourIndex } from "@/utils/boulderColours"
 import { parseMaxLog } from "@/utils/edgeWarmup"
@@ -13,7 +13,6 @@ import { attemptGrades } from "@/utils/progression/fourByFour"
 import { intervalsLog } from "@/utils/progression/intervals"
 import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
 import { loggedFocus, readRound, setsAtFinalLoad } from "@/utils/scHistory"
-import type { Focus } from "@/utils/scProgression"
 
 // Reads the coach Stats card's numbers out of an athlete's history
 // (docs/athlete-stats.md §3–5). Pure: the dashboard loads the rows, this
@@ -30,8 +29,10 @@ export interface StatsPlan {
 
 export interface StatsLibraryExercise {
   $id: string
+  name?: string
   movementType?: string
   loadMode?: "weight" | "level"
+  unit?: "reps" | "seconds"
 }
 
 export interface StatsInput {
@@ -191,18 +192,19 @@ export function projectSessions(sessions: ParsedSession[], from: string, to: str
   })
 }
 
-// S&C by movement pattern → exercise → focus: one point per session, the
-// load the session ended on (kg, or the step for a level exercise).
-// `bestPerLabel` merges points that share a label, keeping the highest (used
-// for "All blocks", where the label is the block).
+// S&C by movement pattern → exercise → focus: one point per session (the
+// best of a day), what the session ended on: the weight (kg), the step for a
+// level exercise, else — bodyweight, no weight logged — the reps or seconds.
+// A workout with no focus on the exercise (built by hand) goes under "none".
 export function scPatternStats(
   sessions: ParsedSession[],
   library: StatsLibraryExercise[],
   from: string,
   to: string,
-  labelFor: (date: string) => string = shortDay,
 ): ScPatternStats[] {
   const lib = new Map(library.map((e) => [e.$id, e]))
+  // Exercises saved before blocks kept the library id are found by name.
+  const libByName = new Map(library.filter((e) => e.name).map((e) => [e.name!.trim().toLowerCase(), e]))
   const exercises = new Map<string, { pattern: MovementType; stats: ScExerciseStats }>()
 
   for (const log of blockLogs(sessions, from, to, (b) => b?.type === "strength_conditioning" && Array.isArray(b.exercises))) {
@@ -220,33 +222,42 @@ export function scPatternStats(
     }
 
     for (const [ex, attempts] of byExercise) {
-      const libEx = ex.exerciseId ? lib.get(ex.exerciseId) : undefined
+      const libEx = (ex.exerciseId ? lib.get(ex.exerciseId) : undefined) ?? libByName.get(String(ex.name ?? "").trim().toLowerCase())
       const movement = (ex.movementType ?? libEx?.movementType) as MovementType | undefined
       if (!movement || !MOVEMENT_TYPES.includes(movement) || movement === "mobility") continue
-      const focus: Focus | undefined = loggedFocus(attempts[0], log.protocol) ?? ex.focus
-      if (!focus) continue
+      const focus: StatFocus = loggedFocus(attempts[0], log.protocol) ?? ex.focus ?? "none"
 
       const rounds = [...attempts].sort((a, b) => (a.scData?.round ?? 0) - (b.scData?.round ?? 0)).map((a) => readRound(a.scData, "kg"))
       const final = setsAtFinalLoad(rounds)
       const levels: any[] = Array.isArray(ex.levels) ? ex.levels : []
       const isLevel = (libEx?.loadMode ?? ex.loadMode) === "level" && levels.length > 0
       let value: number | undefined
+      let unit: ScExerciseStats["unit"] = "kg"
       if (isLevel) {
         const step = levels.findIndex((l) => l?.exerciseId === final?.exerciseId)
         value = step >= 0 ? step + 1 : undefined
+        unit = "level"
+      } else if (final?.weight != null && final.weight > 0) {
+        value = final.weight
       } else {
-        value = final?.weight
+        // Bodyweight: the most reps (or seconds) in a set at the final load.
+        const amounts = (final?.sets ?? []).map((st) => st.amount).filter((n) => typeof n === "number" && n > 0)
+        value = amounts.length ? Math.max(...amounts) : undefined
+        unit = (ex.unit ?? libEx?.unit) === "seconds" ? "s" : "reps"
       }
       if (value == null) continue
 
-      const key = ex.exerciseId ?? ex.name
+      // A weighted and a bodyweight version of one exercise are tracked apart.
+      const base = ex.exerciseId ?? ex.name
+      const key = unit === "kg" || unit === "level" ? base : `${base}:${unit}`
       let entry = exercises.get(key)
       if (!entry) {
-        entry = { pattern: movement, stats: { id: key, name: ex.name ?? "Exercise", unit: isLevel ? "level" : "kg", byFocus: {} } }
+        const name = ex.name ?? "Exercise"
+        entry = { pattern: movement, stats: { id: key, name: unit === "reps" || unit === "s" ? `${name} (bodyweight)` : name, unit, byFocus: {} } }
         exercises.set(key, entry)
       }
       const points = entry.stats.byFocus[focus] ?? (entry.stats.byFocus[focus] = [])
-      const label = labelFor(log.date)
+      const label = shortDay(log.date)
       const same = points.find((p) => p.label === label)
       if (same) same.value = Math.max(same.value, value)
       else points.push({ label, value })
@@ -319,11 +330,6 @@ export function buildBlockStats(input: StatsInput & { plan: StatsPlan; planWorko
 export function buildAllBlocksStats(input: StatsInput & { plans: StatsPlan[]; workoutsByPlan: Record<string, ProgressWorkout[]> }): PeriodStats {
   const plans = [...input.plans].sort((a, b) => (a.windowStart < b.windowStart ? -1 : 1)).filter((p) => p.windowStart <= input.today)
   const parsed = parseSessions(input.sessions)
-  const labelOf = (date: string): string => {
-    const i = plans.findIndex((p) => date >= p.windowStart && date <= p.windowEnd)
-    return i >= 0 ? `B${i + 1}` : ""
-  }
-
   const lastOf = (pts: StatPoint[]) => pts[pts.length - 1]
   const edge: StatPoint[] = []
   const four: StatPoint[] = []
@@ -349,18 +355,9 @@ export function buildAllBlocksStats(input: StatsInput & { plans: StatsPlan[]; wo
       { id: "intervals", label: "Intervals", unit: "s", points: intervals },
       { id: "workouts", label: "Workouts", unit: "workouts", points: workouts, planned },
     ],
-    sc: plans.length ? scPatternStats(parsed, input.library, from, input.today, labelOf)
-      .map((p) => ({ ...p, exercises: p.exercises.map((e) => ({ ...e, byFocus: dropUnlabelled(e.byFocus) })) })) : [],
+    // S&C: every session ever, plan or not — hand-built workouts count too.
+    sc: scPatternStats(parsed, input.library, "0000-01-01", input.today),
     projects: projectSessions(parsed, from, input.today),
     warmups: warmupSessions(parsed, from, input.today),
   }
-}
-
-function dropUnlabelled(byFocus: ScExerciseStats["byFocus"]): ScExerciseStats["byFocus"] {
-  const out: ScExerciseStats["byFocus"] = {}
-  for (const [f, pts] of Object.entries(byFocus) as [Focus, StatPoint[]][]) {
-    const kept = pts.filter((p) => p.label !== "")
-    if (kept.length) out[f] = kept
-  }
-  return out
 }

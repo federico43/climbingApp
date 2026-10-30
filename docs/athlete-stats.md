@@ -59,6 +59,7 @@ métricas, más es mejor.
 | segundos (intervals) | `60 s` | `▲ 15 s` |
 | color (4×4) | el color que alcanzaron todos los slots | `▲ 0.5 colours` (promedio de slots) |
 | nivel (S&C por niveles) | `Level 3` | `▲ 1 level` |
+| reps (S&C con peso corporal) | `8 reps` | `▲ 2 reps` |
 | minutos (1 on 1 off) | `10 min` | `▲ 2 min` |
 | workouts | `7 / 8` | `1 missed` o `All done` |
 
@@ -73,7 +74,7 @@ en la semana anterior.
 | Edge lift max | `users.edgeLiftMaxLog` | El max vigente al final de cada semana |
 | 4×4 | Colores del último set (`attemptGrades`) | Promedio de los slots; la mejor sesión de la semana |
 | Intervals | Bloques intervals con `kind: power_endurance` | `workTime` de la última sesión de la semana |
-| S&C | Rondas S&C, foco con `loggedFocus`, patrón con `movementType` (bloque o biblioteca) | Por sesión: el peso de la carga final (`setsAtFinalLoad`, en kg), o el paso en la cadena de niveles. En All blocks, el mejor de cada bloque |
+| S&C | Rondas S&C, foco con `loggedFocus` (sin foco → "No focus"), patrón con `movementType` (bloque, o biblioteca por id o por nombre) | Por sesión: el peso de la carga final (kg); el paso en la cadena de niveles; o, sin peso (peso corporal), las reps o segundos máximos de un set, como "Ejercicio (bodyweight)". All blocks incluye todas las sesiones, con plan o sin plan |
 | Project bouldering | Intentos del bloque | Minutos del primer al último intento (con uno solo, el tiempo límite del bloque); grado del último intento con color, o el del bloque; ✓ si algún intento fue logrado |
 | 1 on 1 off | Intervals con `kind: warmup` o llamados "1 on 1 off" | `series × workTime` en minutos |
 | Workouts | `donePlanWorkouts` | Hechos por semana; planeados = 2 × semanas que ya empezaron |

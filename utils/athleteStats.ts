@@ -1,6 +1,6 @@
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import type { MovementType } from "@/utils/movementTypes"
-import type { Focus } from "@/utils/scProgression"
+import { FOCUS_COLOR, FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 
 // Coach dashboard Stats card (docs/athlete-stats.md): one tile per metric,
 // first point vs last point of the period. Pure — no React Native imports —
@@ -10,7 +10,7 @@ import type { Focus } from "@/utils/scProgression"
 // utils/athleteStatsData.ts; SAMPLE_STATS is the card's preview data.
 
 export type StatsPeriod = "block" | "all"
-export type StatUnit = "kg" | "added_kg" | "s" | "colour" | "level" | "workouts"
+export type StatUnit = "kg" | "added_kg" | "s" | "reps" | "colour" | "level" | "workouts"
 export type StatTrend = "up" | "down" | "same"
 
 export interface StatPoint {
@@ -44,6 +44,7 @@ export function formatStatValue(unit: StatUnit, v: number): string {
     // colour every slot has reached.
     case "colour": return colourLabel(BoulderLevelOptions[Math.floor(v + 1e-9)]?.value)
     case "level": return `Level ${Math.round(v)}`
+    case "reps": return `${round1(v)} reps`
     case "workouts": return `${round1(v)}`
   }
 }
@@ -77,7 +78,7 @@ export function statChange(m: StatMetric): StatChange | null {
     delta = `${arrow} ${round1(n)} ${noun}${n === 1 ? "" : "s"}`
   }
   else if (m.unit === "kg" && first > 0) delta = `${arrow} ${Math.round(Math.abs(diff) / first * 100)}%`
-  else delta = `${arrow} ${round1(Math.abs(diff))} ${m.unit === "s" ? "s" : "kg"}`
+  else delta = `${arrow} ${round1(Math.abs(diff))} ${m.unit === "s" ? "s" : m.unit === "reps" ? "reps" : "kg"}`
 
   return {
     trend,
@@ -97,13 +98,19 @@ function round1(v: number): string {
 // exercise is tracked per focus — a hypertrophy set says nothing about a
 // max-force one, so they're never on the same line.
 
-export const FOCUS_ORDER: Focus[] = ["max_force", "hypertrophy", "explosiveness"]
+// "none": an exercise in a workout with no focus set (built by hand).
+export type StatFocus = Focus | "none"
+
+export const FOCUS_ORDER: StatFocus[] = ["max_force", "hypertrophy", "explosiveness", "none"]
+
+export const STAT_FOCUS_LABEL: Record<StatFocus, string> = { ...FOCUS_LABEL, none: "No focus" }
+export const STAT_FOCUS_COLOR: Record<StatFocus, string> = { ...FOCUS_COLOR, none: "#8A8A8E" }
 
 export interface ScExerciseStats {
   id: string
   name: string
-  unit: "kg" | "added_kg" | "level"
-  byFocus: Partial<Record<Focus, StatPoint[]>>   // points oldest first
+  unit: "kg" | "added_kg" | "level" | "reps" | "s"
+  byFocus: Partial<Record<StatFocus, StatPoint[]>>   // points oldest first
 }
 
 export interface ScPatternStats {
@@ -122,7 +129,7 @@ export function visiblePatterns(patterns: ScPatternStats[]): ScPatternStats[] {
 
 // The focuses an exercise was done at, in display order, as metrics
 // statChange can read.
-export function focusMetrics(e: ScExerciseStats): { focus: Focus; metric: StatMetric }[] {
+export function focusMetrics(e: ScExerciseStats): { focus: StatFocus; metric: StatMetric }[] {
   return FOCUS_ORDER
     .filter((f) => (e.byFocus[f]?.length ?? 0) > 0)
     .map((f) => ({ focus: f, metric: { id: `${e.id}:${f}`, label: e.name, unit: e.unit, points: e.byFocus[f]! } }))
@@ -163,7 +170,7 @@ export interface ReviewRow {
   id: string
   name: string
   detail?: string        // the focus, for S&C ("Max force")
-  focus?: Focus
+  focus?: StatFocus
   change: StatChange
 }
 
@@ -192,7 +199,7 @@ export function minutesChange(first: number, last: number): StatChange {
   }
 }
 
-export function blockReview(p: PeriodStats, focusLabel: Record<Focus, string>): BlockReview {
+export function blockReview(p: PeriodStats): BlockReview {
   const rows: ReviewRow[] = []
   for (const m of p.metrics) {
     if (m.unit === "workouts" || m.points.length < 2) continue
@@ -204,7 +211,7 @@ export function blockReview(p: PeriodStats, focusLabel: Record<Focus, string>): 
       for (const { focus, metric } of focusMetrics(e)) {
         if (metric.points.length < 2) continue
         const change = statChange(metric)
-        if (change) rows.push({ id: metric.id, name: e.name, detail: focusLabel[focus], focus, change })
+        if (change) rows.push({ id: metric.id, name: e.name, detail: STAT_FOCUS_LABEL[focus], focus, change })
       }
     }
   }

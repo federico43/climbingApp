@@ -4,7 +4,7 @@ import { BlockReviewView } from "@/components/BlockReviewView"
 import type { useAthleteStats } from "@/hooks/useAthleteStats"
 import type { TrainingPlanRow } from "@/services/BoulderGraphService"
 import {
-  focusMetrics, formatStatValue, isEmptyPeriod, SAMPLE_STATS, statChange, visiblePatterns,
+  focusMetrics, formatStatValue, isEmptyPeriod, SAMPLE_STATS, STAT_FOCUS_COLOR, STAT_FOCUS_LABEL, statChange, visiblePatterns,
   type PeriodStats, type ProjectSessionStat, type ScPatternStats, type StatMetric, type StatsPeriod, type StatTrend,
   type WarmupSessionStat,
 } from "@/utils/athleteStats"
@@ -12,7 +12,6 @@ import { shortDay } from "@/utils/athleteStatsData"
 import { localDateStr, PLAN_FOCUS_LABEL, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
-import { FOCUS_COLOR, FOCUS_LABEL } from "@/utils/scProgression"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -326,15 +325,15 @@ function PatternPanel({ stats, wide, width }: { stats: ScPatternStats; wide: boo
         return (
           <View key={focus} style={styles.focusRow}>
             <View style={styles.focusHead}>
-              <View style={[styles.dot, { backgroundColor: FOCUS_COLOR[focus] }]} />
-              <Text style={[styles.focusLabel, { color: FOCUS_COLOR[focus] }]}>{FOCUS_LABEL[focus]}</Text>
+              <View style={[styles.dot, { backgroundColor: STAT_FOCUS_COLOR[focus] }]} />
+              <Text style={[styles.focusLabel, { color: STAT_FOCUS_COLOR[focus] }]}>{STAT_FOCUS_LABEL[focus]}</Text>
               <View style={{ flex: 1 }} />
               <ChangePill trend={change.trend} text={change.delta} />
             </View>
             <Text style={styles.focusValue}>
               {change.value}<Text style={styles.focusFrom}>  {change.from}</Text>
             </Text>
-            <Sparkline metric={metric} color={FOCUS_COLOR[focus]} width={width} />
+            <Sparkline metric={metric} color={STAT_FOCUS_COLOR[focus]} width={width} />
           </View>
         )
       })}

@@ -105,7 +105,7 @@ assert.deepEqual(metric("workouts").points.map((p) => p.value), [1, 0, 0])
 assert.equal(metric("workouts").planned, 6)
 
 // ─── review ───
-const review = blockReview(block, { max_force: "Max force", hypertrophy: "Hypertrophy", explosiveness: "Explosiveness" })
+const review = blockReview(block)
 assert.equal(review.worse, 0)
 assert.ok(review.better >= 5)   // edge lift, 4×4, intervals, pull-up, push-up ladder, 1 on 1 off
 assert.equal(review.rows.find((r) => r.id === "warmup")?.change.delta, "▲ 2 min")
@@ -119,5 +119,28 @@ const all = buildAllBlocksStats({ ...input, plans: [plan, old], workoutsByPlan: 
 assert.deepEqual(all.metrics.find((m) => m.id === "four_by_four")!.points, [{ label: "B1", value: 4 }, { label: "B2", value: 2.5 }])
 assert.deepEqual(all.metrics.find((m) => m.id === "edge_lift_max")!.points, [{ label: "B2", value: 42 }])   // first max logged after B1 ended
 assert.equal(all.metrics.find((m) => m.id === "workouts")!.planned, 12 + 6)
+
+// ─── S&C a hand-built workout logs: no focus, no weight, no library id ───
+const handBuilt = { type: "strength_conditioning", exercises: [{ name: "Pull-up" }, { name: "Row", exerciseId: "row" }] }
+const bw = (date: string, round: number, reps: number) =>
+  ({ blockIndex: 0, type: "strength_conditioning", timestamp: ts(date, 12, round), scData: { exerciseName: "Pull-up", round, repsCompleted: reps } })
+const rowSet = (date: string, weight: number) =>
+  ({ blockIndex: 0, type: "strength_conditioning", timestamp: ts(date, 14), scData: { exerciseId: "row", exerciseName: "Row", round: 1, weight, repsCompleted: 8 } })
+const loose = parseSessions([
+  session("2026-07-01", [handBuilt], [bw("2026-07-01", 1, 6), bw("2026-07-01", 2, 5), rowSet("2026-07-01", 30)]),
+  session("2026-07-08", [handBuilt], [bw("2026-07-08", 1, 8), rowSet("2026-07-08", 32.5)]),
+] as any)
+const lib2 = [{ $id: "pu2", name: "Pull-up", movementType: "pull_vertical" }, { $id: "row", name: "Row", movementType: "pull_horizontal" }]
+const hb = scPatternStats(loose, lib2, "2026-01-01", "2026-12-31")
+assert.deepEqual(hb.map((p) => p.pattern), ["pull_vertical", "pull_horizontal"])
+assert.equal(hb[0].exercises[0].name, "Pull-up (bodyweight)")
+assert.equal(hb[0].exercises[0].unit, "reps")
+assert.deepEqual(hb[0].exercises[0].byFocus.none, [{ label: "Jul 1", value: 6 }, { label: "Jul 8", value: 8 }])
+assert.deepEqual(hb[1].exercises[0].byFocus.none, [{ label: "Jul 1", value: 30 }, { label: "Jul 8", value: 32.5 }])
+// All blocks: S&C from outside any plan counts too
+const allLoose = buildAllBlocksStats({ athlete: {}, sessions: [
+  session("2026-07-01", [handBuilt], [rowSet("2026-07-01", 30)]),
+] as any, library: lib2, today: "2026-10-21", plans: [], workoutsByPlan: {} })
+assert.equal(allLoose.sc[0]?.pattern, "pull_horizontal")
 
 console.log("athleteStatsData: all tests passed")

@@ -4,7 +4,6 @@ import type { ProtocolRow, SessionRow, TrainingPlanRow } from "@/services/Boulde
 import { blockReview } from "@/utils/athleteStats"
 import { buildBlockStats, shortDay, type StatsLibraryExercise } from "@/utils/athleteStatsData"
 import { localDateStr, PLAN_FOCUS_LABEL } from "@/utils/planRotation"
-import { FOCUS_LABEL } from "@/utils/scProgression"
 import { Ionicons } from "@expo/vector-icons"
 import { useMemo, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
@@ -25,7 +24,7 @@ export function BlockProgressCard({ plan, workouts, sessions, library, edgeLiftM
     () => buildBlockStats({ athlete: { edgeLiftMaxLog }, sessions, library, today, plan, planWorkouts: workouts }),
     [edgeLiftMaxLog, sessions, library, today, plan, workouts],
   )
-  const review = blockReview(stats, FOCUS_LABEL)
+  const review = blockReview(stats)
   const over = today > plan.windowEnd
   const summary = review.rows.length === 0
     ? "Shows up after a couple of sessions"
