@@ -1,5 +1,6 @@
 import { C } from "@/utils/theme"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
+import { pickLatestWorkout } from "@/components/LatestWorkoutCard"
 import { card } from "@/components/coach/styles"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
@@ -7,7 +8,9 @@ import {
   ProtocolRow,
   copyProtocolToAthlete,
   deleteProtocol,
+  getUsers,
   listAthleteTemplates,
+  setHomeWorkout,
 } from "@/services/BoulderGraphService"
 import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
 import { Ionicons } from "@expo/vector-icons"
@@ -37,8 +40,8 @@ function blockPreviews(p: ProtocolRow): { name: string; timeLimit?: number }[] {
   } catch { return [] }
 }
 
-// The athlete's coach-assigned templates: Test / Edit / ⋮ (copy, delete) and
-// + Add. Block chips only when there's room (`wide`).
+// The athlete's coach-assigned templates: Test / Edit / ⋮ (show on Home,
+// copy, delete) and + Add. The one the athlete sees on Home is tagged. Block chips only when there's room (`wide`).
 // `onHomeworkChanged`: a save may split blocks (or the whole workout) off
 // into homework, which the athlete's homework card must pick up.
 export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
@@ -46,6 +49,7 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
 }) {
   const workoutCtx = useWorkoutContext()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
+  const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(athlete.homeWorkoutId ?? null)
   const [loading, setLoading] = useState(false)
   const [building, setBuilding] = useState(false)
   const [editProtocol, setEditProtocol] = useState<ProtocolRow | null>(null)
@@ -57,8 +61,15 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
   // don't show up in this admin view; homework / split-off S&C neither.)
   const load = useCallback(() => {
     setLoading(true)
-    listAthleteTemplates(athlete.$id)
-      .then((rows) => setTemplates(rows.filter((r) => r.source !== "library" && r.planPart !== "homework")))
+    Promise.all([
+      listAthleteTemplates(athlete.$id),
+      // Fresh: the roster's copy is stale once a pick changes.
+      getUsers(athlete.$id).catch(() => null),
+    ])
+      .then(([rows, user]) => {
+        setTemplates(rows.filter((r) => r.source !== "library" && r.planPart !== "homework"))
+        setHomeWorkoutId((user as any)?.homeWorkoutId ?? null)
+      })
       .catch((e) => { console.error(e); setTemplates([]) })
       .finally(() => setLoading(false))
   }, [athlete.$id])
@@ -87,8 +98,30 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
     ])
   }
 
+  // What the athlete's Home shows: the pick, else the newest workout.
+  const home = pickLatestWorkout(templates, homeWorkoutId)
+  const onHomeId = home.workout?.$id ?? null
+
+  async function pickForHome(id: string | null) {
+    try {
+      await setHomeWorkout(athlete.$id, id)
+      setHomeWorkoutId(id)
+    } catch (e: any) {
+      Alert.alert(
+        "Couldn't change Home",
+        `${e?.message ?? "Unknown error"}\n\nCheck that the users table has the homeWorkoutId column.`,
+      )
+    }
+  }
+
   function openMenu(p: ProtocolRow) {
+    // Split-off S&C rides along with its workout — it can't be Home's own.
+    const homeAction = p.planPart ? []
+      : p.$id !== onHomeId ? [{ text: "Show on athlete's home", onPress: () => pickForHome(p.$id) }]
+        : home.picked ? [{ text: "Show the newest workout on home", onPress: () => pickForHome(null) }]
+          : []
     Alert.alert(p.name, undefined, [
+      ...homeAction,
       { text: "Copy to another athlete", onPress: () => { setCopyFor(p); setCopyTargets(new Set()) } },
       { text: "Delete", style: "destructive", onPress: () => confirmDelete(p) },
       { text: "Cancel", style: "cancel" },
@@ -131,7 +164,15 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
         <View key={p.$id} style={styles.row}>
           <View style={styles.rowTop}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name} numberOfLines={1}>{p.name}</Text>
+              <View style={styles.nameRow}>
+                <Text style={[styles.name, { flexShrink: 1 }]} numberOfLines={1}>{p.name}</Text>
+                {p.$id === onHomeId && (
+                  <View style={styles.homeTag}>
+                    <Ionicons name="home" size={10} color={C.green} />
+                    <Text style={styles.homeTagText}>On home</Text>
+                  </View>
+                )}
+              </View>
               <Text style={card.sub}>{blockCount(p)} block{blockCount(p) !== 1 ? "s" : ""}</Text>
             </View>
             <Pressable style={styles.iconBtn} onPress={() => handleTest(p)} accessibilityLabel="Test">
@@ -214,6 +255,12 @@ const styles = StyleSheet.create({
   row: { gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
   rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { fontSize: 14.5, fontWeight: "700", color: C.textPrimary },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  homeTag: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    borderWidth: 1, borderColor: C.green, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1,
+  },
+  homeTagText: { fontSize: 10, fontWeight: "800", color: C.green },
   iconBtn: { borderWidth: 1, borderColor: C.green, borderRadius: 10, padding: 7 },
   menuBtn: { paddingHorizontal: 4, paddingVertical: 6 },
   previewWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },

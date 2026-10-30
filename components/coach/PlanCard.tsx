@@ -19,6 +19,7 @@ import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   AppUser,
   BlockRow,
+  clearHomeWorkout,
   createProtocol,
   deleteProtocol,
   getSessionsByUserId,
@@ -220,6 +221,7 @@ export function PlanCard({
         })
       }
       await createProtocol({ name: next.name, blocks: next.blocks, athleteId: athlete.$id, ...next.slot })
+      await clearHomeWorkout(athlete.$id)
       if (homeworkRow) notifyHomeworkAssigned(homeworkRow.$id, shortDay(dueBy))
       setCreated(next.slot.planIndex)
       if (plan) listPlanWorkouts(plan.$id).then(onPlanWorkouts).catch(console.error)
