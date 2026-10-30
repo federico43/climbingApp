@@ -10,6 +10,8 @@ import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { StyleSheet, Text, View } from "react-native"
 
+export { pickLatestWorkout } from "@/utils/homeWorkout"
+
 // The athlete's most recently built workout, ready to start — full screen
 // on Home, a card at the top of the Plan tab when they have a plan.
 
@@ -20,18 +22,6 @@ export function parseBlocks(p: ProtocolRow): Block[] {
   } catch {
     return []
   }
-}
-
-// The most recently built coach workout. A split-off S&C workout (same
-// plan slot, planPart "sc") rides along as "Also today".
-export function pickLatestWorkout(templates: ProtocolRow[]): { workout: ProtocolRow | null; scPart: ProtocolRow | null } {
-  const workout = templates
-    .filter((t) => t.source !== "library" && !t.planPart)
-    .sort((a, b) => b.$createdAt.localeCompare(a.$createdAt))[0] ?? null
-  const scPart = workout?.planId
-    ? templates.find((t) => t.planPart === "sc" && t.planId === workout.planId && t.planIndex === workout.planIndex) ?? null
-    : null
-  return { workout, scPart }
 }
 
 function blockTitle(b: Block): string {
@@ -85,10 +75,12 @@ export function startWorkout(ctx: ReturnType<typeof useWorkoutContext>, w: Proto
 export function LatestWorkoutCard({
   workout,
   scPart,
+  picked,
   fill,
 }: {
   workout: ProtocolRow
   scPart: ProtocolRow | null
+  picked?: boolean   // the coach picked it for Home (not just the newest)
   fill?: boolean
 }) {
   const workoutCtx = useWorkoutContext()
@@ -102,7 +94,7 @@ export function LatestWorkoutCard({
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.cardTopRow}>
-        <Text style={styles.cardKicker}>{tag ? "Your next workout" : "Latest workout"}</Text>
+        <Text style={styles.cardKicker}>{tag || picked ? "Your next workout" : "Latest workout"}</Text>
         <Text style={styles.cardDate}>Built {builtOn(workout)}</Text>
       </View>
       {tag && (
