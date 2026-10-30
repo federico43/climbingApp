@@ -143,4 +143,19 @@ const allLoose = buildAllBlocksStats({ athlete: {}, sessions: [
 ] as any, library: lib2, today: "2026-10-21", plans: [], workoutsByPlan: {} })
 assert.equal(allLoose.sc[0]?.pattern, "pull_horizontal")
 
+// Projects: a session logged after the fact (placeholder attempt) or a
+// coached Done marker isn't a send
+const proj = { type: "project_bouldering", timeLimit: 30, grade: "Blue" }
+const late = parseSessions([
+  session("2026-08-01", [proj], [{ blockIndex: 0, type: "project_bouldering", success: true, timestamp: ts("2026-08-01", 12), notes: "" }]),
+  session("2026-08-02", [{ ...proj, coached: true }], [{ blockIndex: 0, type: "project_bouldering", success: true, coached: true, timestamp: ts("2026-08-02", 12) }]),
+] as any)
+assert.deepEqual(projectSessions(late, "2026-01-01", "2026-12-31").map((p) => p.sent), [false, false])
+// S&C: the same day a year apart stays two points
+const yearly = parseSessions([
+  session("2025-07-01", [handBuilt], [rowSet("2025-07-01", 28)]),
+  session("2026-07-01", [handBuilt], [rowSet("2026-07-01", 30)]),
+] as any)
+assert.deepEqual(scPatternStats(yearly, lib2, "0000-01-01", "2026-12-31")[0].exercises[0].byFocus.none, [{ label: "Jul 1", value: 28 }, { label: "Jul 1", value: 30 }])
+
 console.log("athleteStatsData: all tests passed")

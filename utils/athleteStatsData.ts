@@ -176,18 +176,21 @@ export function warmupSessions(sessions: ParsedSession[], from: string, to: stri
 
 // Project bouldering: minutes from the first to the last attempt (one
 // attempt alone → the block's time limit), the grade worked, and whether
-// any attempt sent it.
+// any attempt sent it. A coached block's Done marker isn't an attempt, and
+// a session logged after the fact (one placeholder attempt, no grade) never
+// counts as a send.
 export function projectSessions(sessions: ParsedSession[], from: string, to: string): ProjectSessionStat[] {
   return blockLogs(sessions, from, to, (b) => b?.type === "project_bouldering").map((log) => {
     const settings = normalizeProjectBlock(log.block)
-    const times = log.attempts.map((a) => a.timestamp).filter((t) => typeof t === "number")
+    const real = log.attempts.filter((a) => !(a.coached && !a.routeId))
+    const times = real.map((a) => a.timestamp).filter((t) => typeof t === "number")
     const span = times.length > 1 ? Math.round((Math.max(...times) - Math.min(...times)) / 60000) : 0
-    const graded = [...log.attempts].reverse().find((a) => colourIndex(a.level) >= 0)
+    const graded = [...real].reverse().find((a) => colourIndex(a.level) >= 0)
     return {
       label: shortDay(log.date),
       minutes: span > 0 ? span : settings.timeLimit,
       grade: graded?.level ?? settings.grade,
-      sent: log.attempts.some((a) => a.success),
+      sent: real.some((a) => a.success && (a.level || a.pbv != null || a.routeId)),
     }
   })
 }
@@ -206,6 +209,7 @@ export function scPatternStats(
   // Exercises saved before blocks kept the library id are found by name.
   const libByName = new Map(library.filter((e) => e.name).map((e) => [e.name!.trim().toLowerCase(), e]))
   const exercises = new Map<string, { pattern: MovementType; stats: ScExerciseStats }>()
+  const dayPoints = new Map<string, StatPoint>()
 
   for (const log of blockLogs(sessions, from, to, (b) => b?.type === "strength_conditioning" && Array.isArray(b.exercises))) {
     const byExercise = new Map<any, Attempt[]>()
@@ -256,11 +260,16 @@ export function scPatternStats(
         entry = { pattern: movement, stats: { id: key, name: unit === "reps" || unit === "s" ? `${name} (bodyweight)` : name, unit, byFocus: {} } }
         exercises.set(key, entry)
       }
+      // One point per day: the same "Oct 6" a year apart stays two points.
       const points = entry.stats.byFocus[focus] ?? (entry.stats.byFocus[focus] = [])
-      const label = shortDay(log.date)
-      const same = points.find((p) => p.label === label)
+      const dayKey = `${key}|${focus}|${log.date}`
+      const same = dayPoints.get(dayKey)
       if (same) same.value = Math.max(same.value, value)
-      else points.push({ label, value })
+      else {
+        const point = { label: shortDay(log.date), value }
+        points.push(point)
+        dayPoints.set(dayKey, point)
+      }
     }
   }
 

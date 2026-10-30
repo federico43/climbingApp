@@ -59,28 +59,38 @@ export function useAthleteStats({ athlete, plan, sessions, planWorkouts }: {
 
   const parsed = useMemo(() => parseSessions(sessions), [sessions])
 
+  // The loaded plans with the active one as the detail has it now: a pause
+  // or new end date the coach just set, its workouts as they're built, or
+  // a plan created after the load.
+  const plansNow = useMemo(() => {
+    if (!plans) return null
+    if (!plan) return plans
+    return plans.some((p) => p.$id === plan.$id) ? plans.map((p) => (p.$id === plan.$id ? plan : p)) : [...plans, plan]
+  }, [plans, plan])
+  const workoutsNow = useMemo(
+    () => (plan ? { ...workoutsByPlan, [plan.$id]: planWorkouts } : workoutsByPlan),
+    [workoutsByPlan, plan, planWorkouts],
+  )
+
   const blockStats: PeriodStats | null = useMemo(() => {
     if (!plan || plan.windowStart > today) return null
     return buildBlockStats({ athlete, sessions, library, today, plan, planWorkouts }, parsed)
   }, [athlete, plan, sessions, library, today, planWorkouts, parsed])
 
   const allStats: PeriodStats | null = useMemo(() => {
-    if (!plans) return null
-    return buildAllBlocksStats({ athlete, sessions, library, today, plans, workoutsByPlan })
-  }, [athlete, sessions, library, today, plans, workoutsByPlan])
+    if (!plansNow) return null
+    return buildAllBlocksStats({ athlete, sessions, library, today, plans: plansNow, workoutsByPlan: workoutsNow })
+  }, [athlete, sessions, library, today, plansNow, workoutsNow])
 
   // Plans that have started, newest first — the ones a review can show.
   const reviewPlans = useMemo(
-    () => (plans ?? []).filter((p) => p.windowStart <= today).sort((a, b) => (a.windowStart < b.windowStart ? 1 : -1)),
-    [plans, today],
+    () => (plansNow ?? []).filter((p) => p.windowStart <= today).sort((a, b) => (a.windowStart < b.windowStart ? 1 : -1)),
+    [plansNow, today],
   )
 
   const statsForPlan = useCallback((p: TrainingPlanRow): PeriodStats => {
-    // The active plan's workouts are the detail's own (kept fresh as the
-    // coach builds them).
-    const workouts = p.$id === plan?.$id ? planWorkouts : workoutsByPlan[p.$id] ?? []
-    return buildBlockStats({ athlete, sessions, library, today, plan: p, planWorkouts: workouts }, parsed)
-  }, [athlete, sessions, library, today, plan, planWorkouts, workoutsByPlan, parsed])
+    return buildBlockStats({ athlete, sessions, library, today, plan: p, planWorkouts: workoutsNow[p.$id] ?? [] }, parsed)
+  }, [athlete, sessions, library, today, workoutsNow, parsed])
 
   return { blockStats, allStats, reviewPlans, statsForPlan, loadPlans, loadingPlans, plansLoaded: plans != null }
 }
