@@ -144,12 +144,16 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
   // Inner width of a panel: card padding 16, panel padding 12; two side by
   // side on wide screens with a 10 gap.
   const panelWidth = wide ? (width - 32 - 10) / 2 - 24 : width - 32 - 24
+  // Tiles keep one width, so an odd last tile doesn't stretch across the row
+  // (34 = card padding and border).
+  const cols = wide ? 4 : 2
+  const tileWidth = width > 0 ? Math.floor((width - 34 - 10 * (cols - 1)) / cols) : undefined
 
   return (
     <>
       <View style={styles.grid}>
         {metrics.map((m) => (
-          <Tile key={m.id} metric={m} columns={wide ? 4 : 2} selected={m.id === selected?.id} onPress={() => setSelectedId(m.id)} />
+          <Tile key={m.id} metric={m} width={tileWidth} selected={m.id === selected?.id} onPress={() => setSelectedId(m.id)} />
         ))}
       </View>
       {width > 0 && selected && selected.points.length > 0 && <TrendChart metric={selected} width={width - 32} />}
@@ -206,9 +210,9 @@ function ChangePill({ trend, text }: { trend: StatTrend; text: string }) {
   )
 }
 
-function Tile({ metric, columns, selected, onPress }: {
+function Tile({ metric, width, selected, onPress }: {
   metric: StatMetric
-  columns: 2 | 4
+  width?: number
   selected: boolean
   onPress: () => void
 }) {
@@ -218,7 +222,7 @@ function Tile({ metric, columns, selected, onPress }: {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={[styles.tile, { flexBasis: columns === 4 ? "22%" : "47%" }, selected && styles.tileSelected]}
+      style={[styles.tile, width ? { width } : { flexBasis: "47%", flexGrow: 1 }, selected && styles.tileSelected]}
     >
       <Text style={styles.tileLabel} numberOfLines={1}>{metric.label}</Text>
       <Text style={styles.tileValue} numberOfLines={1}>{change?.value ?? "—"}</Text>
@@ -235,6 +239,7 @@ function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
   // Lines start a bit under the lowest point so small changes are visible.
   const offset = metric.unit === "workouts" ? 0 : Math.max(0, Math.floor(min - (max - min || 1) * 0.5))
   const spacing = metric.points.length > 1 ? (width - 60) / (metric.points.length - 1) : 0
+  const shown = labelEvery(metric.points.length, spacing)
 
   return (
     <View style={styles.chart}>
@@ -260,7 +265,11 @@ function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
         />
       ) : (
         <LineChart
-          data={metric.points.map((p) => ({ value: p.value - offset, label: p.label, dataPointText: formatStatValue(metric.unit, p.value) }))}
+          data={metric.points.map((p, i) => ({
+            value: p.value - offset,
+            label: shown(i) ? p.label : "",
+            dataPointText: shown(i) ? formatStatValue(metric.unit, p.value) : "",
+          }))}
           width={width - 40}
           height={120}
           initialSpacing={16}
@@ -347,9 +356,10 @@ function Sparkline({ metric, color, width }: { metric: StatMetric; color: string
   const min = Math.min(...values)
   const offset = min - (max - min || Math.max(1, Math.abs(min))) * 0.5
   const spacing = metric.points.length > 1 ? (width - 40) / (metric.points.length - 1) : 0
+  const shown = labelEvery(metric.points.length, spacing)
   return (
     <LineChart
-      data={metric.points.map((p) => ({ value: p.value - offset, label: p.label }))}
+      data={metric.points.map((p, i) => ({ value: p.value - offset, label: shown(i) ? p.label : "" }))}
       width={width - 8}
       height={48}
       initialSpacing={12}
@@ -371,6 +381,15 @@ function Sparkline({ metric, color, width }: { metric: StatMetric; color: string
       disableScroll
     />
   )
+}
+
+// With many points close together, label only every few (always the last,
+// the one the coach reads) so "Oct 6" labels don't run into each other.
+const LABEL_PX = 46
+
+function labelEvery(n: number, spacing: number): (i: number) => boolean {
+  const every = spacing > 0 ? Math.max(1, Math.ceil(LABEL_PX / spacing)) : 1
+  return (i) => (n - 1 - i) % every === 0
 }
 
 // ─── Blocks ───────────────────────────────────────────────────────────────────
@@ -419,6 +438,7 @@ function ProjectPanel({ sessions, wide, width }: { sessions: ProjectSessionStat[
         hideRules
         xAxisLabelTextStyle={[styles.axisText, { width: BAR + BAR_GAP, marginLeft: -BAR_GAP / 2 }]}
         disableScroll={sessions.length * (BAR + BAR_GAP) < width}
+        scrollToEnd
       />
       <View style={styles.legend}>
         <Text style={styles.legendText}>Bar = minutes · colour = grade</Text>
@@ -465,6 +485,7 @@ function WarmupPanel({ sessions, wide, width }: { sessions: WarmupSessionStat[];
         hideRules
         xAxisLabelTextStyle={[styles.axisText, { width: BAR + BAR_GAP, marginLeft: -BAR_GAP / 2 }]}
         disableScroll={sessions.length * (BAR + BAR_GAP) < width}
+        scrollToEnd
       />
       <Text style={styles.legendText}>Minutes on per session</Text>
     </View>
@@ -483,7 +504,7 @@ const styles = StyleSheet.create({
   periodTextActive: { color: C.textPrimary, fontWeight: "700" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   tile: {
-    flexGrow: 1, minWidth: 0, gap: 4, padding: 12, borderRadius: 14,
+    minWidth: 0, gap: 4, padding: 12, borderRadius: 14,
     backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
   },
   tileSelected: { borderColor: C.green },
