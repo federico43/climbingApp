@@ -2,7 +2,6 @@ import {
   CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
   currentPackage, gymNow, mondayOfYmd, packageLocked, parseSlot, proposeProblem, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
-import { formatCop, planTerms } from "./clientPlans.js"
 import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
 
 // Weekly classes (Plan › This week for athletes, the Classes tab for
@@ -21,7 +20,6 @@ const PACKAGES = "packages"
 const USERS = "users"
 const PLANS = "training_plans"
 const PROTOCOLS = "protocol"
-const PLAN_REQUESTS = "plan_requests"
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const KINDS = ["move", "propose", "extra", "skip"]
@@ -434,78 +432,19 @@ async function addPackage(ctx, userId, body) {
     || !DAY_RE.test(body.startsOn ?? "") || !DAY_RE.test(body.useBy ?? "") || body.useBy < body.startsOn) {
     return fail(400, "Bad package.")
   }
-  const row = await createPackage(ctx, body.athleteId, total, body.startsOn, body.useBy,
-    ["Package ready", `${total} sessions, use them by ${body.useBy}.`])
-  return row ? ok({ package: row }) : fail(502, "Could not save.")
-}
-
-// Saves a package and its side effects. `note` is the push [title, body]
-// the athlete gets for a renewal.
-async function createPackage(ctx, athleteId, total, startsOn, useBy, note) {
-  const row = await ctx.db.create(PACKAGES, { athleteId, total, startsOn, useBy })
-  if (!row) return null
+  const row = await ctx.db.create(PACKAGES, { athleteId: body.athleteId, total, startsOn: body.startsOn, useBy: body.useBy })
+  if (!row) return fail(502, "Could not save.")
   // 0 sessions ends their classes: out of the ones still ahead, pending
   // requests dropped, and the app locks (packageLocked) until a new package.
   if (total === 0) {
-    await dropFromClassesAhead(ctx, athleteId, gymNow(new Date(), ctx.tz))
-    return row
+    await dropFromClassesAhead(ctx, body.athleteId, gymNow(new Date(), ctx.tz))
+    return ok({ package: row })
   }
   // A renewal unlocks the athlete: back into their usual classes still ahead.
-  const athlete = await ctx.getUserRow(athleteId)
+  const athlete = await ctx.getUserRow(body.athleteId)
   if (athlete) await joinUsualClasses(ctx, athlete, await pausesByAthlete(ctx))
-  await pushUser(ctx, athleteId, note[0], note[1], { type: "class_package" })
-  return row
-}
-
-// ── Athlete: ask for a plan (clientPlans.js) ─────────────────────────────────
-// body: { plan, payment }. No payment in the app: the coach activates it
-// once they've paid. One request waiting at a time.
-async function planRequest(ctx, userId, body) {
-  const terms = planTerms(body.plan, body.payment)
-  if (!terms) return fail(400, "Bad plan.")
-  const mine = await ctx.db.list(PLAN_REQUESTS, [ctx.q.equal("athleteId", userId)])
-  if (mine.some((r) => r.status === "pending")) return fail(409, "You already sent a request. Your coach will answer it.")
-  const row = await ctx.db.create(PLAN_REQUESTS, { athleteId: userId, plan: body.plan, payment: body.payment, status: "pending" })
-  if (!row) return fail(502, "Could not save.")
-  const caller = await ctx.getUserRow(userId)
-  await pushCoaches(ctx, userId, "Plan request",
-    `${name(caller)} wants the ${terms.name} (${terms.label.toLowerCase()}, ${formatCop(terms.price)}).`,
-    { type: "plan_request", requestId: row.$id })
-  return ok({ request: row })
-}
-
-// ── Athlete: take back a request the coach hasn't answered ───────────────────
-async function planCancel(ctx, userId, body) {
-  const r = await ctx.db.get(PLAN_REQUESTS, String(body.requestId ?? ""))
-  if (!r || r.athleteId !== userId) return fail(404, "No such request.")
-  if (r.status !== "pending") return fail(409, "Your coach already answered.")
-  await ctx.db.remove(PLAN_REQUESTS, r.$id)
-  return ok({})
-}
-
-// ── Coach: activate a plan (once paid) or decline it ─────────────────────────
-// Activating adds the plan's package, starting today; it takes the place of
-// the athlete's current one, like a package the coach adds by hand.
-async function planAnswer(ctx, userId, body) {
-  const r = await ctx.db.get(PLAN_REQUESTS, String(body.requestId ?? ""))
-  if (!r) return fail(404, "No such request.")
-  if (r.status !== "pending") return fail(409, "Already answered.")
-  const terms = planTerms(r.plan, r.payment)
-  if (!terms) return fail(400, "Bad plan.")
-  if (body.accept !== true) {
-    const updated = await ctx.db.update(PLAN_REQUESTS, r.$id, { status: "declined" })
-    if (!updated) return fail(502, "Could not save.")
-    await pushUser(ctx, r.athleteId, "Plan request declined", `Talk to your coach about the ${terms.name}.`, { type: "plan_answer" })
-    return ok({ request: updated })
-  }
-  const today = gymNow(new Date(), ctx.tz).ymd
-  const useBy = addDays(today, terms.weeks * 7)
-  const pkg = await createPackage(ctx, r.athleteId, terms.sessions, today, useBy,
-    [`${terms.name} active`, `${terms.sessions} sessions, use them by ${useBy}.`])
-  if (!pkg) return fail(502, "Could not save.")
-  const updated = await ctx.db.update(PLAN_REQUESTS, r.$id, { status: "active", packageId: pkg.$id })
-  if (!updated) return fail(502, "Could not save.")
-  return ok({ request: updated, package: pkg })
+  await pushUser(ctx, body.athleteId, "Package ready", `${total} sessions, use them by ${body.useBy}.`, { type: "class_package" })
+  return ok({ package: row })
 }
 
 // Out of every class still ahead, pending requests dropped (a locked athlete
@@ -555,9 +494,6 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPause": return coach ? setPauses(ctx, userId, body) : fail(403, "Coaches only.")
-    case "classPlanRequest": return coach ? fail(403, "Athletes only.") : planRequest(ctx, userId, body)
-    case "classPlanCancel": return planCancel(ctx, userId, body)
-    case "classPlanAnswer": return coach ? planAnswer(ctx, userId, body) : fail(403, "Coaches only.")
     default: return null
   }
 }

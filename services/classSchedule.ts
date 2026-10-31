@@ -2,7 +2,6 @@ import { functions } from "@/components/AppWrite"
 import { AI_PROTOCOL_FUNCTION_ID } from "@/services/aiProtocol"
 import { USERS_TABLE, listAllRows } from "@/services/BoulderGraphService"
 import type { BlockedTime, ClassRequestRow, GymClass } from "@/utils/classSchedule"
-import type { PaymentId, PlanId, PlanRequestRow } from "@/utils/clientPlans"
 import type { PlanPause } from "@/utils/planPauses"
 import { ExecutionMethod, Query } from "appwrite"
 
@@ -14,7 +13,6 @@ const CLASSES_TABLE = "classes"
 const WEEKS_TABLE = "class_weeks"
 const REQUESTS_TABLE = "class_requests"
 const PACKAGES_TABLE = "packages"
-const PLAN_REQUESTS_TABLE = "plan_requests"
 
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
 export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[] }
@@ -46,11 +44,6 @@ export async function loadUsers(): Promise<ClassUser[]> {
 
 export async function loadPackages(athleteId?: string): Promise<ClassPackage[]> {
   return listAllRows<ClassPackage>(PACKAGES_TABLE, athleteId ? [Query.equal("athleteId", athleteId)] : [])
-}
-
-// Plan requests: all of them for a coach, only their own for an athlete.
-export async function loadPlanRequests(athleteId?: string): Promise<PlanRequestRow[]> {
-  return listAllRows<PlanRequestRow>(PLAN_REQUESTS_TABLE, athleteId ? [Query.equal("athleteId", athleteId)] : [])
 }
 
 // The athlete's classes and skips since `weekStart`, to count sessions used.
@@ -94,7 +87,3 @@ export const addPackage = (athleteId: string, total: number, startsOn: string, u
 // The plan's whole list of pauses (utils/planPauses.ts); the server moves the
 // plan's end date and the package's use-by date, and the athlete's classes.
 export const savePlanPauses = (planId: string, pauses: PlanPause[]) => call("classPause", { planId, pauses })
-// "Choose your plan": the athlete asks, the coach activates it once paid.
-export const requestPlan = (plan: PlanId, payment: PaymentId) => call("classPlanRequest", { plan, payment })
-export const cancelPlanRequest = (requestId: string) => call("classPlanCancel", { requestId })
-export const answerPlanRequest = (requestId: string, accept: boolean) => call("classPlanAnswer", { requestId, accept })
