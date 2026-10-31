@@ -44,7 +44,7 @@ const TABLES = [
   },
   {
     id: "packages", name: "Packages",
-    columns: [str("athleteId", 36, req), int("total", { ...req, min: 1, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
+    columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
     indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
   },
 ]
@@ -113,6 +113,17 @@ for (const t of TABLES) {
     if (indexes.some((h) => h.key === ix.key)) { console.log(`  index ${ix.key}: already there`); continue }
     await api("POST", `${db}/${t.id}/indexes`, { ...ix, type: "key" })
     console.log(`  index ${ix.key}: created`)
+  }
+}
+// Columns created before a limit changed: packages.total went from min 1 to
+// min 0 (a 0-session package locks the athlete out).
+for (const t of TABLES) {
+  for (const { type, ...c } of t.columns.filter((x) => x.type === "integer")) {
+    const have = await exists(`${db}/${t.id}/columns/${c.key}`)
+    if (!have || (have.min === (c.min ?? have.min) && have.max === (c.max ?? have.max))) continue
+    if (!APPLY) { console.log(`  ${t.id}.${c.key}: would change limits ${have.min}–${have.max} → ${c.min}–${c.max}`); continue }
+    await api("PATCH", `${db}/${t.id}/columns/${type}/${c.key}`, { required: c.required, min: c.min, max: c.max, default: null })
+    console.log(`  ${t.id}.${c.key}: limits now ${c.min}–${c.max}`)
   }
 }
 console.log("users")
