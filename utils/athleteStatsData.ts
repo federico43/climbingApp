@@ -228,6 +228,25 @@ export function scPatternStats(
     return ids
   }
 
+  // A set swapped mid-workout is logged as the picked exercise, which isn't
+  // in the block: it's tracked as that library exercise, at the focus the
+  // block prescribed for the one it replaced.
+  const swapped = new Map<string, any>()
+  const swappedIn = (a: Attempt, log: BlockLog): any => {
+    const id = a.scData?.exerciseId
+    const libEx = id ? lib.get(id) : undefined
+    if (!id || !libEx || !a.scData?.swappedFrom) return undefined
+    const key = `${log.date}|${log.protocol.indexOf(log.block)}|${id}`
+    let ex = swapped.get(key)
+    if (!ex) {
+      const from = a.scData.swappedFrom as { exerciseId?: string; exerciseName?: string }
+      const original = log.block.exercises.find((e: any) => (from.exerciseId && e?.exerciseId === from.exerciseId) || e?.name === from.exerciseName)
+      ex = { name: libEx.name ?? a.scData.exerciseName, exerciseId: id, focus: original?.focus }
+      swapped.set(key, ex)
+    }
+    return ex
+  }
+
   for (const log of blockLogs(sessions, from, to, (b) => b?.type === "strength_conditioning" && Array.isArray(b.exercises))) {
     const byExercise = new Map<any, Attempt[]>()
     for (const a of log.attempts) {
@@ -235,6 +254,7 @@ export function scPatternStats(
       const id = a.scData.exerciseId
       const ex = log.block.exercises.find((e: any) => (id && e?.exerciseId === id) || e?.name === a.scData!.exerciseName)
         ?? (id ? log.block.exercises.find((e: any) => ladderOf(e).includes(id)) : undefined)
+        ?? swappedIn(a, log)
       if (!ex) continue
       const list = byExercise.get(ex)
       if (list) list.push(a)

@@ -122,6 +122,25 @@ assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", va
   ])
 }
 
+// A set swapped mid-workout counts for the exercise picked, at the focus of
+// the one it replaced.
+{
+  const swapLib = [
+    { $id: "row", name: "Ring row", movementType: "pull_horizontal" },
+    { $id: "bp", name: "Bench press", movementType: "push" },
+  ]
+  const swapSessions = parseSessions([
+    session("2026-10-15", [{ type: "strength_conditioning", exercises: [{ name: "Bench press", exerciseId: "bp", focus: "max_force" }] }], [
+      { blockIndex: 0, type: "strength_conditioning", timestamp: ts("2026-10-15"),
+        scData: { exerciseId: "row", exerciseName: "Ring row", round: 1, weight: 10, repsCompleted: 6, swappedFrom: { exerciseId: "bp", exerciseName: "Bench press" } } },
+    ]),
+  ] as any)
+  const sw = scPatternStats(swapSessions, swapLib, "2026-10-01", "2026-10-31")
+  assert.deepEqual(sw.map((p) => p.pattern), ["pull_horizontal"])
+  assert.equal(sw[0].exercises[0].name, "Ring row")
+  assert.deepEqual(sw[0].exercises[0].byFocus.max_force, [{ label: "Oct 15", value: 10 }])
+}
+
 const workouts = [{ $id: "w1", $createdAt: new Date(ts("2026-10-04")).toISOString(), blocks: "[]", planIndex: 1 }]
 const linked = sessions.map((s, i) => (i === 0 ? { ...s, protocolId: "w1" } : s))
 const input = { athlete: { edgeLiftMaxLog: log }, sessions: linked as any, library, today: "2026-10-21" }
