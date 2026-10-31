@@ -145,6 +145,9 @@ export interface AppUser {
   // set by the max test or the coach. See utils/edgeWarmup.ts.
   edgeLiftMax?: number | null
   edgeLiftMaxLog?: string | null
+  // The workout the coach picked for the athlete's Home (a protocol id).
+  // Unset → the newest coach workout. See pickLatestWorkout.
+  homeWorkoutId?: string | null
   [key: string]: any
 }
 
@@ -625,6 +628,19 @@ export async function setUserRole(userId: string, role: UserRole) {
 // than silently dropping the value like savePushToken does.
 export async function setFlashLevel(userId: string, flashLevel: string | null) {
   return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { flashLevel } })
+}
+
+// The workout the athlete sees on Home (null → the newest one again).
+// Throws when the `homeWorkoutId` column doesn't exist on `users` yet
+// (scripts/class-tables/create-tables.mjs adds it).
+export async function setHomeWorkout(userId: string, protocolId: string | null) {
+  return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { homeWorkoutId: protocolId } })
+}
+
+// A new coach workout goes on Home, as before there was a pick — best
+// effort, so a missing column doesn't block saving the workout.
+export async function clearHomeWorkout(userId: string) {
+  await setHomeWorkout(userId, null).catch(() => {})
 }
 
 // Saves a new Edge Lifts max and adds it to the athlete's log. Throws when
