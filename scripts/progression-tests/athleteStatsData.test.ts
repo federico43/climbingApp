@@ -92,7 +92,35 @@ const pats = scPatternStats(parsed, library, "2026-10-01", "2026-10-31")
 assert.deepEqual(pats.map((p) => p.pattern), ["pull_vertical", "push"])   // mobility left out
 assert.deepEqual(pats[0].exercises[0].byFocus.max_force, [{ label: "Oct 6", value: 10 }, { label: "Oct 20", value: 12.5 }])
 assert.equal(pats[1].exercises[0].unit, "level")
-assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 1 }, { label: "Oct 20", value: 2 }])
+// The ladder's own exercise is step 1; its levels are the harder steps.
+assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 2 }, { label: "Oct 20", value: 3 }])
+
+// A level exercise logged at its own step, and a workout programmed one step
+// up where the athlete dropped back down: both on one line, steps counted
+// on the whole ladder (the library row's `levels` is only its harder tail).
+{
+  const ladderLib = [
+    { $id: "ba", name: "Band assisted pull-up", movementType: "pull_vertical", loadMode: "level" as const,
+      levels: [{ exerciseId: "neg", name: "Negative pull-up" }, { exerciseId: "pu1", name: "Pull-up" }] },
+    { $id: "neg", name: "Negative pull-up", movementType: "pull_vertical", loadMode: "level" as const, levels: [{ exerciseId: "pu1", name: "Pull-up" }] },
+  ]
+  const block = (exerciseId: string, name: string, levels: any[]) =>
+    ({ type: "strength_conditioning", exercises: [{ name, exerciseId, movementType: "pull_vertical", focus: "hypertrophy", levels }] })
+  const round = (date: string, exerciseId: string, name: string) =>
+    ({ blockIndex: 0, type: "strength_conditioning", timestamp: ts(date), scData: { exerciseId, exerciseName: name, round: 1, repsCompleted: 7 } })
+  const ladderSessions = parseSessions([
+    session("2026-10-19", [block("ba", "Band assisted pull-up", ladderLib[0].levels)], [round("2026-10-19", "ba", "Band assisted pull-up")]),
+    session("2026-10-29", [block("neg", "Negative pull-up", ladderLib[1].levels)], [round("2026-10-29", "ba", "Band assisted pull-up")]),
+    session("2026-10-30", [block("neg", "Negative pull-up", ladderLib[1].levels)], [round("2026-10-30", "neg", "Negative pull-up")]),
+  ] as any)
+  const pull = scPatternStats(ladderSessions, ladderLib, "2026-10-01", "2026-10-31")
+  assert.equal(pull.length, 1)
+  assert.equal(pull[0].exercises.length, 1)
+  assert.equal(pull[0].exercises[0].unit, "level")
+  assert.deepEqual(pull[0].exercises[0].byFocus.hypertrophy, [
+    { label: "Oct 19", value: 1 }, { label: "Oct 29", value: 1 }, { label: "Oct 30", value: 2 },
+  ])
+}
 
 const workouts = [{ $id: "w1", $createdAt: new Date(ts("2026-10-04")).toISOString(), blocks: "[]", planIndex: 1 }]
 const linked = sessions.map((s, i) => (i === 0 ? { ...s, protocolId: "w1" } : s))
