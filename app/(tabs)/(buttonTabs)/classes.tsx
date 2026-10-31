@@ -8,9 +8,10 @@ import {
   addClassProblem, dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, answerPlanRequest, answerRequest, pendingPlanRequests, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type Slot,
 } from "@/utils/classScheduleStore"
+import { paymentOf, requestLabel } from "@/utils/clientPlans"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
@@ -35,6 +36,7 @@ type SheetState =
   | { kind: "requests" }
   | { kind: "request"; key: string }
   | { kind: "packages" }
+  | { kind: "plans" }
   | { kind: "package"; athleteId: string }
   | null
 
@@ -57,6 +59,7 @@ export default function ClassesScreen() {
   const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
   const [pkgQuery, setPkgQuery] = useState("")
   const requests = pendingRequests(st)
+  const planRequests = pendingPlanRequests(st)
   const gridRequests = requests.filter((r) => r.weekStart === weekStart)
   const dayBlocked = (d: number) => blocks.some((b) => b.day === d && b.all)
   // Requests drawn on the grid: who's asking to join a class (or a new time)
@@ -186,6 +189,14 @@ export default function ClassesScreen() {
             <Text style={s.pkgRowText}>Packages</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
+          {planRequests.length > 0 && (
+            <Pressable style={s.requests} onPress={() => setSheet({ kind: "plans" })}>
+              <Text style={s.requestsText}>
+                {planRequests.length} plan request{planRequests.length > 1 ? "s" : ""}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={C.yellow} />
+            </Pressable>
+          )}
           {requests.length > 0 && (
             <Pressable style={s.requests} onPress={() => setSheet({ kind: "requests" })}>
               <Text style={s.requestsText}>
@@ -346,6 +357,45 @@ export default function ClassesScreen() {
         {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
           <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
         )}
+      </Sheet>
+
+      <Sheet
+        visible={sheet?.kind === "plans"}
+        title="Plan requests"
+        subtitle="Activate a plan once the athlete has paid."
+        onClose={() => setSheet(null)}
+      >
+        {planRequests.map((r) => {
+          const who = st.names[r.athleteId] ?? "athlete"
+          const terms = paymentOf(r.plan, r.payment)
+          const current = st.packages.filter((p) => p.athleteId === r.athleteId).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
+          const stillOn = !!current && current.total > 0 && current.useBy >= ymd(new Date())
+          return (
+            <View key={r.$id} style={s.req}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>{who}</Text>
+                <Text style={s.reqText}>{requestLabel(r.plan, r.payment)}</Text>
+                {terms && <Text style={s.reqText}>{terms.pay.sessions} sessions · {terms.pay.weeks} weeks</Text>}
+              </View>
+              <Pressable style={[s.reqBtn, s.reqNo]} disabled={st.busy} onPress={() => answerPlanRequest(r.$id, false)}>
+                <Text style={s.reqNoText}>Decline</Text>
+              </Pressable>
+              <Pressable
+                style={[s.reqBtn, s.reqYes]}
+                disabled={st.busy || !terms}
+                onPress={() => Alert.alert(
+                  `Activate for ${who}?`,
+                  `Only once they've paid. ${terms?.pay.sessions} sessions to use within ${terms?.pay.weeks} weeks, starting today.`
+                    + (stillOn ? ` It replaces their current package (use by ${current.useBy}).` : ""),
+                  [{ text: "Cancel", style: "cancel" }, { text: "Activate", onPress: () => answerPlanRequest(r.$id, true) }],
+                )}
+              >
+                <Text style={s.reqYesText}>Activate</Text>
+              </Pressable>
+            </View>
+          )
+        })}
+        {planRequests.length === 0 && <Text style={s.names}>All answered.</Text>}
       </Sheet>
 
       <Sheet
