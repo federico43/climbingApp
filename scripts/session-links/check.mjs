@@ -50,7 +50,9 @@ let missing = 0
 for (const { type, ...c } of LINK_COLUMNS) {
   const col = have.find((h) => h.key === c.key)
   if (col) {
-    const ok = col.type === type
+    // Newer Appwrite reports string columns as varchar / text / longtext.
+    const STRINGS = ["string", "varchar", "text", "mediumtext", "longtext"]
+    const ok = type === "string" ? STRINGS.includes(col.type) : col.type === type
     console.log(`  ${c.key}: ${col.type}, ${col.status}${ok ? "" : `  ← should be ${type}: sessions save without their link`}`)
     continue
   }
