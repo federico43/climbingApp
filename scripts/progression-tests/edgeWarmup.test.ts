@@ -22,10 +22,13 @@ assert.deepEqual(warmupRamp(NaN, "kg"), [])
 // Which exercise
 assert.equal(isEdgeLift({ name: "Edge Lifts" }), true)
 assert.equal(isEdgeLift({ name: " edge lifts " }), true)
+assert.equal(isEdgeLift({ name: "Edge Lift" }), true)
 assert.equal(isEdgeLift({ name: "repeaters" }), false)
 assert.equal(needsWarmup({ name: "Edge Lifts", focus: "max_force" }), true)
 assert.equal(needsWarmup({ name: "Edge Lifts", focus: "hypertrophy" }), false)
-assert.equal(needsWarmup({ name: "Edge Lifts" }), false)
+assert.equal(needsWarmup({ name: "Edge Lifts", focus: "explosiveness" }), false)
+assert.equal(needsWarmup({ name: "Edge Lifts" }), true)   // hand-made block, no focus
+assert.equal(needsWarmup({ name: "repeaters", focus: "max_force" }), false)
 
 // Stored max
 assert.equal(currentMax({ edgeLiftMax: 30 }), 30)
