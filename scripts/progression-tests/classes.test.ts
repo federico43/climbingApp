@@ -157,10 +157,21 @@ assert.equal((await call("classRequest", "cami", { kind: "extra", toClassId: at(
 
 // ── Republish: a removed class tells its athletes ────────────────────────────
 pushes.length = 0
+// Requests about Wednesday: a pending move into it, a pending extra and a skip
+const wedId = at(2, 9.5).$id
+const intoWed = await ctx.db.create("class_requests", {
+  athleteId: "bea", weekStart: week, kind: "move", status: "pending", fromClassId: at(1, 12).$id, toClassId: wedId,
+})
+const extraWed = await ctx.db.create("class_requests", { athleteId: "cami", weekStart: week, kind: "extra", status: "pending", toClassId: wedId })
+const skipWed = await ctx.db.create("class_requests", { athleteId: "ana", weekStart: week, kind: "skip", status: "accepted", fromClassId: wedId })
 const keep = [...t("classes").values()].filter((c) => !(c.day === 2)).map((c) => ({ id: c.$id, day: c.day, start: c.start }))
 assert.equal((await call("classPublish", "coach", { weekStart: week, classes: keep })).status, 200)
 assert.ok(pushes.some((p) => p.to === "ana" && p.body.includes("Wed 9:30 was cancelled")))
 assert.ok(!pushes.some((p) => p.title.includes("Next week")))
+// …are dropped, so cami can ask for another extra and the skip costs nothing
+for (const id of [intoWed.$id, extraWed.$id, skipWed.$id]) assert.ok(!t("class_requests").has(id))
+assert.ok(pushes.some((p) => p.to === "cami" && p.body.includes("request was dropped")))
+assert.deepEqual(at(1, 12).roster, ["bea"])
 
 // ── Cron ─────────────────────────────────────────────────────────────────────
 // A pending request whose class has started expires
@@ -211,6 +222,16 @@ assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 0,
 assert.ok(!at(3, 9.5).roster.includes("dani"))
 assert.equal((await call("classRequest", "dani", { kind: "extra", toClassId: at(3, 9.5).$id })).status, 409)
 assert.ok(!pushes.some((p) => p.to === "dani"))
+// She had said she'd skip Thursday: a renewal doesn't put her back in it
+const daniSkip = await ctx.db.create("class_requests", {
+  athleteId: "dani", weekStart: week, kind: "skip", status: "accepted", fromClassId: at(3, 9.5).$id,
+})
+assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: 8, startsOn: week, useBy: addDays(week, 30) })).status, 200)
+assert.ok(!at(3, 9.5).roster.includes("dani"))
+// Nor do new usual classes
+assert.equal((await call("classDefaults", "dani", { slots: ["3@9.5"] })).status, 200)
+assert.ok(!at(3, 9.5).roster.includes("dani"))
+t("class_requests").delete(daniSkip.$id)
 assert.equal((await call("classPackage", "coach", { athleteId: "dani", total: -1, startsOn: week, useBy: addDays(week, 30) })).status, 400)
 globalThis.Date = RealDate
 Date.now = realNow
@@ -249,6 +270,11 @@ assert.equal((await call("classPublish", "coach", { weekStart: week2, classes: [
 const mon2 = [...t("classes").values()].find((c) => c.weekStart === week2 && c.day === 0)!
 assert.deepEqual(mon2.roster, ["bea"])
 assert.equal((await call("classRequest", "ana", { kind: "extra", toClassId: mon2.$id })).status, 409)
+// …and "I can go after all" on a skip from before the pause doesn't sneak her back in
+const oldSkip = await ctx.db.create("class_requests", { athleteId: "ana", weekStart: week2, kind: "skip", status: "accepted", fromClassId: mon2.$id })
+assert.equal((await call("classCancel", "ana", { requestId: oldSkip.$id })).status, 409)
+assert.deepEqual(mon2.roster, ["bea"])
+t("class_requests").delete(oldSkip.$id)
 // The night the pause ends
 const [y2, m2, d2] = week2.split("-").map(Number)
 report = await runClassCron(ctx, new Date(Date.UTC(y2, m2 - 1, d2 + 6, 20, 5)))
@@ -297,5 +323,20 @@ assert.equal((await call("classPlanAnswer", "coach", { requestId: r.json.request
 assert.equal(t("plan_requests").get(r.json.request.$id)!.status, "declined")
 assert.ok(pushes.some((p) => p.to === "eli" && p.title === "Plan request declined"))
 assert.equal([...t("packages").values()].filter((p) => p.athleteId === "eli").length, 1)
+
+// ── Package used up or expired: out of the classes still ahead ──────────────
+// ivy's single session went on Monday; fay's package ran out on Monday.
+for (const id of ["ivy", "fay"]) t("users").set(id, { $id: id, role: "athlete", username: id })
+await ctx.db.create("packages", { athleteId: "ivy", total: 1, startsOn: week, useBy: addDays(week, 30) })
+await ctx.db.create("packages", { athleteId: "fay", total: 8, startsOn: addDays(week, -30), useBy: week })
+at(0, 9.5).roster = [...at(0, 9.5).roster, "ivy"]
+at(3, 9.5).roster = [...at(3, 9.5).roster, "ana", "ivy", "fay", "gus"]
+const ivyExtra = await ctx.db.create("class_requests", { athleteId: "ivy", weekStart: week, kind: "extra", status: "pending", toClassId: at(4, 15).$id })
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 1, 12, 30)))
+assert.equal(report.dropped, 2)
+assert.ok(!at(3, 9.5).roster.includes("ivy") && !at(3, 9.5).roster.includes("fay"))
+assert.ok(at(0, 9.5).roster.includes("ivy")) // the class she took stays
+assert.ok(!t("class_requests").has(ivyExtra.$id))
+assert.deepEqual(at(3, 9.5).roster, ["ana", "gus"]) // sessions left, or no package: they stay
 
 console.log("classes: all tests passed")

@@ -45,6 +45,9 @@ assert.deepEqual(plain.map((e) => [e.cls.id, e.state]), [["c1", "on"], ["c8", "o
 // Moving Thu to Sat: the Sat class shows as pending and replaces Thu
 const moved = athleteWeek(EXAMPLE_CLASSES, mine, { c8: { status: "move", to: "c13" } }, null)
 assert.deepEqual(moved.map((e) => [e.cls.id, e.state, e.from]), [["c1", "on", undefined], ["c13", "pending", "c8"]])
+// A move into a class that's gone (cancelled) keeps Thu on the week
+const movedToGone = athleteWeek(EXAMPLE_CLASSES, mine, { c8: { status: "move", to: "gone" } }, null)
+assert.deepEqual(movedToGone.map((e) => [e.cls.id, e.state]), [["c1", "on"], ["c8", "on"]])
 // While moving Thu, Thu itself doesn't count as busy
 assert.deepEqual(busyDays(plain, "c8"), [0])
 
