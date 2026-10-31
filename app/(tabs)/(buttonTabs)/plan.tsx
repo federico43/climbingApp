@@ -8,6 +8,9 @@ import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkout
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
+import { BlockProgressCard } from "@/components/BlockProgressCard"
+import type { StatsLibraryExercise } from "@/utils/athleteStatsData"
+import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { currentOrNextPause, pauseOn, type PlanPause } from "@/utils/planPauses"
 import { ThisWeekCard } from "@/components/schedule/ThisWeekCard"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
@@ -18,6 +21,7 @@ import {
   getActiveTrainingPlan,
   BlockRow,
   getSessions,
+  getUsers,
   listAthleteTemplates,
   listBlocks,
   listPlanWorkouts,
@@ -102,6 +106,10 @@ export default function PlanScreen() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [library, setLibrary] = useState<BlockRow[]>([])
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
+  // For "How this block is going": the S&C exercises' movement patterns and
+  // the athlete's Edge Lifts max log.
+  const [exercises, setExercises] = useState<StatsLibraryExercise[]>([])
+  const [edgeLiftMaxLog, setEdgeLiftMaxLog] = useState<string | null>(null)
   const activePlan = useActivePlan()
   // Read through a ref so load() doesn't change (and re-fire) whenever the context re-renders.
   const activePlanRef = useRef(activePlan)
@@ -118,14 +126,18 @@ export default function PlanScreen() {
       // Keep the tab layout (Home shown or not) in step with what we found.
       if (!!active !== !!activePlanRef.current.plan) activePlanRef.current.refresh()
       if (!active) return
-      const [planWorkouts, sessionRows, blocks, templateRows] = await Promise.all([
+      const [planWorkouts, sessionRows, blocks, templateRows, exerciseRows, userRow] = await Promise.all([
         listPlanWorkouts(active.$id),
         getSessions(),
         // Library blocks time the upcoming workouts' summaries.
         listBlocks().catch(() => [] as BlockRow[]),
         // For the latest-built-workout card (any coach workout, plan or not).
         listAthleteTemplates(User!.$id, { migrate: false }).catch(() => [] as ProtocolRow[]),
+        getExerciseLibrary().catch(() => []),
+        getUsers(User!.$id).catch(() => null),
       ])
+      setExercises(exerciseRows as StatsLibraryExercise[])
+      setEdgeLiftMaxLog((userRow as any)?.edgeLiftMaxLog ?? null)
       setTemplates(templateRows)
       setLibrary(blocks)
       setWorkouts(planWorkouts)
@@ -208,6 +220,8 @@ export default function PlanScreen() {
                   workouts={workouts}
                   sessions={sessions}
                   library={library}
+                  exercises={exercises}
+                  edgeLiftMaxLog={edgeLiftMaxLog}
                   onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
                   onChanged={load}
                 />
@@ -230,6 +244,8 @@ function PlanBody({
   workouts,
   sessions,
   library,
+  exercises,
+  edgeLiftMaxLog,
   onStart,
   onChanged,
 }: {
@@ -238,6 +254,8 @@ function PlanBody({
   workouts: ProtocolRow[]
   sessions: SessionRow[]
   library: BlockRow[]
+  exercises: StatsLibraryExercise[]
+  edgeLiftMaxLog: string | null
   onStart: (w: ProtocolRow) => void
   onChanged: () => void
 }) {
@@ -346,6 +364,10 @@ function PlanBody({
 
       {/* ── Timeline: start → end, status, the 6-week day grid ─────────────── */}
       <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+
+      {!notStarted && (
+        <BlockProgressCard plan={plan} workouts={workouts} sessions={sessions} library={exercises} edgeLiftMaxLog={edgeLiftMaxLog} />
+      )}
 
       {/* ── Workouts ──────────────────────────────────────────────────────── */}
       <View style={styles.card}>
