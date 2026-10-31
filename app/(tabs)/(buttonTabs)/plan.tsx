@@ -326,7 +326,7 @@ function PlanBody({
   // latest workout card at the top already covers what's next).
   const [selected, setSelected] = useState<number | null>(null)
   const shown = selected ? slots.find((s) => s.index === selected) ?? null : null
-  const { workout: latest, scPart, picked } = pickLatestWorkout(templates, homeWorkoutId)
+  const { workout: latest, scPart } = pickLatestWorkout(templates, homeWorkoutId)
   // Homework rides on the athlete's templates (planPart "homework"); its
   // picked days show on the timeline like events.
   const homework = templates.filter((t) => t.planPart === "homework")
@@ -350,7 +350,7 @@ function PlanBody({
       ) : latest && (
         <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
           <GroupLabel icon="flash" text="Up next" />
-          <LatestWorkoutCard workout={latest} scPart={scPart} picked={picked} />
+          <LatestWorkoutCard workout={latest} scPart={scPart} />
         </View>
       )}
 

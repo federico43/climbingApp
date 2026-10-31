@@ -77,7 +77,7 @@ function HomeContent() {
   // The workout card mounts only after the launch intro so its entrance is
   // actually visible.
   const [introDone, setIntroDone] = useState(introAlreadyPlayed())
-  const { workout, scPart, picked } = pickLatestWorkout(templates, homeWorkoutId)
+  const { workout, scPart } = pickLatestWorkout(templates, homeWorkoutId)
   const homework = templates.filter((t) => t.planPart === "homework")
   const ready = introDone && !loading
 
@@ -119,7 +119,7 @@ function HomeContent() {
                 </View>
               )}
               {workout ? (
-                <LatestWorkoutCard workout={workout} scPart={scPart} picked={picked} fill />
+                <LatestWorkoutCard workout={workout} scPart={scPart} fill />
               ) : (
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
                   <Ionicons name="barbell-outline" size={36} color={C.textMuted} />
