@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/scSwap.test.ts
 
 import assert from "node:assert/strict"
-import { isPlanPick, replacePlanPick, swapCandidates, swappedExercise, swapReasonOf } from "@/utils/scSwap"
+import { isPlanPick, planPickFor, replacePlanPick, swapCandidates, swappedExercise, swapReasonOf } from "@/utils/scSwap"
 
 const row = (over: any) => ({ $createdAt: "", type: "reps", ...over })
 const kbSquat = row({ $id: "kb", name: "KB squat", movementType: "squat", loadMode: "weight", loadStep: 2 })
@@ -86,5 +86,11 @@ assert.deepEqual(replacePlanPick(patterns, "kb", "split")![0].exerciseIds, ["spl
 // not a pick / no change → null
 assert.equal(replacePlanPick(patterns, "mob", "x"), null)
 assert.equal(replacePlanPick(patterns, "kb", "kb"), null)
+
+// a ladder step the plan prescribed stands for the pick on its ladder
+assert.equal(planPickFor(patterns, "kb"), "kb")
+assert.equal(planPickFor(patterns, "step", ["easier", "kb", "step"]), "kb")
+assert.equal(planPickFor(patterns, "step", ["easier", "step"]), undefined)
+assert.equal(planPickFor(patterns, undefined), undefined)
 
 console.log("all scSwap plan tests passed")

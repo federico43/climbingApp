@@ -300,8 +300,12 @@ export async function saveSession(data: any, forUserId?: string, rowId: string =
       })
     } catch (e) {
       lastError = e
-      // Offline or already saved — a smaller payload won't change that.
-      if (isNetworkError(e) || (e as { code?: number })?.code === 409) break
+      // Only a rejected row (400: e.g. unknown column) is worth retrying
+      // smaller. Anything else — offline, already saved, a server hiccup —
+      // a smaller payload won't fix, and saving it without its link would
+      // leave the workout uncounted on the plan for good; the sync queue
+      // retries the whole row instead.
+      if (isNetworkError(e) || (e as { code?: number })?.code !== 400) break
     }
   }
   console.error("Failed to save session", lastError)
