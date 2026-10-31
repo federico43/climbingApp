@@ -142,13 +142,15 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
   const metrics = stats.metrics.filter((m) => m.unit === "workouts" || m.points.length > 0)
   const selected = metrics.find((m) => m.id === selectedId) ?? metrics[0]
   const patterns = visiblePatterns(stats.sc)
-  // Inner width of a panel: card padding 16, panel padding 12; two side by
-  // side on wide screens with a 10 gap.
-  const panelWidth = wide ? (width - 32 - 10) / 2 - 24 : width - 32 - 24
-  // Tiles keep one width, so an odd last tile doesn't stretch across the row
-  // (34 = card padding and border).
+  // Space inside the card: padding 16 and border 1 on each side.
+  const inner = width - 34
+  // Panels: two side by side on wide screens with a 10 gap. A chart inside
+  // one gets what's left after the panel's padding 12 and border 1.
+  const panelOuter = Math.floor(wide ? (inner - 10) / 2 : inner)
+  const panelWidth = panelOuter - 26
+  // Tiles keep one width, so an odd last tile doesn't stretch across the row.
   const cols = wide ? 4 : 2
-  const tileWidth = width > 0 ? Math.floor((width - 34 - 10 * (cols - 1)) / cols) : undefined
+  const tileWidth = width > 0 ? Math.floor((inner - 10 * (cols - 1)) / cols) : undefined
 
   return (
     <>
@@ -158,14 +160,14 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
         ))}
       </View>
       {metrics.length > 1 && <Text style={styles.hint}>Tap a tile to see its trend.</Text>}
-      {width > 0 && selected && selected.points.length > 0 && <TrendChart metric={selected} width={width - 32} />}
+      {width > 0 && selected && selected.points.length > 0 && <TrendChart metric={selected} width={inner} />}
 
       {width > 0 && patterns.length > 0 && (
         <>
           <Text style={styles.section}>S&C · by movement pattern</Text>
           <View style={styles.panels}>
             {patterns.map((p) => (
-              <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} wide={wide} width={panelWidth} startOpen={patterns.length === 1} />
+              <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} outer={panelOuter} width={panelWidth} startOpen={patterns.length === 1} />
             ))}
           </View>
         </>
@@ -175,8 +177,8 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
         <>
           <Text style={styles.section}>Blocks</Text>
           <View style={styles.panels}>
-            {stats.projects.length > 0 && <ProjectPanel sessions={stats.projects} wide={wide} width={panelWidth} />}
-            {stats.warmups.length > 0 && <WarmupPanel sessions={stats.warmups} wide={wide} width={panelWidth} />}
+            {stats.projects.length > 0 && <ProjectPanel sessions={stats.projects} outer={panelOuter} width={panelWidth} />}
+            {stats.warmups.length > 0 && <WarmupPanel sessions={stats.warmups} outer={panelOuter} width={panelWidth} />}
           </View>
         </>
       )}
@@ -192,7 +194,9 @@ function PeriodPill({ label, active, onPress }: { label: string; active: boolean
       accessibilityState={{ selected: active }}
       style={[styles.period, active && styles.periodActive]}
     >
-      <Text style={[styles.periodText, active && styles.periodTextActive]}>{label}</Text>
+      <Text style={[styles.periodText, active && styles.periodTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+        {label}
+      </Text>
     </Pressable>
   )
 }
@@ -226,22 +230,31 @@ function Tile({ metric, width, selected, onPress }: {
       accessibilityState={{ selected }}
       style={[styles.tile, width ? { width } : { flexBasis: "47%", flexGrow: 1 }, selected && styles.tileSelected]}
     >
-      <Text style={styles.tileLabel} numberOfLines={1}>{metric.label}</Text>
-      <Text style={styles.tileValue} numberOfLines={1}>{change?.value ?? "—"}</Text>
-      <Text style={styles.tileFrom} numberOfLines={1}>{change?.from ?? "No data yet"}</Text>
+      {/* Small phones: shrink to fit instead of cutting "102.5 kg" to "102…". */}
+      <Text style={styles.tileLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{metric.label}</Text>
+      <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{change?.value ?? "—"}</Text>
+      <Text style={styles.tileFrom} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{change?.from ?? "No data yet"}</Text>
       {change && <ChangePill trend={change.trend} text={change.delta} />}
     </Pressable>
   )
 }
 
+// The charts get exactly the width they're drawn in, with no room kept for
+// the hidden y-axis labels, so on a phone the last point (the one the coach
+// reads) and its value aren't cut off at the right edge.
+const EDGE = 18
+
 function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
   const values = metric.points.map((p) => p.value)
   const max = Math.max(...values, 1)
   const min = Math.min(...values)
+  const n = metric.points.length
   // Lines start a bit under the lowest point so small changes are visible.
   const offset = metric.unit === "workouts" ? 0 : Math.max(0, Math.floor(min - (max - min || 1) * 0.5))
-  const spacing = metric.points.length > 1 ? (width - 60) / (metric.points.length - 1) : 0
-  const shown = labelEvery(metric.points.length, spacing)
+  const spacing = n > 1 ? (width - 2 * EDGE) / (n - 1) : 0
+  const shown = labelEvery(n, spacing)
+  const barGap = n > 8 ? 6 : 12
+  const barWidth = Math.max(4, Math.min(36, (width - 2 * barGap - barGap * (n - 1)) / n))
 
   return (
     <View style={styles.chart}>
@@ -249,48 +262,56 @@ function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
       {metric.unit === "workouts" ? (
         <BarChart
           data={metric.points.map((p) => ({ value: p.value, label: p.label, topLabelComponent: () => <Text style={styles.pointText}>{p.value}</Text> }))}
-          width={width - 40}
+          width={width}
           height={120}
-          barWidth={Math.min(36, (width - 80) / metric.points.length - 12)}
-          spacing={12}
+          barWidth={barWidth}
+          spacing={barGap}
+          initialSpacing={barGap}
+          endSpacing={barGap}
           frontColor={C.green}
           barBorderRadius={6}
           maxValue={max + 1}
           noOfSections={3}
           hideYAxisText
+          yAxisLabelWidth={0}
           yAxisThickness={0}
           xAxisThickness={1}
           xAxisColor={C.border}
           hideRules
-          xAxisLabelTextStyle={styles.axisText}
+          xAxisLabelTextStyle={[styles.axisText, labelBox(barWidth + barGap)]}
           disableScroll
         />
       ) : (
         <LineChart
-          data={metric.points.map((p, i) => ({
-            value: p.value - offset,
-            label: shown(i) ? p.label : "",
-            dataPointText: shown(i) ? formatStatValue(metric.unit, p.value) : "",
-          }))}
-          width={width - 40}
+          data={metric.points.map((p, i) => {
+            const text = shown(i) ? formatStatValue(metric.unit, p.value) : ""
+            return {
+              value: p.value - offset,
+              label: shown(i) ? p.label : "",
+              dataPointText: text,
+              // Centred over its point, but kept inside the chart at both ends.
+              textShiftX: valueShift(text, i, n),
+            }
+          })}
+          width={width}
           height={120}
-          initialSpacing={16}
-          endSpacing={16}
+          initialSpacing={EDGE}
+          endSpacing={EDGE}
           spacing={spacing}
           color={C.green}
           thickness={2.5}
           maxValue={(max - offset) * 1.25}
           noOfSections={3}
           hideYAxisText
+          yAxisLabelWidth={0}
           yAxisThickness={0}
           xAxisThickness={1}
           xAxisColor={C.border}
           hideRules
-          xAxisLabelTextStyle={styles.axisText}
+          xAxisLabelTextStyle={[styles.axisText, labelBox(spacing)]}
           dataPointsRadius={4}
           dataPointsColor={C.green}
           textShiftY={-10}
-          textShiftX={-12}
           textFontSize={11}
           textColor={C.textSecondary}
           disableScroll
@@ -300,13 +321,30 @@ function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
   )
 }
 
+// Rough width of a value label at font size 11.
+const CHAR_PX = 6.3
+
+function valueShift(text: string, i: number, n: number): number {
+  const w = text.length * CHAR_PX
+  if (n > 1 && i === n - 1) return Math.min(-w / 2, EDGE - w)
+  if (i === 0) return Math.max(-w / 2, -EDGE)
+  return -w / 2
+}
+
+// The library gives each x-axis label only the space between two points, so
+// "Oct 14" got cut to "Oct…" when points sit close. Give it a fixed box,
+// centred on its point; labelEvery keeps neighbours from touching.
+function labelBox(slot: number) {
+  return { width: LABEL_PX, marginLeft: (slot - LABEL_PX) / 2, textAlign: "center" as const }
+}
+
 // ─── S&C: one panel per movement pattern ─────────────────────────────────────
 
 // Folded to one line (how many exercises, how many got better or worse)
 // so many patterns stay short; tap to open. Open: exercise chips on top
 // (many exercises scroll sideways), then one row per focus the exercise was
 // done at: its own line, now vs then.
-function PatternPanel({ stats, wide, width, startOpen }: { stats: ScPatternStats; wide: boolean; width: number; startOpen: boolean }) {
+function PatternPanel({ stats, outer, width, startOpen }: { stats: ScPatternStats; outer: number; width: number; startOpen: boolean }) {
   const [open, setOpen] = useState(startOpen)
   const [exerciseId, setExerciseId] = useState(stats.exercises[0].id)
   const exercise = stats.exercises.find((e) => e.id === exerciseId) ?? stats.exercises[0]
@@ -320,7 +358,7 @@ function PatternPanel({ stats, wide, width, startOpen }: { stats: ScPatternStats
   const count = `${stats.exercises.length} exercise${stats.exercises.length === 1 ? "" : "s"}`
   const summary = [count, trends.up && `${trends.up} better`, trends.down && `${trends.down} worse`].filter(Boolean).join(" · ")
   return (
-    <View style={[styles.panel, wide && styles.panelHalf]}>
+    <View style={[styles.panel, { width: outer }]}>
       <Pressable
         onPress={() => setOpen((o) => !o)}
         style={styles.panelToggle}
@@ -380,15 +418,15 @@ function Sparkline({ metric, color, width }: { metric: StatMetric; color: string
   const max = Math.max(...values)
   const min = Math.min(...values)
   const offset = min - (max - min || Math.max(1, Math.abs(min))) * 0.5
-  const spacing = metric.points.length > 1 ? (width - 40) / (metric.points.length - 1) : 0
+  const spacing = metric.points.length > 1 ? (width - 2 * EDGE) / (metric.points.length - 1) : 0
   const shown = labelEvery(metric.points.length, spacing)
   return (
     <LineChart
       data={metric.points.map((p, i) => ({ value: p.value - offset, label: shown(i) ? p.label : "" }))}
-      width={width - 8}
+      width={width}
       height={48}
-      initialSpacing={12}
-      endSpacing={12}
+      initialSpacing={EDGE}
+      endSpacing={EDGE}
       spacing={spacing}
       color={color}
       thickness={2}
@@ -400,7 +438,7 @@ function Sparkline({ metric, color, width }: { metric: StatMetric; color: string
       xAxisThickness={1}
       xAxisColor={C.border}
       hideRules
-      xAxisLabelTextStyle={styles.axisText}
+      xAxisLabelTextStyle={[styles.axisText, labelBox(spacing)]}
       dataPointsRadius={3}
       dataPointsColor={color}
       disableScroll
@@ -410,7 +448,7 @@ function Sparkline({ metric, color, width }: { metric: StatMetric; color: string
 
 // With many points close together, label only every few (always the last,
 // the one the coach reads) so "Oct 6" labels don't run into each other.
-const LABEL_PX = 46
+const LABEL_PX = 44
 
 function labelEvery(n: number, spacing: number): (i: number) => boolean {
   const every = spacing > 0 ? Math.max(1, Math.ceil(LABEL_PX / spacing)) : 1
@@ -422,13 +460,19 @@ function labelEvery(n: number, spacing: number): (i: number) => boolean {
 const BAR = 22
 const BAR_GAP = 14
 
+// Many sessions don't fit on a phone: the bars scroll sideways, starting at
+// the latest one.
+function barsScroll(n: number, width: number): boolean {
+  return 16 + n * BAR + (n - 1) * BAR_GAP > width
+}
+
 // One bar per session: height = minutes on the project, colour = the grade
 // worked, a check above it when the project went down.
-function ProjectPanel({ sessions, wide, width }: { sessions: ProjectSessionStat[]; wide: boolean; width: number }) {
+function ProjectPanel({ sessions, outer, width }: { sessions: ProjectSessionStat[]; outer: number; width: number }) {
   const max = Math.max(...sessions.map((s) => s.minutes))
   const sends = sessions.filter((s) => s.sent).length
   return (
-    <View style={[styles.panel, wide && styles.panelHalf]}>
+    <View style={[styles.panel, { width: outer }]}>
       <View style={styles.panelHead}>
         <Text style={styles.panelTitle}>Project bouldering</Text>
         <Text style={styles.panelMeta}>{sends} sent</Text>
@@ -447,11 +491,12 @@ function ProjectPanel({ sessions, wide, width }: { sessions: ProjectSessionStat[
               : <Text style={styles.pointText}>{s.minutes}</Text>,
           }
         })}
-        width={width - 8}
+        width={width}
         height={110}
         barWidth={BAR}
         spacing={BAR_GAP}
         initialSpacing={8}
+        endSpacing={8}
         barBorderRadius={5}
         maxValue={max * 1.3}
         noOfSections={3}
@@ -461,8 +506,8 @@ function ProjectPanel({ sessions, wide, width }: { sessions: ProjectSessionStat[
         xAxisThickness={1}
         xAxisColor={C.border}
         hideRules
-        xAxisLabelTextStyle={[styles.axisText, { width: BAR + BAR_GAP, marginLeft: -BAR_GAP / 2 }]}
-        disableScroll={sessions.length * (BAR + BAR_GAP) < width}
+        xAxisLabelTextStyle={[styles.axisText, labelBox(BAR + BAR_GAP)]}
+        disableScroll={!barsScroll(sessions.length, width)}
         scrollToEnd
       />
       <View style={styles.legend}>
@@ -474,13 +519,13 @@ function ProjectPanel({ sessions, wide, width }: { sessions: ProjectSessionStat[
   )
 }
 
-function WarmupPanel({ sessions, wide, width }: { sessions: WarmupSessionStat[]; wide: boolean; width: number }) {
+function WarmupPanel({ sessions, outer, width }: { sessions: WarmupSessionStat[]; outer: number; width: number }) {
   const max = Math.max(...sessions.map((s) => s.minutes))
   const first = sessions[0].minutes
   const last = sessions[sessions.length - 1].minutes
   const diff = last - first
   return (
-    <View style={[styles.panel, wide && styles.panelHalf]}>
+    <View style={[styles.panel, { width: outer }]}>
       <View style={styles.panelHead}>
         <Text style={styles.panelTitle}>1 on 1 off</Text>
         {sessions.length > 1 && (
@@ -493,11 +538,12 @@ function WarmupPanel({ sessions, wide, width }: { sessions: WarmupSessionStat[];
           label: s.label,
           topLabelComponent: () => <Text style={styles.pointText}>{s.minutes}</Text>,
         }))}
-        width={width - 8}
+        width={width}
         height={110}
         barWidth={BAR}
         spacing={BAR_GAP}
         initialSpacing={8}
+        endSpacing={8}
         frontColor={C.green}
         barBorderRadius={5}
         maxValue={max * 1.3}
@@ -508,8 +554,8 @@ function WarmupPanel({ sessions, wide, width }: { sessions: WarmupSessionStat[];
         xAxisThickness={1}
         xAxisColor={C.border}
         hideRules
-        xAxisLabelTextStyle={[styles.axisText, { width: BAR + BAR_GAP, marginLeft: -BAR_GAP / 2 }]}
-        disableScroll={sessions.length * (BAR + BAR_GAP) < width}
+        xAxisLabelTextStyle={[styles.axisText, labelBox(BAR + BAR_GAP)]}
+        disableScroll={!barsScroll(sessions.length, width)}
         scrollToEnd
       />
       <Text style={styles.legendText}>Minutes on per session</Text>
@@ -549,7 +595,6 @@ const styles = StyleSheet.create({
     width: "100%", gap: 10, padding: 12, borderRadius: 14,
     backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
   },
-  panelHalf: { width: "48.8%" },
   panelToggle: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 40 },
   panelHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   panelTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
