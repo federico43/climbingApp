@@ -4,13 +4,16 @@ import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
 import { coreFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
+import { startingLevelRow } from "@/utils/scPrefill"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 4 movement patterns (one of
 // each pattern's two exercises per workout) plus app-picked mobility, with
 // every exercise programmed for the day's S&C focus (core: its own max force ↔
-// hypertrophy cycle). Load, reps and level
-// then progress from the athlete's history as for any S&C block
+// hypertrophy cycle). A ladder exercise is prescribed at the step the
+// athlete's history puts them on — the same rule as the workout's prefill
+// (utils/scPrefill.ts), so both name the same exercise. Load and reps then
+// progress from the athlete's history as for any S&C block
 // (utils/scHistory.ts, utils/scProgression.ts). Pure — no fetching or UI.
 
 export type ExerciseDraft = Omit<Exercise, "id">
@@ -166,7 +169,9 @@ export function buildScBlocks(
     // Core follows its own max force ↔ hypertrophy cycle (no explosiveness).
     const f = p.movementType === "core" ? coreFocusFor(spec.index) : focus
     const row = exerciseForPattern(p, spec, f, byId, exercises, warnings)
-    return row ? withFocus(exerciseDraftFromLibrary(row), f) : null
+    if (!row) return null
+    const draftOf = (r: ExerciseRow) => withFocus(exerciseDraftFromLibrary(r), f)
+    return draftOf(startingLevelRow(row, draftOf, sessions, exercises))
   })
   // Edge Lifts (max force) go first in their block: their warm-up runs
   // before the block's first round (utils/edgeWarmup.ts).

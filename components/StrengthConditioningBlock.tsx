@@ -9,12 +9,13 @@ import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
 import {
   Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
-import { findScSessions, readRound, setsAtFinalLoad } from "@/utils/scHistory"
-import { basisLine, planNextForFocus, type FocusEntry } from "@/utils/scNext"
-import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, usableAt, type ResolvedChain } from "@/utils/levelChain"
+import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
+import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
+import { planFromHistory, type ExerciseSetting } from "@/utils/scPrefill"
+import { chainIds, chainIndexOf, findLibraryRow, usableAt, type ResolvedChain } from "@/utils/levelChain"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
-import { isPlanPick, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
+import { planPickFor, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
 import { useWorkoutLink } from "@/contexts/WorkoutContext"
 import { useRestNotification } from "@/hooks/useRestNotification"
 import { useAuth } from "@/components/auth-context"
@@ -168,7 +169,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     planForWorkout(User.$id, link.planId).then((plan) => { if (!cancelled && plan) setPlanPatterns(plan.scPatterns) })
     return () => { cancelled = true }
   }, [link?.planId, User?.$id])
-  const canSwapInPlan = (idx: number) => !!planPatterns && isPlanPick(planPatterns, block.exercises[idx]?.exerciseId)
+  // The plan pick behind a block exercise — a ladder step stands for the
+  // pick on its ladder (the plan prescribes the athlete's step).
+  const planPickAt = (idx: number) => planPatterns
+    ? planPickFor(planPatterns, block.exercises[idx]?.exerciseId, chains[idx] ? chainIds(chains[idx]) : [])
+    : undefined
+  const canSwapInPlan = (idx: number) => !!planPickAt(idx)
   const { height: winHeight } = useWindowDimensions()
   const [phase, setPhase] = useState<Phase>("intro")
   const [currentRound, setCurrentRound] = useState(0)
@@ -284,8 +290,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     // Stash the block exercise's own state the first time only — swapping
     // again from a swap still undoes back to the original.
     if (!swaps[idx]) setOriginals((prev) => ({ ...prev, [idx]: prefillAt(idx) }))
-    setSwaps((prev) => ({ ...prev, [idx]: { row, reason, scope } }))
-    if (scope === "plan") changePlan(idx, swaps[idx]?.scope === "plan" ? swaps[idx].row.$id : block.exercises[idx].exerciseId!, row.$id, row.name)
+    const pickId = swaps[idx]?.pick?.id ?? planPickAt(idx)
+    const pick = pickId ? { id: pickId, name: chains[idx]?.chain.find((l) => l.exerciseId === pickId)?.name ?? block.exercises[idx].name } : undefined
+    setSwaps((prev) => ({ ...prev, [idx]: { row, reason, scope, ...(scope === "plan" && pick ? { pick } : {}) } }))
+    if (scope === "plan" && pick) changePlan(idx, swaps[idx]?.scope === "plan" ? swaps[idx].row.$id : pick.id, row.$id, row.name, false, pick.name)
     // The picked exercise starts from its own history (nothing carried over
     // from a different exercise); a pending easier-round banner was for the
     // old one.
@@ -295,9 +303,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
   // Replace the plan's pick (and later built workouts) on the server. On
   // failure the swap stays for today only and the athlete is told.
-  function changePlan(idx: number, fromId: string, toId: string, toName: string, undoing = false) {
+  function changePlan(idx: number, fromId: string, toId: string, toName: string, undoing = false, pickName?: string) {
     if (!link?.planId) return
-    const fromName = undoing ? swaps[idx]?.row.name ?? "" : swaps[idx]?.scope === "plan" ? swaps[idx].row.name : block.exercises[idx].name
+    const fromName = undoing ? swaps[idx]?.row.name ?? "" : swaps[idx]?.scope === "plan" ? swaps[idx].row.name : pickName ?? block.exercises[idx].name
     swapExerciseInPlan({ planId: link.planId, fromExerciseId: fromId, fromExerciseName: fromName, toExerciseId: toId, afterPlanIndex: link.planIndex })
       .then(() => {
         setPlanPatterns((prev) => prev?.map((p) => ({ ...p, exerciseIds: p.exerciseIds.map((id) => (id === fromId ? toId : id)) })) ?? prev)
@@ -314,8 +322,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   function undoSwap(idx: number) {
     // A plan swap is undone in the plan too.
     const swap = swaps[idx]
-    const originalId = block.exercises[idx]?.exerciseId
-    if (swap?.scope === "plan" && originalId) changePlan(idx, swap.row.$id, originalId, block.exercises[idx].name, true)
+    const original = swap?.pick ?? (block.exercises[idx]?.exerciseId ? { id: block.exercises[idx].exerciseId!, name: block.exercises[idx].name } : undefined)
+    if (swap?.scope === "plan" && original) changePlan(idx, swap.row.$id, original.id, original.name, true)
     applyPrefill(idx, originals[idx] ?? null)
     setOriginals((prev) => { const n = { ...prev }; delete n[idx]; return n })
     setSwaps((prev) => { const n = { ...prev }; delete n[idx]; return n })
@@ -928,20 +936,9 @@ function LevelPicker({ levelChain, value, suggested, onChange }: {
   )
 }
 
-// An exercise's adjustable-setting hints, if it has any.
-interface ExerciseSetting { harder?: string; easier?: string }
-function settingOf(x: { settingHarder?: string | null; settingEasier?: string | null }): ExerciseSetting | undefined {
-  const harder = x.settingHarder?.trim() || undefined
-  const easier = x.settingEasier?.trim() || undefined
-  return harder || easier ? { harder, easier } : undefined
-}
-
-// Sessions read per exercise, any focus: enough for three of one focus
-// (stall rule) while the plan rotates three focuses.
-const HISTORY_LOOKBACK = 10
-
 // A block exercise swapped for another library exercise (see utils/scSwap).
-interface ActiveSwap { row: LibraryExercise; reason: SwapReason; scope: SwapScope }
+// `pick`: the plan pick a plan-scope swap replaced, restored on undo.
+interface ActiveSwap { row: LibraryExercise; reason: SwapReason; scope: SwapScope; pick?: { id: string; name: string } }
 
 // What an exercise starts on: its ladder, weight jump and setting hints from
 // the live library, and the weight / level / note from the athlete's own
@@ -961,24 +958,8 @@ interface Prefill {
 // null for exercises that don't progress (mobility, 7/3s).
 function prefillFor(ex: Exercise, sessions: SessionRow[] | null, library: LibraryExercise[] | null, unit: WeightUnit): Prefill | null {
   if (ex.type === "7/3s" || ex.movementType === "mobility") return null
-  const out: Prefill = {}
-  const chain = resolveExerciseChain(ex, library)
-  if (chain) out.chain = chain
-  const row = library ? findLibraryRow(ex, library) : undefined
-  out.loadStep = row?.loadStep ?? ex.loadStep ?? undefined
-  const setting = settingOf(row ?? ex)
-  if (setting) out.setting = setting
-  if (!sessions) return out
-  // Search the whole family — every member of the full chain — since a
-  // round could have been logged under any of them.
-  const candidateIds = chain ? chainIds(chain, ex.exerciseId) : [ex.exerciseId].filter((id): id is string => !!id)
-  // Every focus: planNextForFocus picks today's focus's history, and
-  // explosiveness starts from max force (scNext.ts). Weights come back in
-  // the athlete's current unit.
-  const history = findScSessions(sessions, candidateIds, ex.name, { unit, limit: HISTORY_LOOKBACK })
-  if (history.length === 0) return out
-  out.past = history
-  const next = planNextForFocus({ ...ex, setting }, chain ?? undefined, out.loadStep, unit, history, "last time")
+  const { next, ...out }: Prefill & { next?: NextPlan } = planFromHistory(ex, sessions, library, unit)
+  if (!next) return out
   if (next.atHardest != null) out.hardest = next.atHardest
   if (next.level) out.level = next.level
   if (next.weight != null) out.weight = String(next.weight)

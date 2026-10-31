@@ -1,6 +1,7 @@
 import type { ExerciseRow } from "@/services/BoulderGraphService"
 import { exerciseDraftFromLibrary, type ExerciseDraft } from "@/utils/scPlanBuilder"
 import { FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
+import type { SwapReason } from "@/utils/scHistory"
 
 // Swapping an S&C exercise mid-workout for another library exercise. The
 // swap lives only in the athlete's session — the coach's block is never
@@ -8,17 +9,9 @@ import { FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 // name), with `swappedFrom` pointing back at what the block prescribed and
 // `swapReason` saying why. Pure — the UI is in StrengthConditioningBlock.
 
-// "easier": the app offered it after the athlete missed the minimum with
-// nothing left to lower (RoundDrop.pickEasier) — the coach is told to add
-// an easier version to the ladder. "choice": the athlete replaced it
-// themselves (machine taken, injury, preference…). Logs written before the
-// reason existed are easier swaps (it was the only kind).
-export type SwapReason = "easier" | "choice"
-
-export function swapReasonOf(scData: { swappedFrom?: unknown; swapReason?: string } | null | undefined): SwapReason | null {
-  if (!scData?.swappedFrom) return null
-  return scData.swapReason === "choice" ? "choice" : "easier"
-}
+// Why a swap happened — lives in scHistory.ts (which reads it from logs) so
+// that file doesn't import this one.
+export { swapReasonOf, type SwapReason } from "@/utils/scHistory"
 
 // The block exercise fields a swap reads (RepExercise / BothSidesExercise
 // in StrengthConditioningBlock, Exercise in workoutBlocks).
@@ -97,6 +90,14 @@ export interface PatternPicks { movementType: string; exerciseIds: string[] }
 
 export function isPlanPick(patterns: PatternPicks[], exerciseId: string | undefined): boolean {
   return !!exerciseId && patterns.some((p) => p.exerciseIds.includes(exerciseId))
+}
+
+// The plan pick a block exercise stands for: itself, or — for a ladder step
+// the plan prescribed from the athlete's history (scPlanBuilder) — the pick
+// on the same ladder (`ladderIds`). undefined when it's neither.
+export function planPickFor(patterns: PatternPicks[], exerciseId: string | undefined, ladderIds: string[] = []): string | undefined {
+  if (isPlanPick(patterns, exerciseId)) return exerciseId
+  return ladderIds.find((id) => isPlanPick(patterns, id))
 }
 
 // The plan's patterns with `fromId` replaced by `toId` in place (same
