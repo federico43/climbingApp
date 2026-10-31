@@ -1,0 +1,49 @@
+# Publishes an over-the-air update (eas update) to a channel, so it doesn't
+# have to run from Federico's Mac. Only runs when triggered by hand from the
+# Actions tab: nothing reaches phones on a push or merge.
+# Needs the repository secret EXPO_TOKEN (an expo.dev access token for the
+# account that owns the fdqg18/testApp project).
+name: EAS update
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel to publish to
+        type: choice
+        options:
+          - production
+          - preview
+        default: production
+      message:
+        description: Update message (shown on expo.dev)
+        required: true
+
+concurrency:
+  group: eas-update-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      - name: Publish
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          MESSAGE: ${{ inputs.message }}
+        run: eas update --channel "$CHANNEL" --message "$MESSAGE" --non-interactive
