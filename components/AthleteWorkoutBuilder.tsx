@@ -1,6 +1,6 @@
 import { useHoldUpdates } from "@/utils/updateHold"
 import { C } from "@/utils/theme"
-import { AppUser, ExerciseRow, ProtocolRow, createProtocol, deleteProtocol, updateProtocol } from "@/services/BoulderGraphService"
+import { AppUser, ExerciseRow, ProtocolRow, clearHomeWorkout, createProtocol, deleteProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import { AthleteRecentSessionsSummary } from "@/components/AthleteRecentSessionsSummary"
 import { SuggestedWarmupCard } from "@/components/SuggestedWarmupCard"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
@@ -307,6 +307,7 @@ export function AthleteWorkoutBuilder({
         // The whole workout is homework.
       } else {
         await createProtocol({ name: name.trim(), blocks: stripLocalIds(kept), athleteId: athlete?.$id, source, ...plan })
+        if (athlete) await clearHomeWorkout(athlete.$id)
       }
     } catch (e: any) {
       // Undo the homework so a retry doesn't make it twice.
