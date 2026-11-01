@@ -65,7 +65,7 @@ export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<
             : (
               <>
                 {reviewPlans.length > 1 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
                     {reviewPlans.map((p) => {
                       const active = p.$id === reviewPlan.$id
                       return (
@@ -76,7 +76,7 @@ export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<
                           accessibilityState={{ selected: active }}
                           style={[styles.chip, active && styles.chipActive]}
                         >
-                          <Text style={[styles.chipText, active && styles.chipTextActive]}>{planChipLabel(p)}</Text>
+                          <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>{planChipLabel(p)}</Text>
                         </Pressable>
                       )
                     })}
@@ -165,7 +165,7 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
       {width > 0 && patterns.length > 0 && (
         <>
           <Text style={styles.section}>S&C · by movement pattern</Text>
-          <View style={styles.panels}>
+          <View style={wide ? styles.panelsWide : styles.panels}>
             {patterns.map((p) => (
               <PatternPanel key={`${periodKey}:${p.pattern}`} stats={p} outer={panelOuter} width={panelWidth} startOpen={patterns.length === 1} />
             ))}
@@ -176,7 +176,7 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
       {width > 0 && (stats.projects.length > 0 || stats.warmups.length > 0) && (
         <>
           <Text style={styles.section}>Blocks</Text>
-          <View style={styles.panels}>
+          <View style={wide ? styles.panelsWide : styles.panels}>
             {stats.projects.length > 0 && <ProjectPanel sessions={stats.projects} outer={panelOuter} width={panelWidth} />}
             {stats.warmups.length > 0 && <WarmupPanel sessions={stats.warmups} outer={panelOuter} width={panelWidth} />}
           </View>
@@ -372,7 +372,7 @@ function PatternPanel({ stats, outer, width, startOpen }: { stats: ScPatternStat
         <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={C.textSecondary} />
       </Pressable>
       {!open ? null : stats.exercises.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
           {stats.exercises.map((e) => {
             const active = e.id === exercise.id
             return (
@@ -383,7 +383,7 @@ function PatternPanel({ stats, outer, width, startOpen }: { stats: ScPatternStat
                 accessibilityState={{ selected: active }}
                 style={[styles.chip, active && styles.chipActive]}
               >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{e.name}</Text>
+                <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>{e.name}</Text>
               </Pressable>
             )
           })}
@@ -590,7 +590,10 @@ const styles = StyleSheet.create({
   pointText: { fontSize: 11, color: C.textSecondary, marginBottom: 4 },
 
   section: { marginTop: 6, fontSize: 12, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  panels: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 10 },
+  // Phone: one column. A wrapping row there let a horizontal chip row grow
+  // to the full screen height and spill over the next section.
+  panels: { gap: 10 },
+  panelsWide: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 10 },
   panel: {
     width: "100%", gap: 10, padding: 12, borderRadius: 14,
     backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
@@ -600,8 +603,10 @@ const styles = StyleSheet.create({
   panelTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   panelSub: { fontSize: 13, color: C.textSecondary },
   panelMeta: { fontSize: 13, fontWeight: "600", color: C.green },
-  chips: { gap: 6 },
-  chip: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: C.border, justifyContent: "center" },
+  // A horizontal ScrollView grows by default; keep the chip row one chip tall.
+  chipScroll: { flexGrow: 0, flexShrink: 0 },
+  chips: { gap: 6, alignItems: "center" },
+  chip: { minHeight: 32, maxWidth: 240, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: C.border, justifyContent: "center" },
   chipActive: { borderColor: C.green, backgroundColor: C.surfaceHigh },
   chipText: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary },
   chipTextActive: { color: C.textPrimary },
