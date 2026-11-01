@@ -91,13 +91,14 @@ assert.deepEqual(warmupSessions(parsed, "2026-10-01", "2026-10-31"), [{ label: "
 const pats = scPatternStats(parsed, library, "2026-10-01", "2026-10-31")
 assert.deepEqual(pats.map((p) => p.pattern), ["pull_vertical", "push"])   // mobility left out
 assert.deepEqual(pats[0].exercises[0].byFocus.max_force, [{ label: "Oct 6", value: 10 }, { label: "Oct 20", value: 12.5 }])
-assert.equal(pats[1].exercises[0].unit, "level")
-// The ladder's own exercise is step 1; its levels are the harder steps.
-assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 2 }, { label: "Oct 20", value: 3 }])
+// A level exercise is charted per step done, in reps.
+assert.deepEqual(pats[1].exercises.map((e) => [e.name, e.unit]), [["Knee push-up", "reps"], ["Push-up", "reps"]])
+assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 12 }])
+assert.deepEqual(pats[1].exercises[1].byFocus.hypertrophy, [{ label: "Oct 20", value: 10 }])
 
 // A level exercise logged at its own step, and a workout programmed one step
-// up where the athlete dropped back down: both on one line, steps counted
-// on the whole ladder (the library row's `levels` is only its harder tail).
+// up where the athlete dropped back down: the sets count for the step done
+// (the library row's `levels` is only its harder tail).
 {
   const ladderLib = [
     { $id: "ba", name: "Band assisted pull-up", movementType: "pull_vertical", loadMode: "level" as const,
@@ -115,11 +116,10 @@ assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", va
   ] as any)
   const pull = scPatternStats(ladderSessions, ladderLib, "2026-10-01", "2026-10-31")
   assert.equal(pull.length, 1)
-  assert.equal(pull[0].exercises.length, 1)
-  assert.equal(pull[0].exercises[0].unit, "level")
-  assert.deepEqual(pull[0].exercises[0].byFocus.hypertrophy, [
-    { label: "Oct 19", value: 1 }, { label: "Oct 29", value: 1 }, { label: "Oct 30", value: 2 },
-  ])
+  // One line per step actually done, whatever step was programmed.
+  assert.deepEqual(pull[0].exercises.map((e) => [e.name, e.unit]), [["Band assisted pull-up", "reps"], ["Negative pull-up", "reps"]])
+  assert.deepEqual(pull[0].exercises[0].byFocus.hypertrophy, [{ label: "Oct 19", value: 7 }, { label: "Oct 29", value: 7 }])
+  assert.deepEqual(pull[0].exercises[1].byFocus.hypertrophy, [{ label: "Oct 30", value: 7 }])
 }
 
 // A set swapped mid-workout counts for the exercise picked, at the focus of
@@ -154,9 +154,8 @@ assert.equal(metric("workouts").planned, 4)   // W3 still running: not missed ye
 // ─── review ───
 const review = blockReview(block)
 assert.equal(review.worse, 0)
-assert.ok(review.better >= 5)   // edge lift, 4×4, intervals, pull-up, push-up ladder, 1 on 1 off
+assert.ok(review.better >= 4)   // edge lift, 4×4, intervals, pull-up, 1 on 1 off
 assert.equal(review.rows.find((r) => r.id === "warmup")?.change.delta, "▲ 2 min")
-assert.equal(review.rows.find((r) => r.name === "Push-up ladder")?.change.delta, "▲ 1 level")
 assert.equal(review.workouts?.value, "1 / 4")
 assert.equal(review.projectsSent, 1)
 

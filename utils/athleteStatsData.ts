@@ -269,32 +269,33 @@ export function scPatternStats(
 
       const rounds = [...attempts].sort((a, b) => (a.scData?.round ?? 0) - (b.scData?.round ?? 0)).map((a) => readRound(a.scData, "kg"))
       const final = setsAtFinalLoad(rounds)
-      const ladder = ladderOf(ex)
-      const step = final?.exerciseId ? ladder.indexOf(final.exerciseId) : -1
-      const isLevel = (libEx?.loadMode ?? ex.loadMode) === "level" && ladder.length > 1 && step >= 0
+      // A level exercise is charted by the step actually done: each step of
+      // the ladder is its own exercise with its own reps — what the coach
+      // reads progress by (the step alone hides a step done for more reps).
+      const isLevel = (libEx?.loadMode ?? ex.loadMode) === "level"
+      const stepId: string | undefined = isLevel ? final?.exerciseId ?? ex.exerciseId : ex.exerciseId
+      const stepLib = isLevel && stepId ? lib.get(stepId) ?? libEx : libEx
+      const lastLogged = attempts[attempts.length - 1]?.scData?.exerciseName
+      const name: string = isLevel ? stepLib?.name ?? lastLogged ?? ex.name ?? "Exercise" : ex.name ?? "Exercise"
       let value: number | undefined
       let unit: ScExerciseStats["unit"] = "kg"
-      if (isLevel) {
-        value = step + 1
-        unit = "level"
-      } else if (final?.weight != null && final.weight > 0) {
+      if (final?.weight != null && final.weight > 0) {
         value = final.weight
       } else {
-        // Bodyweight: the most reps (or seconds) in a set at the final load.
+        // No weight: the most reps (or seconds) in a set at the final load.
         const amounts = (final?.sets ?? []).map((st) => st.amount).filter((n) => typeof n === "number" && n > 0)
         value = amounts.length ? Math.max(...amounts) : undefined
-        unit = (ex.unit ?? libEx?.unit) === "seconds" ? "s" : "reps"
+        unit = (stepLib?.unit ?? ex.unit ?? libEx?.unit) === "seconds" ? "s" : "reps"
       }
       if (value == null) continue
 
       // A weighted and a bodyweight version of one exercise are tracked apart.
-      // One line per ladder: the programmed step can change between workouts.
-      const base = isLevel ? ladder[0] : ex.exerciseId ?? ex.name
-      const key = unit === "kg" || unit === "level" ? base : `${base}:${unit}`
+      const base = stepId ?? name
+      const key = unit === "kg" ? base : `${base}:${unit}`
       let entry = exercises.get(key)
       if (!entry) {
-        const name = ex.name ?? "Exercise"
-        entry = { pattern: movement, stats: { id: key, name: unit === "reps" || unit === "s" ? `${name} (bodyweight)` : name, unit, byFocus: {} } }
+        const label = unit === "kg" || isLevel ? name : `${name} (bodyweight)`
+        entry = { pattern: movement, stats: { id: key, name: label, unit, byFocus: {} } }
         exercises.set(key, entry)
       }
       // One point per day: the same "Oct 6" a year apart stays two points.
