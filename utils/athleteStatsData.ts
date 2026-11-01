@@ -7,6 +7,7 @@ import { colourIndex } from "@/utils/boulderColours"
 import { parseMaxLog } from "@/utils/edgeWarmup"
 import { MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
 import { donePlanWorkouts, sessionLocalDate, type ProgressWorkout } from "@/utils/planProgress"
+import { resolveFullChain } from "@/utils/levelChain"
 import { pauseOn, type PlanPause } from "@/utils/planPauses"
 import { addDays, PLAN_WEEKS, planWeek, WORKOUTS_PER_WEEK } from "@/utils/planRotation"
 import { attemptGrades } from "@/utils/progression/fourByFour"
@@ -33,6 +34,7 @@ export interface StatsLibraryExercise {
   movementType?: string
   loadMode?: "weight" | "level"
   unit?: "reps" | "seconds"
+  levels?: { exerciseId: string; name?: string }[]   // the "harder than me" tail
 }
 
 export interface StatsInput {
@@ -210,15 +212,49 @@ export function scPatternStats(
   const libByName = new Map(library.filter((e) => e.name).map((e) => [e.name!.trim().toLowerCase(), e]))
   const exercises = new Map<string, { pattern: MovementType; stats: ScExerciseStats }>()
   const dayPoints = new Map<string, StatPoint>()
+  const members = library.map((e) => ({ ...e, name: e.name ?? "", levels: e.levels?.map((l) => ({ exerciseId: l.exerciseId, name: l.name ?? "" })) }))
+  const chains = new Map<any, string[]>()
+  // A level exercise's whole ladder, easiest → hardest, itself included: the
+  // athlete can log a step easier or harder than the one programmed, and
+  // the exercise's own `levels` is only the harder tail.
+  const ladderOf = (ex: any): string[] => {
+    let ids = chains.get(ex)
+    if (!ids) {
+      const full = ex?.exerciseId ? resolveFullChain(ex.exerciseId, members).map((l) => l.exerciseId) : []
+      const own = [ex?.exerciseId, ...(Array.isArray(ex?.levels) ? ex.levels : []).map((l: any) => l?.exerciseId)].filter(Boolean)
+      ids = full.length > 1 ? full : own
+      chains.set(ex, ids)
+    }
+    return ids
+  }
+
+  // A set swapped mid-workout is logged as the picked exercise, which isn't
+  // in the block: it's tracked as that library exercise, at the focus the
+  // block prescribed for the one it replaced.
+  const swapped = new Map<string, any>()
+  const swappedIn = (a: Attempt, log: BlockLog): any => {
+    const id = a.scData?.exerciseId
+    const libEx = id ? lib.get(id) : undefined
+    if (!id || !libEx || !a.scData?.swappedFrom) return undefined
+    const key = `${log.date}|${log.protocol.indexOf(log.block)}|${id}`
+    let ex = swapped.get(key)
+    if (!ex) {
+      const from = a.scData.swappedFrom as { exerciseId?: string; exerciseName?: string }
+      const original = log.block.exercises.find((e: any) => (from.exerciseId && e?.exerciseId === from.exerciseId) || e?.name === from.exerciseName)
+      ex = { name: libEx.name ?? a.scData.exerciseName, exerciseId: id, focus: original?.focus }
+      swapped.set(key, ex)
+    }
+    return ex
+  }
 
   for (const log of blockLogs(sessions, from, to, (b) => b?.type === "strength_conditioning" && Array.isArray(b.exercises))) {
     const byExercise = new Map<any, Attempt[]>()
     for (const a of log.attempts) {
       if (a?.type !== "strength_conditioning" || !a.scData) continue
       const id = a.scData.exerciseId
-      const ex = log.block.exercises.find((e: any) =>
-        (id && (e?.exerciseId === id || (e?.levels ?? []).some((l: any) => l?.exerciseId === id)))
-        || e?.name === a.scData!.exerciseName)
+      const ex = log.block.exercises.find((e: any) => (id && e?.exerciseId === id) || e?.name === a.scData!.exerciseName)
+        ?? (id ? log.block.exercises.find((e: any) => ladderOf(e).includes(id)) : undefined)
+        ?? swappedIn(a, log)
       if (!ex) continue
       const list = byExercise.get(ex)
       if (list) list.push(a)
@@ -233,31 +269,33 @@ export function scPatternStats(
 
       const rounds = [...attempts].sort((a, b) => (a.scData?.round ?? 0) - (b.scData?.round ?? 0)).map((a) => readRound(a.scData, "kg"))
       const final = setsAtFinalLoad(rounds)
-      const levels: any[] = Array.isArray(ex.levels) ? ex.levels : []
-      const isLevel = (libEx?.loadMode ?? ex.loadMode) === "level" && levels.length > 0
+      // A level exercise is charted by the step actually done: each step of
+      // the ladder is its own exercise with its own reps — what the coach
+      // reads progress by (the step alone hides a step done for more reps).
+      const isLevel = (libEx?.loadMode ?? ex.loadMode) === "level"
+      const stepId: string | undefined = isLevel ? final?.exerciseId ?? ex.exerciseId : ex.exerciseId
+      const stepLib = isLevel && stepId ? lib.get(stepId) ?? libEx : libEx
+      const lastLogged = attempts[attempts.length - 1]?.scData?.exerciseName
+      const name: string = isLevel ? stepLib?.name ?? lastLogged ?? ex.name ?? "Exercise" : ex.name ?? "Exercise"
       let value: number | undefined
       let unit: ScExerciseStats["unit"] = "kg"
-      if (isLevel) {
-        const step = levels.findIndex((l) => l?.exerciseId === final?.exerciseId)
-        value = step >= 0 ? step + 1 : undefined
-        unit = "level"
-      } else if (final?.weight != null && final.weight > 0) {
+      if (final?.weight != null && final.weight > 0) {
         value = final.weight
       } else {
-        // Bodyweight: the most reps (or seconds) in a set at the final load.
+        // No weight: the most reps (or seconds) in a set at the final load.
         const amounts = (final?.sets ?? []).map((st) => st.amount).filter((n) => typeof n === "number" && n > 0)
         value = amounts.length ? Math.max(...amounts) : undefined
-        unit = (ex.unit ?? libEx?.unit) === "seconds" ? "s" : "reps"
+        unit = (stepLib?.unit ?? ex.unit ?? libEx?.unit) === "seconds" ? "s" : "reps"
       }
       if (value == null) continue
 
       // A weighted and a bodyweight version of one exercise are tracked apart.
-      const base = ex.exerciseId ?? ex.name
-      const key = unit === "kg" || unit === "level" ? base : `${base}:${unit}`
+      const base = stepId ?? name
+      const key = unit === "kg" ? base : `${base}:${unit}`
       let entry = exercises.get(key)
       if (!entry) {
-        const name = ex.name ?? "Exercise"
-        entry = { pattern: movement, stats: { id: key, name: unit === "reps" || unit === "s" ? `${name} (bodyweight)` : name, unit, byFocus: {} } }
+        const label = unit === "kg" || isLevel ? name : `${name} (bodyweight)`
+        entry = { pattern: movement, stats: { id: key, name: label, unit, byFocus: {} } }
         exercises.set(key, entry)
       }
       // One point per day: the same "Oct 6" a year apart stays two points.
