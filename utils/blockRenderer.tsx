@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
@@ -321,9 +322,7 @@ function ConstraintWarmupBlock({
               </Text>
             </View>
           )}
-          {!!block.description && (
-            <Text style={shared_styles.description}>{block.description}</Text>
-          )}
+          <BlockNotes text={block.description} />
           <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("ready") }} />
         </ScrollView>
       </View>
