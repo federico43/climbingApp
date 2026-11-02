@@ -47,7 +47,7 @@ export function BlockReviewView({ stats, title, subtitle }: { stats: PeriodStats
           {review.rows.map((r, i) => (
             <View key={r.id} style={[styles.row, i === review.rows.length - 1 && { borderBottomWidth: 0 }]}>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.rowName} numberOfLines={1}>
+                <Text style={styles.rowName} numberOfLines={2}>
                   {r.name}
                   {r.detail && r.focus && <Text style={{ color: STAT_FOCUS_COLOR[r.focus] }}>{`  ${r.detail}`}</Text>}
                 </Text>
@@ -109,6 +109,6 @@ const styles = StyleSheet.create({
   },
   rowName: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
   rowChange: { fontSize: 13, color: C.textSecondary },
-  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  pill: { flexShrink: 0, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   pillText: { fontSize: 12, fontWeight: "700" },
 })
