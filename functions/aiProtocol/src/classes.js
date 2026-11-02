@@ -236,20 +236,28 @@ async function fillFromDefaults(ctx, classes, users, onlyUser, paused, stepsOut)
 async function publish(ctx, userId, body) {
   const weekStart = String(body.weekStart ?? "")
   if (!DAY_RE.test(weekStart) || mondayOfYmd(weekStart) !== weekStart) return fail(400, "Bad week.")
-  if (classMs({ weekStart, day: 6, start: 24 }) <= gymNow(new Date(), ctx.tz).ms) return fail(409, "That week is over.")
+  const now = gymNow(new Date(), ctx.tz)
+  // This week can still be published mid-week (the coach missed Sunday), but
+  // not once it's over, and no new class (or move) into a time already gone.
+  if (classMs({ weekStart, day: 6, start: 24 }) <= now.ms) return fail(409, "That week is over.")
   const wanted = Array.isArray(body.classes) ? body.classes : []
   const blocks = (Array.isArray(body.blocks) ? body.blocks : [])
     .filter((b) => Number.isInteger(b?.day) && typeof b.start === "number" && typeof b.end === "number")
     .map((b) => ({ day: b.day, start: b.start, end: b.end, ...(b.all ? { all: true } : {}) }))
   // Check the whole week before writing anything.
+  const existing = await weekClasses(ctx, weekStart)
   const placed = []
   for (const c of wanted) {
+    const old = existing.find((e) => e.$id === c?.id)
+    const same = old && old.day === Number(c.day) && old.start === Number(c.start)
+    if (!same && classMs({ weekStart, day: Number(c?.day), start: Number(c?.start) }) <= now.ms) {
+      return fail(409, `${classLabel({ day: c.day, start: c.start })}: that time has already gone by.`)
+    }
     const problem = classProblem(placed, blocks, Number(c?.day), Number(c?.start))
     if (problem) return fail(409, `${classLabel({ day: c.day, start: c.start })}: ${PROBLEM_TEXT[problem]}`)
     placed.push({ day: Number(c.day), start: Number(c.start) })
   }
 
-  const existing = await weekClasses(ctx, weekStart)
   const week = await weekRow(ctx, weekStart)
   const firstTime = !week?.published
   const changedFor = new Map() // athleteId → what happened to their class
@@ -296,13 +304,14 @@ async function publish(ctx, userId, body) {
   const users = await ctx.listUsers()
   if (firstTime) {
     const paused = await pausesByAthlete(ctx)
-    await fillFromDefaults(ctx, kept, users, undefined, paused)
+    // Only classes still ahead (published mid-week, the ones gone by are skipped).
+    await fillFromDefaults(ctx, kept.filter((c) => classMs(c) > now.ms), users, undefined, paused)
     // Athletes paused the whole week don't need to check it.
     const offAllWeek = (u) => [0, 1, 2, 3, 4, 5, 6].every((d) => pauseOn(paused.get(u.$id), addDays(weekStart, d)))
     const athletes = users.filter((u) => u.role !== "coach" && !offAllWeek(u))
     await ctx.push(athletes, () => ({
       sound: "default",
-      title: "Next week's classes are up",
+      title: weekStart === mondayOfYmd(now.ymd) ? "This week's classes are up" : "Next week's classes are up",
       body: "Check your classes and change any you can't make.",
       data: { type: "class_week", weekStart },
     }))
@@ -501,7 +510,8 @@ export async function handleClassAction(action, userId, body, ctx) {
 // ── Every hour (the function's schedule) ─────────────────────────────────────
 // Requests nobody answered before the class are declined; the night before,
 // athletes hear about tomorrow's class; on Saturday morning the coach is
-// reminded to publish next week; the night a pause ends, the athlete hears
+// reminded to publish next week (and on Monday morning if this week still
+// isn't); the night a pause ends, the athlete hears
 // their plan restarts; after a class, athletes with 2 or 0
 // sessions left (and the coach) hear about it; athletes whose package is
 // used up or expired leave the classes still ahead.
@@ -550,6 +560,11 @@ export async function runClassCron(ctx, date = new Date()) {
   // Saturday 10:00, next week still unpublished.
   if (now.weekday === 5 && Math.floor(now.hour) === 10 && !(await weekRow(ctx, nextWeek))?.published) {
     await pushCoaches(ctx, null, "Plan next week", "Publish next week's classes so athletes can check theirs.", { type: "class_plan" })
+    report.reminded = true
+  }
+  // Monday 8:00, this week still unpublished: it can still be published.
+  if (now.weekday === 0 && Math.floor(now.hour) === 8 && !(await weekRow(ctx, thisWeek))?.published) {
+    await pushCoaches(ctx, null, "This week isn't published", "Your athletes can't see their classes yet. You can still publish this week.", { type: "class_plan" })
     report.reminded = true
   }
 
