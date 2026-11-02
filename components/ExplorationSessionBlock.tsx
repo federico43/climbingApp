@@ -214,13 +214,15 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
               <Text style={styles.timeLimitText}>⏱ {block.timeLimit} min timer</Text>
             </View>
           )}
+        </ScrollView>
+        <View style={shared_styles.footer}>
           <Pressable
             style={styles.startButton}
             onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }}
           >
             <Text style={styles.startButtonText}>Start</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </View>
     )
   }

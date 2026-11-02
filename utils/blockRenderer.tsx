@@ -324,8 +324,10 @@ function ConstraintWarmupBlock({
             </View>
           )}
           <BlockNotes text={block.description} words={CONSTRAINT_WORDS} />
-          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("ready") }} />
         </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("ready") }} />
+        </View>
       </View>
     )
   }

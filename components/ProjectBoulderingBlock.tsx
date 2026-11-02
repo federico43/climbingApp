@@ -235,8 +235,10 @@ export function ProjectBoulderingBlock({
           <Text style={s.hint}>
             Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
           </Text>
-          <CustomButton title={settings.grade ? "Start" : "Next"} onPress={() => (settings.grade ? start() : setPhase("grade"))} />
         </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title={settings.grade ? "Start" : "Next"} onPress={() => (settings.grade ? start() : setPhase("grade"))} />
+        </View>
       </View>
     )
   }
@@ -264,8 +266,10 @@ export function ProjectBoulderingBlock({
               )
             })}
           </View>
-          <CustomButton title="Start" onPress={start} disabled={!grade} />
         </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title="Start" onPress={start} disabled={!grade} />
+        </View>
       </View>
     )
   }

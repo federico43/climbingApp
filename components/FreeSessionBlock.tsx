@@ -110,10 +110,12 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           showsVerticalScrollIndicator={false}
         >
           <BlockNotes text={block.description} />
+        </ScrollView>
+        <View style={shared_styles.footer}>
           <Pressable style={styles.startBtn} onPress={start}>
             <Text style={styles.startBtnText}>Start</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </View>
     )
   }
