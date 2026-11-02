@@ -1,4 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
+import { CONSTRAINT_WORDS } from "@/utils/blockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
@@ -322,7 +323,7 @@ function ConstraintWarmupBlock({
               </Text>
             </View>
           )}
-          <BlockNotes text={block.description} />
+          <BlockNotes text={block.description} words={CONSTRAINT_WORDS} />
           <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("ready") }} />
         </ScrollView>
       </View>

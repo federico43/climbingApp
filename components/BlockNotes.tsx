@@ -4,12 +4,15 @@ import React from "react"
 import { StyleSheet, Text, View } from "react-native"
 
 // The coach's instructions on a block intro: a card with a title, one
-// numbered step per line or sentence, and the key numbers in green.
+// numbered step per line or sentence, and the key numbers (plus *starred*
+// text and any `words`) in green.
 // `compact` is the small, title-less version for running screens.
-export function BlockNotes({ text, title = "Coach notes", compact = false }: {
+export function BlockNotes({ text, title = "Coach notes", compact = false, words }: {
   text: string | null | undefined
   title?: string
   compact?: boolean
+  /** Extra words to highlight (e.g. CONSTRAINT_WORDS). */
+  words?: string[]
 }) {
   const steps = noteSteps(text)
   if (steps.length === 0) return null
@@ -26,7 +29,7 @@ export function BlockNotes({ text, title = "Coach notes", compact = false }: {
             </View>
           )}
           <Text style={[styles.text, compact && styles.textCompact]}>
-            {noteParts(step).map((p, j) => p.key
+            {noteParts(step, words).map((p, j) => p.key
               ? <Text key={j} style={styles.key}>{p.text}</Text>
               : p.text)}
           </Text>

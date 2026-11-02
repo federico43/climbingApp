@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/blockNotes.test.ts
 
 import assert from "node:assert/strict"
-import { noteParts, noteSteps } from "@/utils/blockNotes"
+import { CONSTRAINT_WORDS, noteParts, noteSteps } from "@/utils/blockNotes"
 
 const keys = (s: string) => noteParts(s).filter((p) => p.key).map((p) => p.text)
 
@@ -27,5 +27,19 @@ assert.deepEqual(keys("5 slow moves"), ["5"])
 // Parts rebuild the original text.
 const s = "Rest 3 min, then 2 x 5 reps."
 assert.equal(noteParts(s).map((p) => p.text).join(""), s)
+
+// *Stars* mark highlights (markers removed), in any block.
+assert.deepEqual(noteParts("Keep *hips close* and **breathe**"), [
+  { text: "Keep ", key: false }, { text: "hips close", key: true }, { text: " and ", key: false }, { text: "breathe", key: true },
+])
+assert.deepEqual(noteSteps("Climb easy. *Only* one hand."), ["Climb easy.", "*Only* one hand."])
+// Constraint rule words: whole words, any case, longest first.
+const cw = (s: string) => noteParts(s, CONSTRAINT_WORDS).filter((p) => p.key).map((p) => p.text)
+assert.deepEqual(cw("Use only one hand on each hold"), ["only", "one hand"])
+assert.deepEqual(cw("Place your feet silently, no re-adjusting"), ["feet", "silently", "no"])
+assert.deepEqual(cw("Nothing known here; another notion"), [])
+assert.deepEqual(cw("Don't match, 3 moves"), ["Don't", "3 moves"])
+// Without words, nothing but numbers.
+assert.deepEqual(keys("Use only one hand"), [])
 
 console.log("blockNotes: ok")
