@@ -189,7 +189,7 @@ export function WorkOutState({
     return (
       <SafeAreaView style={[styles.container, styles.centeredScreen, { paddingTop: insets.top }]} edges={["bottom"]}>
         {onClose && (
-          <Pressable
+          <Pressable accessibilityRole="button" accessibilityLabel="Close"
             onPress={() => { onWorkoutEnd(); resetWorkout() }}
             style={styles.closeButton}
           >
@@ -230,7 +230,7 @@ export function WorkOutState({
         <View style={styles.progressBar}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressText}>Summary</Text>
-            <Pressable hitSlop={8} onPress={() => closeSummaryRef.current()}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={8} onPress={() => closeSummaryRef.current()}>
               <Text style={styles.exitButton}>✕</Text>
             </Pressable>
           </View>
@@ -313,16 +313,16 @@ export function WorkOutState({
             {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
             )}
-            <Pressable onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Skip block" onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
               <Text style={styles.skipBtnText}>Skip</Text>
               <Ionicons name="play-skip-forward" size={14} color={C.textSecondary} />
             </Pressable>
             {onMinimize && (
-              <Pressable onPress={onMinimize} style={styles.minimizeBtn} hitSlop={10}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Minimize workout" onPress={onMinimize} style={styles.minimizeBtn} hitSlop={10}>
                 <Ionicons name="chevron-down" size={18} color={C.textSecondary} />
               </Pressable>
             )}
-            <Pressable
+            <Pressable accessibilityRole="button" accessibilityLabel="Exit workout"
               hitSlop={8}
               onPress={() => {
                 Alert.alert(

@@ -56,7 +56,7 @@ export default function WorkoutLibraryScreen() {
     <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
       <SafeAreaView style={s.safe} edges={["top"]}>
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
             <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
           </Pressable>
           <Text style={s.title}>Workout Library</Text>

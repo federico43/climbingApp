@@ -85,7 +85,7 @@ export default function ImageCapture({ onFinish, onClose }: Props) {
       )}
 
       {/* Back button */}
-      <TouchableOpacity
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back"
         onPress={onClose}
         style={{
           position: "absolute", top: 40, left: 20,

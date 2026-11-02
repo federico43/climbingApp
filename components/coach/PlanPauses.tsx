@@ -128,7 +128,7 @@ function AddPauseModal({ visible, plan, saving, onClose, onSave }: {
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modal}>
-          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={styles.closeBtn} onPress={onClose} hitSlop={8}>
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
           <Text style={styles.title}>Pause the plan</Text>

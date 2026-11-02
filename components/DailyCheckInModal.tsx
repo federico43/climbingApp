@@ -47,7 +47,7 @@ export function DailyCheckInModal({ visible, onDone, onClose, initial }: Props) 
     <Modal visible={visible} animationType="fade" transparent>
       <View style={s.overlay}>
         <View style={s.card}>
-          <Pressable style={s.closeBtn} onPress={onClose} hitSlop={8}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={s.closeBtn} onPress={onClose} hitSlop={8}>
             <Text style={s.closeBtnText}>✕</Text>
           </Pressable>
 

@@ -722,7 +722,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
       <SafeAreaView style={styles.safe} edges={["top"]}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={styles.closeBtn} hitSlop={12}>
             <Text style={styles.closeBtnText}>‹</Text>
           </Pressable>
           <Text style={styles.headerDate}>{date ? formatDate(date) : ""}</Text>

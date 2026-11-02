@@ -375,7 +375,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
       {isWaitingForDownload ? (
         <SafeAreaView style={fb.safe} edges={["top", "bottom"]}>
           <View style={fb.header}>
-            <Pressable style={fb.closeBtn} onPress={onClose} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" style={fb.closeBtn} onPress={onClose} hitSlop={8}>
               <Text style={fb.closeBtnText}>✕</Text>
             </Pressable>
             <Text style={fb.headerTitle}>Downloading…</Text>
@@ -450,7 +450,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
           <Animated.View style={[StyleSheet.absoluteFill, styles.controls, { opacity: controlsOpacity }]} pointerEvents="box-none">
 
             <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-              <Pressable style={styles.closeButton} onPress={onClose}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" style={styles.closeButton} onPress={onClose}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </Pressable>
               {title ? <Text style={styles.videoTitle} numberOfLines={1}>{title}</Text> : null}

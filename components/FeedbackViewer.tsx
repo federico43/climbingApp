@@ -151,7 +151,7 @@ export function FeedbackViewer({ feedback, video, title, onClose }: Props) {
       <DebugLogOverlay />
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={styles.closeBtn} onPress={onClose} hitSlop={8}>
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
           <Text style={styles.headerTitle} numberOfLines={1}>{title ?? "Coach feedback"}</Text>

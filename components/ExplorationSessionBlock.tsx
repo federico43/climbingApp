@@ -284,7 +284,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
     <View style={shared_styles.screen}>
       {/* Active phase top bar — same visual style as TopBar */}
       <View style={topBar_styles.bar}>
-        <Pressable
+        <Pressable accessibilityRole="button" accessibilityLabel="Back"
           onPress={() => { stopTimer(); setPhase("intro") }}
           style={{ width: 40, justifyContent: "center" }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -386,7 +386,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
                   <Text style={styles.climbScore}>
                     +{c.levelDifficulty % 1 === 0 ? c.levelDifficulty : c.levelDifficulty.toFixed(1)}
                   </Text>
-                  <Pressable onPress={() => removeClimb(c.id)} hitSlop={10} style={styles.deleteBtn}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Delete" onPress={() => removeClimb(c.id)} hitSlop={10} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>✕</Text>
                   </Pressable>
                 </View>

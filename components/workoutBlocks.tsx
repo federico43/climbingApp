@@ -454,7 +454,7 @@ export function BlockPickerModal({
         {embedded ? (
           <View style={styles.iconBackBtn} />
         ) : (
-          <Pressable onPress={onClose} style={styles.iconBackBtn} hitSlop={10}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={styles.iconBackBtn} hitSlop={10}>
             <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
           </Pressable>
         )}
@@ -726,7 +726,7 @@ function NewBlockForm({ type, onBack, onSave, allowSaveToLibrary = true }: {
 
   return (
     <View style={{ gap: 8 }}>
-      <Pressable onPress={onBack} style={[styles.iconBackBtn, { marginBottom: 8 }]} hitSlop={10}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={[styles.iconBackBtn, { marginBottom: 8 }]} hitSlop={10}>
         <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
       </Pressable>
 
@@ -2480,7 +2480,7 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
           )}
           {exercise.loadMode === "level" && <Text style={styles.exerciseTypeTag}>Level progression</Text>}
         </View>
-        <Pressable onPress={onDelete} hitSlop={6}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Delete" onPress={onDelete} hitSlop={6}><Text style={styles.deleteButtonText}>✕</Text></Pressable>
       </View>
 
       {!!athleteProgress && (
@@ -3084,7 +3084,7 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   return (
     <SafeAreaView style={styles.safeContainer}>
       <View style={styles.modalHeader}>
-        <Pressable onPress={onClose} style={styles.iconBackBtn} hitSlop={10}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onClose} style={styles.iconBackBtn} hitSlop={10}>
           <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
         </Pressable>
         <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>Select route</Text>

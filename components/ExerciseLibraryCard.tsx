@@ -117,7 +117,7 @@ export function ExerciseLibraryCard({ exercise, onPress, onDelete, onEditingChan
       )}
 
       {onDelete && (
-        <Pressable onPress={onDelete} style={styles.deleteBtn} hitSlop={8}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Delete" onPress={onDelete} style={styles.deleteBtn} hitSlop={8}>
           <Text style={styles.deleteBtnText}>✕</Text>
         </Pressable>
       )}

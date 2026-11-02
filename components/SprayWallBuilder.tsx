@@ -612,7 +612,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
         {/* Left: back + undo + redo */}
         <View style={styles.topBarLeft}>
           {onBack && (
-            <Pressable onPress={onBack} hitSlop={10} style={styles.topBarIconBtn}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} hitSlop={10} style={styles.topBarIconBtn}>
               <Text style={styles.topBarBack}>←</Text>
             </Pressable>
           )}

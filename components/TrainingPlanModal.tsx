@@ -184,7 +184,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.card}>
-          <Pressable style={s.closeBtn} onPress={onClose} hitSlop={8}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={s.closeBtn} onPress={onClose} hitSlop={8}>
             <Text style={s.closeBtnText}>✕</Text>
           </Pressable>
 

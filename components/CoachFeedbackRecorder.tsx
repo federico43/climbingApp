@@ -733,7 +733,7 @@ export function CoachFeedbackRecorder({ player, video, positionMs, durationMs, o
 
       <SafeAreaView style={styles.chrome} edges={["top", "bottom"]} pointerEvents="box-none">
         <View style={styles.header} pointerEvents="box-none">
-          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={styles.closeBtn} onPress={onClose} hitSlop={8}>
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
