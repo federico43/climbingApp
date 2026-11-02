@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
@@ -164,7 +165,7 @@ export function FourByFourBlock({
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={styles.content}>
-          {!!block.description && <Text style={styles.desc}>{block.description}</Text>}
+          <BlockNotes text={block.description} />
           {showIntro && <Text style={styles.intro}>{introLine}</Text>}
 
           <View style={styles.statsCard}>
@@ -351,7 +352,6 @@ function SetDots({ done, total }: { done: number; total: number }) {
 
 const styles = StyleSheet.create({
   content: { padding: 20, gap: 16, paddingBottom: 8 },
-  desc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
 
   statsCard: {
     flexDirection: "row", backgroundColor: C.surface, borderRadius: 16,

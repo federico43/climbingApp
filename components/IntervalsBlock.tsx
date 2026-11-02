@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
@@ -10,7 +11,7 @@ import {
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
@@ -254,13 +255,13 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
     return (
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} onBack={goToPreviousBlock} />
-        <View style={s.center}>
+        <ScrollView contentContainerStyle={s.centerScroll}>
           {/* Built from the settings actually being run (incl. a suggested
               work time), then the coach's notes, if any. */}
           {suggestionReady && (
             <Text style={shared_styles.description}>{intervalsDescription({ kind, series, workTime, restTime })}</Text>
           )}
-          {!!block.description && <Text style={shared_styles.description}>{block.description}</Text>}
+          <BlockNotes text={block.description} />
           {!suggestionReady ? <ActivityIndicator color={C.green} /> : (
             <View style={s.configBox}>
               <Text style={s.configMain}>{series} × {fmt(workTime)}</Text>
@@ -286,9 +287,9 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
               ))}
             </View>
           )}
-          <View style={{ width: "100%" }}>
-            <CustomButton title="Start" onPress={handleStart} disabled={!suggestionReady} />
-          </View>
+        </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title="Start" onPress={handleStart} disabled={!suggestionReady} />
         </View>
       </View>
     )
@@ -391,6 +392,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
 
 const s = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
+  centerScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
   configBox: { alignItems: "center", gap: 4, marginVertical: 12 },
   configMain: { fontSize: 40, fontWeight: "800", color: C.textPrimary },
   configSub: { fontSize: 14, color: C.textSecondary },

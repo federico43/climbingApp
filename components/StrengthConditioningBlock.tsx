@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
@@ -575,9 +576,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             </Text>
           </View>
 
-          {!!block.description && (
-            <Text style={styles.description}>{block.description}</Text>
-          )}
+          <BlockNotes text={block.description} />
 
           <View style={styles.exList}>
             {block.exercises.map((ex, i) => <ExerciseRow key={i} exercise={ex} />)}
@@ -2619,7 +2618,6 @@ const styles = StyleSheet.create({
   hero: { marginTop: -20, marginHorizontal: -20, marginBottom: -8, height: 240 },
   heroImg: { width: "100%", height: "100%" },
   heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 110 },
-  description: { fontSize: 15, color: C.textSecondary, lineHeight: 22 },
 
   // Shared type scale / layout with Home & Plan (LatestWorkoutCard)
   screenContent: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 24, gap: 16 },

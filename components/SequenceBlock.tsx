@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
@@ -458,9 +459,7 @@ export function SequenceBlock({
             />
           </View>
 
-          {!!block.description && (
-            <Text style={styles.infoCardDesc}>{block.description}</Text>
-          )}
+          <BlockNotes text={block.description} />
 
           {/* Progression suggestion — stays until the athlete chooses the
               authored route instead (same persistent pattern as S&C). */}
@@ -843,7 +842,6 @@ export function SequenceBlock({
 const styles = StyleSheet.create({
   // ── Intro
   introContent: { padding: 20, gap: 16, paddingBottom: 8 },
-  infoCardDesc: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   // Full-bleed hero: negative margins cancel the introContent padding so the
   // image runs edge-to-edge. Capped height + cover crops it (keeps proportions
   // without dominating the screen).

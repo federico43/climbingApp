@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
@@ -108,13 +109,13 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           contentContainerStyle={shared_styles.introContent}
           showsVerticalScrollIndicator={false}
         >
-          {!!block.description && (
-            <Text style={shared_styles.description}>{block.description}</Text>
-          )}
+          <BlockNotes text={block.description} />
+        </ScrollView>
+        <View style={shared_styles.footer}>
           <Pressable style={styles.startBtn} onPress={start}>
             <Text style={styles.startBtnText}>Start</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </View>
     )
   }
@@ -131,9 +132,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
     return (
       <View style={shared_styles.screen}>
         <TopBar title={block.blockName} />
-        {!!block.description && (
-          <Text style={styles.runningDescription}>{block.description}</Text>
-        )}
+        <BlockNotes text={block.description} compact />
         {hasRoute && (
           <View style={styles.wallWrap}>
             <SprayWallViewer
@@ -229,15 +228,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: C.textPrimary,
     textAlignVertical: "top",
-  },
-
-  // Running — description
-  runningDescription: {
-    fontSize: 14,
-    color: C.textMuted,
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 4,
   },
 
   // Attached-sequence viewer (running)

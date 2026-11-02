@@ -74,6 +74,8 @@ export const shared_styles = StyleSheet.create({
     padding: 24,
     gap: 20,
   },
+  // Start button pinned under a scrolling intro: always visible.
+  footer: { backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36 },
   // centered non-scroll content (ready / active phases)
   container: {
     flex: 1,

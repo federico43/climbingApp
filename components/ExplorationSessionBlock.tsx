@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import { account } from "@/components/AppWrite"
 import { getBoulderLevels, logRecord } from "@/services/BoulderGraphService"
@@ -207,19 +208,21 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <Text style={shared_styles.description}>{description}</Text>
+          <BlockNotes text={description} title={block?.description?.trim() ? "Coach notes" : "How it works"} />
           {(block?.timeLimit ?? 0) > 0 && (
             <View style={styles.timeLimitPill}>
               <Text style={styles.timeLimitText}>⏱ {block.timeLimit} min timer</Text>
             </View>
           )}
+        </ScrollView>
+        <View style={shared_styles.footer}>
           <Pressable
             style={styles.startButton}
             onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }}
           >
             <Text style={styles.startButtonText}>Start</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </View>
     )
   }
