@@ -4,22 +4,23 @@ import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import {
-  AddClassProblem, BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  addClassProblem, dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
+  BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, publishWeek, removeNextClass, unblock,
-  unblockDay, useClassSchedule, type ClassRequest, type Slot,
+  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-const PROBLEM: Record<AddClassProblem, string> = {
+const PROBLEM: Record<PlanProblem, string> = {
+  past: "That time has already gone by",
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
   bigDays: `Only ${MAX_BIG_DAYS} days a week can have ${MAX_CLASSES_PER_DAY} classes`,
   overlap: "Overlaps another class",
@@ -40,14 +41,17 @@ type SheetState =
 
 // Coach tab: this week as it stands (who's in each class, read only), and
 // next week to plan (2 classes a day, 3 on up to 2 days), block the times you
-// can't teach, answer athletes' requests, add packages. Next week is a draft
-// on the phone until it's published.
+// can't teach, answer athletes' requests, add packages. A planned week is a
+// draft on the phone until it's published. If this week wasn't published in
+// time, it can still be planned and published (from now on).
 export default function ClassesScreen() {
   const st = useClassSchedule()
   useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
   // Next week from Saturday, when the coach is reminded to plan it.
   const [week, setWeek] = useState<"this" | "next">(() => (weekdayOf(new Date()) >= 5 ? "next" : "this"))
-  const live = week === "this"
+  useEffect(() => { planWeek(week) }, [week])
+  // This week is read only once it's published.
+  const live = week === "this" && !st.thisOpen
   const weekStart = live ? st.thisWeek.weekStart : st.nextWeekStart
   const classes = live ? st.thisWeek.classes : st.nextClasses
   const blocks = live ? st.thisWeek.blocks : st.blocks
@@ -128,7 +132,7 @@ export default function ClassesScreen() {
   }
 
   const slot = sheet?.kind === "slot" ? sheet : null
-  const slotProblem = slot ? addClassProblem(st.nextClasses, st.blocks, slot.day, slot.start) : null
+  const slotProblem = slot ? planProblem(st.nextClasses, slot.day, slot.start) : null
   // A class already sits in (part of) this time: remove it before blocking.
   const slotHasClass = !!slot && st.nextClasses.some((c) => c.day === slot.day && c.start < slot.start + CLASS_HOURS && slot.start < c.start + CLASS_HOURS)
   const dayS = sheet?.kind === "day" ? sheet : null
@@ -174,7 +178,9 @@ export default function ClassesScreen() {
             </View>
             <Text style={s.subtitle}>
               {range} · {live
-                ? (st.thisWeek.published ? "who's in each class" : "not published")
+                ? "who's in each class"
+                : week === "this" && !st.published
+                ? "not published yet · plan it now"
                 : `${CLASSES_PER_DAY} classes a day, ${MAX_CLASSES_PER_DAY} on up to ${MAX_BIG_DAYS} days`}
             </Text>
           </View>
@@ -197,8 +203,8 @@ export default function ClassesScreen() {
         </View>
         <WeekGrid
           dates={dates}
-          today={live ? weekdayOf(new Date()) : -1}
-          dimPast={live}
+          today={week === "this" ? weekdayOf(new Date()) : -1}
+          dimPast={week === "this"}
           offDays={DAYS.filter(dayBlocked)}
           onPressDay={live ? undefined : (day) => setSheet({ kind: "day", day })}
           onPressTime={live ? undefined : (day, y) => {
@@ -211,7 +217,7 @@ export default function ClassesScreen() {
         {!live && (
           <View style={s.footer}>
             <SheetButton
-              label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : "Publish week"}
+              label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : week === "this" ? "Publish this week" : "Publish week"}
               disabled={st.published || st.busy || st.status !== "ready"}
               onPress={publishWeek}
             />

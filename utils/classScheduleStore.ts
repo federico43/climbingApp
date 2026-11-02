@@ -12,8 +12,9 @@ import { Alert } from "react-native"
 // The class screens' state (athlete week, Plan card, coach planner), loaded
 // from Appwrite and shared so they stay in step. Changes go through the
 // server (services/classSchedule.ts) and the state is reloaded after each
-// one. The coach's plan for next week is a draft on the phone until they
-// publish it.
+// one. The coach's plan for a week is a draft on the phone until they
+// publish it: next week, and this week too while it isn't published (a coach
+// who missed Sunday can still publish it mid-week).
 
 // A time on the week grid.
 export interface Slot { day: number; start: number }
@@ -56,7 +57,10 @@ interface State {
   shownNext: boolean
   defaults: string[]               // usual classes, "day@start"
   pkg: PackageInfo | null
-  // Coach: next week as drafted on the phone
+  // Coach: the week being planned (next week, or this week while it's
+  // unpublished; see planWeek) as drafted on the phone
+  planning: "this" | "next"
+  thisOpen: boolean                // this week isn't published, so the coach can still plan it
   nextWeekStart: string
   nextClasses: GymClass[]          // rosters as names
   blocks: BlockedTime[]
@@ -71,7 +75,7 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
   thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, defaults: [], pkg: null,
-  nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
+  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
 }
 const listeners = new Set<() => void>()
 
@@ -95,47 +99,70 @@ interface Draft {
   dirty: boolean
   removed: Set<string>
 }
-let draft: Draft | null = null
+// One draft per week (this week's only while it's unpublished), so switching
+// tabs keeps the edits.
+let drafts: Record<string, Draft> = {}
 let nextId = 1
-let server: { next: ClassWeek | null } = { next: null }
+let server: { this: ClassWeek | null; next: ClassWeek | null } = { this: null, next: null }
 
-// Start the draft from next week as saved, or from this week's times (no
-// rosters) when next week is still empty. A changed draft keeps the coach's
-// edits and picks up classes the server added (an accepted new time).
-function syncDraft(thisWeek: ClassWeek, nextWeek: ClassWeek) {
-  if (!draft || draft.weekStart !== nextWeek.weekStart || !draft.dirty) {
-    const fresh = nextWeek.classes.length || nextWeek.published
-    draft = {
-      weekStart: nextWeek.weekStart,
+// A class (or new time) this week that has already started.
+const started = (weekStart: string, c: Slot, now = new Date()) => classDate(weekStart, c).getTime() <= now.getTime()
+
+// Start a week's draft from the week as saved, or from the seed week's times
+// (no rosters) when it's still empty, leaving out times already gone. A
+// changed draft keeps the coach's edits and picks up classes the server added
+// (an accepted new time).
+function syncDraft(week: ClassWeek, seed: ClassWeek | null) {
+  const draft = drafts[week.weekStart]
+  if (!draft || !draft.dirty) {
+    const fresh = week.classes.length || week.published
+    const seeded = (seed?.classes ?? []).filter((c) => !started(week.weekStart, c))
+    drafts[week.weekStart] = {
+      weekStart: week.weekStart,
       classes: fresh
-        ? nextWeek.classes.map(({ id, day, start }) => ({ id, day, start }))
-        : thisWeek.classes.map(({ day, start }) => ({ id: `new${nextId++}`, day, start })),
-      blocks: fresh ? nextWeek.blocks : thisWeek.blocks.map((b) => ({ ...b })),
-      dirty: !fresh && thisWeek.classes.length > 0,
+        ? week.classes.map(({ id, day, start }) => ({ id, day, start }))
+        : seeded.map(({ day, start }) => ({ id: `new${nextId++}`, day, start })),
+      blocks: fresh ? week.blocks : (seed?.blocks ?? []).map((b) => ({ ...b })),
+      dirty: !fresh && seeded.length > 0,
       removed: new Set(),
     }
     return
   }
-  for (const c of nextWeek.classes) {
+  for (const c of week.classes) {
     if (!draft.removed.has(c.id) && !draft.classes.some((d) => d.id === c.id)) draft.classes.push({ id: c.id, day: c.day, start: c.start })
   }
 }
 
+const planned = () => (state.planning === "this" && state.thisOpen ? server.this : server.next)
+const currentDraft = (): Draft | null => {
+  const w = planned()
+  return w ? drafts[w.weekStart] ?? null : null
+}
+
 function draftPatch(): Partial<State> {
+  const draft = currentDraft()
   if (!draft) return {}
-  const rosters = new Map((server.next?.classes ?? []).map((c) => [c.id, c.roster]))
+  const week = planned()
+  const rosters = new Map((week?.classes ?? []).map((c) => [c.id, c.roster]))
   return {
     nextWeekStart: draft.weekStart,
     nextClasses: draft.classes.map((c) => ({ ...c, roster: (rosters.get(c.id) ?? []).map((u) => state.names[u] ?? "athlete") })),
     blocks: draft.blocks,
-    published: !!server.next?.published && !draft.dirty,
+    published: !!week?.published && !draft.dirty,
   }
 }
 
 function editDraft(fn: (d: Draft) => void) {
+  const draft = currentDraft()
   if (!draft) return
   fn(draft)
   draft.dirty = true
+  set(draftPatch())
+}
+
+// Which week the coach's planner edits: this week only while it's unpublished.
+export function planWeek(which: "this" | "next") {
+  set({ planning: which })
   set(draftPatch())
 }
 
@@ -176,11 +203,15 @@ async function load() {
   const next = mondayOf(now)
   next.setDate(next.getDate() + 7)
   const nextStart = ymd(next)
+  const last = mondayOf(now)
+  last.setDate(last.getDate() - 7)
   if (state.status !== "ready") set({ status: "loading" })
   try {
-    const [thisWeek, nextWeek, users, requests] = await Promise.all([
+    const [thisWeek, nextWeek, lastWeek, users, requests] = await Promise.all([
       api.loadWeek(thisStart),
       api.loadWeek(nextStart),
+      // Seeds this week's plan when the coach didn't publish it in time.
+      coach ? api.loadWeek(ymd(last)) : Promise.resolve(null),
       api.loadUsers(),
       api.loadRequests([thisStart, nextStart], coach ? undefined : me),
     ])
@@ -190,8 +221,14 @@ async function load() {
       coach ? Promise.resolve(null) : packageInfo(me, now),
       coach ? api.loadPackages() : Promise.resolve([]),
     ])
-    server = { next: nextWeek }
-    if (coach) syncDraft(thisWeek, nextWeek)
+    server = { this: thisWeek, next: nextWeek }
+    const thisOpen = coach && !thisWeek.published
+    if (coach) {
+      for (const k of Object.keys(drafts)) if (k !== thisStart && k !== nextStart) delete drafts[k]
+      if (thisOpen) syncDraft(thisWeek, lastWeek)
+      else delete drafts[thisStart]
+      syncDraft(nextWeek, thisWeek.classes.length ? thisWeek : lastWeek)
+    }
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
@@ -200,7 +237,7 @@ async function load() {
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,
-      shownNext,
+      shownNext, thisOpen,
     })
     set(draftPatch())
   } catch (e: any) {
@@ -222,7 +259,7 @@ export function useClassSchedule(): State {
     const coach = role === "coach"
     if (who?.me === me && who.coach === coach) return
     who = { me, coach }
-    draft = null
+    drafts = {}
     refreshClassSchedule()
   }, [me, role])
   return useSyncExternalStore(subscribe, get, get)
@@ -277,7 +314,7 @@ export function saveUsualClasses(slots: string[]): Promise<boolean> {
 
 // Requests waiting for the coach, both weeks.
 export function pendingRequests(s: State): ClassRequest[] {
-  const all = [...s.thisWeek.classes, ...(server.next?.classes ?? [])]
+  const all = [...(server.this?.classes ?? []), ...(server.next?.classes ?? [])]
   const byId = (id?: string | null) => all.find((c) => c.id === id)
   const out: ClassRequest[] = []
   for (const r of s.requests) {
@@ -299,15 +336,23 @@ export function answerRequest(req: ClassRequest, accept: boolean): Promise<boole
   return run(() => api.answerRequest(req.key, accept))
 }
 
+// Why a time can't take a class in the week being planned: the rules, or
+// (this week) it has already gone by.
+export type PlanProblem = AddClassProblem | "past"
+export function planProblem(classes: GymClass[], day: number, start: number): PlanProblem | null {
+  if (state.planning === "this" && state.thisOpen && started(state.nextWeekStart, { day, start })) return "past"
+  return addClassProblem(classes, state.blocks, day, start)
+}
+
 export function addNextClass(day: number, start: number) {
   editDraft((d) => { d.classes.push({ id: `new${nextId++}`, day, start }) })
 }
 
 // Drag a class or a blocked time to another day or time. Returns why it
 // can't go there, or null once it's moved.
-export function moveNextClass(id: string, day: number, start: number): AddClassProblem | null {
+export function moveNextClass(id: string, day: number, start: number): PlanProblem | null {
   const others = state.nextClasses.filter((c) => c.id !== id)
-  const problem = addClassProblem(others, state.blocks, day, start)
+  const problem = planProblem(others, day, start)
   if (problem) return problem
   editDraft((d) => { d.classes = d.classes.map((c) => (c.id === id ? { ...c, day, start } : c)) })
   return null
@@ -357,13 +402,16 @@ export function unblockDay(day: number) {
 }
 
 export async function publishWeek(): Promise<boolean> {
-  const d = draft
+  const d = currentDraft()
   if (!d) return false
-  const classes = d.classes.map((c) => (c.id.startsWith("new") ? { day: c.day, start: c.start } : c))
+  // This week: a class already gone by isn't published (it would sit empty).
+  const classes = d.classes
+    .filter((c) => !c.id.startsWith("new") || !started(d.weekStart, c))
+    .map((c) => (c.id.startsWith("new") ? { day: c.day, start: c.start } : c))
   const saved = await run(async () => {
     await api.publishWeek(d.weekStart, classes, d.blocks)
     d.dirty = false
-    draft = null
+    delete drafts[d.weekStart]
   })
   return saved
 }
