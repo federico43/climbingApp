@@ -91,8 +91,55 @@ assert.deepEqual(warmupSessions(parsed, "2026-10-01", "2026-10-31"), [{ label: "
 const pats = scPatternStats(parsed, library, "2026-10-01", "2026-10-31")
 assert.deepEqual(pats.map((p) => p.pattern), ["pull_vertical", "push"])   // mobility left out
 assert.deepEqual(pats[0].exercises[0].byFocus.max_force, [{ label: "Oct 6", value: 10 }, { label: "Oct 20", value: 12.5 }])
-assert.equal(pats[1].exercises[0].unit, "level")
-assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 1 }, { label: "Oct 20", value: 2 }])
+// A level exercise is charted per step done, in reps.
+assert.deepEqual(pats[1].exercises.map((e) => [e.name, e.unit]), [["Knee push-up", "reps"], ["Push-up", "reps"]])
+assert.deepEqual(pats[1].exercises[0].byFocus.hypertrophy, [{ label: "Oct 6", value: 12 }])
+assert.deepEqual(pats[1].exercises[1].byFocus.hypertrophy, [{ label: "Oct 20", value: 10 }])
+
+// A level exercise logged at its own step, and a workout programmed one step
+// up where the athlete dropped back down: the sets count for the step done
+// (the library row's `levels` is only its harder tail).
+{
+  const ladderLib = [
+    { $id: "ba", name: "Band assisted pull-up", movementType: "pull_vertical", loadMode: "level" as const,
+      levels: [{ exerciseId: "neg", name: "Negative pull-up" }, { exerciseId: "pu1", name: "Pull-up" }] },
+    { $id: "neg", name: "Negative pull-up", movementType: "pull_vertical", loadMode: "level" as const, levels: [{ exerciseId: "pu1", name: "Pull-up" }] },
+  ]
+  const block = (exerciseId: string, name: string, levels: any[]) =>
+    ({ type: "strength_conditioning", exercises: [{ name, exerciseId, movementType: "pull_vertical", focus: "hypertrophy", levels }] })
+  const round = (date: string, exerciseId: string, name: string) =>
+    ({ blockIndex: 0, type: "strength_conditioning", timestamp: ts(date), scData: { exerciseId, exerciseName: name, round: 1, repsCompleted: 7 } })
+  const ladderSessions = parseSessions([
+    session("2026-10-19", [block("ba", "Band assisted pull-up", ladderLib[0].levels)], [round("2026-10-19", "ba", "Band assisted pull-up")]),
+    session("2026-10-29", [block("neg", "Negative pull-up", ladderLib[1].levels)], [round("2026-10-29", "ba", "Band assisted pull-up")]),
+    session("2026-10-30", [block("neg", "Negative pull-up", ladderLib[1].levels)], [round("2026-10-30", "neg", "Negative pull-up")]),
+  ] as any)
+  const pull = scPatternStats(ladderSessions, ladderLib, "2026-10-01", "2026-10-31")
+  assert.equal(pull.length, 1)
+  // One line per step actually done, whatever step was programmed.
+  assert.deepEqual(pull[0].exercises.map((e) => [e.name, e.unit]), [["Band assisted pull-up", "reps"], ["Negative pull-up", "reps"]])
+  assert.deepEqual(pull[0].exercises[0].byFocus.hypertrophy, [{ label: "Oct 19", value: 7 }, { label: "Oct 29", value: 7 }])
+  assert.deepEqual(pull[0].exercises[1].byFocus.hypertrophy, [{ label: "Oct 30", value: 7 }])
+}
+
+// A set swapped mid-workout counts for the exercise picked, at the focus of
+// the one it replaced.
+{
+  const swapLib = [
+    { $id: "row", name: "Ring row", movementType: "pull_horizontal" },
+    { $id: "bp", name: "Bench press", movementType: "push" },
+  ]
+  const swapSessions = parseSessions([
+    session("2026-10-15", [{ type: "strength_conditioning", exercises: [{ name: "Bench press", exerciseId: "bp", focus: "max_force" }] }], [
+      { blockIndex: 0, type: "strength_conditioning", timestamp: ts("2026-10-15"),
+        scData: { exerciseId: "row", exerciseName: "Ring row", round: 1, weight: 10, repsCompleted: 6, swappedFrom: { exerciseId: "bp", exerciseName: "Bench press" } } },
+    ]),
+  ] as any)
+  const sw = scPatternStats(swapSessions, swapLib, "2026-10-01", "2026-10-31")
+  assert.deepEqual(sw.map((p) => p.pattern), ["pull_horizontal"])
+  assert.equal(sw[0].exercises[0].name, "Ring row")
+  assert.deepEqual(sw[0].exercises[0].byFocus.max_force, [{ label: "Oct 15", value: 10 }])
+}
 
 const workouts = [{ $id: "w1", $createdAt: new Date(ts("2026-10-04")).toISOString(), blocks: "[]", planIndex: 1 }]
 const linked = sessions.map((s, i) => (i === 0 ? { ...s, protocolId: "w1" } : s))
@@ -107,9 +154,8 @@ assert.equal(metric("workouts").planned, 4)   // W3 still running: not missed ye
 // ─── review ───
 const review = blockReview(block)
 assert.equal(review.worse, 0)
-assert.ok(review.better >= 5)   // edge lift, 4×4, intervals, pull-up, push-up ladder, 1 on 1 off
+assert.ok(review.better >= 4)   // edge lift, 4×4, intervals, pull-up, 1 on 1 off
 assert.equal(review.rows.find((r) => r.id === "warmup")?.change.delta, "▲ 2 min")
-assert.equal(review.rows.find((r) => r.name === "Push-up ladder")?.change.delta, "▲ 1 level")
 assert.equal(review.workouts?.value, "1 / 4")
 assert.equal(review.projectsSent, 1)
 
