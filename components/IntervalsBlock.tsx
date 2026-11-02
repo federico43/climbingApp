@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
@@ -260,7 +261,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
           {suggestionReady && (
             <Text style={shared_styles.description}>{intervalsDescription({ kind, series, workTime, restTime })}</Text>
           )}
-          {!!block.description && <Text style={shared_styles.description}>{block.description}</Text>}
+          <BlockNotes text={block.description} />
           {!suggestionReady ? <ActivityIndicator color={C.green} /> : (
             <View style={s.configBox}>
               <Text style={s.configMain}>{series} × {fmt(workTime)}</Text>

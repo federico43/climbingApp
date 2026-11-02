@@ -1,3 +1,4 @@
+import { BlockNotes } from "@/components/BlockNotes"
 import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
@@ -230,7 +231,7 @@ export function ProjectBoulderingBlock({
             <View style={s.infoPill}><Text style={s.infoPillText}>⏱ {settings.timeLimit} min</Text></View>
             <View style={s.infoPill}><Text style={s.infoPillText}>{clock(settings.restTime)} rest</Text></View>
           </View>
-          {!!block.description && <Text style={shared_styles.description}>{block.description}</Text>}
+          <BlockNotes text={block.description} />
           <Text style={s.hint}>
             Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
           </Text>
