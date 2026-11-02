@@ -1,6 +1,6 @@
 import { C } from "@/utils/theme";
 import { spacing } from '@/theme/spacing';
-import { StyleSheet, Pressable,Text } from "react-native";
+import { ActivityIndicator, StyleSheet, Pressable, Text } from "react-native";
 
 const styles = StyleSheet.create({
   base: {
@@ -42,23 +42,32 @@ type Props = {
   mode?: "contained" | "text";
   disabled?: boolean;
   fontSize?: number
+  /** Shows a spinner in place of the title and blocks taps. */
+  loading?: boolean
 };
 
 //add the functionality 
 export default function CustomButton({ title, onPress, mode = "contained",
-  disabled = false, fontSize = 16 }: Props) {
+  disabled = false, fontSize = 16, loading = false }: Props) {
+  const blocked = disabled || loading
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={blocked}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: blocked, busy: loading }}
       style={({ pressed }) => [
         styles.base,
         mode === "contained" && styles.contained,
         mode === "text" && styles.textMode,
-        pressed && !disabled && { opacity: 0.7 },
+        pressed && !blocked && { opacity: 0.7 },
         disabled && styles.disabled,
       ]}
     >
+      {loading ? (
+        <ActivityIndicator color={mode === "contained" ? C.bg : C.green} />
+      ) : (
       <Text
         style={[
           styles.text,
@@ -68,6 +77,7 @@ export default function CustomButton({ title, onPress, mode = "contained",
       >
         {title}
       </Text>
+      )}
     </Pressable>
   );
 }

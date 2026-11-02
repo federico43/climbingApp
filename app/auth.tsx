@@ -1,11 +1,11 @@
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native'
+import { Text, StyleSheet, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import CustomButton from '@/components/customButton'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { APPWRITE_ENDPOINT } from '@/components/AppWrite'
 import { canReachServer, OFFLINE_MESSAGE } from '@/utils/network'
 import CustomTextInput from '@/components/customTextInput'
-import { colors, MainStyles } from '@/theme/colors'
+import { MainStyles } from '@/theme/colors'
 import { C } from '@/utils/theme'
 import { ConsumeAuth } from '@/components/auth-context'
 import { useRouter } from 'expo-router'
@@ -83,7 +83,7 @@ export default function AuthScreen() {
     <View style={styles.offline}>
       <Ionicons name="cloud-offline-outline" size={22} color={C.textPrimary} />
       <Text style={styles.offlineText}>{OFFLINE_MESSAGE}</Text>
-      <Pressable onPress={retry} disabled={checking} style={styles.retryBtn} hitSlop={6}>
+      <Pressable onPress={retry} disabled={checking} style={styles.retryBtn} hitSlop={6} accessibilityRole="button" accessibilityLabel="Retry connection">
         {checking ? <ActivityIndicator size="small" color={C.bg} /> : <Text style={styles.retryText}>Retry</Text>}
       </Pressable>
     </View>
@@ -91,10 +91,35 @@ export default function AuthScreen() {
   // The offline banner already says it; other errors show as before.
   const errorText = error && !(offline && errorKind === "network") ? error : null
 
+  // Keeps the fields above the keyboard on small phones; taps on buttons
+  // still land while the keyboard is up.
+  const screen = (children: React.ReactNode) => (
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        {children}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  )
+
+  const emailInput = (
+    <CustomTextInput
+      placeHolder="Email"
+      value={email}
+      onChangeText={setEmail}
+      keyboardType="email-address"
+      autoCapitalize="none"
+      autoCorrect={false}
+      autoComplete="email"
+      textContentType="emailAddress"
+      returnKeyType={mode === "forgot" ? "send" : "next"}
+      onSubmitEditing={mode === "forgot" ? handleSubmit : undefined}
+    />
+  )
+
   // ── Forgot password screens ────────────────────────────────────────────────
   if (mode === "forgot") {
-    return (
-      <View style={styles.container}>
+    return screen(
+      <>
         <Text style={MainStyles.ScreenTitle}>Reset password</Text>
 
         {recoverySent ? (
@@ -110,19 +135,19 @@ export default function AuthScreen() {
               Enter the email address for your account and we&apos;ll send you a link to reset your password.
             </Text>
             {offlineBanner}
-            <CustomTextInput placeHolder="email" onChangeText={setEmail} />
+            {emailInput}
             {errorText && <Text style={styles.errorText}>{errorText}</Text>}
-            <CustomButton title={loading ? "Sending…" : "Send reset link"} onPress={handleSubmit} disabled={loading} />
+            <CustomButton title="Send reset link" onPress={handleSubmit} loading={loading} />
             <CustomButton title="Back to sign in" onPress={() => setMode("signin")} mode="text" />
           </>
         )}
-      </View>
+      </>
     )
   }
 
   // ── Sign in / Sign up ──────────────────────────────────────────────────────
-  return (
-    <View style={styles.container}>
+  return screen(
+    <>
       <Text style={MainStyles.ScreenTitle}>
         {mode === "signin" ? "Welcome Back" : "Create Account"}
       </Text>
@@ -130,21 +155,40 @@ export default function AuthScreen() {
       {offlineBanner}
 
       {mode === "signup" && (
-        <CustomTextInput placeHolder="user name" onChangeText={setUserName} />
+        <CustomTextInput
+          placeHolder="Name"
+          value={userName}
+          onChangeText={setUserName}
+          autoCapitalize="words"
+          autoComplete="name"
+          textContentType="name"
+          returnKeyType="next"
+        />
       )}
-      <CustomTextInput placeHolder="email" onChangeText={setEmail} />
-      <CustomTextInput placeHolder="password" onChangeText={setPassword} secureTextEntry />
+      {emailInput}
+      <CustomTextInput
+        placeHolder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete={mode === "signup" ? "new-password" : "current-password"}
+        textContentType={mode === "signup" ? "newPassword" : "password"}
+        returnKeyType="go"
+        onSubmitEditing={handleSubmit}
+      />
 
       <CustomButton
         title={mode === "signin" ? "Sign In" : "Sign Up"}
         onPress={handleSubmit}
-        disabled={loading}
+        loading={loading}
       />
 
       {errorText && <Text style={styles.errorText}>{errorText}</Text>}
 
       {mode === "signin" && (
-        <Pressable onPress={() => setMode("forgot")} style={styles.forgotBtn}>
+        <Pressable onPress={() => setMode("forgot")} style={styles.forgotBtn} accessibilityRole="button">
           <Text style={styles.forgotText}>Forgot password?</Text>
         </Pressable>
       )}
@@ -154,13 +198,14 @@ export default function AuthScreen() {
         onPress={() => setMode(mode === "signin" ? "signup" : "signin")}
         mode="text"
       />
-    </View>
+    </>
   )
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: C.bg },
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: 20,
     gap: 4,
@@ -197,8 +242,11 @@ const styles = StyleSheet.create({
     color: C.bg,
   },
   errorText: {
-    color: colors.text,
+    color: C.red,
+    fontSize: 14,
     textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 20,
   },
   hint: {
     fontSize: 14,
