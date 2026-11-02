@@ -1,3 +1,4 @@
+import { BackButton } from "@/components/BackButton"
 import { C } from "@/utils/theme"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { ProjectPickerModal } from "@/components/ProjectPickerModal"
@@ -13,7 +14,6 @@ import {
   SessionRow,
   updateProject,
 } from "@/services/BoulderGraphService"
-import { useRouter } from "expo-router"
 import { Image as CachedImage } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
@@ -122,7 +122,6 @@ function extractSequenceRoutes(sessions: SessionRow[]): SequenceRoute[] {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PastProjects() {
-  const router = useRouter()
   const [tab, setTab] = useState<Tab>("boulders")
   const [loading, setLoading] = useState(true)
   const [projects, setProjects] = useState<ProjectRow[]>([])
@@ -158,9 +157,9 @@ export default function PastProjects() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Text style={styles.backArrow}>‹</Text>
-        </Pressable>
+        <View style={styles.backBtn}>
+          <BackButton />
+        </View>
         <Text style={styles.title}>Projects</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -409,9 +408,9 @@ function ProjectEditModal({
     <Modal visible animationType="slide" presentationStyle="formSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.backBtn} hitSlop={12}>
-            <Text style={styles.backArrow}>‹</Text>
-          </Pressable>
+          <View style={styles.backBtn}>
+            <BackButton onPress={onClose} />
+          </View>
           <Text style={styles.title}>Edit boulder</Text>
           <Pressable onPress={save} disabled={saving} hitSlop={12} style={{ width: 60 }}>
             <Text style={[styles.saveText, saving && { opacity: 0.5 }]}>
@@ -539,9 +538,9 @@ function SequenceRouteContent({
   return (
     <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.backBtn} hitSlop={12}>
-            <Text style={styles.backArrow}>‹</Text>
-          </Pressable>
+          <View style={styles.backBtn}>
+            <BackButton onPress={onClose} />
+          </View>
           <Text style={styles.title} numberOfLines={1}>{route.routeName}</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -598,7 +597,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: C.border,
   },
   backBtn: { width: 40 },
-  backArrow: { fontSize: 34, color: C.textSecondary, lineHeight: 36 },
   title: { flex: 1, fontSize: 18, fontWeight: "700", color: C.textPrimary, textAlign: "center" },
   saveText: { fontSize: 15, fontWeight: "700", color: C.green, textAlign: "right" },
 

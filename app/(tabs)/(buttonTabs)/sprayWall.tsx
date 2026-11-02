@@ -1,3 +1,4 @@
+import { BackButton } from "@/components/BackButton"
 import { C } from "@/utils/theme"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
@@ -309,11 +310,9 @@ export default function SprayWallScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
+        <BackButton onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} />
         <Text style={styles.title}>Spray Wall</Text>
-        <View style={{ width: 32 }} />
+        <View style={{ width: 36 }} />
       </View>
 
       {/* Wall chip strip */}
@@ -555,7 +554,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
   },
-  back:  { fontSize: 22, color: C.textSecondary },
   title: { fontSize: 17, fontWeight: "700", color: C.textPrimary },
 
   wallStripContainer: {

@@ -1,3 +1,4 @@
+import { BackButton } from "@/components/BackButton"
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -151,9 +152,9 @@ export default function ExercisesScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
+        <View style={styles.backBtn}>
+          <BackButton onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} />
+        </View>
         <Text style={styles.title}>Exercise Library</Text>
         {isCoach ? (
           <Pressable style={styles.newBtn} onPress={() => setShowCreate(true)}>
@@ -296,7 +297,6 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   backBtn: { width: 40 },
-  backArrow: { fontSize: 22, color: C.textSecondary },
   title: { fontSize: 18, fontWeight: "700", color: C.textPrimary },
   newBtn: {
     backgroundColor: C.green,

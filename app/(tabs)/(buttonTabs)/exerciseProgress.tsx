@@ -1,10 +1,10 @@
+import { BackButton } from "@/components/BackButton"
 import { C } from "@/utils/theme"
 import { getSessions, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -244,12 +244,9 @@ export default function ExerciseProgressScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
-          style={styles.backBtn}
-        >
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
+        <View style={styles.backBtn}>
+          <BackButton onPress={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)} />
+        </View>
         <Text style={styles.title} numberOfLines={1}>{name}</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -341,7 +338,6 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   backBtn: { width: 40 },
-  backArrow: { fontSize: 22, color: C.textSecondary },
   title: { flex: 1, fontSize: 18, fontWeight: "700", textAlign: "center", color: C.textPrimary },
   empty: {
     flex: 1,
