@@ -286,4 +286,43 @@ assert.equal(t("training_plans").get(plan.$id)!.windowEnd, addDays(week, 41))
 assert.equal(t("packages").get(pkg.$id)!.useBy, useBy)
 assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
 
+// ── Publishing this week mid-week (the coach missed Sunday) ─────────────────
+{
+  const RealDate = Date
+  const thisWeek = addDays(week, 21)
+  const [y3, m3, d3] = thisWeek.split("-").map(Number)
+  const fake = RealDate.UTC(y3, m3 - 1, d3 + 2, 12) // Wednesday 12:00
+  globalThis.Date = class extends RealDate {
+    constructor(...a: any[]) { super(...((a.length ? a : [fake]) as [])) }
+    static now() { return fake }
+  } as DateConstructor
+  try {
+    t("users").get("cami")!.defaultClasses = ["0@9.5", "3@9.5"]
+    pushes.length = 0
+    // Monday is gone: refused, nothing written
+    const late = await call("classPublish", "coach", { weekStart: thisWeek, classes: [{ day: 0, start: 9.5 }, { day: 3, start: 9.5 }] })
+    assert.equal(late.status, 409)
+    assert.ok(![...t("classes").values()].some((c) => c.weekStart === thisWeek))
+    // The rest of the week publishes, fills usual classes ahead and says "this week"
+    assert.equal((await call("classPublish", "coach", { weekStart: thisWeek, classes: [{ day: 2, start: 15 }, { day: 3, start: 9.5 }] })).status, 200)
+    const thu3 = [...t("classes").values()].find((c) => c.weekStart === thisWeek && c.day === 3)!
+    assert.ok(thu3.roster.includes("cami"))
+    assert.equal(t("class_weeks").get(thisWeek)!.published, true)
+    assert.ok(pushes.some((p) => p.to === "cami" && p.title === "This week's classes are up"))
+    // A week already over can't be published
+    assert.equal((await call("classPublish", "coach", { weekStart: addDays(thisWeek, -7), classes: [] })).status, 409)
+  } finally {
+    globalThis.Date = RealDate
+  }
+}
+
+// Monday 8:00 with this week unpublished: the coach hears they can still publish it
+{
+  const [y4, m4, d4] = addDays(week, 35).split("-").map(Number)
+  pushes.length = 0
+  const rep = await runClassCron(ctx, new Date(Date.UTC(y4, m4 - 1, d4, 8, 5)))
+  assert.equal(rep.reminded, true)
+  assert.ok(pushes.some((p) => p.to === "coach" && p.title === "This week isn't published"))
+}
+
 console.log("classes: all tests passed")
