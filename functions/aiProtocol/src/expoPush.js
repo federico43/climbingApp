@@ -61,16 +61,19 @@ async function postJson(url, payload, { fetchImpl, retryDelayMs }) {
  *   fetchImpl        for tests; defaults to global fetch.
  *   retryDelayMs     wait before the single retry (default 1000).
  *
- * Returns { sent, failed, invalidTokens }: `sent` counts tickets Expo
- * accepted, `failed` everything else (bad tokens, ticket or receipt errors,
- * request failures), `invalidTokens` the tokens that will never work again
- * (malformed or DeviceNotRegistered). Never throws.
+ * Returns { sent, failed, invalidTokens, outcomes }: `sent` counts tickets
+ * Expo accepted, `failed` everything else (bad tokens, ticket or receipt
+ * errors, request failures), `invalidTokens` the tokens that will never work
+ * again (malformed or DeviceNotRegistered), `outcomes` a Map token →
+ * { ok, error } for every token tried (for the push log). Never throws.
  */
 export async function sendExpoPush(messages, options = {}) {
   const { log, error, receiptWaitMs = 0, retryDelayMs = 1000 } = options
   const fetchImpl = options.fetchImpl ?? fetch
   const result = { sent: 0, failed: 0, invalidTokens: [] }
   const dead = new Set()
+  const outcomes = new Map() // token → { ok, error }
+  const fail = (to, code) => outcomes.set(to, { ok: false, error: String(code ?? "unknown").slice(0, 200) })
 
   // A malformed token makes Expo reject the whole request, so it never goes
   // out. The same token twice (one device on two accounts) is sent once.
@@ -81,6 +84,7 @@ export async function sendExpoPush(messages, options = {}) {
     if (!isExpoPushToken(m.to)) {
       error?.(`Expo push: skipped malformed token ${m.to.slice(0, 40)}`)
       dead.add(m.to)
+      fail(m.to, "MalformedToken")
       result.failed++
       continue
     }
@@ -96,11 +100,13 @@ export async function sendExpoPush(messages, options = {}) {
       const t = tickets[i]
       if (t?.status === "ok") {
         result.sent++
+        outcomes.set(m.to, { ok: true, error: null })
         if (typeof t.id === "string") receiptTokens.set(t.id, m.to)
         return
       }
       result.failed++
       const code = t?.details?.error
+      fail(m.to, code ?? t?.message)
       error?.(`Expo push ticket error for ${m.to}: ${code ?? "unknown"} ${t?.message ?? ""}`.trim())
       if (code === "DeviceNotRegistered") dead.add(m.to)
     })
@@ -124,12 +130,14 @@ export async function sendExpoPush(messages, options = {}) {
         if (one.status >= 200 && one.status < 300 && t) handleTickets([m], t)
         else {
           result.failed++
+          fail(m.to, `HTTP ${one.status}`)
           error?.(`Expo push send failed for ${m.to}: ${one.status} ${one.text.slice(0, 300)}`)
         }
       }
       continue
     }
     result.failed += batch.length
+    for (const m of batch) fail(m.to, r.status ? `HTTP ${r.status}` : "Network error")
     error?.(`Expo push send failed: ${r.status} ${r.text.slice(0, 300)}`)
   }
 
@@ -148,6 +156,7 @@ export async function sendExpoPush(messages, options = {}) {
         const code = rec?.details?.error
         result.sent--
         result.failed++
+        if (token) fail(token, `Receipt: ${code ?? rec?.message ?? "unknown"}`)
         error?.(`Expo push receipt error for ${token}: ${code ?? "unknown"} ${rec?.message ?? ""}`.trim())
         if (code === "DeviceNotRegistered" && token) dead.add(token)
       }
@@ -155,6 +164,7 @@ export async function sendExpoPush(messages, options = {}) {
   }
 
   result.invalidTokens = [...dead]
+  result.outcomes = outcomes
   if (result.sent > 0 || result.failed > 0) {
     log?.(`Expo push: ${result.sent} sent, ${result.failed} failed${dead.size ? `, ${dead.size} token(s) to clear` : ""}`)
   }

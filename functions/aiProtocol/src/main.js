@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
 import { handleClassAction, runClassCron } from "./classes.js"
+import { PUSH_LOG_KEEP_DAYS, PUSH_LOG_TABLE, pushLogRows, toPushLogEntry } from "./pushLog.js"
 
 // Model. Haiku is cheap and plenty for turning a sentence into a structured
 // protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
@@ -149,15 +150,21 @@ async function deleteRow(table, id, log) {
 // `to`. Users without a token are skipped. Tokens Expo says are dead
 // (DeviceNotRegistered, or malformed) are cleared from their rows so we stop
 // pushing them; the app saves a fresh one on its next launch. Pass
-// `receiptWaitMs` only from async executions (see expoPush.js). Returns how
-// many were accepted by Expo.
-async function pushToUsers(users, build, log, error, { receiptWaitMs = 0 } = {}) {
+// `receiptWaitMs` only from async executions (see expoPush.js). Every person
+// it was meant for gets a row in the push log, `source` saying what sent it.
+// Returns how many were accepted by Expo.
+async function pushToUsers(users, build, log, error, { receiptWaitMs = 0, source = null } = {}) {
   const withToken = users.filter((u) => typeof u?.pushToken === "string" && u.pushToken)
-  if (withToken.length === 0) return 0
-  const { sent, invalidTokens } = await sendExpoPush(
-    withToken.map((u) => ({ ...build(u), to: u.pushToken })),
-    { log, error, receiptWaitMs },
-  )
+  let sent = 0
+  let invalidTokens = []
+  let outcomes = new Map()
+  if (withToken.length > 0) {
+    ;({ sent, invalidTokens, outcomes } = await sendExpoPush(
+      withToken.map((u) => ({ ...build(u), to: u.pushToken })),
+      { log, error, receiptWaitMs },
+    ))
+  }
+  await writePushLog(pushLogRows(users, build, outcomes, source), log)
   for (const token of invalidTokens) {
     for (const u of withToken.filter((x) => x.pushToken === token)) {
       const cleared = await updateRow(USERS_TABLE, u.$id, { pushToken: null }, log)
@@ -166,6 +173,26 @@ async function pushToUsers(users, build, log, error, { receiptWaitMs = 0 } = {})
     }
   }
   return sent
+}
+
+// Best-effort: a missing push_log table (or any write error) is logged once
+// and never stops the push.
+async function writePushLog(rows, log) {
+  if (rows.length === 0) return
+  const first = await createRow(PUSH_LOG_TABLE, rows[0], null, log)
+  if (!first) {
+    log(`Push log: couldn't write to ${PUSH_LOG_TABLE} (table missing?), skipped ${rows.length} row(s)`)
+    return
+  }
+  await Promise.all(rows.slice(1).map((r) => createRow(PUSH_LOG_TABLE, r, null, log)))
+}
+
+// Hourly: drop push log rows older than PUSH_LOG_KEEP_DAYS (up to 500 a run).
+async function prunePushLog(log) {
+  const cutoff = new Date(Date.now() - PUSH_LOG_KEEP_DAYS * 86400000).toISOString()
+  const old = await listRows(PUSH_LOG_TABLE, [{ method: "lessThan", attribute: "$createdAt", values: [cutoff] }], log)
+  for (const r of old) await deleteRow(PUSH_LOG_TABLE, r.$id, log)
+  return old.length
 }
 
 // Async executions (nobody waits on the response) look up delivery receipts
@@ -251,8 +278,8 @@ async function isCoach(userId, log) {
   return row?.role === "coach"
 }
 
-// What classes.js needs from here.
-function classContext(log, error) {
+// What classes.js needs from here. `source` labels its pushes in the push log.
+function classContext(log, error, source) {
   return {
     db: {
       get: (table, id) => (id ? getRow(table, id, log) : null),
@@ -269,7 +296,7 @@ function classContext(log, error) {
     getUserRow: (id) => getUserRow(id, log),
     listCoachRows: () => listCoachRows(log),
     listUsers: () => listRows(USERS_TABLE, [], log),
-    push: (users, build) => pushToUsers(users, build, log, error),
+    push: (users, build) => pushToUsers(users, build, log, error, { source }),
     log, error, tz: GYM_TZ,
   }
 }
@@ -284,7 +311,8 @@ export default async ({ req, res, log, error }) => {
   }
   // ── The hourly schedule: class reminders and expired requests ───────────────
   if (req.headers["x-appwrite-trigger"] === "schedule") {
-    const report = await runClassCron(classContext(log, error))
+    const report = await runClassCron(classContext(log, error, "classCron"))
+    report.pushLogPruned = await prunePushLog(log)
     log(`Class cron: ${JSON.stringify(report)}`)
     return res.json({ ok: true, ...report }, 200)
   }
@@ -295,7 +323,8 @@ export default async ({ req, res, log, error }) => {
   // server key (Appwrite's free plan has no schedules). Execute access is
   // "users", so a call with no user behind it came with an API key.
   if (!userId && body.action === "classCron") {
-    const report = await runClassCron(classContext(log, error))
+    const report = await runClassCron(classContext(log, error, "classCron"))
+    report.pushLogPruned = await prunePushLog(log)
     log(`Class cron (GitHub): ${JSON.stringify(report)}`)
     return res.json({ ok: true, ...report }, 200)
   }
@@ -305,8 +334,20 @@ export default async ({ req, res, log, error }) => {
 
   // ── Actions: weekly classes (classes.js) ────────────────────────────────────
   if (typeof body.action === "string" && body.action.startsWith("class")) {
-    const out = await handleClassAction(body.action, userId, body, classContext(log, error))
+    const out = await handleClassAction(body.action, userId, body, classContext(log, error, body.action))
     if (out) return res.json(out.json, out.status)
+  }
+
+  // ── Action: the push log, for the coach (Settings › Notifications sent) ─────
+  // body: { userId?, problemsOnly? } → { entries } newest first, up to 300.
+  // Read through the server key: athletes can't see who got what.
+  if (body.action === "pushLog") {
+    if (!(await isCoach(userId, log))) return res.json({ error: "Only coaches can see the notification log." }, 403)
+    const queries = [{ method: "orderDesc", attribute: "$createdAt" }]
+    if (typeof body.userId === "string" && body.userId) queries.push({ method: "equal", attribute: "userId", values: [body.userId] })
+    if (body.problemsOnly === true) queries.push({ method: "notEqual", attribute: "status", values: ["sent"] })
+    const rows = await listRows(PUSH_LOG_TABLE, queries, log)
+    return res.json({ entries: rows.slice(0, 300).map(toPushLogEntry) }, 200)
   }
 
   // ── Action: notify the coach(es) that an athlete finished a workout ──────────
@@ -332,7 +373,7 @@ export default async ({ req, res, log, error }) => {
       title: "Workout completed",
       body: protocolName ? `${athleteName} finished "${protocolName}".` : `${athleteName} finished a workout.`,
       data: { type: "workout_completed", athleteId: userId },
-    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS })
+    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS, source: body.action })
     return res.json({ ok: true, notified }, 200)
   }
 
@@ -373,7 +414,7 @@ export default async ({ req, res, log, error }) => {
         ? `${clip(hw.name, 80) || "Your homework"} is now due ${clip(body.dueLabel, 40) || hw.dueBy}. Pick a day.`
         : `${clip(hw.name, 80) || "New homework"} from your coach.${due}`,
       data: { type: "homework_assigned", homeworkId: hw.$id },
-    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS })
+    }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS, source: body.action })
     return res.json({ ok: true, notified: sent }, 200)
   }
 
@@ -417,7 +458,7 @@ export default async ({ req, res, log, error }) => {
       title: body.cantAttend === true ? "Homework: can't attend" : "Homework scheduled",
       body: pushBody,
       data: { type: "homework_update", athleteId: userId, homeworkId: hw.$id },
-    }), log, error)
+    }), log, error, { source: body.action })
     return res.json({ ok: true, row: updated }, 200)
   }
 
@@ -485,7 +526,7 @@ export default async ({ req, res, log, error }) => {
       title: "Plan exercise changed",
       body: `${name} replaced ${fromName} with ${clip(to.name, 80)} for the rest of their plan.`,
       data: { type: "plan_swap", athleteId: userId, planId },
-    }), log, error)
+    }), log, error, { source: body.action })
     return res.json({ ok: true, scPatterns: nextPatterns, workoutsUpdated }, 200)
   }
 
