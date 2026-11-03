@@ -46,10 +46,10 @@ const build = (u: any) => ({ sound: "default", title: `Hi ${u.username}`, body: 
     "x".repeat(99),
   )
   assert.equal(rows.length, 2)
-  assert.equal(rows[0].title.length, 120)
-  assert.equal(rows[0].body.length, 500)
-  assert.equal(rows[0].type.length, 40)
-  assert.equal(rows[0].source.length, 40)
+  assert.equal(rows[0].title?.length, 120)
+  assert.equal(rows[0].body?.length, 500)
+  assert.equal(rows[0].type?.length, 40)
+  assert.equal(rows[0].source?.length, 40)
   assert.equal(rows[1].title, null)
   assert.equal(rows[1].status, "sent")
 }
