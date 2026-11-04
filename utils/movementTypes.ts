@@ -8,6 +8,13 @@
 // Pull is split into vertical (pull-ups, lat pulldowns) and horizontal (rows)
 // since they load climbing-relevant muscle groups differently enough to
 // matter for circuit pairing. Push is kept as one category.
+//
+// Joint patterns (wrist, elbow, shoulder, ankle) are for keeping a joint
+// strong or bringing it back after an injury (coach 2026-11-04). They're
+// ordinary movement patterns — tagged, picked and charted like any other —
+// with one rule of their own, shared with core: no explosiveness, only
+// max force ↔ hypertrophy (focusesFor in utils/scProgression.ts,
+// noPowerFocusFor in utils/planRotation.ts).
 
 export type MovementType =
   | "pull_vertical"
@@ -19,6 +26,9 @@ export type MovementType =
   | "carry_grip"
   | "rotational"
   | "wrist"
+  | "elbow"
+  | "shoulder"
+  | "ankle"
   | "mobility"
 
 export const MOVEMENT_TYPES: MovementType[] = [
@@ -31,8 +41,23 @@ export const MOVEMENT_TYPES: MovementType[] = [
   "carry_grip",
   "rotational",
   "wrist",
+  "elbow",
+  "shoulder",
+  "ankle",
   "mobility",
 ]
+
+export const JOINT_PATTERNS: MovementType[] = ["wrist", "elbow", "shoulder", "ankle"]
+
+export function isJointPattern(m?: string | null): boolean {
+  return !!m && (JOINT_PATTERNS as string[]).includes(m)
+}
+
+// Patterns that never train explosiveness: core (coach 2026-10-21) and the
+// joints (coach 2026-11-04).
+export function skipsExplosiveness(m?: string | null): boolean {
+  return m === "core" || isJointPattern(m)
+}
 
 export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
   pull_vertical:    "Pull (vertical)",
@@ -44,6 +69,9 @@ export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
   carry_grip:       "Fingers / grip",
   rotational:       "Rotational",
   wrist:            "Wrist",
+  elbow:            "Elbow",
+  shoulder:         "Shoulder",
+  ankle:            "Ankle",
   mobility:         "Mobility",
 }
 
@@ -57,5 +85,8 @@ export const MOVEMENT_TYPE_COLOR: Record<MovementType, string> = {
   carry_grip:       "#5DBDB3",  // teal
   rotational:       "#C2577A",  // wine
   wrist:            "#D68C4F",  // amber — sibling of carry/grip, distinct from it
+  elbow:            "#B88A5A",  // tan — joint sibling of wrist
+  shoulder:         "#8FA35A",  // olive — joint
+  ankle:            "#7A8FB0",  // slate blue — joint
   mobility:         "#D67AB1",  // pink — distinct from every other pattern's color
 }

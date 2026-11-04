@@ -8,16 +8,18 @@
 // source of truth for both StrengthConditioningBlock.tsx (where it reads
 // history to prefill) and any future coach-facing view of the same call.
 
+import { skipsExplosiveness } from "@/utils/movementTypes"
+
 export type Focus = "max_force" | "hypertrophy" | "explosiveness"
 export type LoadMode = "weight" | "level"
 
 export const FOCUSES: Focus[] = ["max_force", "hypertrophy", "explosiveness"]
 
 // The focuses an exercise of this movement pattern can be trained at. Core
-// never trains explosiveness — it only alternates max force and hypertrophy
-// (coach 2026-10-21).
+// and the joint patterns never train explosiveness — they only alternate max
+// force and hypertrophy (coach 2026-10-21, 2026-11-04).
 export function focusesFor(movementType?: string): Focus[] {
-  return movementType === "core" ? FOCUSES.filter((f) => f !== "explosiveness") : FOCUSES
+  return skipsExplosiveness(movementType) ? FOCUSES.filter((f) => f !== "explosiveness") : FOCUSES
 }
 
 export const FOCUS_LABEL: Record<Focus, string> = {
