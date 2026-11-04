@@ -112,6 +112,22 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Coach: notification log, to spot push bugs */}
+        {role === "coach" ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Coach</Text>
+            <View style={styles.card}>
+              <Pressable
+                style={({ pressed }) => [styles.row, styles.rowLast, pressed && { opacity: 0.6 }]}
+                onPress={() => router.push("/(tabs)/(buttonTabs)/push-log" as any)}
+              >
+                <Text style={styles.rowLabel}>Notifications sent</Text>
+                <Text style={styles.rowValue}>›</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {/* About / debug */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>About</Text>
