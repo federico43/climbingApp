@@ -363,7 +363,7 @@ function PlanBody({
         <Text style={[styles.focusName, { color: focusColor }]}>
           {plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
         </Text>
-        {plan.hasSc && plan.scPatterns.length > 0 && (
+        {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
           <ScSummary patterns={plan.scPatterns.map((p) => p.movementType)} hasMobility={plan.hasMobility} />
         )}
       </View>

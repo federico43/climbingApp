@@ -21,8 +21,10 @@ export const PLAN_FOCUS_LABEL: Record<PlanFocus, string> = {
   fear_management: "Fear management",
 }
 
-// S&C patterns per plan: exactly this many (coach 2026-10-03).
-export const SC_PATTERN_COUNT = 4
+// S&C patterns per plan: 1 to 4 (coach 2026-10-03: exactly 4; 2026-11-04:
+// at least 1). A plan with mobility can also have none — mobility only.
+export const SC_PATTERN_MAX = 4
+export const SC_PATTERN_MIN = 1
 export const EXERCISES_PER_PATTERN = 2
 
 export interface ScPattern {
@@ -98,15 +100,20 @@ export const SC_FOCUS_FOR: Record<MainType, Focus> = {
   power: "explosiveness",
 }
 
-// Core never trains explosiveness (coach 2026-10-21): it has its own cycle,
-// max force ↔ hypertrophy, whatever the day's S&C focus. It flips every
-// week, so each of the pattern's two exercises (one per workout of the week)
-// alternates max force → hypertrophy → max force … on its own.
-export const CORE_FOCUS_CYCLE: Focus[] = ["max_force", "hypertrophy"]
+// Core and the joint patterns never train explosiveness (coach 2026-10-21,
+// 2026-11-04): they have their own cycle, max force ↔ hypertrophy, whatever
+// the day's S&C focus. It flips every week, so each of the pattern's two
+// exercises (one per workout of the week) alternates max force →
+// hypertrophy → max force … on its own.
+export const NO_POWER_FOCUS_CYCLE: Focus[] = ["max_force", "hypertrophy"]
 
-export function coreFocusFor(index: number): Focus {
-  return CORE_FOCUS_CYCLE[Math.floor((index - 1) / WORKOUTS_PER_WEEK) % CORE_FOCUS_CYCLE.length]
+export function noPowerFocusFor(index: number): Focus {
+  return NO_POWER_FOCUS_CYCLE[Math.floor((index - 1) / WORKOUTS_PER_WEEK) % NO_POWER_FOCUS_CYCLE.length]
 }
+
+// Core's name for the same cycle.
+export const CORE_FOCUS_CYCLE = NO_POWER_FOCUS_CYCLE
+export const coreFocusFor = noPowerFocusFor
 
 // ─── Dates ───────────────────────────────────────────────────────────────────
 

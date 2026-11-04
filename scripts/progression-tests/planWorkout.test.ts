@@ -198,6 +198,60 @@ assert.deepEqual(focusesFor("push"), ["max_force", "hypertrophy", "explosiveness
 // no S&C
 assert.deepEqual(buildScBlocks({ ...plan, hasSc: false }, spec(1), exercises, []).blocks, [])
 
+// ── fewer patterns (coach 2026-11-04) ──
+// one pattern: both picks every workout, by sets — each in its own block,
+// this workout's pick first
+const onePlan: PlanShape = { ...plan, scPatterns: [{ movementType: "push", exerciseIds: ["p1", "p2"] }] }
+sc = buildScBlocks(onePlan, workoutSpec(onePlan, 1, [], start), exercises, [])
+assert.deepEqual(sc.blocks.map((b) => [b.blockName, names(b)]), [
+  ["S&C 1", ["Push-ups", "Cosack Squat"]], ["S&C 2", ["Bench press", "Deep Squat"]], ["Mobility", ["Frogs", "kneeling lunge stretch"]],
+])
+assert.deepEqual(sc.warnings, [])
+sc = buildScBlocks(onePlan, workoutSpec(onePlan, 2, [], start), exercises, [])
+assert.deepEqual(sc.blocks.slice(0, 2).map((b) => names(b)[0]), ["Bench press", "Push-ups"])
+const oneNoMob = { ...onePlan, hasMobility: false }
+sc = buildScBlocks(oneNoMob, workoutSpec(oneNoMob, 2, [], start), exercises, [])
+assert.deepEqual(sc.blocks.map((b) => [names(b), b.rounds, b.restBetweenRounds]), [[["Bench press"], 3, 120], [["Push-ups"], 3, 120]])
+// a single pick → a single exercise
+const onePick = { ...oneNoMob, scPatterns: [{ movementType: "hinge" as const, exerciseIds: ["h1"] }] }
+assert.deepEqual(buildScBlocks(onePick, workoutSpec(onePick, 1, [], start), exercises, []).blocks.map(names), [["KettleBell Deadlift"]])
+// fingers alone: its fixed exercise for the day
+const fingersOnly = { ...oneNoMob, scPatterns: [{ movementType: "carry_grip" as const, exerciseIds: [] }] }
+assert.deepEqual(buildScBlocks(fingersOnly, workoutSpec(fingersOnly, 1, [], start), exercises, []).blocks.map(names), [["Edge Lifts"]])
+
+// two patterns: one circuit; squat + hinge are split into two blocks
+const twoPlan: PlanShape = { ...plan, hasMobility: false, scPatterns: [plan.scPatterns[0], plan.scPatterns[2]] }
+assert.deepEqual(buildScBlocks(twoPlan, workoutSpec(twoPlan, 1, [], start), exercises, []).blocks.map(names), [["Pistol Squat", "Push-ups"]])
+const sqHinge: PlanShape = { ...twoPlan, scPatterns: [plan.scPatterns[0], plan.scPatterns[1]] }
+assert.deepEqual(buildScBlocks(sqHinge, workoutSpec(sqHinge, 1, [], start), exercises, []).blocks.map(names), [["Pistol Squat"], ["KettleBell Deadlift"]])
+// with mobility, the 2nd held mobility goes to the mobility block
+sc = buildScBlocks({ ...twoPlan, hasMobility: true }, workoutSpec(twoPlan, 1, [], start), exercises, [])
+assert.deepEqual(sc.blocks.map(names), [["Pistol Squat", "Push-ups", "Cosack Squat"], ["Deep Squat", "Frogs", "kneeling lunge stretch"]])
+assert.deepEqual(sc.blocks.map((b) => b.restBetweenRounds), [60, 30])
+// three patterns: a pair, then the 3rd alone
+const threePlan: PlanShape = { ...plan, hasMobility: false, scPatterns: plan.scPatterns.slice(0, 3) }
+assert.deepEqual(buildScBlocks(threePlan, workoutSpec(threePlan, 1, [], start), exercises, []).blocks.map(names), [["Pistol Squat", "Push-ups"], ["KettleBell Deadlift"]])
+
+// mobility only: no patterns, one mobility block with all 4
+const mobOnly: PlanShape = { ...plan, scPatterns: [] }
+sc = buildScBlocks(mobOnly, workoutSpec(mobOnly, 1, [], start), exercises, [])
+assert.deepEqual(sc.blocks.map((b) => [b.blockName, names(b), b.restBetweenRounds]), [
+  ["Mobility", ["Cosack Squat", "Deep Squat", "Frogs", "kneeling lunge stretch"], 30],
+])
+assert.deepEqual(sc.warnings, [])
+
+// joints: max force ↔ hypertrophy like core, never explosiveness
+assert.deepEqual(focusesFor("ankle"), ["max_force", "hypertrophy"])
+assert.deepEqual(focusesFor("wrist"), ["max_force", "hypertrophy"])
+const jointLib = [...exercises, ex("a1", "Tibialis raise", "ankle"), ex("a2", "Calf raise", "ankle")]
+const anklePlan: PlanShape = { ...plan, hasMobility: false, scPatterns: [{ movementType: "ankle", exerciseIds: ["a1", "a2"] }] }
+const ankleOf = (i: number) => buildScBlocks(anklePlan, workoutSpec(anklePlan, i, [], start), jointLib, []).blocks
+assert.deepEqual([1, 2, 3, 4].map((i) => ankleOf(i).map((b) => b.exercises[0].focus)), [
+  ["max_force", "max_force"], ["max_force", "max_force"], ["hypertrophy", "hypertrophy"], ["hypertrophy", "hypertrophy"],
+])
+// rest follows the block's own focus (workout 3 is a power day; the ankle is on hypertrophy)
+assert.deepEqual(ankleOf(3).map((b) => b.restBetweenRounds), [120, 120])
+
 // a special-case exercise missing from the library → warning, fingers left out
 sc = buildScBlocks(plan, spec(1), exercises.filter((e) => e.name !== "Edge Lifts"), [])
 assert.equal(sc.warnings.length, 1)

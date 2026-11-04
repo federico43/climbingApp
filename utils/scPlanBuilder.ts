@@ -1,16 +1,20 @@
 import type { Exercise, StrengthConditioningBlock } from "@/components/workoutBlocks"
 import type { ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
-import { MOVEMENT_TYPE_LABEL, type MovementType } from "@/utils/movementTypes"
-import { coreFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
+import { MOVEMENT_TYPE_LABEL, skipsExplosiveness, type MovementType } from "@/utils/movementTypes"
+import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 import { startingLevelRow } from "@/utils/scPrefill"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
-// a library template: generated from the plan's 4 movement patterns (one of
-// each pattern's two exercises per workout) plus app-picked mobility, with
-// every exercise programmed for the day's S&C focus (core: its own max force ↔
-// hypertrophy cycle). A ladder exercise is prescribed at the step the
+// a library template: generated from the plan's 1–4 movement patterns plus
+// app-picked mobility, with every exercise programmed for the day's S&C focus
+// (core and joints: their own max force ↔ hypertrophy cycle).
+//   · 2–4 patterns: one of each pattern's two exercises per workout, done as
+//     circuits of two (patterns 1+2, 3+4; a 3rd pattern alone).
+//   · 1 pattern: both its exercises every workout, done by sets — all
+//     rounds of one, then all rounds of the other (coach 2026-11-04).
+//   · 0 patterns (mobility only): just the mobility. A ladder exercise is prescribed at the step the
 // athlete's history puts them on — the same rule as the workout's prefill
 // (utils/scPrefill.ts), so both name the same exercise. Load and reps then
 // progress from the athlete's history as for any S&C block
@@ -69,6 +73,7 @@ function withFocus(ex: ExerciseDraft, focus: Focus): ExerciseDraft {
 
 // Squat and hinge can't share a block: blocks take patterns in pairs
 // (1+2, 3+4), so if both land in one pair, swap one with the other pair.
+// With only 2 patterns there's no other pair — patternGroups splits them.
 export function orderPatterns(patterns: ScPattern[]): ScPattern[] {
   const out = [...patterns]
   const pairOf = (i: number) => (i < 2 ? 0 : 1)
@@ -76,8 +81,23 @@ export function orderPatterns(patterns: ScPattern[]): ScPattern[] {
   const hinge = out.findIndex((p) => p.movementType === "hinge")
   if (squat < 0 || hinge < 0 || pairOf(squat) !== pairOf(hinge)) return out
   const target = pairOf(hinge) === 0 ? 2 : 0
+  if (target >= out.length) return out
   ;[out[hinge], out[target]] = [out[target], out[hinge]]
   return out
+}
+
+// The plan's patterns (2+) as blocks: pairs in order, a 3rd pattern alone,
+// and a squat + hinge pair split into two blocks.
+export function patternGroups(patterns: ScPattern[]): ScPattern[][] {
+  const ordered = orderPatterns(patterns)
+  const groups: ScPattern[][] = []
+  for (let i = 0; i < ordered.length; i += 2) {
+    const pair = ordered.slice(i, i + 2)
+    const types = pair.map((p) => p.movementType)
+    if (types.includes("squat") && types.includes("hinge")) groups.push([pair[0]], [pair[1]])
+    else groups.push(pair)
+  }
+  return groups
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -153,6 +173,23 @@ export function mobilityByRecency(exercises: ExerciseRow[], sessions: SessionRow
   return [...mobility].sort((a, b) => age(b) - age(a) || a.name.localeCompare(b.name))
 }
 
+// A one-pattern plan's second exercise: the pattern's other pick, if it can
+// be programmed for the focus and isn't the first one. No library fallback —
+// with a single pick, the workout has a single exercise.
+function secondExercise(
+  pattern: ScPattern,
+  spec: WorkoutSpec,
+  focus: Focus,
+  byId: Map<string, ExerciseRow>,
+  first: ExerciseRow | null,
+): ExerciseRow | null {
+  const ids = pattern.exerciseIds
+  const ordered = [ids[spec.exerciseSlot], ...ids.filter((_, i) => i !== spec.exerciseSlot)]
+  return ordered
+    .map((id) => (id ? byId.get(id) : undefined))
+    .find((e): e is ExerciseRow => !!e && e.$id !== first?.$id && fitsFocus(e, focus)) ?? null
+}
+
 export function buildScBlocks(
   plan: PlanShape,
   spec: WorkoutSpec,
@@ -164,20 +201,33 @@ export function buildScBlocks(
   if (!plan.hasSc || !focus) return { blocks: [], warnings }
 
   const byId = new Map(exercises.map((e) => [e.$id, e]))
-  const patterns = orderPatterns(plan.scPatterns)
-  const main = patterns.map((p) => {
-    // Core follows its own max force ↔ hypertrophy cycle (no explosiveness).
-    const f = p.movementType === "core" ? coreFocusFor(spec.index) : focus
-    const row = exerciseForPattern(p, spec, f, byId, exercises, warnings)
-    if (!row) return null
+  // Core and joints follow their own max force ↔ hypertrophy cycle.
+  const focusOf = (p: ScPattern) => (skipsExplosiveness(p.movementType) ? noPowerFocusFor(spec.index) : focus)
+  const draftFor = (row: ExerciseRow, f: Focus): ExerciseDraft => {
     const draftOf = (r: ExerciseRow) => withFocus(exerciseDraftFromLibrary(r), f)
     return draftOf(startingLevelRow(row, draftOf, sessions, exercises))
-  })
+  }
   // Edge Lifts (max force) go first in their block: their warm-up runs
   // before the block's first round (utils/edgeWarmup.ts).
-  const pair = (i: number) => [main[i], main[i + 1]]
-    .filter((e): e is ExerciseDraft => !!e)
-    .sort((a, b) => Number(needsWarmup(b)) - Number(needsWarmup(a)))
+  const warmupFirst = (exs: ExerciseDraft[]) => [...exs].sort((a, b) => Number(needsWarmup(b)) - Number(needsWarmup(a)))
+
+  // The main S&C blocks' exercises, block by block.
+  let mainGroups: ExerciseDraft[][]
+  if (plan.scPatterns.length === 1) {
+    // One pattern: both its exercises, each in its own block (by sets).
+    const p = plan.scPatterns[0]
+    const f = focusOf(p)
+    const first = exerciseForPattern(p, spec, f, byId, exercises, warnings)
+    const second = secondExercise(p, spec, f, byId, first)
+    mainGroups = [first, second].filter((r): r is ExerciseRow => !!r).map((r) => [draftFor(r, f)])
+  } else {
+    mainGroups = patternGroups(plan.scPatterns).map((group) => warmupFirst(group.flatMap((p) => {
+      const f = focusOf(p)
+      const row = exerciseForPattern(p, spec, f, byId, exercises, warnings)
+      return row ? [draftFor(row, f)] : []
+    })))
+  }
+  mainGroups = mainGroups.filter((g) => g.length > 0)
 
   const block = (name: string, exs: ExerciseDraft[], rest: number): ScBlockDraft => ({
     type: "strength_conditioning",
@@ -187,16 +237,23 @@ export function buildScBlocks(
     restBetweenRounds: rest,
     exercises: exs,
   })
-
-  if (!plan.hasMobility) {
-    const rest = focus === "hypertrophy" ? SC_PLAN_RULES.restHypertrophy : SC_PLAN_RULES.restOther
-    const blocks = [block("S&C 1", pair(0), rest), block("S&C 2", pair(2), rest)]
-    return { blocks: blocks.filter((b) => b.exercises.length > 0), warnings }
+  // Rest without mobility follows the day's focus — or the block's own, when
+  // all its exercises share another one (a core / joint block on its own
+  // cycle).
+  const restFor = (exs: ExerciseDraft[]) => {
+    const own = new Set(exs.map((e) => e.focus))
+    const f = own.size === 1 ? [...own][0] ?? focus : focus
+    return f === "hypertrophy" ? SC_PLAN_RULES.restHypertrophy : SC_PLAN_RULES.restOther
   }
 
-  // 4 mobility slots: one held (passive) in each of blocks 1–2, two by reps
-  // (active) in block 3. Least recently used first, no repeats within the
-  // workout. Short of a kind → any other mobility exercise, in its own way.
+  if (!plan.hasMobility) {
+    return { blocks: mainGroups.map((g, i) => block(`S&C ${i + 1}`, g, restFor(g))), warnings }
+  }
+
+  // 4 mobility slots: two held (passive), two by reps (active). The held ones
+  // are the rest of the first two S&C blocks; the rest go in a Mobility block
+  // at the end. Least recently used first, no repeats within the workout.
+  // Short of a kind → any other mobility exercise, in its own way.
   const pool = mobilityByRecency(exercises, sessions)
   const used = new Set<string>()
   const take = (way: "hold" | "reps"): ExerciseDraft | null => {
@@ -206,15 +263,19 @@ export function buildScBlocks(
     used.add(row.$id)
     return fits(row) ? mobilityDraft(row, way) : exerciseDraftFromLibrary(row)
   }
-  const slots = [take("hold"), take("hold"), take("reps"), take("reps")]
-  const found = slots.filter(Boolean).length
+  const holds = [take("hold"), take("hold")]
+  const reps = [take("reps"), take("reps")]
+  const found = [...holds, ...reps].filter(Boolean).length
   if (found < 4) warnings.push(`Only ${found} mobility exercise(s) in the library — the workout needs 4.`)
-  const mob = (i: number) => (slots[i] ? [slots[i]!] : [])
+  const some = (xs: (ExerciseDraft | null)[]) => xs.filter((x): x is ExerciseDraft => !!x)
 
-  const blocks = [
-    block("S&C 1", [...pair(0), ...mob(0)], SC_PLAN_RULES.restWithMobility),
-    block("S&C 2", [...pair(2), ...mob(1)], SC_PLAN_RULES.restWithMobility),
-    block("Mobility", [...mob(2), ...mob(3)], SC_PLAN_RULES.restMobilityBlock),
-  ]
+  const blocks = mainGroups.map((g, i) => {
+    const hold = i < holds.length ? some([holds[i]]) : []
+    return hold.length > 0
+      ? block(`S&C ${i + 1}`, [...g, ...hold], SC_PLAN_RULES.restWithMobility)
+      : block(`S&C ${i + 1}`, g, restFor(g))
+  })
+  const leftover = some(holds.slice(mainGroups.length))
+  blocks.push(block("Mobility", [...leftover, ...some(reps)], SC_PLAN_RULES.restMobilityBlock))
   return { blocks: blocks.filter((b) => b.exercises.length > 0), warnings }
 }
