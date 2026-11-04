@@ -1,7 +1,7 @@
 import { C } from "@/utils/theme"
-import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
+import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType, isJointPattern } from "@/utils/movementTypes"
 import {
-  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_COUNT,
+  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN,
   localDateStr, mainTypeFor, planEndFor, type MainType, type PlanFocus, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
@@ -19,13 +19,16 @@ import { useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 
 // Coach-side training plan form (docs/training-plan.md §9): 6-week window,
-// one focus, and optional S&C — mobility yes/no, exactly 4 movement
-// patterns, and 1–2 library exercises per pattern (with one, both weekly
-// workouts use it). Fingers has no picks: it always uses fixed exercises per S&C
+// one focus, and optional S&C — mobility yes/no, 1–4 movement patterns
+// (none for mobility only), and 1–2 library exercises per pattern (with one,
+// both weekly workouts use it; with a single pattern, both go in every
+// workout, done by sets). Fingers has no picks: it always uses fixed exercises per S&C
 // focus (SPECIAL_CASE_EXERCISES).
 
-// Mobility is its own yes/no, not one of the 4 patterns.
-const PICKABLE_PATTERNS = MOVEMENT_TYPES.filter((m) => m !== "mobility")
+// Mobility is its own yes/no, not one of the patterns. Joints are listed on
+// their own row.
+const PICKABLE_PATTERNS = MOVEMENT_TYPES.filter((m) => m !== "mobility" && !isJointPattern(m))
+const JOINT_PICKS = MOVEMENT_TYPES.filter((m) => isJointPattern(m))
 const FIXED_PATTERNS = new Set<MovementType>(["carry_grip"])
 
 function formatDate(dateStr: string): string {
@@ -98,7 +101,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   function togglePattern(m: MovementType) {
     setPatterns((prev) => {
       if (prev.some((p) => p.movementType === m)) return prev.filter((p) => p.movementType !== m)
-      if (prev.length >= SC_PATTERN_COUNT) return prev
+      if (prev.length >= SC_PATTERN_MAX) return prev
       // Only one exercise in the library for this pattern → it's the pick.
       const available = exercisesByPattern.get(m) ?? []
       const exerciseIds = !FIXED_PATTERNS.has(m) && available.length === 1 ? [available[0].$id] : []
@@ -115,11 +118,30 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     }))
   }
 
+  function patternChip(m: MovementType) {
+    const sel = patterns.some((p) => p.movementType === m)
+    const count = (exercisesByPattern.get(m) ?? []).length
+    const empty = count === 0 && !FIXED_PATTERNS.has(m)
+    const full = !sel && patterns.length >= SC_PATTERN_MAX
+    return (
+      <Pressable
+        key={m}
+        style={[s.chip, sel && { backgroundColor: MOVEMENT_TYPE_COLOR[m], borderColor: MOVEMENT_TYPE_COLOR[m] }, (empty || full) && { opacity: 0.35 }]}
+        onPress={() => togglePattern(m)}
+        disabled={(empty || full) && !sel}
+      >
+        <Text style={[s.chipText, sel && s.chipTextSelected]}>
+          {MOVEMENT_TYPE_LABEL[m]}{empty ? " · none" : ""}
+        </Text>
+      </Pressable>
+    )
+  }
+
   // What's still missing, in order — the first one is shown under the button.
   const problems: string[] = []
   if (!focus) problems.push("Pick a focus")
   if (hasSc) {
-    if (patterns.length !== SC_PATTERN_COUNT) problems.push(`Pick ${SC_PATTERN_COUNT} movement patterns (${patterns.length} so far)`)
+    if (patterns.length < SC_PATTERN_MIN && !hasMobility) problems.push("Pick at least 1 movement pattern, or turn on mobility")
     for (const p of patterns) {
       if (FIXED_PATTERNS.has(p.movementType)) continue
       if (p.exerciseIds.length === 0) problems.push(`Pick at least 1 ${MOVEMENT_TYPE_LABEL[p.movementType]} exercise`)
@@ -269,28 +291,13 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                   <Switch value={hasMobility} onValueChange={setHasMobility} trackColor={{ true: C.green }} />
                 </View>
 
-                <Text style={s.label}>Movement patterns · {patterns.length}/{SC_PATTERN_COUNT}</Text>
-                <Text style={s.sub2}>Squat and hinge are kept in separate blocks</Text>
-                <View style={s.chipWrap}>
-                  {PICKABLE_PATTERNS.map((m) => {
-                    const sel = patterns.some((p) => p.movementType === m)
-                    const count = (exercisesByPattern.get(m) ?? []).length
-                    const empty = count === 0 && !FIXED_PATTERNS.has(m)
-                    const full = !sel && patterns.length >= SC_PATTERN_COUNT
-                    return (
-                      <Pressable
-                        key={m}
-                        style={[s.chip, sel && { backgroundColor: MOVEMENT_TYPE_COLOR[m], borderColor: MOVEMENT_TYPE_COLOR[m] }, (empty || full) && { opacity: 0.35 }]}
-                        onPress={() => togglePattern(m)}
-                        disabled={(empty || full) && !sel}
-                      >
-                        <Text style={[s.chipText, sel && s.chipTextSelected]}>
-                          {MOVEMENT_TYPE_LABEL[m]}{empty ? " · none" : ""}
-                        </Text>
-                      </Pressable>
-                    )
-                  })}
-                </View>
+                <Text style={s.label}>Movement patterns · {patterns.length}/{SC_PATTERN_MAX}</Text>
+                <Text style={s.sub2}>
+                  1 to {SC_PATTERN_MAX}{hasMobility ? ", or none for mobility only" : ""}. Squat and hinge are kept in separate blocks
+                </Text>
+                <View style={s.chipWrap}>{PICKABLE_PATTERNS.map(patternChip)}</View>
+                <Text style={s.sub2}>Joints · max force ↔ hypertrophy, no explosiveness</Text>
+                <View style={s.chipWrap}>{JOINT_PICKS.map(patternChip)}</View>
 
                 {patterns.map((p, i) => {
                   const m = p.movementType
@@ -328,7 +335,13 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                     </View>
                   )
                 })}
-                {patterns.length > 0 && (
+                {patterns.length === 1 && (
+                  <Text style={s.sub2}>
+                    One pattern: both picks go in every workout, by sets — all rounds of one, then all rounds
+                    of the other. 1 goes first in the first workout of the week, 2 in the second.
+                  </Text>
+                )}
+                {patterns.length > 1 && (
                   <Text style={s.sub2}>
                     1 = first workout of the week, 2 = second. With only 1, both workouts use it. If a pick
                     isn&apos;t used for the day&apos;s S&C focus, the other pick is used instead.

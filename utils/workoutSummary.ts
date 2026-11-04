@@ -240,24 +240,37 @@ export function summarizeSpec(
   const phases: PhaseSummary[] = []
 
   if (spec.scFocus) {
-    const patterns = plan.scPatterns.length || 4
-    const sc = (exercises: number, rest: number) => ({
+    // Same layout as utils/scPlanBuilder.ts buildScBlocks: one pattern → its
+    // 1–2 exercises by sets; 2–4 → pairs; none → mobility only. (A plan with
+    // S&C, no patterns and no mobility predates patterns: counted as 4.)
+    const n = plan.scPatterns.length || (plan.hasMobility ? 0 : 4)
+    const picks = (plan.scPatterns[0] as { exerciseIds?: unknown[] } | undefined)?.exerciseIds?.length
+    const mainSizes = n === 1
+      ? Array.from({ length: Math.min(2, Math.max(1, picks ?? 2)) }, () => 1)
+      : Array.from({ length: Math.ceil(n / 2) }, (_, i) => Math.min(2, n - i * 2))
+    const exercises = mainSizes.reduce((t, k) => t + k, 0)
+    const restNoMobility = spec.scFocus === "hypertrophy" ? SC_PLAN_RULES.restHypertrophy : SC_PLAN_RULES.restOther
+    const sc = (count: number, rest: number) => ({
       type: "strength_conditioning",
       rounds: SC_PLAN_RULES.rounds,
       restBetweenRounds: rest,
-      exercises: Array.from({ length: exercises }, () => ({})),
+      exercises: Array.from({ length: count }, () => ({})),
     })
     const blocks = plan.hasMobility
-      ? [sc(3, SC_PLAN_RULES.restWithMobility), sc(3, SC_PLAN_RULES.restWithMobility), sc(2, SC_PLAN_RULES.restMobilityBlock)]
-      : [sc(patterns / 2, spec.scFocus === "hypertrophy" ? SC_PLAN_RULES.restHypertrophy : SC_PLAN_RULES.restOther),
-         sc(patterns / 2, spec.scFocus === "hypertrophy" ? SC_PLAN_RULES.restHypertrophy : SC_PLAN_RULES.restOther)]
+      ? [
+          ...mainSizes.map((k, i) => (i < 2 ? sc(k + 1, SC_PLAN_RULES.restWithMobility) : sc(k, restNoMobility))),
+          sc(2 + Math.max(0, 2 - mainSizes.length), SC_PLAN_RULES.restMobilityBlock),
+        ]
+      : mainSizes.map((k) => sc(k, restNoMobility))
     const secs = blocks.reduce((t, b) => t + estimateBlockSeconds(b, history), 0)
     phases.push({
       key: "sc",
       label: PHASE_LABEL.sc,
       adaptation: "conditioning",
-      title: FOCUS_LABEL[spec.scFocus],
-      detail: `${plural(patterns, "exercise")}${plan.hasMobility ? " + mobility" : ""} · ${plural(SC_PLAN_RULES.rounds, "round")}`,
+      title: exercises === 0 ? "Mobility" : FOCUS_LABEL[spec.scFocus],
+      detail: exercises === 0
+        ? `4 mobility exercises · ${plural(SC_PLAN_RULES.rounds, "round")}`
+        : `${plural(exercises, "exercise")}${n === 1 && exercises > 1 ? " by sets" : ""}${plan.hasMobility ? " + mobility" : ""} · ${plural(SC_PLAN_RULES.rounds, "round")}`,
       minutes: toMinutes(secs),
     })
   }

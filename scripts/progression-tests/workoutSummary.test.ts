@@ -77,4 +77,11 @@ assert.equal(u.phases[2].adaptation, "power")
 const c = summarizeSpec({ ...spec, warmup: "constraints", scFocus: null }, { focus: "technique", hasMobility: false, scPatterns: [] }, library, empty)
 assert.deepEqual(c.phases.map((p) => [p.key, p.adaptation, p.title]), [["warmup", "technique", "3 constraints"], ["main", "power", "Power boulders ×2"]])
 
+// One pattern: its 2 exercises by sets; mobility only: just mobility
+const one = summarizeSpec(spec, { focus: "technique", hasMobility: false, scPatterns: [{ exerciseIds: ["a", "b"] }] }, library, empty)
+assert.equal(one.phases[0].detail, "2 exercises by sets · 3 rounds")
+const mob = summarizeSpec(spec, { focus: "technique", hasMobility: true, scPatterns: [] }, library, empty)
+assert.equal(mob.phases[0].title, "Mobility")
+assert.equal(mob.phases[0].detail, "4 mobility exercises · 3 rounds")
+
 console.log("workoutSummary: all tests passed")

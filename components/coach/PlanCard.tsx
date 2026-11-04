@@ -308,13 +308,15 @@ export function PlanCard({
               <Text style={styles.nextTitle}>
                 Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today, plan.pauses))}
               </Text>
-              {nextSpec.scFocus && (
-                <PickRow
-                  color={ADAPTATION_COLOR.conditioning}
-                  text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
-                  onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!) })}
-                />
-              )}
+              {nextSpec.scFocus && (plan.scPatterns.length === 0 && plan.hasMobility
+                ? <PickRow color={ADAPTATION_COLOR.conditioning} text="S&C · Mobility only" />
+                : (
+                  <PickRow
+                    color={ADAPTATION_COLOR.conditioning}
+                    text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
+                    onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!) })}
+                  />
+                ))}
               {nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
               <PickRow
                 color={C.textMuted}
