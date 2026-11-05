@@ -136,3 +136,19 @@ export async function sendWorkoutCompletedNotification(protocolName: string): Pr
     method: ExecutionMethod.POST,
   })
 }
+
+/**
+ * Tells the backend an athlete's clip just reached the coach (its `videos`
+ * row exists) so it can push the coach(es) — `videoUploaded` action in
+ * functions/aiProtocol/src/main.js. Queued on Appwrite (`async: true`).
+ * Rejects when that fails (e.g. offline); services/videoUploadQueue.ts
+ * retries it on its next pass.
+ */
+export async function sendVideoUploadedNotification(videoId: string): Promise<void> {
+  await functions.createExecution({
+    functionId: AI_PROTOCOL_FUNCTION_ID,
+    body: JSON.stringify({ action: "videoUploaded", videoId }),
+    async: true,
+    method: ExecutionMethod.POST,
+  })
+}
