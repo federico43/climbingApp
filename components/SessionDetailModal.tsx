@@ -186,7 +186,7 @@ function ProjectBlockView({ attempts, canGiveFeedback }: { attempts: any[]; canG
 // ─── Route exploration view ───────────────────────────────────────────────────
 
 // Part 1: goes and sent / tried per colour, each route with its wall and go.
-// Part 2: worked something out or not, what they noticed, their note.
+// Part 2: what they realised they did wrong in part 1, and their note.
 function ExplorationBlockView({ attempts }: { attempts: any[] }) {
   const sum = summarizeExploration(attempts)
   const goLabel = (r: { sent: boolean; tries: number }) => (r.sent ? (r.tries === 1 ? "Flash" : `Go ${r.tries}`) : "Not sent")
@@ -206,8 +206,7 @@ function ExplorationBlockView({ attempts }: { attempts: any[] }) {
         ))}
       </View>
       <Text style={styles.blockStats}>
-        Part 2 · {sum.solved === null ? "not answered" : sum.solved ? "worked something out" : "nothing worked out"}
-        {sum.reasons.length > 0 ? ` · ${sum.reasons.map(fallReasonLabel).join(", ")}` : ""}
+        Part 2 · did wrong: {!sum.answered ? "not answered" : sum.reasons.map(fallReasonLabel).join(", ") || "nothing picked"}
       </Text>
       {!!sum.notes && <Text style={styles.attemptLabel}>“{sum.notes}”</Text>}
     </View>

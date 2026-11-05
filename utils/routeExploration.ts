@@ -5,7 +5,8 @@ import { BoulderLevelOptions, colourIndex } from "@/utils/boulderColours"
 //   Part 1, Flash (25 min): new routes from the athlete's flash colour (blue
 //   at least), at most 3 goes each. Each route is logged with the go it went
 //   on, or "not sent". All sent at a colour → the next colour; any not sent
-//   once the colour is tried → straight to part 2.
+//   once the colour is tried → straight to part 2. After moving up, the
+//   athlete tries every route of the new colour until time runs out.
 //   Part 2, Project (25 min): the routes that didn't go, worked with more
 //   rest. At the end: did you work something out, and what did you notice
 //   (the project bouldering fall reasons).
@@ -29,12 +30,24 @@ export function wallLabel(key: string | null | undefined): string {
   return WALLS.find((w) => w.key === key)?.label ?? (key || "—")
 }
 
+// {colour} is replaced with the athlete's starting colour when shown.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Part 1 · Flash (25 min): try every new route of the week, starting at your colour. Look for the new ones on the wall the coach tells you, or on another wall if that one has none.",
+  "Warm up first with *4 orange routes* before you start.",
+  "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
-  "Sent them all? Go up one colour. Any left unsent? Go straight to part 2.",
-  "Part 2 · Project (25 min): go back to the routes that didn't go. Rest more and work the moves.",
+  "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+  "Any {colour} left unsent? Go straight to part 2.",
 ].join("\n")
+
+export const EXPLORATION_PROJECT_NOTES = [
+  "Part 2 · Project: go back to the routes that didn't go.",
+  "Rest more between goes and work the moves you couldn't do.",
+].join("\n")
+
+// The coach's notes with {colour} filled in.
+export function explorationNotes(text: string, colourName: string): string {
+  return text.split("{colour}").join(colourName)
+}
 
 // The colour part 1 starts at: the athlete's flash colour, blue at least.
 export function explorationStartColour(flash: string | null | undefined): string {
@@ -71,8 +84,8 @@ export function explorationGoes(routes: ExplorationRoute[]): number {
 // ─── Saved attempts ──────────────────────────────────────────────────────────
 
 // What the block logs: one attempt per route in part 1 (part 1, level =
-// colour, wall, tries, success = sent) and one for part 2 (part 2, success =
-// worked something out, fallReasons, notes).
+// colour, wall, tries, success = sent) and one for part 2 (part 2, what
+// they realised they did wrong in part 1: fallReasons, notes).
 export interface ExplorationAttemptLike {
   success: boolean
   level?: string
@@ -89,8 +102,8 @@ export interface ExplorationSummary {
   // Sent / tried per colour, easiest first.
   byColour: { colour: string; sent: number; tried: number }[]
   topSent: string | null
-  // Part 2; null when the athlete never got to its question.
-  solved: boolean | null
+  // Part 2's question answered (what they realised they did wrong).
+  answered: boolean
   reasons: string[]
   notes: string
 }
@@ -116,7 +129,7 @@ export function summarizeExploration(attempts: ExplorationAttemptLike[]): Explor
     routes,
     byColour,
     topSent: sentColours.length ? sentColours[sentColours.length - 1].colour : null,
-    solved: part2 ? !!part2.success : null,
+    answered: !!part2,
     reasons: part2?.fallReasons ?? [],
     notes: part2?.notes ?? "",
   }

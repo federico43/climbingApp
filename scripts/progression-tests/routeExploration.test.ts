@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict"
 import {
-  explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
+  explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
   nextExplorationColour, summarizeExploration,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
@@ -34,9 +34,11 @@ const sum = summarizeExploration([
 assert.equal(sum.goes, 7)
 assert.deepEqual(sum.byColour, [{ colour: "blue", sent: 2, tried: 2 }, { colour: "green", sent: 0, tried: 1 }])
 assert.equal(sum.topSent, "blue")
-assert.equal(sum.solved, true)
+assert.equal(sum.answered, true)
 assert.deepEqual(sum.reasons, ["beta"])
-assert.equal(summarizeExploration([{ success: false, level: "blue", part: 1 }]).solved, null)
+assert.equal(summarizeExploration([{ success: false, level: "blue", part: 1 }]).answered, false)
+
+assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "Green"), "at *Green*. Every Green?")
 
 // ── dates ──
 assert.equal(isMonday("2026-11-02"), true)
