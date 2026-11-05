@@ -3,6 +3,7 @@ import { BlockReviewView } from "@/components/BlockReviewView"
 import type { ProtocolRow, SessionRow, TrainingPlanRow } from "@/services/BoulderGraphService"
 import { blockReview } from "@/utils/athleteStats"
 import { buildBlockStats, shortDay, type StatsLibraryExercise } from "@/utils/athleteStatsData"
+import { useLevelDifficulty } from "@/utils/boulderLevelsCache"
 import { localDateStr, PLAN_FOCUS_LABEL } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { useMemo, useState } from "react"
@@ -20,9 +21,10 @@ export function BlockProgressCard({ plan, workouts, sessions, library, edgeLiftM
 }) {
   const [open, setOpen] = useState(false)
   const today = localDateStr(new Date())
+  const levelDifficulty = useLevelDifficulty()
   const stats = useMemo(
-    () => buildBlockStats({ athlete: { edgeLiftMaxLog }, sessions, library, today, plan, planWorkouts: workouts }),
-    [edgeLiftMaxLog, sessions, library, today, plan, workouts],
+    () => buildBlockStats({ athlete: { edgeLiftMaxLog }, sessions, library, levelDifficulty, today, plan, planWorkouts: workouts }),
+    [edgeLiftMaxLog, sessions, library, levelDifficulty, today, plan, workouts],
   )
   const review = blockReview(stats)
   const over = today > plan.windowEnd
