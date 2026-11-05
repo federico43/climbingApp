@@ -1,3 +1,4 @@
+import { usePopupTurn } from "@/utils/popupTurn"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
@@ -46,11 +47,13 @@ export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) 
     setShow(false)
     AsyncStorage.setItem(KEY(id), "1").catch(() => {})
   }
+  // Waits for any other pop-up (e.g. the daily check-in) to close first.
+  const visible = usePopupTurn(show)
   const page = pages[i]
   const last = i === pages.length - 1
 
   return (
-    <Modal visible={show} transparent animationType="fade" onRequestClose={close}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <View style={s.scrim}>
         <View style={s.card}>
           <View style={s.art}>
