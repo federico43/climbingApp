@@ -3,7 +3,10 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/homework.test.ts
 
 import assert from "node:assert/strict"
-import { defaultDueBy, dueByOf, homeworkName, homeworkStatus, shortDay, type HomeworkRow } from "@/utils/homework"
+import {
+  blocksLeftOut, defaultDueBy, dueByOf, homeworkName, homeworkRemainder, homeworkStatus, leftByAthlete, leftHomework,
+  shortDay, type HomeworkRow,
+} from "@/utils/homework"
 
 const at = (date: string, hour = 12) => new Date(`${date}T${String(hour).padStart(2, "0")}:00:00`).toISOString()
 const session = (date: string, protocolId: string) => ({
@@ -76,3 +79,35 @@ console.log("all homework tests passed")
   assert.equal(timeLabel(local("2026-10-10", 12, 0)), "12:00 PM")
   console.log("all homework reminder tests passed")
 }
+
+// ── Left as homework by the athlete ──
+
+const sc = { type: "strength_conditioning", blockName: "S&C", rounds: 3, restBetweenRounds: 90, exercises: [{ name: "A" }, { name: "B" }] }
+const scAt = (round: number) => ({ blockIndex: 1, scData: { round } })
+// nothing done → the whole block
+assert.deepEqual(homeworkRemainder(sc, []), { block: sc })
+// round 1 done, round 2 half → 2 rounds left (the half one again)
+assert.deepEqual(homeworkRemainder(sc, [scAt(1), scAt(1), scAt(2)]), { block: { ...sc, rounds: 2 }, roundsDone: 1 })
+// all done → nothing left
+assert.equal(homeworkRemainder(sc, [1, 1, 2, 2, 3, 3].map(scAt)), null)
+// other blocks go whole, even with attempts
+const proj = { type: "project_bouldering", blockName: "Project" }
+assert.deepEqual(homeworkRemainder(proj, [{ scData: null }]), { block: proj })
+
+const protocol = [{ type: "warmup", blockName: "Warm-up" }, sc, proj]
+const made = leftHomework(protocol, [scAt(1), scAt(1)], new Set([2, 1]), "Workout 3 · Power", "2026-11-05")!
+assert.equal(made.name, "Workout 3 · Power · Homework")
+assert.equal(made.dueBy, "2026-11-10")
+assert.deepEqual(made.blocks.map((b) => [b.blockName, b.rounds ?? null]), [["S&C", 2], ["Project", null]])
+assert.deepEqual(made.blocks[0].leftAsHomework, { on: "2026-11-05", from: "Workout 3 · Power", roundsDone: 1 })
+assert.equal(leftHomework(protocol, [], new Set([2]), "W", "2026-11-05")!.name, "Project")
+assert.equal(leftHomework(protocol, [], new Set(), "W", "2026-11-05"), null)
+
+// dropped from the session: skipped, and homework blocks with nothing logged
+assert.deepEqual([...blocksLeftOut(new Set([0]), new Set([1, 2]), [scAt(1)])].sort(), [0, 2])
+
+assert.deepEqual(leftByAthlete({ blocks: JSON.stringify(made.blocks) })?.on, "2026-11-05")
+assert.equal(leftByAthlete({ blocks: JSON.stringify([proj]) }), null)
+assert.equal(leftByAthlete({ blocks: "nope" }), null)
+
+console.log("homework tests passed")
