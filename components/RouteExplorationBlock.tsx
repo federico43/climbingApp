@@ -9,7 +9,7 @@ import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
   explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
-  summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
+  routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
@@ -23,7 +23,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 // did you realise you did wrong". Routes live in the logged attempts, so a
 // resumed workout picks up where it was.
 
-type Phase = "intro" | "flash" | "projectIntro" | "project" | "question" | "done"
+// review = part 1's points vs last time, before part 2 (coach 2026-11-05).
+type Phase = "intro" | "flash" | "review" | "projectIntro" | "project" | "question" | "done"
 
 const RESULTS = [
   { label: "Flash", tries: 1, sent: true },
@@ -98,7 +99,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
   const [last, setLast] = useState<{ date: string; summary: ExplorationSummary } | null | undefined>(undefined)
 
   useEffect(() => {
-    if (phase !== "done" || last !== undefined) return
+    if ((phase !== "review" && phase !== "done") || last !== undefined) return
     const own = attempts.map((a) => a.timestamp)
     getSessions()
       .then((sessions) => setLast(lastExploration(sessions, own)))
@@ -121,7 +122,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
 
   const flashLeft = useCountdown(flashMin, phase === "flash", () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
-    setPhase("projectIntro")
+    setPhase("review")
   })
   const projectLeft = useCountdown(projectMin, phase === "project", () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
@@ -143,13 +144,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
       setResult(0)
       setNotice(`Every ${colourLabel(colour).toLowerCase()} sent. Now try every ${colourLabel(next).toLowerCase()}.`)
     } else {
-      setPhase("projectIntro")
+      setPhase("review")
     }
   }
 
   function save() {
     logAttempt({ success: false, part: 2, fallReasons: reasons, notes: notes.trim() || undefined })
     setPhase("done")
+    goToNextBlock()
   }
 
   // Density test's top bar: back, title, timer and count badges.
@@ -185,6 +187,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
         {withResult && (
           <Text style={[styles.climbAttemptsText, r.sent && { color: C.green }]}>{resultLabel(r)}</Text>
         )}
+        {withResult && <Text style={styles.climbScore}>+{formatPoints(routePoints(r))}</Text>}
         {undoFirst && i === 0 && undoLastAttempt && (
           <Pressable onPress={undoLastAttempt} hitSlop={10} style={styles.deleteBtn}>
             <Text style={styles.deleteBtnText}>✕</Text>
@@ -364,13 +367,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
     )
   }
 
-  // ── Done: review ─────────────────────────────────────────────────────────────
-  // Points today vs the last exploration, then where they came from.
+  // ── Review (after part 1) / Done ─────────────────────────────────────────────
+  // Part 1's points vs the last exploration, then where they came from.
+  // After part 1 it leads into part 2; on a finished block, to the next one.
   const lastWall = (w: string) => last?.summary.byWall.find((b) => b.wall === w)
   const diff = last ? Math.round((summary.points - last.summary.points) * 10) / 10 : 0
   return (
     <View style={shared_styles.screen}>
-      <TopBar title="Session complete" onBack={goToPreviousBlock} />
+      <TopBar title={phase === "review" ? "Part 1 · Review" : "Session complete"} onBack={phase === "review" ? undefined : goToPreviousBlock} />
       <ScrollView contentContainerStyle={styles.reviewScroll}>
         <View style={styles.scoreCard}>
           <Text style={styles.scoreLabel}>Points today</Text>
@@ -428,8 +432,11 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
             ))}
           </View>
         )}
-        <Pressable style={[styles.startButton, { width: "100%" }]} onPress={goToNextBlock}>
-          <Text style={styles.startButtonText}>{nextLabel}</Text>
+        <Pressable
+          style={[styles.startButton, { width: "100%" }]}
+          onPress={phase === "review" ? () => setPhase("projectIntro") : goToNextBlock}
+        >
+          <Text style={styles.startButtonText}>{phase === "review" ? "Go to part 2" : nextLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -477,6 +484,7 @@ const styles = StyleSheet.create({
   climbLevelBar: { width: 4, height: 28, borderRadius: 2 },
   climbLevelText: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flex: 1 },
   climbAttemptsText: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
+  climbScore: { fontSize: 13, fontWeight: "700", color: C.green },
   deleteBtn: { paddingLeft: 8 },
   deleteBtnText: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
 
