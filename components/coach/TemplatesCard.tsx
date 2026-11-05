@@ -25,7 +25,7 @@ function blockCount(p: ProtocolRow): number {
 const BLOCK_TYPE_LABEL: Record<string, string> = {
   project_bouldering: "Project", constraint_warmup: "Warmup", strength_conditioning: "S&C",
   exploration_session: "Explore", sequence: "Sequence", free_session: "Free",
-  four_by_four: "4×4", intervals: "Intervals",
+  four_by_four: "4×4", intervals: "Intervals", route_exploration: "Exploration",
 }
 
 // Block previews in workout order: name (custom, else a short type label) plus

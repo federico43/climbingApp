@@ -42,6 +42,12 @@ export interface Attempt {
   reviewClip?: boolean    // filmed because the app asked (for the coach to review)
   reviewPrompted?: boolean // logging this one raised the "film your next attempt" prompt
   pbv?: number           // 2 = logged by the v2 runtime
+  // Route exploration (utils/routeExploration.ts): part 1 = one per route
+  // (level = colour, wall, tries = the go it went on), part 2 = the
+  // end-of-block answer (success = worked something out, fallReasons, notes).
+  part?: number
+  wall?: string
+  tries?: number
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────

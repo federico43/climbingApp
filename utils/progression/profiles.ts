@@ -62,6 +62,11 @@ export const PROGRESSION_PROFILES: Record<BlockType, ProgressionProfile> = {
     signals: "—",
     lever: "—",
   },
+  route_exploration: {
+    kind: "none", built: true,
+    signals: "Routes sent per colour and go, goes in part 1; part 2 answer and fall reasons",
+    lever: "Starting colour = flash level (blue at least); up a colour in-session when all sent",
+  },
   exploration_session: {
     kind: "test", built: true,
     signals: "Results recorded only",

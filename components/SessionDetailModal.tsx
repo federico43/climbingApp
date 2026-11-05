@@ -6,6 +6,8 @@ import { ProjectSummaryCard } from "@/components/ProjectBoulderingBlock"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
 import { getVideoById, type VideoRow } from "@/services/videoStorage"
 import { fallReasonLabel, PROJECT_V2 } from "@/utils/progression/projectBouldering"
+import { colourLabel } from "@/utils/boulderColours"
+import { summarizeExploration, wallLabel } from "@/utils/routeExploration"
 import { parseVariations, variationHolds, type RouteVariations, type VariationKey } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useMemo, useState } from "react"
@@ -177,6 +179,36 @@ function ProjectBlockView({ attempts, canGiveFeedback }: { attempts: any[]; canG
           />
         </Modal>
       )}
+    </View>
+  )
+}
+
+// ─── Route exploration view ───────────────────────────────────────────────────
+
+// Part 1: goes and sent / tried per colour, each route with its wall and go.
+// Part 2: what they realised they did wrong in part 1, and their note.
+function ExplorationBlockView({ attempts }: { attempts: any[] }) {
+  const sum = summarizeExploration(attempts)
+  const goLabel = (r: { sent: boolean; tries: number }) => (r.sent ? (r.tries === 1 ? "Flash" : `Go ${r.tries}`) : "Not sent")
+  return (
+    <View style={{ gap: 6, marginTop: 8 }}>
+      <Text style={styles.blockStats}>
+        Part 1 · {sum.goes} goes · {sum.byColour.map((b) => `${colourLabel(b.colour)} ${b.sent}/${b.tried}`).join(" · ") || "no routes"}
+      </Text>
+      <View style={styles.attemptList}>
+        {sum.routes.map((r, i) => (
+          <View key={i} style={[styles.attemptRow, i === sum.routes.length - 1 && { borderBottomWidth: 0 }]}>
+            <View style={[styles.attemptBody, { flexDirection: "row", alignItems: "center", gap: 8 }]}>
+              <Text style={[styles.attemptLabel, { flex: 1 }]}>{colourLabel(r.colour)} · {wallLabel(r.wall)}</Text>
+              <Text style={[styles.attemptLabel, { color: r.sent ? C.green : C.textSecondary }]}>{goLabel(r)}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.blockStats}>
+        Part 2 · did wrong: {!sum.answered ? "not answered" : sum.reasons.map(fallReasonLabel).join(", ") || "nothing picked"}
+      </Text>
+      {!!sum.notes && <Text style={styles.attemptLabel}>“{sum.notes}”</Text>}
     </View>
   )
 }
@@ -839,6 +871,8 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                           <ScBlockView block={block.block} attempts={blockAttempts} onOpenExercise={onOpenExercise} />
                         ) : block.blockType === "free_session" ? (
                           <FreeSessionBlockView block={block.block} attempts={blockAttempts} />
+                        ) : block.blockType === "route_exploration" ? (
+                          <ExplorationBlockView attempts={blockAttempts} />
                         ) : block.blockType === "project_bouldering" && blockAttempts.some((a) => a.pbv === PROJECT_V2) ? (
                           <ProjectBlockView attempts={blockAttempts} canGiveFeedback={canGiveFeedback} />
                         ) : block.blockType !== "constraint_warmup" && (

@@ -2,6 +2,7 @@ import type { BlockType } from "@/components/workoutBlocks"
 import type { MovementType } from "@/utils/movementTypes"
 import type { Focus } from "@/utils/scProgression"
 import { pausedDayCount, planClockDate, type PlanPause } from "@/utils/planPauses"
+import { explorationAllowed, hasExplorationBlock } from "@/utils/routeExploration"
 
 // The training plan's fixed rotation (docs/training-plan.md §9): what
 // workout n of a plan is — main type, main block, warm-up kind, S&C focus,
@@ -60,11 +61,15 @@ export interface WorkoutSpec {
   index: number // 1-based position in the plan
   mainType: MainType
   mainBlock: LibraryBlockRef
-  warmup: "constraints" | "one_on_one_off"
+  // "exploration": route exploration, Fear management plans only — first in
+  // the workout, before S&C (utils/routeExploration.ts).
+  warmup: WarmupKind
   scFocus: Focus | null       // null when the plan has no S&C
   exerciseSlot: 0 | 1         // which of each pattern's two exercises
   withTest: boolean
 }
+
+export type WarmupKind = "constraints" | "one_on_one_off" | "exploration"
 
 export const PLAN_WEEKS = 6
 export const WORKOUTS_PER_WEEK = 2
@@ -92,6 +97,9 @@ export const MAIN_BLOCK_COPIES = 2
 
 export const WARMUP_INTERVALS_BLOCK: LibraryBlockRef = { name: "1 on 1 off", type: "intervals" }
 export const TEST_BLOCK: LibraryBlockRef = { name: "Density test", type: "exploration_session" }
+// Library copy of the route exploration, if the coach saved one (its notes
+// win); otherwise the app's default block is used.
+export const EXPLORATION_BLOCK: LibraryBlockRef = { name: "Route exploration", type: "route_exploration" }
 
 // S&C focus is tied to the day's main type (coach 2026-10-03).
 export const SC_FOCUS_FOR: Record<MainType, Focus> = {
@@ -242,6 +250,21 @@ function mainBlockFor(index: number, built: BuiltPlanWorkout[], startType?: Main
   return blocks[pick]
 }
 
+// The warm-up of workout `index`. Constraints and 1 on 1 off alternate
+// (odd, even). Fear management plans swap the constraints for the route
+// exploration (coach 2026-11-05), once a week and never on a Monday — the
+// day the new routes are set: the next workout gets it when allowed today,
+// otherwise 1 on 1 off. Slots further ahead keep the plain alternation.
+function warmupFor(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WarmupKind {
+  const alternate: WarmupKind = index % 2 === 1 ? "constraints" : "one_on_one_off"
+  if (plan.focus !== "fear_management") return alternate
+  if (index > nextPlanIndex(built)) return alternate === "constraints" ? "exploration" : alternate
+  const others = built
+    .filter((w) => w.planIndex !== index) // a slot being rebuilt doesn't count against itself
+    .map((w) => ({ day: localDateStr(new Date(w.createdAt)), hasExploration: hasExplorationBlock(w.blocks) }))
+  return explorationAllowed(today, others) ? "exploration" : "one_on_one_off"
+}
+
 export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WorkoutSpec {
   const mainType = mainTypeFor(index, plan.startType)
 
@@ -256,7 +279,7 @@ export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWork
     index,
     mainType,
     mainBlock: mainBlockFor(index, built, plan.startType),
-    warmup: index % 2 === 1 ? "constraints" : "one_on_one_off",
+    warmup: warmupFor(plan, index, built, today),
     scFocus: plan.hasSc ? SC_FOCUS_FOR[mainType] : null,
     exerciseSlot: ((index - 1) % WORKOUTS_PER_WEEK) as 0 | 1,
     withTest,

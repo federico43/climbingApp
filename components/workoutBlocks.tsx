@@ -54,6 +54,7 @@ import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, type ChainMember } from "@/utils/levelChain"
 import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
 import { findBlockRuns } from "@/utils/blockHistory"
+import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN } from "@/utils/routeExploration"
 import { routesVisibleTo, suggestNextSequence, type SequenceSuggestion } from "@/utils/progression/sequence"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -78,7 +79,7 @@ const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals"
+export type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals" | "route_exploration"
 
 interface BaseBlock {
   id: string
@@ -157,6 +158,19 @@ interface ExplorationSessionBlock extends BaseBlock {
   timeLimit?: number   // minutes, 0 = no timer
 }
 
+// Route exploration (utils/routeExploration.ts): part 1 Flash (timeLimit
+// minutes) on the week's new routes, part 2 Project (projectTime minutes) on
+// the ones that didn't go. Fear management plans put it in once a week.
+interface RouteExplorationBlock extends BaseBlock {
+  type: "route_exploration"
+  description: string
+  timeLimit?: number    // part 1, minutes
+  projectTime?: number  // part 2, minutes
+  // Colour part 1 starts at (the athlete's flash, blue at least). Unset →
+  // the athlete's flash level at workout time.
+  startColour?: string
+}
+
 interface SequenceBlock extends BaseBlock {
   type: "sequence"
   description: string
@@ -226,7 +240,7 @@ interface IntervalsBlock extends BaseBlock {
   kind?: IntervalsKind
 }
 
-export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock
+export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock | RouteExplorationBlock
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -250,6 +264,8 @@ export function makeDefaultBlock(type: BlockType, name: string = ""): Block {
       return { id: generateId(), type, blockName: name, description: "", sets: 4, bouldersPerSet: 4, restTime: 240 }
     case "intervals":
       return { id: generateId(), type, blockName: name, description: "", series: 6, workTime: 30, restTime: 60 }
+    case "route_exploration":
+      return { id: generateId(), type, blockName: name, description: EXPLORATION_DEFAULT_DESCRIPTION, timeLimit: EXPLORATION_PART_MIN, projectTime: EXPLORATION_PART_MIN }
   }
 }
 
@@ -297,6 +313,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   free_session: "Free session",
   four_by_four: "4×4",
   intervals: "Intervals",
+  route_exploration: "Route exploration",
 }
 
 export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
@@ -308,6 +325,7 @@ export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
   free_session: "time",
   four_by_four: "grid",
   intervals: "timer",
+  route_exploration: "compass",
 }
 
 const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
@@ -319,6 +337,7 @@ const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   free_session: "Open-ended climbing time",
   four_by_four: "Sets of boulders for power endurance",
   intervals: "Timed work / rest rounds",
+  route_exploration: "New routes: flash, then project",
 }
 
 // ─── Block Picker Modal ───────────────────────────────────────────────────────
@@ -581,7 +600,7 @@ export function BlockPickerModal({
             <>
               <Text style={styles.pickerPrompt}>Choose a block type</Text>
               <View style={styles.blockTypeGrid}>
-                {(["project_bouldering", "constraint_warmup", "strength_conditioning", "exploration_session", "sequence", "four_by_four", "intervals", "free_session"] as BlockType[]).map((type) => (
+                {(["project_bouldering", "constraint_warmup", "strength_conditioning", "exploration_session", "sequence", "four_by_four", "intervals", "free_session", "route_exploration"] as BlockType[]).map((type) => (
                   <Pressable
                     key={type}
                     style={styles.blockTypeCard}
@@ -761,6 +780,9 @@ function NewBlockForm({ type, onBack, onSave, allowSaveToLibrary = true }: {
       )}
       {type === "exploration_session" && (
         <ExplorationSessionFields block={block as ExplorationSessionBlock} onUpdate={setBlock} />
+      )}
+      {type === "route_exploration" && (
+        <RouteExplorationFields block={block as RouteExplorationBlock} onUpdate={setBlock} />
       )}
       {type === "sequence" && (
         <SequenceFields block={block as SequenceBlock} onUpdate={setBlock} />
@@ -983,6 +1005,7 @@ function TypeSpecificFields({ block, onUpdate }: { block: Block; onUpdate: (b: B
       {block.type === "constraint_warmup" && <ConstraintWarmupFields block={block} onUpdate={onUpdate} />}
       {block.type === "strength_conditioning" && <StrengthConditioningFields block={block} onUpdate={onUpdate} />}
       {block.type === "exploration_session" && <ExplorationSessionFields block={block} onUpdate={onUpdate} />}
+      {block.type === "route_exploration" && <RouteExplorationFields block={block} onUpdate={onUpdate} />}
       {block.type === "sequence" && <SequenceFields block={block as SequenceBlock} onUpdate={onUpdate} />}
       {block.type === "four_by_four" && <FourByFourFields block={block as FourByFourBlock} onUpdate={onUpdate} />}
       {block.type === "intervals" && <IntervalsFields block={block as IntervalsBlock} onUpdate={onUpdate} />}
@@ -2438,6 +2461,18 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
   )
 }
 
+// Route exploration: the block's time limit is part 1 (Flash); part 2
+// (Project) has its own minutes here.
+function RouteExplorationFields({ block, onUpdate }: { block: RouteExplorationBlock; onUpdate: (b: Block) => void }) {
+  function update(fields: Partial<RouteExplorationBlock>) { onUpdate({ ...block, ...fields }) }
+  return (
+    <>
+      <StepperField label="Part 2 · project (min)" value={block.projectTime ?? EXPLORATION_PART_MIN} onChange={(n) => update({ projectTime: n })} min={5} step={5} />
+      <FieldLabel label="Description" />
+      <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline placeholder="What should athletes know before starting?" />
+    </>
+  )
+}
 
 interface AthleteProgress {
   level?: string
