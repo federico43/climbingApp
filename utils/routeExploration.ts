@@ -36,7 +36,7 @@ export const EXPLORATION_DEFAULT_DESCRIPTION = [
   "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
   "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
-  "Any {colour} left unsent? Go straight to part 2.",
+  "Tried every {colour} and there's still time left? Go on to part 2.",
 ].join("\n")
 
 export const EXPLORATION_PROJECT_NOTES = [

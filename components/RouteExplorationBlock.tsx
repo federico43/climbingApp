@@ -300,19 +300,18 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
         </View>
       )
     }
+    // Running: like a free session — a big countdown and Stop; what they
+    // realised is asked at the end.
     return (
       <View style={shared_styles.screen}>
-        {activeBar("Part 2 · Project", projectLeft)}
-        <View style={styles.container}>
-          <Text style={styles.pickerLabel}>Routes that didn&apos;t go</Text>
-          <ScrollView style={styles.climbList} contentContainerStyle={[styles.climbListContent, { paddingTop: 6 }]} showsVerticalScrollIndicator={false}>
-            {list}
-          </ScrollView>
-          <View style={styles.footer}>
-            <Pressable style={[styles.logBoulderBtn, { backgroundColor: C.surface }]} onPress={() => setPhase("question")}>
-              <Text style={[styles.logBoulderBtnText, { color: C.textPrimary }]}>Finish part 2</Text>
-            </Pressable>
-          </View>
+        <TopBar title="Part 2 · Project" />
+        <BlockNotes text={EXPLORATION_PROJECT_NOTES} compact />
+        <View style={styles.centerContent}>
+          <Text style={styles.bigTimerLabel}>remaining</Text>
+          <Text style={styles.bigTimer}>{formatTime(projectLeft)}</Text>
+          <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
+            <Text style={styles.stopBtnText}>Stop</Text>
+          </Pressable>
         </View>
       </View>
     )
@@ -435,6 +434,13 @@ const styles = StyleSheet.create({
   startButtonText: { color: C.bg, fontSize: 16, fontWeight: "700", padding: 10 },
   timeLimitPill: { alignSelf: "flex-start", backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+
+  // Part 2's countdown — same as FreeSessionBlock.
+  centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
+  bigTimerLabel: { fontSize: 13, fontWeight: "600", color: C.textMuted, textTransform: "uppercase", letterSpacing: 1.5 },
+  bigTimer: { fontSize: 72, fontWeight: "700", color: C.textPrimary, fontVariant: ["tabular-nums"], letterSpacing: -2, lineHeight: 80 },
+  stopBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.red, marginTop: 8 },
+  stopBtnText: { fontSize: 18, fontWeight: "700", color: C.red, letterSpacing: 0.3 },
 
   questionContent: { padding: 20, gap: 14 },
   question: { fontSize: 18, fontWeight: "700", color: C.textPrimary, lineHeight: 24 },
