@@ -268,3 +268,43 @@ export function athleteView(
     extra,
   }
 }
+
+// ── Usual (fixed) schedule ──────────────────────────────────────────────────
+
+// Every time a class can start: on the half hour, ending by GRID_END.
+export const CLASS_STARTS = Array.from({ length: (GRID_END - CLASS_HOURS - GRID_START) * 2 + 1 }, (_, i) => GRID_START + i / 2)
+
+// Usual days the athlete can still add: up to 3, a rest day between them.
+export const usualDayOk = (picked: number[], day: number) => picked.length < 3 && restDayOk(picked, day)
+
+// Usual slots still ahead this week (from `today`) that the coach has no class
+// for, on days the athlete isn't already in a class.
+export function missingUsual(
+  defaults: string[],
+  classes: GymClass[],
+  week: WeekEntry[],
+  today: number,
+): { day: number; start: number }[] {
+  const busy = busyDays(week)
+  return defaults
+    .map(parseSlot)
+    .filter((s): s is { day: number; start: number } => !!s && s.day >= today)
+    .filter((s) => !busy.includes(s.day) && !classes.some((c) => c.day === s.day && c.start === s.start))
+}
+
+// This week's classes the athlete could ask to join instead: still ahead, not
+// theirs, with room and a rest day around their other classes. Closest to
+// `near` (the missing usual slot) first.
+export function classesToJoin(
+  classes: GymClass[],
+  week: WeekEntry[],
+  today: number,
+  near?: { day: number; start: number },
+): GymClass[] {
+  const busy = busyDays(week)
+  const dist = (c: GymClass) => (near ? Math.abs(c.day - near.day) * 24 + Math.abs(c.start - near.start) : 0)
+  return classes
+    .filter((c) => c.day >= today && !week.some((e) => e.cls.id === c.id))
+    .filter((c) => headcount(c, week) < CAPACITY && restDayOk(busy, c.day))
+    .sort((a, b) => dist(a) - dist(b) || a.day - b.day || a.start - b.start)
+}

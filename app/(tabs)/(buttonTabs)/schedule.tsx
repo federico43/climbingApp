@@ -1,19 +1,22 @@
 import { useAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
+import { FeatureIntro, IntroButton, useIntroSeen } from "@/components/schedule/FeatureIntro"
+import { UsualSetup } from "@/components/schedule/UsualSetup"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
   AddClassProblem, CAPACITY, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classLabel, formatTime,
-  headcount, proposeProblem,
+  classesToJoin, headcount, missingUsual, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
-import { cancelExtra, changeClass, refreshClassSchedule, saveUsualClasses, useClassSchedule } from "@/utils/classScheduleStore"
+import { cancelExtra, changeClass, refreshClassSchedule, requestExtra, saveUsualClasses, useClassSchedule } from "@/utils/classScheduleStore"
+import { setFixedAnswer, useFixedAnswer } from "@/utils/fixedScheduleAnswer"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -26,7 +29,10 @@ const NO_FIT: Record<AddClassProblem, string> = {
   late: `Classes have to end by ${GRID_END}:00.`,
 }
 
-type Mode = { kind: "move" | "propose"; from: string } | { kind: "usual" } | null
+type Mode = { kind: "move" | "propose"; from: string } | null
+
+// "No class at your usual time" closed for a week, on this phone.
+const MISSING_KEY = (user: string, weekStart: string) => `missing-usual-seen:${user}:${weekStart}`
 
 // The athlete's week of classes, Google-Calendar style, opened from the
 // "This week" card on Plan.
@@ -42,8 +48,13 @@ export default function ScheduleScreen() {
   const dates = useMemo(() => weekDates(dateOf(wk.weekStart || "2000-01-03")), [wk.weekStart])
   const week = athleteWeek(wk.classes, wk.mine, wk.changes, wk.extra)
   const [mode, setMode] = useState<Mode>(null)
-  // Usual classes being picked (mode "usual").
-  const [usual, setUsual] = useState<string[]>([])
+  // The fixed-schedule screen: shown until the athlete answers, and from "Change".
+  const answer = useFixedAnswer(st.me)
+  const [editing, setEditing] = useState(false)
+  const setup = editing || (st.status === "ready" && !st.defaults.length && answer === null)
+  // Still finding out whether to show it: hold the intro pop-up back meanwhile.
+  const deciding = !st.defaults.length && (st.status !== "ready" || answer === undefined)
+  const introSeen = useIntroSeen("class-week-v2")
   const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
   // The time picked for a proposal, still to be adjusted and sent.
   const [draft, setDraft] = useState<{ day: number; start: number } | null>(null)
@@ -53,8 +64,35 @@ export default function ScheduleScreen() {
   const entryFor = (id: string) => week.find((e) => e.cls.id === id)
   const fits = (c: { day: number }, except?: string) => c.day >= today && restDayOk(busyDays(week, except), c.day)
 
+  // Usual times still ahead with no class this week → offer the ones there are.
+  const missing = wk.published && !wk.extra ? missingUsual(st.defaults, wk.classes, week, today) : []
+  const joinable = missing.length ? classesToJoin(wk.classes, week, today, missing[0]) : []
+  const missingId = missing.length ? `${wk.weekStart}:${missing.map(slotKey).join(",")}` : ""
+  const [showMissing, setShowMissing] = useState(false)
+  useEffect(() => {
+    // Never on top of another pop-up: wait for the intro, the setup screen and
+    // any sheet, and give iOS a moment after a Modal closes.
+    if (!missingId || setup || deciding || !introSeen || sheet || mode || showMissing) return
+    let live = true
+    const t = setTimeout(() => {
+      AsyncStorage.getItem(MISSING_KEY(st.me, wk.weekStart))
+        .then((v) => { if (live && v !== missingId) setShowMissing(true) })
+        .catch(() => {})
+    }, 600)
+    return () => { live = false; clearTimeout(t) }
+  }, [missingId, setup, deciding, introSeen, sheet, mode, showMissing, st.me, wk.weekStart])
+  const closeMissing = () => {
+    setShowMissing(false)
+    AsyncStorage.setItem(MISSING_KEY(st.me, wk.weekStart), missingId).catch(() => {})
+  }
+  const joinInstead = async (c: GymClass) => {
+    closeMissing()
+    if (await requestExtra(c.id)) {
+      setTimeout(() => Alert.alert("Request sent", `${classLabel(c)}. Your coach answers before the class.`), 500)
+    }
+  }
+
   const toneFor = (c: GymClass) => {
-    if (mode?.kind === "usual") return usual.includes(slotKey(c)) ? "mine" : "other"
     const e = entryFor(c.id)
     if (e) return e.state === "skip" ? "skip" : e.state === "pending" ? "pending" : "mine"
     if (headcount(c, week) >= CAPACITY) return "full"
@@ -76,14 +114,14 @@ export default function ScheduleScreen() {
       ))}
       {wk.classes.filter((c) => c.day === day).map((c) => {
         const e = entryFor(c.id)
-        const names = [...(e && e.state !== "skip" ? [me] : []), ...c.roster]
+        const names = [...(e && e.state !== "skip" ? ["You"] : []), ...c.roster]
         return (
           <GridBlock
             key={c.id}
             start={c.start}
             tone={toneFor(c)}
             text={names.join(", ") || "—"}
-            onPress={() => (mode?.kind === "usual" ? toggleUsual(c) : setSheet({ kind: "class", id: c.id }))}
+            onPress={() => setSheet({ kind: "class", id: c.id })}
           />
         )
       })}
@@ -128,17 +166,15 @@ export default function ScheduleScreen() {
       Alert.alert("Proposal sent", `${classLabel(sent)}. Your coach answers before the class.`)
     }
   }
-  // Usual classes: one a day at most, with a rest day between them.
-  const toggleUsual = (c: GymClass) => {
-    const key = slotKey(c)
-    if (usual.includes(key)) return setUsual(usual.filter((k) => k !== key))
-    const days = usual.map((k) => parseSlot(k)!.day)
-    if (!restDayOk(days, c.day)) return Alert.alert("Leave a rest day between classes")
-    if (usual.length >= 3) return Alert.alert("Up to 3 classes a week")
-    setUsual([...usual, key])
+  const saveUsual = async (slots: string[]) => {
+    if (await saveUsualClasses(slots)) {
+      setFixedAnswer(st.me, null)
+      setEditing(false)
+    }
   }
-  const saveUsual = async () => {
-    if (await saveUsualClasses(usual)) setMode(null)
+  const answerNo = () => {
+    setFixedAnswer(st.me, "no")
+    setEditing(false)
   }
   // The "I can't go" options that still have somewhere to go.
   const canMove = !!cantId && wk.classes.some((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c, cantId))
@@ -147,19 +183,30 @@ export default function ScheduleScreen() {
   return (
     <ScreenGradient>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-        <FeatureIntro
+        {!setup && !deciding && <FeatureIntro
           id="class-week-v2"
           pages={[
             { icon: "people", title: "See who's going", text: "Your classes are green. Tap any class to see who's in it. Each class has room for 4." },
             { icon: "swap-horizontal", title: "Missed a class? Make it up", text: "Tell your coach early so someone else can take your spot. Then pick another class this week, or propose a new time (never the day before or after another class). If you can't make it up this week, move it to a later week, up to 2 per package." },
             { icon: "checkmark-done", title: "Your coach approves", text: "Changes show in yellow until your coach answers. No answer before the class means no change." },
           ]}
-        />
+        />}
         <SubScreenHeader
           title={nextWeek ? "Next week" : "This week"}
           subtitle={st.pkg ? `${st.pkg.left} sessions left · use by ${st.pkg.useBy}` : "No package yet. Ask your coach."}
-          right={<IntroButton id="class-week-v2" />}
+          right={setup ? undefined : <IntroButton id="class-week-v2" />}
         />
+        {setup ? (
+          <UsualSetup
+            initial={st.defaults}
+            classes={wk.classes}
+            busy={st.busy}
+            askFirst={!editing}
+            onNo={answerNo}
+            onSave={saveUsual}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (<>
         <View style={s.top}>
           {st.status !== "ready" ? (
             st.status === "error"
@@ -167,16 +214,6 @@ export default function ScheduleScreen() {
               : <ActivityIndicator color={C.green} />
           ) : !wk.published ? (
             <Text style={s.note}>Your coach hasn&apos;t published this week&apos;s classes yet.</Text>
-          ) : mode?.kind === "usual" ? (
-            <View style={s.banner}>
-              <Text style={s.bannerText}>Tap the classes you go to every week ({usual.length} picked)</Text>
-              <Pressable hitSlop={8} disabled={!usual.length || st.busy} onPress={saveUsual}>
-                <Text style={[s.bannerSave, !usual.length && { opacity: 0.4 }]}>Save</Text>
-              </Pressable>
-              <Pressable hitSlop={8} onPress={() => setMode(null)}>
-                <Text style={s.bannerCancel}>Cancel</Text>
-              </Pressable>
-            </View>
           ) : mode ? (
             <View style={s.banner}>
               <Text style={s.bannerText}>
@@ -186,22 +223,20 @@ export default function ScheduleScreen() {
                 <Text style={s.bannerCancel}>Cancel</Text>
               </Pressable>
             </View>
-          ) : !st.defaults.length ? (
-            <Pressable style={s.banner} onPress={() => { setUsual([]); setMode({ kind: "usual" }) }}>
-              <Text style={s.bannerText}>Set your weekly schedule: pick the classes you go to every week</Text>
-              <Text style={s.bannerSave}>Start</Text>
-            </Pressable>
           ) : (
             <View style={s.usualRow}>
               <Text style={s.link} numberOfLines={1}>
-                Usual: {st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(", ")}
+                {st.defaults.length
+                  ? `Fixed schedule: ${st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(", ")}`
+                  : "No fixed schedule: tap a class to join it"}
               </Text>
-              <Pressable style={s.pill} hitSlop={6} onPress={() => { setUsual(st.defaults); setMode({ kind: "usual" }) }}>
+              <Pressable style={s.pill} hitSlop={6} onPress={() => setEditing(true)}>
                 <Ionicons name="create-outline" size={14} color={C.green} />
-                <Text style={s.pillText}>Change</Text>
+                <Text style={s.pillText}>{st.defaults.length ? "Change" : "Set one"}</Text>
               </Pressable>
             </View>
           )}
+          {st.status === "ready" && wk.published && !mode && <Legend />}
         </View>
         <WeekGrid
           dates={dates}
@@ -212,7 +247,32 @@ export default function ScheduleScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        </>)}
       </SafeAreaView>
+
+      <Sheet
+        visible={showMissing && !setup}
+        title="No class at your usual time"
+        subtitle={`Your coach has no class ${missing.map(classLabel).join(" or ")} this week.`}
+        onClose={closeMissing}
+      >
+        {joinable.length ? (
+          <>
+            <Text style={s.lead}>These are this week&apos;s classes with room. Tap one to ask your coach for it:</Text>
+            {joinable.slice(0, 6).map((c) => (
+              <SheetOption
+                key={c.id}
+                title={`${classLabel(c)} – ${formatTime(c.start + CLASS_HOURS)}`}
+                detail={`${headcount(c, week)} of ${CAPACITY} climbers`}
+                onPress={() => joinInstead(c)}
+              />
+            ))}
+          </>
+        ) : (
+          <Text style={s.lead}>There&apos;s no class with room this week that leaves a rest day around your other classes. Ask your coach.</Text>
+        )}
+        <SheetButton kind="line" label="Not now" onPress={closeMissing} />
+      </Sheet>
 
       <ClassSheet
         cls={sheet?.kind === "class" ? wk.classes.find((c) => c.id === sheet.id) ?? null : null}
@@ -303,6 +363,26 @@ export default function ScheduleScreen() {
   )
 }
 
+// What the colours on the week mean.
+function Legend() {
+  const items: [string, object][] = [
+    ["Yours", { backgroundColor: C.green }],
+    ["Others", { backgroundColor: "#2F3A35", borderWidth: 1, borderColor: "rgba(111,207,151,0.45)" }],
+    ["Waiting", { backgroundColor: C.yellow }],
+    ["Full", { backgroundColor: "#26282A", borderWidth: 1, borderColor: C.border }],
+  ]
+  return (
+    <View style={s.legend}>
+      {items.map(([label, style]) => (
+        <View key={label} style={s.legendItem}>
+          <View style={[s.swatch, style]} />
+          <Text style={s.legendText}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 function ClassSheet({
   cls, me, week, today, mode, changedAway, fits, onClose, onCant, onUndoSkip, onMoveHere,
 }: {
@@ -379,10 +459,15 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(254,215,102,0.10)", borderWidth: 1, borderColor: "rgba(254,215,102,0.35)",
     borderRadius: 12, padding: 12,
   },
-  bannerText: { flex: 1, color: C.yellow, fontSize: 13, fontWeight: "600" },
-  bannerCancel: { color: C.textSecondary, fontSize: 13, fontWeight: "700" },
+  bannerText: { flex: 1, color: C.yellow, fontSize: 15, fontWeight: "700" },
+  bannerCancel: { color: C.textPrimary, fontSize: 15, fontWeight: "700" },
   bannerSave: { color: C.green, fontSize: 13, fontWeight: "800" },
-  link: { flex: 1, color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  link: { flex: 1, color: C.textPrimary, fontSize: 14, fontWeight: "600" },
+  lead: { fontSize: 14, color: C.textPrimary, lineHeight: 20 },
+  legend: { flexDirection: "row", gap: 14, flexWrap: "wrap" },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  swatch: { width: 14, height: 14, borderRadius: 4 },
+  legendText: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
   usualRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   pill: {
     flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "rgba(111,207,151,0.45)",
@@ -393,7 +478,7 @@ const s = StyleSheet.create({
     fontSize: 13, lineHeight: 19, color: C.yellow, backgroundColor: "rgba(254,215,102,0.08)",
     borderRadius: 12, padding: 12, overflow: "hidden",
   },
-  note: { fontSize: 13, color: C.textSecondary, fontWeight: "600" },
+  note: { fontSize: 14, color: C.textPrimary, fontWeight: "600" },
   hint: { fontSize: 12, color: C.yellow, marginTop: -4 },
   stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
