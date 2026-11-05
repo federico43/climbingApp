@@ -322,8 +322,14 @@ export function PlanCard({
                 color={C.textMuted}
                 text={nextSpec.warmup === "constraints"
                   ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
-                  : "Warm-up · 1 on 1 off"}
-                onSwap={() => swap({ warmup: nextSpec.warmup === "constraints" ? "one_on_one_off" : "constraints" })}
+                  : nextSpec.warmup === "exploration"
+                    ? "First · Route exploration (new routes)"
+                    : "Warm-up · 1 on 1 off"}
+                onSwap={() => swap({
+                  warmup: nextSpec.warmup !== "one_on_one_off"
+                    ? "one_on_one_off"
+                    : plan.focus === "fear_management" ? "exploration" : "constraints",
+                })}
               />
               {nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
               <PickRow

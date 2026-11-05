@@ -2,6 +2,7 @@
 // an estimated duration. Pure. Used by the athlete's Plan tab for built
 // workouts (from their blocks) and upcoming ones (from the rotation).
 
+import { EXPLORATION_PART_MIN } from "@/utils/routeExploration"
 import type { BlockRow } from "@/services/BoulderGraphService"
 import { type Adaptation, resolveAdaptation } from "@/utils/adaptations"
 import { findLibraryBlock } from "@/utils/planWorkout"
@@ -95,6 +96,8 @@ function settingsSeconds(b: any): number {
       return n(b.series, 4) * (n(b.workTime, 60) + n(b.restTime, 60))
     case "strength_conditioning":
       return n(b.rounds, 3) * ((b.exercises?.length || 2) * ATTEMPT_SECS + n(b.restBetweenRounds, 120))
+    case "route_exploration":
+      return (n(b.timeLimit, EXPLORATION_PART_MIN) + n(b.projectTime, EXPLORATION_PART_MIN)) * 60
     default: // exploration / free session
       return n(b.timeLimit, 20) * 60
   }
@@ -126,7 +129,7 @@ const toMinutes = (secs: number) => Math.max(5, Math.round(secs / 60 / 5) * 5)
 
 function phaseOf(b: any): PhaseKey {
   if (b.type === "strength_conditioning") return "sc"
-  if (b.type === "constraint_warmup" || (b.type === "intervals" && b.kind === "warmup")) return "warmup"
+  if (b.type === "constraint_warmup" || b.type === "route_exploration" || (b.type === "intervals" && b.kind === "warmup")) return "warmup"
   if (b.adaptation === "test" || (b.type === TEST_BLOCK.type && (b.blockName ?? "").trim().toLowerCase() === TEST_BLOCK.name.toLowerCase())) return "test"
   return "main"
 }
@@ -149,6 +152,11 @@ function mainDetail(b: any, copies: number): string {
     default:
       return b.timeLimit ? `${b.timeLimit} min${each}` : ""
   }
+}
+
+// "Flash 25 min + project 25 min".
+function explorationDetail(b: any): string {
+  return `Flash ${b.timeLimit || EXPLORATION_PART_MIN} min + project ${b.projectTime || EXPLORATION_PART_MIN} min`
 }
 
 // "Yellow · 20 min" (or just "20 min" when the athlete picks the grade).
@@ -176,6 +184,7 @@ function summarizeGroup(key: PhaseKey, blocks: any[], minutes: number): PhaseSum
     }
   }
   if (key === "warmup") {
+    if (first.type === "route_exploration") return { ...base, title: first.blockName || "Route exploration", detail: explorationDetail(first) }
     if (first.type === "intervals") {
       // 1 on 1 off goes in untagged (§6.2) — a general warm-up, not power endurance.
       const adaptation: Adaptation = first.adaptation ? resolveAdaptation(first) : "general"
@@ -239,6 +248,12 @@ export function summarizeSpec(
   }
   const phases: PhaseSummary[] = []
 
+  // Route exploration goes first, before S&C (Fear management plans).
+  if (spec.warmup === "exploration") {
+    const ex = { type: "route_exploration", blockName: "Route exploration", timeLimit: EXPLORATION_PART_MIN, projectTime: EXPLORATION_PART_MIN, adaptation: "fear_management" }
+    phases.push(summarizeGroup("warmup", [ex], toMinutes(estimateBlockSeconds(ex, history))))
+  }
+
   if (spec.scFocus) {
     // Same layout as utils/scPlanBuilder.ts buildScBlocks: one pattern → its
     // 1–2 exercises by sets; 2–4 → pairs; none → mobility only. (A plan with
@@ -286,7 +301,7 @@ export function summarizeSpec(
       detail: `${PLAN_FOCUS_LABEL[plan.focus]} focus`,
       minutes: toMinutes(3 * estimateBlockSeconds(one, history)),
     })
-  } else {
+  } else if (spec.warmup === "one_on_one_off") {
     const warm = { ...fromLibrary(WARMUP_INTERVALS_BLOCK), kind: "warmup", series: 4 }
     phases.push(summarizeGroup("warmup", [warm], toMinutes(estimateBlockSeconds(warm, history))))
   }

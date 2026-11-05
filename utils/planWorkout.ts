@@ -2,11 +2,14 @@ import type { Block } from "@/components/workoutBlocks"
 import type { BlockRow, ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage, type WarmupPick } from "@/utils/progression/constraintWarmup"
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
-import { MAIN_BLOCK_COPIES, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
+import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
+import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
 //   S&C → warm-up → main block × 2 (the same library block twice)
+// or, on a Fear management route exploration day:
+//   route exploration → S&C → main block × 2
 // On a test day (first workout, and the first one of the last week) the
 // Density test comes back separately in `homework` — the athlete does it on
 // a day of their own (coach 2026-10-07).
@@ -46,6 +49,21 @@ export function constraintWarmupDrafts(picks: WarmupPick[], library: BlockRow[])
     out.push({ ...cloneLibraryBlock(row), level: p.colour, targetAttempts: p.attempts } as PlanBlockDraft)
   }
   return out
+}
+
+// The route exploration: the coach's library copy if there is one (its
+// notes), else the default; starting colour from the athlete's flash.
+export function explorationDraft(library: BlockRow[], flash: string | null | undefined): PlanBlockDraft {
+  const row = findLibraryBlock(EXPLORATION_BLOCK, library)
+  const base = row
+    ? cloneLibraryBlock(row) as any
+    : { type: "route_exploration", blockName: EXPLORATION_BLOCK.name, description: EXPLORATION_DEFAULT_DESCRIPTION }
+  return {
+    ...base,
+    timeLimit: base.timeLimit || EXPLORATION_PART_MIN,
+    projectTime: base.projectTime || EXPLORATION_PART_MIN,
+    startColour: explorationStartColour(flash),
+  } as PlanBlockDraft
 }
 
 function warmupDrafts(plan: PlanShape, spec: WorkoutSpec, library: BlockRow[], sessions: SessionRow[], flash: string | null | undefined, warnings: string[]): PlanBlockDraft[] {
@@ -106,6 +124,8 @@ export function buildPlanWorkout(
 ): PlanWorkout {
   const warnings: string[] = []
   const blocks: PlanBlockDraft[] = []
+  // Exploration goes before everything, S&C included (coach 2026-11-05).
+  if (spec.warmup === "exploration") blocks.push(explorationDraft(library, flash))
 
   const sc = buildScBlocks(plan, spec, exercises, sessions)
   blocks.push(...sc.blocks)
@@ -122,7 +142,7 @@ export function buildPlanWorkout(
 
   const homework: PlanBlockDraft[] = []
   if (spec.withTest) libraryBlock(TEST_BLOCK, 1, homework)
-  blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
+  if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
   libraryBlock(spec.mainBlock, MAIN_BLOCK_COPIES)
 
   return { blocks, homework, warnings }
