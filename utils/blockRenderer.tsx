@@ -4,6 +4,7 @@ import { C } from "@/utils/theme"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
 import { FourByFourBlock } from "@/components/FourByFourBlock"
+import { RouteExplorationBlock } from "@/components/RouteExplorationBlock"
 import { IntervalsBlock } from "@/components/IntervalsBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { ProjectBoulderingBlock } from "@/components/ProjectBoulderingBlock"
@@ -130,6 +131,19 @@ export function BlockRenderer({
         <ExplorationSessionBlock
           block={block}
           logAttempt={logAttempt}
+          goToNextBlock={goToNextBlock}
+          goToPreviousBlock={onPrevBlock}
+        />
+      )
+
+    case "route_exploration":
+      return (
+        <RouteExplorationBlock
+          key={currentBlockIndex}
+          block={block}
+          attempts={blockAttempts}
+          logAttempt={logAttempt}
+          undoLastAttempt={undoLastAttempt}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
         />
