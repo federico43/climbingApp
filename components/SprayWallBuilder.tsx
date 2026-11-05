@@ -11,14 +11,14 @@ import {
   type VariationKey,
   type RouteVariations,
 } from "@/utils/sequenceVariations"
-import { Gesture, GestureDetector } from "react-native-gesture-handler"
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler"
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated"
 import React, { useMemo, useRef, useState } from "react"
-import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { Image } from "expo-image"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -605,8 +605,17 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // The builder is usually shown inside a RN <Modal> (coached block, sequence
+  // block, athlete sequence creator), which on Android is its own native
+  // window outside the app-level GestureHandlerRootView: the hold taps, pans
+  // and pinch then silently do nothing and the screen looks frozen. Android
+  // gets its own root here (a nested one is harmless). iOS/macOS keep the
+  // plain View — they work today, and RNGH nested in a Modal swallowed
+  // Pressable taps on macOS (see AthleteWorkoutBuilder.tsx).
+  const Root = Platform.OS === "android" ? GestureHandlerRootView : View
+
   return (
-    <View style={styles.screen}>
+    <Root style={styles.screen}>
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         {/* Left: back + undo + redo */}
@@ -883,7 +892,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
           </View>
         </View>
       )}
-    </View>
+    </Root>
   )
 }
 
