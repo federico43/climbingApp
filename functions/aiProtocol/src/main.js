@@ -3,6 +3,7 @@ import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
 import { handleClassAction, runClassCron } from "./classes.js"
 import { PUSH_LOG_KEEP_DAYS, PUSH_LOG_TABLE, pushLogRows, toPushLogEntry } from "./pushLog.js"
+import { videoPushMessage } from "./videoPush.js"
 
 // Model. Haiku is cheap and plenty for turning a sentence into a structured
 // protocol. Bump to "claude-sonnet-4-6" or "claude-opus-4-8" for higher quality.
@@ -16,6 +17,7 @@ const USERS_TABLE = process.env.USERS_TABLE || "users"
 const PROTOCOLS_TABLE = process.env.PROTOCOLS_TABLE || "protocol"
 const TRAINING_PLANS_TABLE = process.env.TRAINING_PLANS_TABLE || "training_plans"
 const EXERCISES_TABLE = process.env.EXERCISES_TABLE || "exercises"
+const VIDEOS_TABLE = process.env.VIDEOS_TABLE || "videos"
 // The gym's time zone: class times are its wall clock.
 const GYM_TZ = process.env.GYM_TZ || "UTC"
 
@@ -374,6 +376,24 @@ export default async ({ req, res, log, error }) => {
       body: protocolName ? `${athleteName} finished "${protocolName}".` : `${athleteName} finished a workout.`,
       data: { type: "workout_completed", athleteId: userId },
     }), log, error, { receiptWaitMs: RECEIPT_WAIT_MS, source: body.action })
+    return res.json({ ok: true, notified }, 200)
+  }
+
+  // ── Action: an athlete's clip reached the coach → push the coach(es) ─────────
+  // body: { videoId }. Sent by the app's upload queue once the `videos` row
+  // exists. The row is read with the server key and must be the caller's own,
+  // so nobody can make the coach's phone buzz about someone else's clip. A
+  // coach uploading their own clip is a silent no-op, like notifyCoach.
+  if (body.action === "videoUploaded") {
+    const video = typeof body.videoId === "string" && body.videoId ? await getRow(VIDEOS_TABLE, body.videoId, log) : null
+    if (!video) return res.json({ error: "No such video." }, 404)
+    if (video.userId !== userId) return res.json({ error: "Not your video." }, 403)
+    const caller = await getUserRow(userId, log)
+    if (!caller || caller.role === "coach") return res.json({ ok: true, notified: 0 }, 200)
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    // Called with async: true, so there's time to check delivery receipts.
+    const notified = await pushToUsers(coaches, () => videoPushMessage(video, caller.username),
+      log, error, { receiptWaitMs: RECEIPT_WAIT_MS, source: body.action })
     return res.json({ ok: true, notified }, 200)
   }
 

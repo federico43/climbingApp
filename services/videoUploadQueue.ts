@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as FileSystem from "expo-file-system/legacy"
 import { useEffect, useState } from "react"
+import { sendVideoUploadedNotification } from "@/services/notifications"
 import { createVideoRow, putVideoObject, VIDEO_PRESIGN_FUNCTION_ID, VideoMeta } from "@/services/videoStorage"
 
 // Clips waiting to reach the coach, persisted so a failed or interrupted
@@ -26,6 +27,10 @@ export interface QueuedUpload {
   lastError?: string
   object?: { url: string; key: string }
   remoteId?: string
+  // false = the clip is up but the coach's push hasn't gone out yet (retried
+  // on the next pass). Left unset on entries from before the push existed,
+  // so an app update doesn't ping the coach about old clips.
+  coachNotified?: boolean
 }
 
 const STORAGE_KEY = "videoUploadQueue.v1"
@@ -121,7 +126,10 @@ async function runQueue(ignoreBackoff: boolean): Promise<void> {
   )
 
   for (const entry of [...(queue ?? [])]) {
-    if (entry.status === "uploaded") continue
+    if (entry.status === "uploaded") {
+      if (entry.coachNotified === false && entry.remoteId) await notifyCoach(entry.filename, entry.remoteId)
+      continue
+    }
     if (!ignoreBackoff && entry.nextAttemptAt && entry.nextAttemptAt > Date.now()) continue
     // Removed (deleted by the athlete) while an earlier entry was uploading.
     if (!queue?.some((e) => e.filename === entry.filename)) continue
@@ -150,8 +158,9 @@ async function runQueue(ignoreBackoff: boolean): Promise<void> {
         if (entry.meta.rowId && e?.code === 409) remoteId = entry.meta.rowId
         else throw e
       }
-      await update(entry.filename, { status: "uploaded", remoteId, lastError: undefined, nextAttemptAt: undefined })
+      await update(entry.filename, { status: "uploaded", remoteId, coachNotified: false, lastError: undefined, nextAttemptAt: undefined })
       console.log("[uploadQueue] sent to coach:", entry.filename)
+      await notifyCoach(entry.filename, remoteId)
     } catch (e: any) {
       const attempts = entry.attempts + 1
       console.warn("[uploadQueue] upload failed (attempt", attempts, "):", entry.filename, e?.message ?? e)
@@ -162,6 +171,18 @@ async function runQueue(ignoreBackoff: boolean): Promise<void> {
         nextAttemptAt: Date.now() + backoffMs(attempts),
       })
     }
+  }
+}
+
+// Push the coach about a clip that's up. Best effort: on failure the entry
+// stays coachNotified: false and the next pass (app start, foreground, next
+// upload) tries again.
+async function notifyCoach(filename: string, videoId: string): Promise<void> {
+  try {
+    await sendVideoUploadedNotification(videoId)
+    await update(filename, { coachNotified: true })
+  } catch (e: any) {
+    console.warn("[uploadQueue] coach push failed, will retry:", filename, e?.message ?? e)
   }
 }
 
