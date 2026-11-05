@@ -19,7 +19,7 @@ export const PLAN_FOCUS_LABEL: Record<PlanFocus, string> = {
   power_endurance: "Power endurance",
   power: "Power",
   technique: "Technique",
-  fear_management: "Fear management",
+  fear_management: "Mental",
 }
 
 // S&C patterns per plan: 1 to 4 (coach 2026-10-03: exactly 4; 2026-11-04:
