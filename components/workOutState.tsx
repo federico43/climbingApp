@@ -76,6 +76,7 @@ export function WorkOutState({
     restTimeRemaining,
     logAttempt,
     undoLastAttempt,
+    removeAttempt,
     updateLastAttempt,
     startWorkout,
     startRestTimer,
@@ -390,6 +391,7 @@ export function WorkOutState({
               attemptsDone={attemptsDone}
               logAttempt={logAttempt}
               undoLastAttempt={undoLastAttempt}
+              removeAttempt={removeAttempt}
               updateLastAttempt={updateLastAttempt}
               timeRemaining={timeRemaining}
               restTimeRemaining={restTimeRemaining}
