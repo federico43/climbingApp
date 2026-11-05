@@ -18,6 +18,7 @@ import { router } from "expo-router"
 import CustomButton from "./customButton"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
+import { ADAPTATION_COLOR } from "@/utils/adaptations"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -86,20 +87,25 @@ export function WorkOutState({
     goToNextBlock,
     goToPreviousBlock,
     skipBlock,
+    leaveAsHomework,
     attempts,
     blockDurations,
     blockStartTime,
     workoutStartTime,
     skippedBlocks,
+    homeworkBlocks,
   } = workout
 
+  // Skip, or leave it as homework: what's logged is kept and the rest goes to
+  // the Plan page's homework, with a deadline and reminders (utils/homework.ts).
   function handleSkip() {
     Alert.alert(
-      "Skip this block?",
-      "It won't be saved or shown in your workout summary.",
+      "Can't finish this block?",
+      "Leave it as homework to do on another day — what you've logged is kept and your coach is told. Or skip it: it won't be saved.",
       [
-        { text: "Cancel", style: "cancel" },
+        { text: "Leave as homework", onPress: leaveAsHomework },
         { text: "Skip", style: "destructive", onPress: skipBlock },
+        { text: "Cancel", style: "cancel" },
       ]
     )
   }
@@ -223,6 +229,7 @@ export function WorkOutState({
     const completedBlocks = protocol
       .map((block: any, i: number) => ({ block, originalIndex: i }))
       .filter(({ originalIndex }) => !skippedBlocks.has(originalIndex))
+    const doneCount = completedBlocks.filter(({ originalIndex }) => !homeworkBlocks.has(originalIndex)).length
 
     return (
       <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={["bottom"]}>
@@ -248,8 +255,8 @@ export function WorkOutState({
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryStat}>
-              <Text style={styles.summaryStatNum}>{completedBlocks.length}</Text>
-              <Text style={styles.summaryStatLabel}>block{completedBlocks.length !== 1 ? "s" : ""}{"\n"}completed</Text>
+              <Text style={styles.summaryStatNum}>{doneCount}</Text>
+              <Text style={styles.summaryStatLabel}>block{doneCount !== 1 ? "s" : ""}{"\n"}completed</Text>
             </View>
           </View>
 
@@ -272,8 +279,14 @@ export function WorkOutState({
                     <Text style={styles.summaryBlockName} numberOfLines={1}>
                       {block.blockName || "Block"}
                     </Text>
-                    <Text style={styles.summaryBlockDuration}>{durStr}</Text>
-                    <Text style={styles.summaryBlockCheck}>✓</Text>
+                    {homeworkBlocks.has(originalIndex) ? (
+                      <Text style={styles.summaryBlockHomework}>Homework</Text>
+                    ) : (
+                      <>
+                        <Text style={styles.summaryBlockDuration}>{durStr}</Text>
+                        <Text style={styles.summaryBlockCheck}>✓</Text>
+                      </>
+                    )}
                   </View>
                   {!!projectAttempts?.length && (
                     <View style={styles.summaryProject}>
@@ -284,6 +297,12 @@ export function WorkOutState({
               )
             })}
           </View>
+
+          {homeworkBlocks.size > 0 && (
+            <Text style={styles.summaryHomeworkNote}>
+              {"What's left is on your Plan page as homework — pick a day to finish it in the next 5 days."}
+            </Text>
+          )}
 
           <CustomButton
             title="Back to home"
@@ -670,6 +689,17 @@ const styles = StyleSheet.create({
   summaryBlockCheck: {
     fontSize: 14,
     color: C.green,
+  },
+  summaryBlockHomework: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: ADAPTATION_COLOR.test,
+  },
+  summaryHomeworkNote: {
+    fontSize: 13,
+    color: C.textSecondary,
+    textAlign: "center",
+    marginBottom: 16,
   },
   summaryAutoClose: {
     fontSize: 13,

@@ -6,6 +6,8 @@ import { applyMainSwap, mainSwapFor } from "@/utils/mainSwap"
 import { cloneLibraryBlock, findLibraryBlock } from "@/utils/planWorkout"
 import { enqueueSession, onSessionsSynced } from "@/services/sessionSyncQueue"
 import { serializeSession } from "@/utils/workoutSession"
+import { blocksLeftOut, leftHomework } from "@/utils/homework"
+import { localDateStr } from "@/utils/planRotation"
 import {
   clearPersistedWorkout,
   loadPersistedWorkout,
@@ -135,11 +137,15 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
                 saved.protocol ?? [],
                 saved.attempts,
                 saved.blockDurations ?? {},
-                new Set(saved.skippedBlocks ?? []),
+                blocksLeftOut(new Set(saved.skippedBlocks ?? []), new Set(saved.homeworkBlocks ?? []), saved.attempts),
               ),
               ...saved.link,
             },
-            { userId: saved.userId ?? null },
+            {
+              userId: saved.userId ?? null,
+              homework: homeworkFor(saved.protocol ?? [], saved.attempts, new Set(saved.homeworkBlocks ?? []),
+                saved.protocolName ?? "", saved.link ?? null),
+            },
           )
         }
         await clearPersistedWorkout()
@@ -155,6 +161,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
         attempts: saved.attempts,
         blockDurations: saved.blockDurations ?? {},
         skippedBlocks: saved.skippedBlocks ?? [],
+        homeworkBlocks: saved.homeworkBlocks ?? [],
         workoutStartTime: saved.workoutStartTime ?? null,
       })
       setWorkoutActive(true)
@@ -177,6 +184,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       attempts: workout.attempts,
       blockDurations: workout.blockDurations,
       skippedBlocks: Array.from(workout.skippedBlocks),
+      homeworkBlocks: Array.from(workout.homeworkBlocks),
       currentBlockIndex: workout.currentBlockIndex,
       workoutStartTime: workout.workoutStartTime,
       savedAt: Date.now(),
@@ -186,6 +194,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     workout.attempts,
     workout.blockDurations,
     workout.skippedBlocks,
+    workout.homeworkBlocks,
     workout.currentBlockIndex,
     protocol,
     protocolName,
@@ -201,11 +210,17 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     if (workout.status !== "completed") return
     enqueueSession(
       {
-        // Skipped blocks are dropped and indices remapped (see serializeSession).
-        ...serializeSession(protocol, workout.attempts, workout.blockDurations, workout.skippedBlocks),
+        // Skipped blocks (and homework ones with nothing logged) are dropped
+        // and indices remapped (see serializeSession).
+        ...serializeSession(protocol, workout.attempts, workout.blockDurations,
+          blocksLeftOut(workout.skippedBlocks, workout.homeworkBlocks, workout.attempts)),
         ...link,
       },
-      { userId, notifyProtocolName: protocolName },
+      {
+        userId,
+        notifyProtocolName: protocolName,
+        homework: homeworkFor(protocol, workout.attempts, workout.homeworkBlocks, protocolName, link),
+      },
     ).then(() => clearPersistedWorkout())
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per completion, with that moment's data
   }, [workout.status])
@@ -268,6 +283,16 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   }
 
   return <WorkoutContext.Provider value={value}>{children}</WorkoutContext.Provider>
+}
+
+// The homework to make from the blocks the athlete left (null = none), on
+// the same plan slot as the workout.
+function homeworkFor(
+  protocol: any[], attempts: { blockIndex: number }[], marked: Set<number>, name: string, link: SessionLink | null,
+) {
+  const hw = leftHomework(protocol, attempts, marked, name, localDateStr(new Date()))
+  if (!hw) return null
+  return link?.planId && link.planIndex != null ? { ...hw, planId: link.planId, planIndex: link.planIndex } : hw
 }
 
 // ─── Consumer hook ────────────────────────────────────────────────────────────

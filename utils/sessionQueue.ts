@@ -19,6 +19,10 @@ export interface PendingSession {
   data: Record<string, any>
   // Set when finishing it should notify the coach (services/notifications.ts).
   notify?: { protocolName: string }
+  // Blocks the athlete left as homework (utils/homework.ts leftHomework) —
+  // made right after the session row, with the entry's id as the row id.
+  homework?: { name: string; blocks: any[]; dueBy: string; planId?: string; planIndex?: number }
+  homeworkMade?: boolean
   saved?: boolean
   createdAt: number
   tries: number
@@ -29,6 +33,8 @@ export interface FlushDeps {
   currentUserId: string
   save: (entry: PendingSession) => Promise<unknown>
   notify: (entry: PendingSession) => Promise<unknown>
+  // Makes the entry's homework; a row that's already there must resolve.
+  homework?: (entry: PendingSession) => Promise<unknown>
   // Called after every step so progress survives the app dying mid-pass.
   update: (entry: PendingSession) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -38,6 +44,9 @@ export interface FlushResult {
   synced: number   // entries fully done (row written, coach notified) this pass
   offline: boolean // stopped early: no connection
 }
+
+// Server errors making the homework before it's given up on.
+export const HOMEWORK_TRIES = 5
 
 export function isAlreadySaved(e: unknown): boolean {
   return (e as { code?: number } | null)?.code === 409
@@ -70,7 +79,24 @@ export async function flushPendingSessions(entries: PendingSession[], deps: Flus
           continue
         }
       }
-      if (entry.notify) await deps.update(entry)
+      if (entry.notify || entry.homework) await deps.update(entry)
+    }
+
+    if (entry.homework && !entry.homeworkMade && deps.homework) {
+      try {
+        await deps.homework(entry)
+        entry = { ...entry, homeworkMade: true, lastError: undefined }
+        await deps.update(entry)
+      } catch (e) {
+        if (isNetworkError(e)) return { synced, offline: true }
+        // Keep trying on later passes, but never hold the queue forever.
+        const tries = entry.tries + 1
+        if (tries < HOMEWORK_TRIES) {
+          await deps.update({ ...entry, tries, lastError: message(e) })
+          continue
+        }
+        entry = { ...entry, homeworkMade: true, lastError: message(e) }
+      }
     }
 
     if (entry.notify) {
