@@ -1,15 +1,15 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
-import { getUsers } from "@/services/BoulderGraphService"
+import { getSessions, getUsers } from "@/services/BoulderGraphService"
 import { shared_styles, topBar_styles, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
-  explorationGoes, explorationNotes, explorationStartColour, nextExplorationColour, summarizeExploration,
-  wallLabel, WALLS,
+  explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
+  summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
@@ -94,6 +94,17 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
   const [notice, setNotice] = useState<string | null>(null)
   const [reasons, setReasons] = useState<string[]>([])
   const [notes, setNotes] = useState("")
+  // The previous exploration, for the review (undefined = still loading).
+  const [last, setLast] = useState<{ date: string; summary: ExplorationSummary } | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (phase !== "done" || last !== undefined) return
+    const own = attempts.map((a) => a.timestamp)
+    getSessions()
+      .then((sessions) => setLast(lastExploration(sessions, own)))
+      .catch(() => setLast(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
 
   // No colour authored: the athlete's flash level, blue at least.
   useEffect(() => {
@@ -159,7 +170,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
         </View>
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
-            <Text style={styles.scoreBadgeText}>{explorationGoes(routes)} goes</Text>
+            <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
           </View>
         )}
       </View>
@@ -353,24 +364,66 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
     )
   }
 
-  // ── Done ───────────────────────────────────────────────────────────────────
+  // ── Done: review ─────────────────────────────────────────────────────────────
+  // Points today vs the last exploration, then where they came from.
+  const lastWall = (w: string) => last?.summary.byWall.find((b) => b.wall === w)
+  const diff = last ? Math.round((summary.points - last.summary.points) * 10) / 10 : 0
   return (
     <View style={shared_styles.screen}>
       <TopBar title="Session complete" onBack={goToPreviousBlock} />
       <ScrollView contentContainerStyle={styles.reviewScroll}>
         <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>Goes in part 1</Text>
-          <Text style={styles.scoreValue}>{summary.goes}</Text>
-          <Text style={styles.scoreSub}>{routes.length} route{routes.length !== 1 ? "s" : ""}</Text>
+          <Text style={styles.scoreLabel}>Points today</Text>
+          <Text style={styles.scoreValue}>{formatPoints(summary.points)}</Text>
+          <Text style={styles.scoreSub}>
+            {routes.length} route{routes.length !== 1 ? "s" : ""} · {routes.length - notSent.length} sent
+          </Text>
         </View>
+
+        <View style={styles.lastCard}>
+          {last === undefined ? (
+            <Text style={styles.scoreSub}>Loading last session…</Text>
+          ) : last === null ? (
+            <Text style={styles.scoreSub}>First exploration. Next time you&apos;ll see how you compare.</Text>
+          ) : (
+            <>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.breakdownTitle}>Last session · {shortDate(last.date)}</Text>
+                <Text style={styles.lastValue}>{formatPoints(last.summary.points)} pts</Text>
+              </View>
+              <Text style={[styles.diff, { color: diff > 0 ? C.green : diff < 0 ? C.red : C.textSecondary }]}>
+                {diff > 0 ? "+" : ""}{formatPoints(diff)}
+              </Text>
+            </>
+          )}
+        </View>
+
+        {summary.byWall.length > 0 && (
+          <View style={styles.breakdownCard}>
+            <Text style={styles.breakdownTitle}>By wall</Text>
+            {summary.byWall.map((b) => {
+              const prev = lastWall(b.wall)
+              return (
+                <View key={b.wall} style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>{wallLabel(b.wall)}</Text>
+                  <Text style={styles.breakdownCount}>{b.sent}/{b.tried} sent</Text>
+                  <Text style={styles.breakdownPts}>{formatPoints(b.points)} pts</Text>
+                  {prev && <Text style={styles.breakdownLast}>last {formatPoints(prev.points)}</Text>}
+                </View>
+              )
+            })}
+          </View>
+        )}
+
         {summary.byColour.length > 0 && (
           <View style={styles.breakdownCard}>
-            <Text style={styles.breakdownTitle}>Breakdown</Text>
+            <Text style={styles.breakdownTitle}>By colour</Text>
             {summary.byColour.map((b) => (
               <View key={b.colour} style={styles.breakdownRow}>
                 <View style={[styles.levelDot, { backgroundColor: swatch(b.colour) }]} />
                 <Text style={styles.breakdownLabel}>{colourLabel(b.colour)}</Text>
                 <Text style={styles.breakdownCount}>{b.sent}/{b.tried} sent</Text>
+                <Text style={styles.breakdownPts}>{formatPoints(b.points)} pts</Text>
               </View>
             ))}
           </View>
@@ -381,6 +434,11 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
       </ScrollView>
     </View>
   )
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
 // Same values as ExplorationSessionBlock (the Density test).
@@ -461,4 +519,9 @@ const styles = StyleSheet.create({
   levelDot: { width: 12, height: 12, borderRadius: 6 },
   breakdownLabel: { fontSize: 15, fontWeight: "600", flex: 1, color: C.textPrimary },
   breakdownCount: { fontSize: 14, color: C.textSecondary },
+  breakdownPts: { fontSize: 14, fontWeight: "700", color: C.green, minWidth: 56, textAlign: "right" },
+  breakdownLast: { fontSize: 12, color: C.textMuted, minWidth: 48, textAlign: "right" },
+  lastCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
+  lastValue: { fontSize: 22, fontWeight: "800", color: C.textPrimary, marginTop: 2 },
+  diff: { fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
 })
