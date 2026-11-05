@@ -462,6 +462,51 @@ export default async ({ req, res, log, error }) => {
     return res.json({ ok: true, row: updated }, 200)
   }
 
+  // ── Action: athlete left a block as homework ─────────────────────────────────
+  // body: { id, name, blocks: [...], dueBy: "YYYY-MM-DD", planId?, planIndex? }
+  // Mid-workout "Leave as homework" (utils/homework.ts leftHomework): the row
+  // is written here with the server key under the caller's id, then the
+  // coach(es) get a push. `id` makes a retry from the phone's queue safe.
+  if (body.action === "homeworkLeft") {
+    const id = typeof body.id === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,35}$/.test(body.id) ? body.id : null
+    const blocks = Array.isArray(body.blocks) ? body.blocks : null
+    if (!id || !blocks || blocks.length === 0 || blocks.length > 10 || !DAY_RE.test(body.dueBy ?? "")) {
+      return res.json({ error: "Bad homework." }, 400)
+    }
+    if (!blocks.every((b) => b && typeof b === "object" && b.leftAsHomework)) {
+      return res.json({ error: "Bad homework." }, 400)
+    }
+    const existing = await getProtocolRow(id, log)
+    if (existing) {
+      if (existing.athleteId !== userId || existing.planPart !== "homework") return res.json({ error: "Taken." }, 409)
+      return res.json({ ok: true, row: existing, existed: true }, 200)
+    }
+    const data = {
+      name: clip(body.name, 120) || "Homework",
+      blocks: JSON.stringify(blocks),
+      athleteId: userId,
+      planPart: "homework",
+      dueBy: body.dueBy,
+    }
+    if (typeof body.planId === "string" && body.planId && Number.isInteger(body.planIndex)) {
+      data.planId = body.planId
+      data.planIndex = body.planIndex
+    }
+    const row = await createRow(PROTOCOLS_TABLE, data, id, log)
+    if (!row) return res.json({ error: "Could not save. (Does the function's API key have write access?)" }, 502)
+
+    const caller = await getUserRow(userId, log)
+    const name = caller?.username || "Your athlete"
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    await pushToUsers(coaches, () => ({
+      sound: "default",
+      title: "Homework left for later",
+      body: `${name} didn't finish ${data.name} and left it as homework.`,
+      data: { type: "homework_update", athleteId: userId, homeworkId: row.$id },
+    }), log, error, { source: body.action })
+    return res.json({ ok: true, row }, 200)
+  }
+
   // ── Action: athlete replaces an S&C exercise for the rest of their plan ─────
   // body: { planId, fromExerciseId, toExerciseId, afterPlanIndex? }
   // The plan's pick for that pattern is replaced (same slot), and workouts
