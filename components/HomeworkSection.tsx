@@ -10,7 +10,7 @@ import {
   type HomeworkIntent,
 } from "@/services/homework"
 import {
-  atLocal, daysToPick, dueByOf, homeworkStatus, shortDay, timeLabel, type HomeworkStatus,
+  atLocal, daysToPick, dueByOf, homeworkStatus, leftByAthlete, shortDay, timeLabel, type HomeworkStatus,
 } from "@/utils/homework"
 import { addDays, localDateStr } from "@/utils/planRotation"
 import AsyncStorage from "@react-native-async-storage/async-storage"
@@ -212,7 +212,9 @@ function PromptModal({ hw, onClose, onPick }: { hw: ProtocolRow | null; onClose:
           {hw && (
             <Text style={s.sheetText}>
               <Text style={{ fontWeight: "800", color: C.textPrimary }}>{hw.name}</Text>
-              {` from your coach. Pick a day to do it before ${shortDay(dueByOf(hw))} and we'll remind you.`}
+              {leftByAthlete(hw)
+                ? ` is waiting — you left it for later. Pick a day to finish it before ${shortDay(dueByOf(hw))} and we'll remind you.`
+                : ` from your coach. Pick a day to do it before ${shortDay(dueByOf(hw))} and we'll remind you.`}
             </Text>
           )}
           <Pressable style={s.primary} onPress={onPick}>

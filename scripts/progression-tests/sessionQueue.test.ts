@@ -3,7 +3,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/sessionQueue.test.ts
 
 import assert from "node:assert/strict"
-import { flushPendingSessions, type FlushDeps, type PendingSession } from "@/utils/sessionQueue"
+import { flushPendingSessions, HOMEWORK_TRIES, type FlushDeps, type PendingSession } from "@/utils/sessionQueue"
 
 const offline = () => new TypeError("Network request failed")
 const appwrite = (message: string, code: number) => Object.assign(new Error(message), { name: "AppwriteException", code })
@@ -92,6 +92,36 @@ function harness(entries: PendingSession[], opts: { saveFails?: Record<string, u
   assert.deepEqual(await flushPendingSessions(h.store, h.deps), { synced: 1, offline: false })
   assert.deepEqual(h.saved, ["s2"])
   assert.deepEqual(h.store.map((e) => e.id), ["s1"])
+}
+
+
+// Homework left mid-workout: made after the row, before the coach push; offline
+// keeps it for the next pass; a server error retries up to HOMEWORK_TRIES.
+{
+  const hw = { name: "S&C", blocks: [{}], dueBy: "2026-11-10" }
+  const made: string[] = []
+  let fail: unknown = offline()
+  const h = harness([entry("s1", { homework: hw, notify: { protocolName: "A" } })])
+  const deps = () => ({ ...h.deps, homework: async (e: PendingSession) => { if (fail) throw fail; made.push(e.id) } })
+  assert.deepEqual(await flushPendingSessions(h.store, deps()), { synced: 0, offline: true })
+  assert.equal(h.store[0].saved, true)
+  assert.equal(h.store[0].homeworkMade, undefined)
+  assert.deepEqual(h.notified, [])
+  fail = appwrite("boom", 500)
+  for (let i = 1; i < HOMEWORK_TRIES; i++) {
+    assert.deepEqual(await flushPendingSessions(h.store, deps()), { synced: 0, offline: false })
+    assert.equal(h.store[0].tries, i)
+  }
+  // last try: given up, the session still finishes and the coach is pinged
+  assert.deepEqual(await flushPendingSessions(h.store, deps()), { synced: 1, offline: false })
+  assert.deepEqual(h.notified, ["s1"])
+  assert.equal(h.store.length, 0)
+  assert.deepEqual(h.saved, ["s1"])
+
+  fail = null
+  const h2 = harness([entry("s2", { homework: hw })])
+  assert.deepEqual(await flushPendingSessions(h2.store, { ...h2.deps, homework: async (e) => { made.push(e.id) } }), { synced: 1, offline: false })
+  assert.deepEqual(made, ["s2"])
 }
 
 console.log("all session queue tests passed")
