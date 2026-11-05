@@ -37,7 +37,7 @@ interface Props {
   block: any
   attempts: Attempt[]
   logAttempt: (attempt: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => void
-  undoLastAttempt?: () => void
+  removeAttempt?: (timestamp: number) => void
   goToNextBlock: () => void
   goToPreviousBlock?: () => void
 }
@@ -74,7 +74,7 @@ function useCountdown(minutes: number, running: boolean, onEnd: () => void) {
   return left
 }
 
-export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttempt, goToNextBlock, goToPreviousBlock }: Props) {
   const nextLabel = useNextBlockLabel("Continue")
   const { User } = ConsumeAuth()
   const flashMin = block?.timeLimit || EXPLORATION_PART_MIN
@@ -179,7 +179,9 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
     </View>
   )
 
-  const routeRows = (list: typeof routes, withResult: boolean, undoFirst = false) =>
+  // Part 1's attempts, in the same order as `routes`, for the ✕ on each row.
+  const routeAttempts = attempts.filter((a) => a.part !== 2)
+  const routeRows = (list: typeof routes, withResult: boolean, deletable = false) =>
     [...list].reverse().map((r, i) => (
       <View key={list.length - i} style={styles.climbRow}>
         <View style={[styles.climbLevelBar, { backgroundColor: swatch(r.colour) }]} />
@@ -188,8 +190,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
           <Text style={[styles.climbAttemptsText, r.sent && { color: C.green }]}>{resultLabel(r)}</Text>
         )}
         {withResult && <Text style={styles.climbScore}>+{formatPoints(routePoints(r))}</Text>}
-        {undoFirst && i === 0 && undoLastAttempt && (
-          <Pressable onPress={undoLastAttempt} hitSlop={10} style={styles.deleteBtn}>
+        {deletable && removeAttempt && routeAttempts[list.length - 1 - i] && (
+          <Pressable onPress={() => removeAttempt(routeAttempts[list.length - 1 - i].timestamp)} hitSlop={10} style={styles.deleteBtn}>
             <Text style={styles.deleteBtnText}>✕</Text>
           </Pressable>
         )}

@@ -37,6 +37,7 @@ interface BlockRendererProps {
   attemptsDone: number
   logAttempt: (attempt: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => void
   undoLastAttempt?: () => void
+  removeAttempt?: (timestamp: number) => void
   updateLastAttempt?: (patch: Partial<Omit<Attempt, "blockIndex" | "type" | "timestamp">>) => void
   timeRemaining: number | null
   restTimeRemaining: number | null
@@ -63,6 +64,7 @@ export function BlockRenderer({
   goToPreviousBlock,
   blockStartTime,
   undoLastAttempt,
+  removeAttempt,
   updateLastAttempt,
 }: BlockRendererProps) {
   if (!block) return null
@@ -143,7 +145,7 @@ export function BlockRenderer({
           block={block}
           attempts={blockAttempts}
           logAttempt={logAttempt}
-          undoLastAttempt={undoLastAttempt}
+          removeAttempt={removeAttempt}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
         />

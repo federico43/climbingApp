@@ -224,6 +224,12 @@ export function useWorkout(protocolInput: Block[]) {
     })
   }, [currentBlockIndex])
 
+  // Remove one attempt of the current block by its timestamp — e.g. any
+  // logged route in the route exploration list, not just the last one.
+  const removeAttempt = useCallback((timestamp: number) => {
+    setAttempts((prev) => prev.filter((a) => !(a.blockIndex === currentBlockIndex && a.timestamp === timestamp)))
+  }, [currentBlockIndex])
+
   // Merge `patch` into the current block's most recent attempt — e.g. the
   // fall reasons a project attempt gets tagged with while the athlete rests.
   const updateLastAttempt = useCallback((patch: Partial<Omit<Attempt, "blockIndex" | "type" | "timestamp">>) => {
@@ -312,6 +318,7 @@ export function useWorkout(protocolInput: Block[]) {
     skipBlock,
     logAttempt,
     undoLastAttempt,
+    removeAttempt,
     updateLastAttempt,
     startWorkout,
     restoreWorkout,
