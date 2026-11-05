@@ -6,7 +6,7 @@ import type { TrainingPlanRow } from "@/services/BoulderGraphService"
 import {
   focusMetrics, formatStatValue, isEmptyPeriod, SAMPLE_STATS, STAT_FOCUS_COLOR, STAT_FOCUS_LABEL, statChange, visiblePatterns,
   type PeriodStats, type ProjectSessionStat, type ScPatternStats, type StatMetric, type StatsPeriod, type StatTrend,
-  type WarmupSessionStat,
+  type DensitySessionStat, type WarmupSessionStat,
 } from "@/utils/athleteStats"
 import { shortDay } from "@/utils/athleteStatsData"
 import { localDateStr, PLAN_FOCUS_LABEL, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
@@ -21,7 +21,7 @@ type Tab = StatsPeriod | "review"
 
 // Coach dashboard: how the athlete is progressing (docs/athlete-stats.md).
 // Tiles for the headline numbers (tap one for its trend), then S&C by
-// movement pattern and the project / 1 on 1 off blocks; Reviews shows one
+// movement pattern and the project / 1 on 1 off / Density test blocks; Reviews shows one
 // block start → end. With nothing logged yet, the sample data can be
 // previewed.
 export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<typeof useAthleteStats> }) {
@@ -173,12 +173,13 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
         </>
       )}
 
-      {width > 0 && (stats.projects.length > 0 || stats.warmups.length > 0) && (
+      {width > 0 && (stats.projects.length > 0 || stats.warmups.length > 0 || stats.density.length > 0) && (
         <>
           <Text style={styles.section}>Blocks</Text>
           <View style={wide ? styles.panelsWide : styles.panels}>
             {stats.projects.length > 0 && <ProjectPanel sessions={stats.projects} outer={panelOuter} width={panelWidth} />}
             {stats.warmups.length > 0 && <WarmupPanel sessions={stats.warmups} outer={panelOuter} width={panelWidth} />}
+            {stats.density.length > 0 && <DensityPanel sessions={stats.density} outer={panelOuter} width={panelWidth} />}
           </View>
         </>
       )}
@@ -559,6 +560,54 @@ function WarmupPanel({ sessions, outer, width }: { sessions: WarmupSessionStat[]
         scrollToEnd
       />
       <Text style={styles.legendText}>Minutes on per session</Text>
+    </View>
+  )
+}
+
+// One bar per Density test: height = score (sum of the grades sent), the
+// score on top, the boulders logged under it in the legend.
+function DensityPanel({ sessions, outer, width }: { sessions: DensitySessionStat[]; outer: number; width: number }) {
+  const max = Math.max(1, ...sessions.map((s) => s.score))
+  const first = sessions[0].score
+  const last = sessions[sessions.length - 1].score
+  const diff = last - first
+  return (
+    <View style={[styles.panel, { width: outer }]}>
+      <View style={styles.panelHead}>
+        <Text style={styles.panelTitle}>Density test</Text>
+        {sessions.length > 1 && (
+          <ChangePill trend={diff > 0 ? "up" : diff < 0 ? "down" : "same"} text={diff === 0 ? "= same" : `${diff > 0 ? "▲" : "▼"} ${Math.abs(diff)} pts`} />
+        )}
+      </View>
+      <BarChart
+        data={sessions.map((s) => ({
+          value: s.score,
+          label: s.label,
+          topLabelComponent: () => <Text style={styles.pointText}>{s.score}</Text>,
+        }))}
+        width={width}
+        height={110}
+        barWidth={BAR}
+        spacing={BAR_GAP}
+        initialSpacing={8}
+        endSpacing={8}
+        frontColor={C.green}
+        barBorderRadius={5}
+        maxValue={max * 1.3}
+        noOfSections={3}
+        hideYAxisText
+        yAxisLabelWidth={0}
+        yAxisThickness={0}
+        xAxisThickness={1}
+        xAxisColor={C.border}
+        hideRules
+        xAxisLabelTextStyle={[styles.axisText, labelBox(BAR + BAR_GAP)]}
+        disableScroll={!barsScroll(sessions.length, width)}
+        scrollToEnd
+      />
+      <Text style={styles.legendText}>
+        Score per test · last: {last} pts, {sessions[sessions.length - 1].climbs} boulder{sessions[sessions.length - 1].climbs === 1 ? "" : "s"}
+      </Text>
     </View>
   )
 }

@@ -10,7 +10,7 @@ import { FOCUS_COLOR, FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 // utils/athleteStatsData.ts; SAMPLE_STATS is the card's preview data.
 
 export type StatsPeriod = "block" | "all"
-export type StatUnit = "kg" | "added_kg" | "s" | "reps" | "colour" | "level" | "workouts"
+export type StatUnit = "kg" | "added_kg" | "s" | "reps" | "colour" | "level" | "workouts" | "points"
 export type StatTrend = "up" | "down" | "same"
 
 export interface StatPoint {
@@ -46,6 +46,7 @@ export function formatStatValue(unit: StatUnit, v: number): string {
     case "level": return `Level ${Math.round(v)}`
     case "reps": return `${round1(v)} reps`
     case "workouts": return `${round1(v)}`
+    case "points": return `${round1(v)} pts`
   }
 }
 
@@ -78,7 +79,7 @@ export function statChange(m: StatMetric): StatChange | null {
     delta = `${arrow} ${round1(n)} ${noun}${n === 1 ? "" : "s"}`
   }
   else if (m.unit === "kg" && first > 0) delta = `${arrow} ${Math.round(Math.abs(diff) / first * 100)}%`
-  else delta = `${arrow} ${round1(Math.abs(diff))} ${m.unit === "s" ? "s" : m.unit === "reps" ? "reps" : "kg"}`
+  else delta = `${arrow} ${round1(Math.abs(diff))} ${m.unit === "s" ? "s" : m.unit === "reps" ? "reps" : m.unit === "points" ? "pts" : "kg"}`
 
   return {
     trend,
@@ -149,16 +150,31 @@ export interface WarmupSessionStat {
   minutes: number   // time on: rounds × work time
 }
 
+// Density test (homework): the score of each test, the sum of the grades
+// (boulder level difficulty) of every boulder sent in the time limit.
+export interface DensitySessionStat {
+  label: string    // session date ("Oct 7")
+  score: number
+  climbs: number   // boulders logged
+}
+
 export interface PeriodStats {
   metrics: StatMetric[]
   sc: ScPatternStats[]
   projects: ProjectSessionStat[]
   warmups: WarmupSessionStat[]
+  density: DensitySessionStat[]
+}
+
+// The density tests as a metric statChange can read (score per test).
+export function densityMetric(sessions: DensitySessionStat[]): StatMetric {
+  return { id: "density", label: "Density test", unit: "points", points: sessions.map((s) => ({ label: s.label, value: s.score })) }
 }
 
 export function isEmptyPeriod(p: PeriodStats): boolean {
   return p.metrics.every((m) => m.unit === "workouts" || m.points.length === 0)
     && visiblePatterns(p.sc).length === 0 && p.projects.length === 0 && p.warmups.length === 0
+    && p.density.length === 0
 }
 
 // ─── Block review ─────────────────────────────────────────────────────────────
@@ -217,6 +233,10 @@ export function blockReview(p: PeriodStats): BlockReview {
   }
   if (p.warmups.length >= 2) {
     rows.push({ id: "warmup", name: "1 on 1 off", change: minutesChange(p.warmups[0].minutes, p.warmups[p.warmups.length - 1].minutes) })
+  }
+  if (p.density.length >= 2) {
+    const change = statChange(densityMetric(p.density))
+    if (change) rows.push({ id: "density", name: "Density test", change })
   }
   rows.sort((a, b) => TREND_ORDER[a.change.trend] - TREND_ORDER[b.change.trend])
   const workoutsMetric = p.metrics.find((m) => m.unit === "workouts")
@@ -292,6 +312,11 @@ export const SAMPLE_STATS: Record<StatsPeriod, PeriodStats> = {
       { label: "Oct 23", minutes: 10 },
       { label: "Oct 30", minutes: 10 },
     ],
+    density: [
+      { label: "Oct 8", score: 18, climbs: 7 },
+      { label: "Oct 22", score: 22, climbs: 8 },
+      { label: "Nov 5", score: 25, climbs: 8 },
+    ],
   },
   all: {
     metrics: [
@@ -337,6 +362,13 @@ export const SAMPLE_STATS: Record<StatsPeriod, PeriodStats> = {
       { label: "Oct 2", minutes: 8 },
       { label: "Oct 16", minutes: 9 },
       { label: "Oct 30", minutes: 10 },
+    ],
+    density: [
+      { label: "Aug 6", score: 12, climbs: 5 },
+      { label: "Sep 3", score: 15, climbs: 6 },
+      { label: "Oct 8", score: 18, climbs: 7 },
+      { label: "Oct 22", score: 22, climbs: 8 },
+      { label: "Nov 5", score: 25, climbs: 8 },
     ],
   },
 }
