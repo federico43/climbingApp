@@ -17,6 +17,9 @@ import type { Direction } from "@/utils/scProgression"
 //                               live); a drop that couldn't happen live (fall
 //                               in the final set, older logs) is applied now;
 //   - falls only in set 3+    → same boulders.
+// A missed top the athlete puts down to pump (forearms flooding, coach
+// 2026-11-06) is a fall but never lowers a boulder — live or between
+// sessions — it only stops the next upgrade (scData.missReason = "pump").
 // The first session (no history) starts every slot one colour below the
 // athlete's flash level, unless the coach set the colours on the block.
 // No fetching or UI here — the athlete runtime and coach editor share it.
@@ -67,22 +70,43 @@ function setNumber(a: Attempt, i: number): number {
   return typeof a.scData?.set === "number" ? a.scData.set : i + 1
 }
 
+// Why a set wasn't fully topped, asked when tops < boulders per set.
+export type FourByFourMissReason = "pump" | "other"
+export function pumped(a: Attempt): boolean {
+  return a.scData?.missReason === "pump"
+}
+
+// Whether a set's missed tops owe a one-colour drop: a fall in sets
+// 1…earlyFallSets that wasn't down to pump. Shared by the live runtime
+// (before the set is logged) and the log reader below.
+export function owesStepDown(set: number, tops: number, n: number, reason?: FourByFourMissReason | null): boolean {
+  return tops < n && set <= FOUR_BY_FOUR_RULES.earlyFallSets && reason !== "pump"
+}
+function owes(a: Attempt, i: number, n: number): boolean {
+  const tops = typeof a.scData?.tops === "number" ? a.scData.tops : n
+  return owesStepDown(setNumber(a, i), tops, n, a.scData?.missReason)
+}
+
 export interface FourByFourRunSummary {
   sets: number
   tops: number
   possible: number
   fellInSets: number[]   // 1-based set numbers with tops < boulders per set
+  pumpedInSets: number[] // the subset the athlete put down to pump
 }
 
 export function summarizeFourByFourRun(run: BlockRun): FourByFourRunSummary {
   const n = run.block?.bouldersPerSet ?? 4
   const fellInSets: number[] = []
+  const pumpedInSets: number[] = []
   let tops = 0
   run.attempts.forEach((a, i) => {
     tops += typeof a.scData?.tops === "number" ? a.scData.tops : n
-    if (fell(a, n)) fellInSets.push(setNumber(a, i))
+    if (!fell(a, n)) return
+    fellInSets.push(setNumber(a, i))
+    if (pumped(a)) pumpedInSets.push(setNumber(a, i))
   })
-  return { sets: run.attempts.length, tops, possible: run.attempts.length * n, fellInSets }
+  return { sets: run.attempts.length, tops, possible: run.attempts.length * n, fellInSets, pumpedInSets }
 }
 
 // ─── In session ──────────────────────────────────────────────────────────────
@@ -99,12 +123,13 @@ export function liveStepDown(grades: string[]): { grades: string[]; slot: number
 
 // Early-fall drops the log shows were owed but not applied live — a fall in
 // the final set (no set left to lower), or sessions logged before live
-// drops existed. Early falls minus the colour changes between logged sets.
+// drops existed. Owed drops (pump excluded) minus the colour changes between
+// logged sets.
 export function pendingStepDowns(attempts: Attempt[], n: number): number {
   let early = 0
   let changes = 0
   attempts.forEach((a, i) => {
-    if (fell(a, n) && setNumber(a, i) <= FOUR_BY_FOUR_RULES.earlyFallSets) early++
+    if (owes(a, i, n)) early++
     if (i > 0 && attemptGrades(a, n)?.join() !== attemptGrades(attempts[i - 1], n)?.join()) changes++
   })
   return Math.max(0, early - changes)
@@ -121,9 +146,10 @@ export interface FourByFourSuggestion {
 }
 
 function lastTimeText(s: FourByFourRunSummary): string {
+  const sets = s.fellInSets.map((n) => (s.pumpedInSets.includes(n) ? `${n} (pumped)` : `${n}`))
   const fellText = s.fellInSets.length === 0
     ? "no falls"
-    : `fell in set${s.fellInSets.length > 1 ? "s" : ""} ${s.fellInSets.join(", ")}`
+    : `fell in set${s.fellInSets.length > 1 ? "s" : ""} ${sets.join(", ")}`
   return `Last time: ${s.tops} of ${s.possible} tops — ${fellText}.`
 }
 
@@ -177,17 +203,22 @@ export function suggestNextFourByFour(
       note: `Next: boulder ${i + 1} goes up to ${colourLabel(up)}.` }
   }
 
-  const early = s.fellInSets.find((set) => set <= earlyFallSets)
-  if (early == null) {
+  const lastN = last.block?.bouldersPerSet ?? 4
+  const owedIdx = last.attempts.findIndex((a, i) => owes(a, i, lastN))
+  if (owedIdx < 0) {
+    const pumpedEarly = s.pumpedInSets.find((set) => set <= earlyFallSets)
     return { direction: "hold", grades: finished, lastTime,
-      note: `Falls only after set ${earlyFallSets} — next: the same boulders.` }
+      note: pumpedEarly != null
+        ? `Missed tops were down to pump — next: the same boulders.`
+        : `Falls only after set ${earlyFallSets} — next: the same boulders.` }
   }
+  const early = setNumber(last.attempts[owedIdx], owedIdx)
 
   // Drops owed but not applied live, starting from the run's first colours.
-  const start = fitGrades(attemptGrades(last.attempts[0], last.block?.bouldersPerSet ?? 4), n) ?? finished
+  const start = fitGrades(attemptGrades(last.attempts[0], lastN), n) ?? finished
   let grades = finished
   const lowered: number[] = []
-  for (let k = pendingStepDowns(last.attempts, last.block?.bouldersPerSet ?? 4); k > 0; k--) {
+  for (let k = pendingStepDowns(last.attempts, lastN); k > 0; k--) {
     const step = liveStepDown(grades)
     if (!step) break
     grades = step.grades
