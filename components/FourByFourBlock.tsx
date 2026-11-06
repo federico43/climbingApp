@@ -9,10 +9,9 @@ import { findBlockRuns } from "@/utils/blockHistory"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { colourIndex, colourLabel } from "@/utils/boulderColours"
 import {
-  attemptGrades, authoredGrades, fitGrades, liveStepDown, pendingStepDowns, suggestNextFourByFour,
-  type FourByFourSuggestion,
+  attemptGrades, authoredGrades, fitGrades, liveStepDown, owesStepDown, pendingStepDowns, suggestNextFourByFour,
+  type FourByFourMissReason, type FourByFourSuggestion,
 } from "@/utils/progression/fourByFour"
-import { FOUR_BY_FOUR_RULES } from "@/utils/progression/profiles"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -31,7 +30,9 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 // the suggested colours are preloaded with a banner that stays until the
 // athlete overrides it by picking one colour for every boulder (the coach
 // already approved the colours in the editor, so there's no "planned" option). In session, a fall in
-// sets 1–2 lowers one boulder for the remaining sets (liveStepDown).
+// sets 1–2 lowers one boulder for the remaining sets (liveStepDown) — unless
+// the athlete says the missed tops were down to pump, asked whenever a set
+// isn't fully topped.
 
 type Phase = "preview" | "active" | "rest" | "review"
 
@@ -92,6 +93,9 @@ export function FourByFourBlock({
   // True once the athlete chose to pick one colour themselves.
   const [pickOwn, setPickOwn] = useState(false)
   const [tops, setTops] = useState<number>(bouldersPerSet)
+  // Why the set wasn't fully topped; asked only when tops < boulders per set.
+  const [missReason, setMissReason] = useState<FourByFourMissReason | null>(null)
+  const missed = tops < bouldersPerSet
   const blockTimer = useBlockTimer()
   const { User } = ConsumeAuth()
   const [showIntro, setShowIntro] = useState(false)
@@ -133,6 +137,7 @@ export function FourByFourBlock({
 
   function startSetRest() {
     setTops(bouldersPerSet)
+    setMissReason(null)
     startRestTimer(restTime)
     setPhase("rest")
   }
@@ -142,19 +147,22 @@ export function FourByFourBlock({
     // `level` = the hardest slot, for anything that reads one colour per attempt.
     const hardest = grades.reduce((a, b) => (colourIndex(b) > colourIndex(a) ? b : a), grades[0])
     const set = attemptsDone + 1
-    logAttempt({ success: true, level: hardest, scData: { tops, set, grades } })
+    const reason = missed ? missReason : null
+    logAttempt({ success: true, level: hardest, scData: { tops, set, grades, ...(reason ? { missReason: reason } : {}) } })
     setStepNotice(null)
     if (showIntro) {
       setShowIntro(false)
       AsyncStorage.setItem(INTRO_SEEN_KEY, "1").catch(() => {})
     }
-    // Fell in set 1–2 → one boulder one colour easier for the remaining sets.
-    if (!isLastSet && tops < bouldersPerSet && set <= FOUR_BY_FOUR_RULES.earlyFallSets) {
+    // Fell in set 1–2 (not from pump) → one boulder one colour easier for the remaining sets.
+    if (!isLastSet && owesStepDown(set, tops, bouldersPerSet, reason)) {
       const step = liveStepDown(grades)
       if (step) {
         setGrades(step.grades)
         setStepNotice(`Fell in set ${set} — boulder ${step.slot + 1} is now ${colourLabel(step.grades[step.slot])} for the rest of the sets.`)
       }
+    } else if (!isLastSet && reason === "pump") {
+      setStepNotice(`Pumped in set ${set} — same boulders for the rest of the sets.`)
     }
     setPhase(isLastSet ? "review" : "active")
   }
@@ -277,6 +285,22 @@ export function FourByFourBlock({
           </Pressable>
         </View>
 
+        {missed && (
+          <View style={styles.reasonBox}>
+            <Text style={styles.reasonQ}>Why did you miss {bouldersPerSet - tops === 1 ? "a top" : "some tops"}?</Text>
+            <View style={styles.reasonRow}>
+              {([["pump", "Pumped"], ["other", "Something else"]] as const).map(([value, label]) => {
+                const sel = missReason === value
+                return (
+                  <Pressable key={value} style={[styles.reasonChip, sel && styles.reasonChipSel]} onPress={() => setMissReason(value)}>
+                    <Text style={[styles.reasonText, sel && styles.reasonTextSel]}>{label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </View>
+        )}
+
         <View style={styles.restCircle}>
           <AnimatedCircularProgress
             size={230} width={10} fill={fill}
@@ -287,7 +311,7 @@ export function FourByFourBlock({
         </View>
 
         <View style={styles.restFooter}>
-          <CustomButton title={isLastSet ? "Save set · finish" : `Save set · on to set ${attemptsDone + 2}`} onPress={logSet} />
+          <CustomButton title={isLastSet ? "Save set · finish" : `Save set · on to set ${attemptsDone + 2}`} onPress={logSet} disabled={missed && !missReason} />
         </View>
       </View>
     )
@@ -309,7 +333,7 @@ export function FourByFourBlock({
                 <View key={j} style={[styles.reviewDot, { backgroundColor: BoulderLevelOptions.find((o) => o.value === g)?.color ?? C.border }]} />
               ))}
             </View>
-            <Text style={styles.reviewTops}>{a.scData?.tops ?? 0} / {bouldersPerSet} tops</Text>
+            <Text style={styles.reviewTops}>{a.scData?.tops ?? 0} / {bouldersPerSet} tops{a.scData?.missReason === "pump" ? " · pumped" : ""}</Text>
           </View>
         ))}
         <View style={{ marginTop: 8 }}>
@@ -424,6 +448,16 @@ const styles = StyleSheet.create({
   topsValue: { flex: 1, alignItems: "center", gap: 2 },
   topsNum: { fontSize: 32, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
   topsOf: { fontSize: 12, color: C.textMuted },
+  reasonBox: { marginTop: 16, gap: 8, alignItems: "center" },
+  reasonQ: { fontSize: 14, fontWeight: "600", color: C.textPrimary },
+  reasonRow: { flexDirection: "row", gap: 10 },
+  reasonChip: {
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+  },
+  reasonChipSel: { backgroundColor: C.green, borderColor: C.green },
+  reasonText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  reasonTextSel: { color: C.bg, fontWeight: "700" },
   restCircle: { flex: 1, alignItems: "center", justifyContent: "center" },
   timerText: { fontSize: 56, fontWeight: "700", color: C.textPrimary },
   restFooter: { width: "100%" },
