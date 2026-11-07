@@ -6,6 +6,7 @@ import type { Attempt } from "@/hooks/WorkoutHook"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -61,6 +62,9 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   const startTimeRef = useRef<number | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [note, setNote] = useState("")
+  // When the time limit (if any) runs out while running — beeps / notifies.
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  useBlockTimerAlert(endsAt, block.blockName || "Free session")
 
   const holds = useMemo(() => {
     if (!block.routeHolds) return []
@@ -78,6 +82,8 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 
   function start() {
     startTimeRef.current = Date.now()
+    const limitSec = (block.timeLimit ?? 0) * 60
+    setEndsAt(limitSec > 0 ? startTimeRef.current + limitSec * 1000 : null)
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startTimeRef.current!) / 1000))
     }, 500)
@@ -89,6 +95,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
+    setEndsAt(null)
     setPhase("done")
   }
 

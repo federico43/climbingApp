@@ -16,6 +16,7 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { Ionicons } from "@expo/vector-icons"
 import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -70,6 +71,11 @@ export function ProjectBoulderingBlock({
     attempts.length === 0 ? "intro" : secondsLeft <= 0 ? "review" : "ready"
   )
   const [overtime, setOvertime] = useState(false)   // "One more attempt" after time's up
+  // Beeps when the block's time runs out, and notifies if the app is in the background.
+  useBlockTimerAlert(
+    startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? startedAt + limitSecs * 1000 : null,
+    blockTitle,
+  )
 
   // Review-clip prompt: the per-block caps come from the attempts themselves
   // (reviewPromptHistory); only the unanswered card and an accepted "film the

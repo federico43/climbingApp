@@ -1,4 +1,5 @@
 import { C } from "@/utils/theme"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { useSessionSyncState } from "@/services/sessionSyncQueue"
 import { BlockRenderer } from "@/utils/blockRenderer"
@@ -311,7 +312,7 @@ export function WorkOutState({
           </Text>
           <View style={styles.progressActions}>
             {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && timerStartedAt !== null && (
-              <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
+              <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} label={currentBlock.blockName || "Block"} />
             )}
             <Pressable onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
               <Text style={styles.skipBtnText}>Skip</Text>
@@ -416,19 +417,21 @@ const SELF_TIMED_BLOCKS = new Set(["exploration_session", "route_exploration", "
 
 // Per-block countdown for blocks that carry a time constraint. Remounts per
 // block (keyed by index), turns red and reads "Time's up" at zero — it never
-// auto-advances, so the athlete decides when to move on.
-function BlockCountdown({ minutes }: { minutes: number }) {
+// auto-advances, so the athlete decides when to move on. Beeps at zero, and
+// notifies when it runs out with the app in the background.
+function BlockCountdown({ minutes, label }: { minutes: number; label: string }) {
   const total = Math.max(0, Math.round(minutes * 60))
   const [remaining, setRemaining] = useState(total)
+  const [end] = useState(() => Date.now() + total * 1000)
+  useBlockTimerAlert(total > 0 ? end : null, label)
   useEffect(() => {
-    const end = Date.now() + total * 1000
     const id = setInterval(() => {
       const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setRemaining(r)
       if (r <= 0) clearInterval(id)
     }, 250)
     return () => clearInterval(id)
-  }, [total])
+  }, [end])
   const over = remaining <= 0
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
