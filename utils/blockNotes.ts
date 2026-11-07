@@ -2,8 +2,6 @@
 // the numbers worth remembering (sets, seconds, kg, %…) so the UI can
 // highlight them. Pure, no React.
 
-import { BoulderLevelOptions } from "@/utils/boulderColours"
-
 export interface NotePart { text: string; key: boolean }
 
 const BULLET = /^\s*(?:[-•*·–]|\d{1,2}[.)])\s+/
@@ -120,25 +118,4 @@ export function noteParts(step: string, words: string[] = []): NotePart[] {
   }
   if (last < step.length) parts.push({ text: step.slice(last), key: false })
   return splitPlain(splitPlain(parts, numbers), wordsIn(words))
-}
-
-// Splits text around boulder colour names ("Blue", "orange", "reds"), so the
-// UI can show each one as a chip of that colour. `colour` is the scale value.
-export function colourParts(text: string): { text: string; colour?: string }[] {
-  const alt = BoulderLevelOptions.map((o) => o.label).join("|")
-  const re = new RegExp(`(?:${alt})s?`, "gi")
-  const out: { text: string; colour?: string }[] = []
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
-    const a = m.index, b = a + m[0].length
-    if ((a > 0 && LETTER.test(text[a - 1])) || (b < text.length && LETTER.test(text[b]))) continue
-    if (a > last) out.push({ text: text.slice(last, a) })
-    const word = m[0].toLowerCase()
-    const colour = BoulderLevelOptions.find((o) => word === o.value || word === o.value + "s")!.value
-    out.push({ text: m[0], colour })
-    last = b
-  }
-  if (last < text.length) out.push({ text: text.slice(last) })
-  return out
 }

@@ -32,7 +32,7 @@ export function wallLabel(key: string | null | undefined): string {
 
 // {colour} is replaced with the athlete's starting colour when shown.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Warm up first with *4 routes, each a bit harder than the last* (for example 3 orange and 1 blue, or 4 orange).",
+  "Warm up first with *4 routes below your flash level*.",
   "*Don't read the routes before the timer starts.*",
   "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",

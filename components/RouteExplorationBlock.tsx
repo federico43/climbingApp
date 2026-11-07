@@ -192,7 +192,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={text} title="Coach notes" colourChips />
+          <BlockNotes text={text} title="Coach notes" />
           <View style={styles.timeLimitPill}>
             <Text style={styles.timeLimitText}>⏱ {flashMin} min + {projectMin} min</Text>
           </View>
