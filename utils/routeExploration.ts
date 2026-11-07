@@ -81,6 +81,37 @@ export function explorationGoes(routes: ExplorationRoute[]): number {
   return routes.reduce((t, r) => t + (r.sent ? r.tries : Math.max(r.tries, EXPLORATION_MAX_TRIES)), 0)
 }
 
+// ─── Points ──────────────────────────────────────────────────────────────────
+
+// Points per colour: the Density test's (`niveles_boulder.difficulty`):
+// blue 1, green 2, yellow 3, red 4, black 5. Orange isn't scored there.
+export function colourPoints(colour: string): number {
+  return Math.max(0, colourIndex(colour))
+}
+
+// What each go keeps of the colour's points (coach 2026-11-05: the 2nd go
+// takes a tenth off). Not sent = 0, like the Density test only counts tops.
+export const GO_FACTOR = [1, 0.9, 0.8] as const
+
+export function routePoints(r: Pick<ExplorationRoute, "colour" | "tries" | "sent">): number {
+  if (!r.sent) return 0
+  const factor = GO_FACTOR[Math.min(Math.max(r.tries, 1), GO_FACTOR.length) - 1]
+  return round1(colourPoints(r.colour) * factor)
+}
+
+export function explorationPoints(routes: ExplorationRoute[]): number {
+  return round1(routes.reduce((t, r) => t + routePoints(r), 0))
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10
+}
+
+// "7", "7.4" — no trailing ".0".
+export function formatPoints(n: number): string {
+  return n % 1 === 0 ? String(n) : n.toFixed(1)
+}
+
 // ─── Saved attempts ──────────────────────────────────────────────────────────
 
 // What the block logs: one attempt per route in part 1 (part 1, level =
@@ -98,9 +129,12 @@ export interface ExplorationAttemptLike {
 
 export interface ExplorationSummary {
   goes: number
+  points: number
   routes: ExplorationRoute[]
-  // Sent / tried per colour, easiest first.
-  byColour: { colour: string; sent: number; tried: number }[]
+  // Sent / tried / points per colour, easiest first.
+  byColour: { colour: string; sent: number; tried: number; points: number }[]
+  // Same per wall, in WALLS order.
+  byWall: { wall: string; sent: number; tried: number; points: number }[]
   topSent: string | null
   // Part 2's question answered (what they realised they did wrong).
   answered: boolean
@@ -112,27 +146,66 @@ export function summarizeExploration(attempts: ExplorationAttemptLike[]): Explor
   const routes: ExplorationRoute[] = attempts
     .filter((a) => a.part !== 2)
     .map((a) => ({ colour: a.level ?? "", wall: a.wall ?? "", tries: a.tries ?? 1, sent: !!a.success }))
-  const counts = new Map<string, { sent: number; tried: number }>()
-  for (const r of routes) {
-    const c = counts.get(r.colour) ?? { sent: 0, tried: 0 }
-    c.tried++
-    if (r.sent) c.sent++
-    counts.set(r.colour, c)
-  }
-  const byColour = [...counts.entries()]
-    .map(([colour, c]) => ({ colour, ...c }))
+  const byColour = tally(routes, (r) => r.colour)
+    .map(({ key, ...c }) => ({ colour: key, ...c }))
     .sort((a, b) => colourIndex(a.colour) - colourIndex(b.colour))
+  const wallOrder = (w: string) => { const i = WALLS.findIndex((x) => x.key === w); return i < 0 ? WALLS.length : i }
+  const byWall = tally(routes, (r) => r.wall)
+    .map(({ key, ...c }) => ({ wall: key, ...c }))
+    .sort((a, b) => wallOrder(a.wall) - wallOrder(b.wall))
   const sentColours = byColour.filter((c) => c.sent > 0)
   const part2 = attempts.find((a) => a.part === 2)
   return {
     goes: explorationGoes(routes),
+    points: explorationPoints(routes),
     routes,
     byColour,
+    byWall,
     topSent: sentColours.length ? sentColours[sentColours.length - 1].colour : null,
     answered: !!part2,
     reasons: part2?.fallReasons ?? [],
     notes: part2?.notes ?? "",
   }
+}
+
+function tally(routes: ExplorationRoute[], keyOf: (r: ExplorationRoute) => string) {
+  const m = new Map<string, { sent: number; tried: number; points: number }>()
+  for (const r of routes) {
+    const k = keyOf(r)
+    const c = m.get(k) ?? { sent: 0, tried: 0, points: 0 }
+    c.tried++
+    if (r.sent) c.sent++
+    c.points = round1(c.points + routePoints(r))
+    m.set(k, c)
+  }
+  return [...m.entries()].map(([key, c]) => ({ key, ...c }))
+}
+
+// ─── Last time ───────────────────────────────────────────────────────────────
+
+export interface ExplorationSessionLike {
+  $createdAt: string
+  attempts: string // JSON array of the session's attempts
+}
+
+// The newest saved session (sessions newest first) with route exploration
+// routes in it, summarised, with its date. `skipTimestamps` = this workout's
+// own attempts, so a session that is this same workout doesn't count.
+export function lastExploration(
+  sessions: ExplorationSessionLike[],
+  skipTimestamps: number[] = [],
+): { date: string; summary: ExplorationSummary } | null {
+  const skip = new Set(skipTimestamps)
+  for (const s of sessions) {
+    let arr: any[] = []
+    try { arr = JSON.parse(s.attempts || "[]") } catch { continue }
+    if (!Array.isArray(arr)) continue
+    const ex = arr.filter((a) => a?.type === EXPLORATION_BLOCK_TYPE)
+    if (ex.some((a) => skip.has(a?.timestamp))) continue
+    const summary = summarizeExploration(ex)
+    if (summary.routes.length > 0) return { date: s.$createdAt, summary }
+  }
+  return null
 }
 
 // ─── When the plan puts it in ────────────────────────────────────────────────
