@@ -1,4 +1,4 @@
-import { BoulderLevelOptions, colourIndex } from "@/utils/boulderColours"
+import { BoulderLevelOptions, colourIndex, colourLabel } from "@/utils/boulderColours"
 
 // Route exploration (coach 2026-11-05): the week's new routes, set every
 // Monday, in two timed parts.
@@ -32,21 +32,42 @@ export function wallLabel(key: string | null | undefined): string {
 
 // {colour} is replaced with the athlete's starting colour when shown.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Warm up first with *4 orange routes* before you start.",
+  "Warm up first with *4 routes below your flash level*.",
+  "*Don't read the routes before the timer starts.*",
   "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
+  "*No trying single moves*: every go starts from the start holds.",
   "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
   "Tried every {colour} and there's still time left? Go on to part 2.",
 ].join("\n")
+
+// Defaults shipped before, saved into workouts built back then. Shown as
+// the current default instead, so old workouts get the new notes.
+const OLD_EXPLORATION_DESCRIPTIONS = [
+  [
+    "Warm up first with *4 orange routes* before you start.",
+    "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+    "*3 goes max* per route. Sent or not, move on to the next one.",
+    "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+    "Tried every {colour} and there's still time left? Go on to part 2.",
+  ].join("\n"),
+]
+
+// The notes to show for a block: its own, unless empty or an old default.
+export function explorationDescription(saved: string | null | undefined): string {
+  const d = saved?.trim()
+  if (!d || OLD_EXPLORATION_DESCRIPTIONS.includes(d)) return EXPLORATION_DEFAULT_DESCRIPTION
+  return d
+}
 
 export const EXPLORATION_PROJECT_NOTES = [
   "Part 2 · Project: go back to the routes that didn't go.",
   "Rest more between goes and work the moves you couldn't do.",
 ].join("\n")
 
-// The coach's notes with {colour} filled in.
-export function explorationNotes(text: string, colourName: string): string {
-  return text.split("{colour}").join(colourName)
+// The coach's notes with {colour} (the start colour) filled in with its name.
+export function explorationNotes(text: string, startColour: string): string {
+  return text.split("{colour}").join(colourLabel(startColour))
 }
 
 // The colour part 1 starts at: the athlete's flash colour, blue at least.

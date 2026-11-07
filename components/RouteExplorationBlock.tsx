@@ -7,8 +7,8 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
-  EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
-  explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
+  EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
+  explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
@@ -107,12 +107,15 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
-  // No colour authored: the athlete's flash level, blue at least.
+  // Before the first route: the athlete's current flash level (blue at
+  // least). The colour saved on the block when the plan was built can be
+  // stale (no flash level yet, or it changed since), so it's only a fallback.
   useEffect(() => {
-    if (block?.startColour || routes.length > 0 || !User?.$id) return
+    if (routes.length > 0 || !User?.$id) return
     getUsers(User.$id)
       .then((u: any) => {
-        const c = explorationStartColour(u?.flashLevel)
+        if (!u?.flashLevel) return
+        const c = explorationStartColour(u.flashLevel)
         setStartColour(c)
         setColour(c)
       })
@@ -200,7 +203,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (phase === "intro") {
-    const text = explorationNotes(block?.description?.trim() || EXPLORATION_DEFAULT_DESCRIPTION, colourLabel(startColour))
+    const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />
