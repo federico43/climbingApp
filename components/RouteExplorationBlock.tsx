@@ -184,12 +184,12 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (phase === "intro") {
-    const text = explorationNotes(block?.description?.trim() || EXPLORATION_DEFAULT_DESCRIPTION, colourLabel(startColour))
+    const text = explorationNotes(block?.description?.trim() || EXPLORATION_DEFAULT_DESCRIPTION, startColour)
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={text} title="Coach notes" />
+          <BlockNotes text={text} title="Coach notes" colourChips />
           <View style={styles.timeLimitPill}>
             <Text style={styles.timeLimitText}>⏱ {flashMin} min + {projectMin} min</Text>
           </View>
