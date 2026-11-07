@@ -1,15 +1,15 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
-import { getUsers } from "@/services/BoulderGraphService"
+import { getSessions, getUsers } from "@/services/BoulderGraphService"
 import { shared_styles, topBar_styles, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
-  explorationDescription, explorationGoes, explorationNotes, explorationStartColour, nextExplorationColour, summarizeExploration,
-  wallLabel, WALLS,
+  explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
+  routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
@@ -23,7 +23,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 // did you realise you did wrong". Routes live in the logged attempts, so a
 // resumed workout picks up where it was.
 
-type Phase = "intro" | "flash" | "projectIntro" | "project" | "question" | "done"
+// review = part 1's points vs last time, before part 2 (coach 2026-11-05).
+type Phase = "intro" | "flash" | "review" | "projectIntro" | "project" | "question" | "done"
 
 const RESULTS = [
   { label: "Flash", tries: 1, sent: true },
@@ -36,7 +37,7 @@ interface Props {
   block: any
   attempts: Attempt[]
   logAttempt: (attempt: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => void
-  undoLastAttempt?: () => void
+  removeAttempt?: (timestamp: number) => void
   goToNextBlock: () => void
   goToPreviousBlock?: () => void
 }
@@ -73,7 +74,7 @@ function useCountdown(minutes: number, running: boolean, onEnd: () => void) {
   return left
 }
 
-export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttempt, goToNextBlock, goToPreviousBlock }: Props) {
   const nextLabel = useNextBlockLabel("Continue")
   const { User } = ConsumeAuth()
   const flashMin = block?.timeLimit || EXPLORATION_PART_MIN
@@ -94,6 +95,17 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
   const [notice, setNotice] = useState<string | null>(null)
   const [reasons, setReasons] = useState<string[]>([])
   const [notes, setNotes] = useState("")
+  // The previous exploration, for the review (undefined = still loading).
+  const [last, setLast] = useState<{ date: string; summary: ExplorationSummary } | null | undefined>(undefined)
+
+  useEffect(() => {
+    if ((phase !== "review" && phase !== "done") || last !== undefined) return
+    const own = attempts.map((a) => a.timestamp)
+    getSessions()
+      .then((sessions) => setLast(lastExploration(sessions, own)))
+      .catch(() => setLast(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
 
   // Before the first route: the athlete's current flash level (blue at
   // least). The colour saved on the block when the plan was built can be
@@ -113,7 +125,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
 
   const flashLeft = useCountdown(flashMin, phase === "flash", () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
-    setPhase("projectIntro")
+    setPhase("review")
   })
   const projectLeft = useCountdown(projectMin, phase === "project", () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
@@ -135,13 +147,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
       setResult(0)
       setNotice(`Every ${colourLabel(colour).toLowerCase()} sent. Now try every ${colourLabel(next).toLowerCase()}.`)
     } else {
-      setPhase("projectIntro")
+      setPhase("review")
     }
   }
 
   function save() {
     logAttempt({ success: false, part: 2, fallReasons: reasons, notes: notes.trim() || undefined })
     setPhase("done")
+    goToNextBlock()
   }
 
   // Density test's top bar: back, title, timer and count badges.
@@ -162,14 +175,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
         </View>
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
-            <Text style={styles.scoreBadgeText}>{explorationGoes(routes)} goes</Text>
+            <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
           </View>
         )}
       </View>
     </View>
   )
 
-  const routeRows = (list: typeof routes, withResult: boolean, undoFirst = false) =>
+  // Part 1's attempts, in the same order as `routes`, for the ✕ on each row.
+  const routeAttempts = attempts.filter((a) => a.part !== 2)
+  const routeRows = (list: typeof routes, withResult: boolean, deletable = false) =>
     [...list].reverse().map((r, i) => (
       <View key={list.length - i} style={styles.climbRow}>
         <View style={[styles.climbLevelBar, { backgroundColor: swatch(r.colour) }]} />
@@ -177,8 +192,9 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
         {withResult && (
           <Text style={[styles.climbAttemptsText, r.sent && { color: C.green }]}>{resultLabel(r)}</Text>
         )}
-        {undoFirst && i === 0 && undoLastAttempt && (
-          <Pressable onPress={undoLastAttempt} hitSlop={10} style={styles.deleteBtn}>
+        {withResult && <Text style={styles.climbScore}>+{formatPoints(routePoints(r))}</Text>}
+        {deletable && removeAttempt && routeAttempts[list.length - 1 - i] && (
+          <Pressable onPress={() => removeAttempt(routeAttempts[list.length - 1 - i].timestamp)} hitSlop={10} style={styles.deleteBtn}>
             <Text style={styles.deleteBtnText}>✕</Text>
           </Pressable>
         )}
@@ -356,34 +372,85 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
     )
   }
 
-  // ── Done ───────────────────────────────────────────────────────────────────
+  // ── Review (after part 1) / Done ─────────────────────────────────────────────
+  // Part 1's points vs the last exploration, then where they came from.
+  // After part 1 it leads into part 2; on a finished block, to the next one.
+  const lastWall = (w: string) => last?.summary.byWall.find((b) => b.wall === w)
+  const diff = last ? Math.round((summary.points - last.summary.points) * 10) / 10 : 0
   return (
     <View style={shared_styles.screen}>
-      <TopBar title="Session complete" onBack={goToPreviousBlock} />
+      <TopBar title={phase === "review" ? "Part 1 · Review" : "Session complete"} onBack={phase === "review" ? undefined : goToPreviousBlock} />
       <ScrollView contentContainerStyle={styles.reviewScroll}>
         <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>Goes in part 1</Text>
-          <Text style={styles.scoreValue}>{summary.goes}</Text>
-          <Text style={styles.scoreSub}>{routes.length} route{routes.length !== 1 ? "s" : ""}</Text>
+          <Text style={styles.scoreLabel}>Points today</Text>
+          <Text style={styles.scoreValue}>{formatPoints(summary.points)}</Text>
+          <Text style={styles.scoreSub}>
+            {routes.length} route{routes.length !== 1 ? "s" : ""} · {routes.length - notSent.length} sent
+          </Text>
         </View>
+
+        <View style={styles.lastCard}>
+          {last === undefined ? (
+            <Text style={styles.scoreSub}>Loading last session…</Text>
+          ) : last === null ? (
+            <Text style={styles.scoreSub}>First exploration. Next time you&apos;ll see how you compare.</Text>
+          ) : (
+            <>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.breakdownTitle}>Last session · {shortDate(last.date)}</Text>
+                <Text style={styles.lastValue}>{formatPoints(last.summary.points)} pts</Text>
+              </View>
+              <Text style={[styles.diff, { color: diff > 0 ? C.green : diff < 0 ? C.red : C.textSecondary }]}>
+                {diff > 0 ? "+" : ""}{formatPoints(diff)}
+              </Text>
+            </>
+          )}
+        </View>
+
+        {summary.byWall.length > 0 && (
+          <View style={styles.breakdownCard}>
+            <Text style={styles.breakdownTitle}>By wall</Text>
+            {summary.byWall.map((b) => {
+              const prev = lastWall(b.wall)
+              return (
+                <View key={b.wall} style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>{wallLabel(b.wall)}</Text>
+                  <Text style={styles.breakdownCount}>{b.sent}/{b.tried} sent</Text>
+                  <Text style={styles.breakdownPts}>{formatPoints(b.points)} pts</Text>
+                  {prev && <Text style={styles.breakdownLast}>last {formatPoints(prev.points)}</Text>}
+                </View>
+              )
+            })}
+          </View>
+        )}
+
         {summary.byColour.length > 0 && (
           <View style={styles.breakdownCard}>
-            <Text style={styles.breakdownTitle}>Breakdown</Text>
+            <Text style={styles.breakdownTitle}>By colour</Text>
             {summary.byColour.map((b) => (
               <View key={b.colour} style={styles.breakdownRow}>
                 <View style={[styles.levelDot, { backgroundColor: swatch(b.colour) }]} />
                 <Text style={styles.breakdownLabel}>{colourLabel(b.colour)}</Text>
                 <Text style={styles.breakdownCount}>{b.sent}/{b.tried} sent</Text>
+                <Text style={styles.breakdownPts}>{formatPoints(b.points)} pts</Text>
               </View>
             ))}
           </View>
         )}
-        <Pressable style={[styles.startButton, { width: "100%" }]} onPress={goToNextBlock}>
-          <Text style={styles.startButtonText}>{nextLabel}</Text>
+        <Pressable
+          style={[styles.startButton, { width: "100%" }]}
+          onPress={phase === "review" ? () => setPhase("projectIntro") : goToNextBlock}
+        >
+          <Text style={styles.startButtonText}>{phase === "review" ? "Go to part 2" : nextLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>
   )
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
 // Same values as ExplorationSessionBlock (the Density test).
@@ -422,6 +489,7 @@ const styles = StyleSheet.create({
   climbLevelBar: { width: 4, height: 28, borderRadius: 2 },
   climbLevelText: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flex: 1 },
   climbAttemptsText: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
+  climbScore: { fontSize: 13, fontWeight: "700", color: C.green },
   deleteBtn: { paddingLeft: 8 },
   deleteBtnText: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
 
@@ -464,4 +532,9 @@ const styles = StyleSheet.create({
   levelDot: { width: 12, height: 12, borderRadius: 6 },
   breakdownLabel: { fontSize: 15, fontWeight: "600", flex: 1, color: C.textPrimary },
   breakdownCount: { fontSize: 14, color: C.textSecondary },
+  breakdownPts: { fontSize: 14, fontWeight: "700", color: C.green, minWidth: 56, textAlign: "right" },
+  breakdownLast: { fontSize: 12, color: C.textMuted, minWidth: 48, textAlign: "right" },
+  lastCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
+  lastValue: { fontSize: 22, fontWeight: "800", color: C.textPrimary, marginTop: 2 },
+  diff: { fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
 })
