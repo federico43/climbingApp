@@ -1,4 +1,4 @@
-import { BoulderLevelOptions, colourIndex, colourLabel, shiftColour } from "@/utils/boulderColours"
+import { BoulderLevelOptions, colourIndex, colourLabel } from "@/utils/boulderColours"
 
 // Route exploration (coach 2026-11-05): the week's new routes, set every
 // Monday, in two timed parts.
@@ -30,10 +30,9 @@ export function wallLabel(key: string | null | undefined): string {
   return WALLS.find((w) => w.key === key)?.label ?? (key || "—")
 }
 
-// {colour} is replaced with the athlete's starting colour when shown, and
-// {below} with the colour under it (blue start → "3 orange and 1 blue").
+// {colour} is replaced with the athlete's starting colour when shown.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Warm up first with *4 routes, each a bit harder than the last* (for example 3 {below} and 1 {colour}, or 4 {below}).",
+  "Warm up first with *4 routes, each a bit harder than the last* (for example 3 orange and 1 blue, or 4 orange).",
   "*Don't read the routes before the timer starts.*",
   "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
@@ -47,12 +46,9 @@ export const EXPLORATION_PROJECT_NOTES = [
   "Rest more between goes and work the moves you couldn't do.",
 ].join("\n")
 
-// The coach's notes with {colour} (the start colour) and {below} (one colour
-// under it) filled in with their names.
+// The coach's notes with {colour} (the start colour) filled in with its name.
 export function explorationNotes(text: string, startColour: string): string {
-  return text
-    .split("{colour}").join(colourLabel(startColour))
-    .split("{below}").join(colourLabel(shiftColour(startColour, -1)))
+  return text.split("{colour}").join(colourLabel(startColour))
 }
 
 // The colour part 1 starts at: the athlete's flash colour, blue at least.

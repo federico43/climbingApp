@@ -95,12 +95,15 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
   const [reasons, setReasons] = useState<string[]>([])
   const [notes, setNotes] = useState("")
 
-  // No colour authored: the athlete's flash level, blue at least.
+  // Before the first route: the athlete's current flash level (blue at
+  // least). The colour saved on the block when the plan was built can be
+  // stale (no flash level yet, or it changed since), so it's only a fallback.
   useEffect(() => {
-    if (block?.startColour || routes.length > 0 || !User?.$id) return
+    if (routes.length > 0 || !User?.$id) return
     getUsers(User.$id)
       .then((u: any) => {
-        const c = explorationStartColour(u?.flashLevel)
+        if (!u?.flashLevel) return
+        const c = explorationStartColour(u.flashLevel)
         setStartColour(c)
         setColour(c)
       })
