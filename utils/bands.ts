@@ -6,7 +6,7 @@
 // set lands in the focus's rep range, and progression later moves one step
 // toward less help. Pure: no React, no Appwrite.
 
-import { FOCUS_REP_RANGE, type Direction, type Focus } from "@/utils/scProgression"
+import { FOCUS_REP_RANGE, type Direction, type Focus, type RoundDrop } from "@/utils/scProgression"
 
 export type BandColor = "green" | "purple" | "black" | "red" | "yellow"
 
@@ -191,4 +191,24 @@ export function planBandNext(savedIdx: number, direction: Direction | undefined,
     ? `▲ Top of the range last time. Next band: ${to}`
     : `▼ Under the range last time. More help: ${to}`
   return { bandIdx: move.index, keepLevel: true, note }
+}
+
+// In-session, after a round on bands. Under the range → the next round
+// starts one step more help, applied with Undo (like a weight or level
+// drop). Over the range → a suggestion only, one step less help
+// (explosiveness never: more reps isn't the goal). null = nothing to say,
+// or already at the most help (the level drop takes over).
+export function bandRoundChange(focus: Focus, amount: number | undefined, bandIdx: number): RoundDrop | null {
+  if (amount == null || !Number.isFinite(amount) || bandIdx < 0) return null
+  const { low, high } = FOCUS_REP_RANGE[focus]
+  const got = `you got ${amount} of ${low}–${high} reps`
+  if (amount < low) {
+    if (bandIdx <= 0) return null
+    const to = bandIdx - 1
+    return { note: `More help this round: ${comboLabel(BAND_LADDER[to])} — ${got}`, band: to, undo: { band: bandIdx } }
+  }
+  if (amount > high && focus !== "explosiveness" && bandIdx < BAND_LADDER.length - 1) {
+    return { note: `Less help this round: try ${comboLabel(BAND_LADDER[bandIdx + 1])} — ${got}`, bannerOnly: true, raise: true }
+  }
+  return null
 }

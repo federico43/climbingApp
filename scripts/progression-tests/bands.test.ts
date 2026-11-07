@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   BAND_LADDER, DEFAULT_START_INDEX, comboId, comboLabel, isBandAssisted, ladderIndexOf,
-  nextTestStep, parseSavedBands, planBandNext, stepBands, withSavedBand,
+  bandRoundChange, nextTestStep, parseSavedBands, planBandNext, stepBands, withSavedBand,
 } from "@/utils/bands"
 
 const idx = (id: string) => ladderIndexOf(id)
@@ -93,3 +93,12 @@ assert.deepEqual(planBandNext(0, "decrease", true), { bandIdx: 0, keepLevel: fal
 // Coming from another level: the saved band, unchanged
 assert.deepEqual(planBandNext(idx("red"), "decrease", false), { bandIdx: idx("red"), keepLevel: false })
 console.log("band plan tests passed")
+
+// ── in session ──
+assert.deepEqual(bandRoundChange("hypertrophy", 6, idx("purple")), { note: "More help this round: Purple + Yellow — you got 6 of 8–12 reps", band: idx("purple+yellow"), undo: { band: idx("purple") } })
+assert.equal(bandRoundChange("hypertrophy", 6, 0), null)
+assert.deepEqual(bandRoundChange("max_force", 8, idx("red")), { note: "Less help this round: try Yellow — you got 8 of 3–6 reps", bannerOnly: true, raise: true })
+assert.equal(bandRoundChange("explosiveness", 8, idx("red")), null)
+assert.equal(bandRoundChange("max_force", 8, idx("")), null)
+assert.equal(bandRoundChange("max_force", 4, idx("red")), null)
+console.log("band round tests passed")
