@@ -7,8 +7,8 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
-  EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
-  explorationGoes, explorationNotes, explorationStartColour, nextExplorationColour, summarizeExploration,
+  EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
+  explorationDescription, explorationGoes, explorationNotes, explorationStartColour, nextExplorationColour, summarizeExploration,
   wallLabel, WALLS,
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
@@ -187,7 +187,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, undoLastAtt
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (phase === "intro") {
-    const text = explorationNotes(block?.description?.trim() || EXPLORATION_DEFAULT_DESCRIPTION, startColour)
+    const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />

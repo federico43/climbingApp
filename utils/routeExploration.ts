@@ -41,6 +41,25 @@ export const EXPLORATION_DEFAULT_DESCRIPTION = [
   "Tried every {colour} and there's still time left? Go on to part 2.",
 ].join("\n")
 
+// Defaults shipped before, saved into workouts built back then. Shown as
+// the current default instead, so old workouts get the new notes.
+const OLD_EXPLORATION_DESCRIPTIONS = [
+  [
+    "Warm up first with *4 orange routes* before you start.",
+    "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+    "*3 goes max* per route. Sent or not, move on to the next one.",
+    "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+    "Tried every {colour} and there's still time left? Go on to part 2.",
+  ].join("\n"),
+]
+
+// The notes to show for a block: its own, unless empty or an old default.
+export function explorationDescription(saved: string | null | undefined): string {
+  const d = saved?.trim()
+  if (!d || OLD_EXPLORATION_DESCRIPTIONS.includes(d)) return EXPLORATION_DEFAULT_DESCRIPTION
+  return d
+}
+
 export const EXPLORATION_PROJECT_NOTES = [
   "Part 2 · Project: go back to the routes that didn't go.",
   "Rest more between goes and work the moves you couldn't do.",

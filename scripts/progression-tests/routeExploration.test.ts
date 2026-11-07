@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict"
 import {
-  explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
+  EXPLORATION_DEFAULT_DESCRIPTION, explorationDescription, explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
   nextExplorationColour, summarizeExploration,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
@@ -40,6 +40,11 @@ assert.equal(summarizeExploration([{ success: false, level: "blue", part: 1 }]).
 
 assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "green"), "at *Green*. Every Green?")
 assert.equal(explorationNotes("at {colour}", "black"), "at Black")
+// old saved default → current default; coach's own notes stay
+const oldDefault = "Warm up first with *4 orange routes* before you start.\nPart 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.\n*3 goes max* per route. Sent or not, move on to the next one.\nSent every {colour}? Go up one colour and try every route of that colour until time runs out.\nTried every {colour} and there's still time left? Go on to part 2."
+assert.equal(explorationDescription(oldDefault), EXPLORATION_DEFAULT_DESCRIPTION)
+assert.equal(explorationDescription(""), EXPLORATION_DEFAULT_DESCRIPTION)
+assert.equal(explorationDescription(" Coach text "), "Coach text")
 
 // ── dates ──
 assert.equal(isMonday("2026-11-02"), true)
