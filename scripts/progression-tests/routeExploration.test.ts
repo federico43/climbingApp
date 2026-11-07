@@ -38,7 +38,10 @@ assert.equal(sum.answered, true)
 assert.deepEqual(sum.reasons, ["beta"])
 assert.equal(summarizeExploration([{ success: false, level: "blue", part: 1 }]).answered, false)
 
-assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "Green"), "at *Green*. Every Green?")
+assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "green"), "at *Green*. Every Green?")
+// warm-up example follows the start colour
+assert.equal(explorationNotes("3 {below} and 1 {colour}, or 4 {below}", "blue"), "3 Orange and 1 Blue, or 4 Orange")
+assert.equal(explorationNotes("3 {below} and 1 {colour}, or 4 {below}", "red"), "3 Yellow and 1 Red, or 4 Yellow")
 
 // ── dates ──
 assert.equal(isMonday("2026-11-02"), true)

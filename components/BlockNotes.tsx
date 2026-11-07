@@ -1,4 +1,5 @@
-import { noteParts, noteSteps } from "@/utils/blockNotes"
+import { BoulderLevelOptions } from "@/utils/boulderColours"
+import { colourParts, noteParts, noteSteps } from "@/utils/blockNotes"
 import { C } from "@/utils/theme"
 import React from "react"
 import { StyleSheet, Text, View } from "react-native"
@@ -7,13 +8,29 @@ import { StyleSheet, Text, View } from "react-native"
 // numbered step per line or sentence, and the key numbers (plus *starred*
 // text and any `words`) in green.
 // `compact` is the small, title-less version for running screens.
-export function BlockNotes({ text, title = "Coach notes", compact = false, words }: {
+// `colourChips` shows boulder colour names as chips of that colour.
+export function BlockNotes({ text, title = "Coach notes", compact = false, words, colourChips = false }: {
   text: string | null | undefined
   title?: string
   compact?: boolean
   /** Extra words to highlight (e.g. CONSTRAINT_WORDS). */
   words?: string[]
+  colourChips?: boolean
 }) {
+  // A colour name as a chip (black text; white on the black chip).
+  const withChips = (t: string, key: number, style?: object) => {
+    if (!colourChips) return style ? <Text key={key} style={style}>{t}</Text> : t
+    return colourParts(t).map((c, k) => {
+      if (!c.colour) return <Text key={`${key}-${k}`} style={style}>{c.text}</Text>
+      const bg = BoulderLevelOptions.find((o) => o.value === c.colour)!.color
+      return (
+        <View key={`${key}-${k}`} style={[styles.chip, { backgroundColor: bg }]}>
+          <Text style={[styles.chipText, compact && styles.chipTextCompact, c.colour === "black" && { color: "#fff" }]}>{c.text}</Text>
+        </View>
+      )
+    })
+  }
+
   const steps = noteSteps(text)
   if (steps.length === 0) return null
   const numbered = steps.length > 1
@@ -29,9 +46,7 @@ export function BlockNotes({ text, title = "Coach notes", compact = false, words
             </View>
           )}
           <Text style={[styles.text, compact && styles.textCompact]}>
-            {noteParts(step, words).map((p, j) => p.key
-              ? <Text key={j} style={styles.key}>{p.text}</Text>
-              : p.text)}
+            {noteParts(step, words).map((p, j) => withChips(p.text, j, p.key ? styles.key : undefined))}
           </Text>
         </View>
       ))}
@@ -63,4 +78,7 @@ const styles = StyleSheet.create({
   text: { flex: 1, fontSize: 16, lineHeight: 24, color: C.textPrimary },
   textCompact: { fontSize: 14, lineHeight: 20, color: C.textSecondary },
   key: { color: C.green, fontWeight: "700" },
+  chip: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, transform: [{ translateY: 3 }] },
+  chipText: { color: "#000", fontSize: 14, fontWeight: "700" },
+  chipTextCompact: { fontSize: 12 },
 })

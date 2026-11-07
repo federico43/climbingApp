@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/blockNotes.test.ts
 
 import assert from "node:assert/strict"
-import { CONSTRAINT_WORDS, noteParts, noteSteps } from "@/utils/blockNotes"
+import { colourParts, CONSTRAINT_WORDS, noteParts, noteSteps } from "@/utils/blockNotes"
 
 const keys = (s: string) => noteParts(s).filter((p) => p.key).map((p) => p.text)
 
@@ -43,3 +43,12 @@ assert.deepEqual(cw("Don't match, 3 moves"), ["Don't", "3 moves"])
 assert.deepEqual(keys("Use only one hand"), [])
 
 console.log("blockNotes: ok")
+
+// ── colour names → chips ──
+{
+  assert.deepEqual(colourParts("3 Orange and 1 blue, or reds"), [
+    { text: "3 " }, { text: "Orange", colour: "orange" }, { text: " and 1 " }, { text: "blue", colour: "blue" },
+    { text: ", or " }, { text: "reds", colour: "red" },
+  ])
+  assert.deepEqual(colourParts("Blueberry"), [{ text: "Blueberry" }])
+}
