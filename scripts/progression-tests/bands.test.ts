@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   BAND_LADDER, DEFAULT_START_INDEX, comboId, comboLabel, isBandAssisted, ladderIndexOf,
-  nextTestStep, parseSavedBands, stepBands, withSavedBand,
+  nextTestStep, parseSavedBands, planBandNext, stepBands, withSavedBand,
 } from "@/utils/bands"
 
 const idx = (id: string) => ladderIndexOf(id)
@@ -80,3 +80,16 @@ assert.deepEqual(stepBands(0, "decrease"), { index: 0, changed: false, atNoBand:
 assert.deepEqual(stepBands(idx(""), "increase"), { index: idx(""), changed: false, atNoBand: true })
 
 console.log("bands tests passed")
+
+// ── next session ──
+assert.deepEqual(planBandNext(-1, "increase", true), { bandIdx: -1, keepLevel: true })
+assert.deepEqual(planBandNext(idx("green"), "hold", true), { bandIdx: idx("green"), keepLevel: true })
+assert.deepEqual(planBandNext(idx("green"), "increase", true), { bandIdx: idx("purple+yellow"), keepLevel: true, note: "▲ Top of the range last time. Next band: Purple + Yellow" })
+assert.deepEqual(planBandNext(idx("green"), "decrease", true), { bandIdx: idx("green+red"), keepLevel: true, note: "▼ Under the range last time. More help: Green + Red" })
+// No band and still topping out → the next level of the ladder takes over
+assert.deepEqual(planBandNext(idx(""), "increase", true), { bandIdx: idx(""), keepLevel: false })
+// Most help and still under → the easier level takes over
+assert.deepEqual(planBandNext(0, "decrease", true), { bandIdx: 0, keepLevel: false })
+// Coming from another level: the saved band, unchanged
+assert.deepEqual(planBandNext(idx("red"), "decrease", false), { bandIdx: idx("red"), keepLevel: false })
+console.log("band plan tests passed")

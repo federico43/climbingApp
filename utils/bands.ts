@@ -169,3 +169,26 @@ export function stepBands(fromIdx: number, direction: Direction): BandMove {
   const index = Math.min(Math.max(from + delta, 0), lastIdx)
   return { index, changed: index !== from, atNoBand: direction === "increase" && from === lastIdx }
 }
+
+// Next session on a band-assisted level, from last time's decision at this
+// focus. Bands move before the level does: ▲ means one band step less help
+// on the same level, until "no band" — only then does the ladder's next
+// level take over (keepLevel false). ▼ means more help, until the most help
+// there is. With no saved band yet the test runs (bandIdx -1).
+export interface BandPlan {
+  bandIdx: number     // -1 = no saved band → guided test
+  keepLevel: boolean  // stay on the band-assisted level instead of the level move
+  note?: string
+}
+
+export function planBandNext(savedIdx: number, direction: Direction | undefined, lastWasBand: boolean): BandPlan {
+  if (savedIdx < 0) return { bandIdx: -1, keepLevel: lastWasBand }
+  if (!lastWasBand || !direction || direction === "hold") return { bandIdx: savedIdx, keepLevel: lastWasBand }
+  const move = stepBands(savedIdx, direction)
+  if (!move.changed) return { bandIdx: savedIdx, keepLevel: false }
+  const to = comboLabel(BAND_LADDER[move.index])
+  const note = direction === "increase"
+    ? `▲ Top of the range last time. Next band: ${to}`
+    : `▼ Under the range last time. More help: ${to}`
+  return { bandIdx: move.index, keepLevel: true, note }
+}
