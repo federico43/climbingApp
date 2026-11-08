@@ -53,6 +53,8 @@ export function RosterList({
     { key: "homework", label: "Homework" },
     { key: "no_plan", label: "No plan" },
     { key: "inactive", label: `Inactive ${inactiveDays}d+` },
+    // Accounts the coach turned off — only shown when there are some.
+    ...(counts.deactivated > 0 || filter === "deactivated" ? [{ key: "deactivated" as const, label: "Deactivated" }] : []),
   ]
 
   return (
@@ -114,9 +116,9 @@ export function RosterList({
               <Text style={[styles.avatarText, sel && styles.avatarTextSel]}>{a.name[0]?.toUpperCase()}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name} numberOfLines={1}>{a.name}</Text>
+              <Text style={[styles.name, !a.active && styles.nameOff]} numberOfLines={1}>{a.name}</Text>
               <Text style={styles.meta} numberOfLines={1}>
-                {planStatusLabel(a)} · {lastSessionLabel(a)}
+                {a.active ? `${planStatusLabel(a)} · ${lastSessionLabel(a)}` : "Deactivated"}
               </Text>
             </View>
             {a.pendingHomework > 0 && (
@@ -161,6 +163,7 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 16, fontWeight: "800", color: C.green },
   avatarTextSel: { color: C.bg },
   name: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  nameOff: { color: C.textMuted },
   meta: { fontSize: 12, color: C.textSecondary, marginTop: 1 },
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   badgeText: { fontSize: 12, fontWeight: "800", color: C.bg },

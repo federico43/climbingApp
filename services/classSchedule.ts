@@ -15,7 +15,7 @@ const REQUESTS_TABLE = "class_requests"
 const PACKAGES_TABLE = "packages"
 
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
-export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[] }
+export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[]; active?: boolean }
 export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string }
 
 const toClass = (r: any): GymClass => ({ id: r.$id, day: r.day, start: r.start, roster: r.roster ?? [] })
@@ -39,7 +39,7 @@ export async function loadRequests(weekStarts: string[], athleteId?: string): Pr
 
 export async function loadUsers(): Promise<ClassUser[]> {
   const rows = await listAllRows<any>(USERS_TABLE)
-  return rows.map((u) => ({ id: u.$id, name: u.username || "athlete", role: u.role ?? null, defaultClasses: u.defaultClasses ?? [] }))
+  return rows.map((u) => ({ id: u.$id, name: u.username || "athlete", role: u.role ?? null, defaultClasses: u.defaultClasses ?? [], active: u.active !== false }))
 }
 
 export async function loadPackages(athleteId?: string): Promise<ClassPackage[]> {

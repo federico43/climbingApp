@@ -233,7 +233,8 @@ async function load() {
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
       status: "ready", error: null, me, names, requests, pkg, packages,
-      athletes: users.filter((u) => u.role !== "coach"),
+      // Deactivated accounts can't be added to classes.
+      athletes: users.filter((u) => u.role !== "coach" && u.active !== false),
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,

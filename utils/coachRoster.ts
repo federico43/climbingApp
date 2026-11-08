@@ -11,7 +11,11 @@ import { sessionLocalDate, type ProgressSession } from "@/utils/planProgress"
 export const ROSTER_WINDOW_DAYS = 60
 export const INACTIVE_STEPS = [7, 14, 30] as const
 
-export interface RosterAthlete { $id: string; username?: string | null }
+export interface RosterAthlete { $id: string; username?: string | null; active?: boolean | null }
+
+// The coach turns an athlete's account off (`users.active` = false) instead
+// of deleting the row; unset counts as active, so older rows stay visible.
+export const isAccountActive = (u: { active?: boolean | null } | null | undefined) => u?.active !== false
 export interface RosterHomework extends HomeworkRow { athleteId?: string | null }
 export interface RosterPlan { $id: string; athleteId: string; name: string; windowStart: string; windowEnd: string; pauses?: PlanPause[] }
 export interface RosterSession extends ProgressSession { userId: string }
@@ -21,6 +25,8 @@ export type PlanStatus = "none" | "upcoming" | "active" | "ended"
 export interface AthleteSummary {
   id: string
   name: string
+  // false → the coach deactivated the account (only the Deactivated chip lists it)
+  active: boolean
   pendingHomework: number
   // Overdue or "can't attend" — the ones that need the coach.
   urgentHomework: number
@@ -87,6 +93,7 @@ export function summarizeRoster(
     return {
       id: a.$id,
       name: a.username || a.$id,
+      active: isAccountActive(a),
       pendingHomework: pending,
       urgentHomework: urgent,
       plan,
@@ -125,17 +132,19 @@ export function rosterKpis(
   inactiveDays: number,
 ): RosterKpis {
   const monday = weekStartOf(today)
+  const live = summaries.filter((a) => a.active)
   return {
-    withHomework: summaries.filter((a) => a.pendingHomework > 0).length,
-    withUrgentHomework: summaries.filter((a) => a.urgentHomework > 0).length,
+    withHomework: live.filter((a) => a.pendingHomework > 0).length,
+    withUrgentHomework: live.filter((a) => a.urgentHomework > 0).length,
     // Every session counts — homework and split-off S&C are training too.
     workoutsThisWeek: sessions.filter((s) => { const d = sessionLocalDate(s); return d >= monday && d <= today }).length,
-    withoutPlan: summaries.filter(hasNoPlan).length,
-    inactive: summaries.filter((a) => isInactive(a, inactiveDays)).length,
+    withoutPlan: live.filter(hasNoPlan).length,
+    inactive: live.filter((a) => isInactive(a, inactiveDays)).length,
   }
 }
 
-export type RosterFilter = "homework" | "no_plan" | "inactive"
+// "inactive" = no recent sessions; "deactivated" = the coach turned the account off.
+export type RosterFilter = "homework" | "no_plan" | "inactive" | "deactivated"
 
 // Case- and accent-insensitive.
 export function normalizeName(s: string): string {
@@ -151,6 +160,9 @@ export function filterRoster(
   const q = normalizeName(query)
   return summaries.filter((a) => {
     if (q && !normalizeName(a.name).includes(q)) return false
+    // Deactivated accounts only show under their own chip.
+    if (filter === "deactivated") return !a.active
+    if (!a.active) return false
     if (filter === "homework") return a.pendingHomework > 0
     if (filter === "no_plan") return hasNoPlan(a)
     if (filter === "inactive") return isInactive(a, inactiveDays)
