@@ -148,6 +148,8 @@ export interface AppUser {
   // The workout the coach picked for the athlete's Home (a protocol id).
   // Unset → the newest coach workout. See pickLatestWorkout.
   homeWorkoutId?: string | null
+  // false → the coach deactivated the account; unset = active.
+  active?: boolean | null
   [key: string]: any
 }
 
@@ -216,6 +218,22 @@ export async function logRecord(table_id: string, data: any, rowID?: string) {
   try {
     return await tablesDB.createRow({ databaseId: DATABASE_ID, tableId: table_id, rowId: rowID, data })
   } catch (error) { console.log(error); throw error }
+}
+
+// The signed-in user's `users` row, created (as an athlete) when it's
+// missing — sign-up writes it before there's a session and never retried, so
+// an account could end up without one and not show on the coach dashboard.
+// Other errors (offline…) throw; nothing is created then.
+export async function ensureOwnUserRow(userId: string, fallbackName: string): Promise<AppUser> {
+  try {
+    return await tablesDB.getRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId }) as unknown as AppUser
+  } catch (e: any) {
+    if (e?.code !== 404) throw e
+  }
+  return await tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId,
+    data: { username: fallbackName, role: "athlete" },
+  }) as unknown as AppUser
 }
 
 export async function useDeleteRow(table_id: string, rowID?: string) {
@@ -621,6 +639,13 @@ export async function updateSession(id: string, data: { attempts?: string; proto
 
 export async function setUserRole(userId: string, role: UserRole) {
   return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { role } })
+}
+
+// The coach turns an account off/on (utils/coachRoster isAccountActive).
+// Throws when the `active` column doesn't exist on `users` yet
+// (scripts/user-active/create-column.mjs adds it).
+export async function setUserActive(userId: string, active: boolean) {
+  return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { active } })
 }
 
 // Throws when the `flashLevel` column doesn't exist on `users` yet (it's
