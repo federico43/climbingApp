@@ -1,4 +1,5 @@
 import Auth_context, { ConsumeAuth } from "@/components/auth-context"
+import { InactiveAccount } from "@/components/InactiveAccount"
 import { Redirect, Stack, useSegments } from "expo-router"
 import React, { useEffect, useState } from "react"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
@@ -6,7 +7,7 @@ import { hasSeenOnboarding } from "../../hooks/onBoardingHook"
 
 export default function AppLayout() {
   const segments = useSegments()
-  const { User, isLoadingUser } = ConsumeAuth()
+  const { User, isLoadingUser, active, role } = ConsumeAuth()
   const [seenOnboarding, setSeenOnboardingState] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -37,6 +38,8 @@ export default function AppLayout() {
 
   if (!User && !inAuthGroup) return <Redirect href="/auth" />
   if (User && inAuthGroup) return <Redirect href="/" />
+  // Deactivated by the coach. A coach is never locked out.
+  if (User && !active && role !== "coach") return <InactiveAccount />
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
