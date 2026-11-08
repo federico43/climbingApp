@@ -7,6 +7,7 @@ import { AthleteCard, useFlashLevel } from "@/components/coach/AthleteCard"
 import { HomeworkCard } from "@/components/coach/HomeworkCard"
 import { PlanCard } from "@/components/coach/PlanCard"
 import { RecentActivityCard } from "@/components/coach/RecentActivityCard"
+import { ActivePill } from "@/components/coach/ActivePill"
 import { RolePill } from "@/components/coach/RolePill"
 import { StatsCard } from "@/components/coach/StatsCard"
 import { useAthleteStats } from "@/hooks/useAthleteStats"
@@ -162,6 +163,7 @@ export function AthleteDetail({
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={1}>{athlete.username || athlete.$id}</Text>
             <RolePill athlete={athlete} onChanged={onChanged} />
+            <ActivePill athlete={athlete} onChanged={onChanged} />
           </View>
           <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
         </View>
