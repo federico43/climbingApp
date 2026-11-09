@@ -79,3 +79,17 @@ export async function hasWorkoutToday(userId: string): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * The coach deletes the athlete's cardio plan: switch off, plan cleared and
+ * its sessions removed, so turning it on again starts from the intro and the
+ * starting test.
+ */
+export async function deleteCardioPlan(userId: string): Promise<void> {
+  await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId,
+    data: { cardioEnabled: false, cardioPlan: null },
+  })
+  const rows = await listCardioSessions(userId).catch(() => [])
+  await Promise.all(rows.map((r) => tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: CARDIO_SESSIONS_TABLE, rowId: r.$id })))
+}

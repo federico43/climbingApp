@@ -1,6 +1,6 @@
 import { C } from "@/utils/theme"
 import type { AppUser } from "@/services/BoulderGraphService"
-import { getCardioUser, listCardioSessions, saveCardioPlan, setCardioEnabled, type CardioSessionRow } from "@/services/cardio"
+import { deleteCardioPlan, getCardioUser, listCardioSessions, saveCardioPlan, setCardioEnabled, type CardioSessionRow } from "@/services/cardio"
 import {
   coachSetStep, formatTime12, lights, MAX_STEP, protocolFor, protocolLabel, repeatedPainZone, WEEKDAY_SHORT,
   type CardioAnswers, type CardioPlan, type CardioStep, type Light,
@@ -65,6 +65,28 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
       setPlan(prev)
       Alert.alert("Couldn't save", e instanceof Error ? e.message : "Try again.")
     } finally { setSaving(false) }
+  }
+
+  function confirmDelete() {
+    const name = athlete.username || "this athlete"
+    Alert.alert(
+      "Delete cardio plan?",
+      `${name}'s jump rope plan and its sessions will be deleted and cardio turned off. Turning it on again starts from the intro and the test.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete", style: "destructive", onPress: async () => {
+            setSaving(true)
+            try {
+              await deleteCardioPlan(athlete.$id)
+              setPlan(null); setSessions([]); setEnabled(false)
+            } catch (e) {
+              Alert.alert("Couldn't delete", e instanceof Error ? e.message : "Try again.")
+            } finally { setSaving(false) }
+          },
+        },
+      ],
+    )
   }
 
   const state = plan?.state ?? null
@@ -146,6 +168,13 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
                 })}
               </View>
             )}
+
+            {(plan || sessions.length > 0) && (
+              <Pressable onPress={confirmDelete} disabled={saving} hitSlop={6} style={s.delete}>
+                <Ionicons name="trash-outline" size={14} color={C.red} />
+                <Text style={s.deleteText}>Delete plan</Text>
+              </Pressable>
+            )}
           </>
         )}
     </View>
@@ -178,6 +207,8 @@ function Stepper({ label, value, min, max, disabled, onChange }: {
 }
 
 const s = StyleSheet.create({
+  delete: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 4 },
+  deleteText: { fontSize: 13, fontWeight: "700", color: C.red },
   label: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: { backgroundColor: C.surfaceHigh, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "transparent" },
