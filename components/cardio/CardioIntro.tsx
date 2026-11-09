@@ -29,9 +29,11 @@ const INFO: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string 
   },
 ]
 
-export function CardioIntro({ visible, daysOnly, initialDays, initialTime, onClose, onCommit }: {
+export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, initialTime, onClose, onCommit }: {
   visible: boolean
   daysOnly?: boolean
+  /** The first session is the starting test (the coach didn't set a step). */
+  hasTest?: boolean
   initialDays?: Weekday[]
   initialTime?: string
   onClose: () => void
@@ -110,7 +112,7 @@ export function CardioIntro({ visible, daysOnly, initialDays, initialTime, onClo
           <Text style={s.title}>Your commitment</Text>
           <Text style={s.text}>
             {days.length} sessions a week ({[...days].sort((a, b) => a - b).map((d) => WEEKDAY_SHORT[d]).join(", ")}) for the next 6 weeks.
-            Your first session is a short test that finds your starting point.
+            {hasTest ? " Your first session is a short test that finds your starting point." : " Your coach already set your starting point."}
           </Text>
         </View>
       </>

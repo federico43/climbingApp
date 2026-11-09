@@ -341,7 +341,7 @@ export function canTrainToday(today: string, sessionDates: string[], painCap: bo
 export type DayStatus = "done" | "today" | "planned" | "missed" | "rest"
 
 /** The 7 days of the week of `today`, for the plan card. */
-export function weekStatus(today: string, days: Weekday[], sessionDates: string[]): DayStatus[] {
+export function weekStatus(today: string, days: Weekday[], sessionDates: string[], since: string | null = null): DayStatus[] {
   const wk = weekStart(today)
   const todayIdx = daysBetween(wk, today)
   return Array.from({ length: 7 }, (_, i) => {
@@ -351,7 +351,9 @@ export function weekStatus(today: string, days: Weekday[], sessionDates: string[
     const planned = days.includes(i as Weekday)
     if (i === todayIdx) return planned ? "today" : "rest"
     if (!planned) return "rest"
-    return i < todayIdx ? "missed" : "planned"
+    // Days before the plan began aren't missed.
+    if (i < todayIdx) return since && date < since ? "rest" : "missed"
+    return "planned"
   })
 }
 
@@ -422,13 +424,19 @@ export function normalizePlan(plan: CardioPlan, today: string): CardioPlan {
   if (!plan.state) return plan
   let state = plan.state
   let forcedDeloadWeek = plan.forcedDeloadWeek
-  if (plan.lastSessionDate) state = afterLongBreak(state, daysBetween(plan.lastSessionDate, today))
+  let lastSessionDate = plan.lastSessionDate
+  // Applied once: the break is "used up", so normalizing twice (todaySession
+  // inside recordSession) doesn't drop two steps.
+  if (lastSessionDate && daysBetween(lastSessionDate, today) >= 14) {
+    state = afterLongBreak(state, daysBetween(lastSessionDate, today))
+    lastSessionDate = null
+  }
   if (state.pendingUp && forcedDeloadWeek && weekStart(today) > forcedDeloadWeek) {
     state = afterDeload(state)
     forcedDeloadWeek = null
   }
   if (!state.pendingUp) forcedDeloadWeek = null
-  return { ...plan, state, forcedDeloadWeek }
+  return { ...plan, state, forcedDeloadWeek, lastSessionDate }
 }
 
 export interface TodaySession {

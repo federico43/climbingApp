@@ -109,6 +109,7 @@ export function CardioSection() {
         daysOnly={intro === "days"}
         initialDays={plan?.days}
         initialTime={plan?.reminderTime}
+        hasTest={plan?.state == null && plan?.coachStartStep == null}
         onClose={() => setIntro("off")}
         onCommit={commit}
       />
@@ -138,7 +139,7 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
 }) {
   const today = localDateStr(new Date())
   const dates = sessions.map((r) => r.date)
-  const week = weekStatus(today, plan.days, dates)
+  const week = weekStatus(today, plan.days, dates, plan.committedAt ? localDateStr(new Date(plan.committedAt)) : null)
   // Climbed-hard is only known when the session opens; the card shows the plain protocol.
   const next = todaySession(plan, today, false)
   const can = canTrainToday(today, dates, !!plan.state?.painCap)

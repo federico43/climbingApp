@@ -125,6 +125,7 @@ assert.deepEqual(
   ["done", "rest", "today", "rest", "planned", "rest", "rest"],
 )
 assert.deepEqual(weekStatus("2026-11-12", [0, 2, 4], []).slice(0, 3), ["missed", "rest", "missed"])
+assert.deepEqual(weekStatus("2026-11-12", [0, 2, 4], [], "2026-11-11").slice(0, 3), ["rest", "rest", "missed"]) // started Wed
 
 console.log("cardio tests passed")
 
@@ -165,8 +166,13 @@ console.log("cardio tests passed")
   const after = normalizePlan(p5, "2026-11-30")
   assert.equal(after.state?.step, 6); assert.equal(after.forcedDeloadWeek, null)
   assert.equal(todaySession(after, "2026-11-30", false).kind, "session")
-  // Long break.
-  assert.equal(normalizePlan({ ...plan, lastSessionDate: "2026-11-01" }, "2026-11-20").state?.step, 3)
+  // Long break: one step down, once — recording that session doesn't drop two.
+  const broke = { ...plan, lastSessionDate: "2026-11-01" }
+  assert.equal(normalizePlan(broke, "2026-11-20").state?.step, 3)
+  assert.equal(normalizePlan(normalizePlan(broke, "2026-11-20"), "2026-11-20").state?.step, 3)
+  const back = recordSession(broke, "2026-11-20", { ...GREEN, effort: "mixed" }, false)
+  assert.equal(back.session.step, 3); assert.equal(back.plan.state?.step, 3)
+  assert.equal(back.plan.lastSessionDate, "2026-11-20")
 }
 console.log("cardio plan tests passed")
 

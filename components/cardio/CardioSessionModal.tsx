@@ -6,7 +6,7 @@ import {
 } from "@/utils/cardio"
 import { localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { CardioQuestions } from "./CardioQuestions"
@@ -53,15 +53,27 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
   const [saving, setSaving] = useState(false)
   const today = localDateStr(new Date())
 
+  // Today's session is fixed when the screen opens: saving the plan mid-way
+  // (after the test) must not turn it into another one.
+  const [session, setSession] = useState<TodaySession | null>(null)
+  const planRef = useRef(plan)
+  planRef.current = plan
+
   useEffect(() => {
     if (!visible) return
     setStep({ k: "intro" })
     setStops([])
     setClimbedHard(null)
-    hasWorkoutToday(userId).then(setClimbedHard)
+    setSession(null)
+    let cancelled = false
+    hasWorkoutToday(userId).then((hard) => {
+      if (cancelled) return
+      setClimbedHard(hard)
+      setSession(todaySession(planRef.current, localDateStr(new Date()), hard))
+    })
+    return () => { cancelled = true }
   }, [visible, userId])
 
-  const session: TodaySession | null = climbedHard == null ? null : todaySession(plan, today, climbedHard)
   const isTest = session?.kind === "test"
 
   function close() {
