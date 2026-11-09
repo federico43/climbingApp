@@ -151,3 +151,85 @@ export function homeworkReminders(hw: HomeworkRow, sessions: ProgressSession[], 
   }
   return out
 }
+
+// ─── Left as homework by the athlete (2026-11-05) ─────────────────────────────
+// Mid-workout, "Leave as homework" on a block the athlete can't finish today.
+// What they logged stays in today's session; what's left becomes a homework
+// row like the coach's (same card, reminders, deadline), with this note on
+// each block so the coach sees the athlete left it.
+
+export interface LeftAsHomework {
+  on: string           // "YYYY-MM-DD" the athlete left it
+  from: string         // the workout it came from
+  roundsDone?: number  // S&C: full rounds already done that day
+}
+
+// What's left of `block` after `blockAttempts` (that block's attempts today).
+// S&C drops the rounds already done in full (a half-done round is done again);
+// every other block goes as a whole. null = nothing left.
+export function homeworkRemainder(
+  block: any,
+  blockAttempts: { scData?: { round?: number } | null }[],
+): { block: any; roundsDone?: number } | null {
+  if (!block) return null
+  if (block.type === "strength_conditioning" && !block.coached) {
+    const perRound = Array.isArray(block.exercises) ? block.exercises.length : 0
+    const rounds = Number(block.rounds) || 0
+    if (perRound === 0 || rounds === 0) return { block }
+    const counts = new Map<number, number>()
+    for (const a of blockAttempts) {
+      const r = a.scData?.round
+      if (typeof r === "number") counts.set(r, (counts.get(r) ?? 0) + 1)
+    }
+    let done = 0
+    for (const n of counts.values()) if (n >= perRound) done++
+    done = Math.min(done, rounds)
+    if (done >= rounds) return null
+    return done > 0 ? { block: { ...block, rounds: rounds - done }, roundsDone: done } : { block }
+  }
+  return { block }
+}
+
+// The homework to make from a finished session: the blocks marked "leave as
+// homework", each cut down to what's left and tagged. null = nothing to make.
+export function leftHomework(
+  protocol: any[],
+  attempts: { blockIndex: number; scData?: any }[],
+  marked: Set<number>,
+  workoutName: string,
+  today: string,
+): { name: string; blocks: any[]; dueBy: string } | null {
+  const blocks: any[] = []
+  for (const i of [...marked].sort((a, b) => a - b)) {
+    const rem = homeworkRemainder(protocol[i], attempts.filter((a) => a.blockIndex === i))
+    if (!rem) continue
+    const note: LeftAsHomework = { on: today, from: workoutName.trim() }
+    if (rem.roundsDone) note.roundsDone = rem.roundsDone
+    // Homework is done alone — never coached.
+    blocks.push({ ...rem.block, coached: undefined, leftAsHomework: note })
+  }
+  if (blocks.length === 0) return null
+  return { name: homeworkName(workoutName, blocks), blocks, dueBy: defaultDueBy(today) }
+}
+
+// Blocks that don't go into today's session: the skipped ones, and the ones
+// left as homework with nothing logged yet.
+export function blocksLeftOut(
+  skipped: Set<number>,
+  marked: Set<number>,
+  attempts: { blockIndex: number }[],
+): Set<number> {
+  const out = new Set(skipped)
+  for (const i of marked) if (!attempts.some((a) => a.blockIndex === i)) out.add(i)
+  return out
+}
+
+// The note when the athlete left this homework themselves, else null.
+export function leftByAthlete(hw: { blocks?: string | null }): LeftAsHomework | null {
+  try {
+    const blocks = JSON.parse(hw.blocks ?? "[]")
+    if (!Array.isArray(blocks)) return null
+    for (const b of blocks) if (b?.leftAsHomework?.on) return b.leftAsHomework as LeftAsHomework
+  } catch { /* not JSON */ }
+  return null
+}

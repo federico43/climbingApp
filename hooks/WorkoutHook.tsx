@@ -74,6 +74,9 @@ export function useWorkout(protocolInput: Block[]) {
   // Indices the user chose to skip. Skipped blocks are omitted from the
   // summary and never persisted (see the save effect below).
   const [skippedBlocks, setSkippedBlocks] = useState<Set<number>>(new Set())
+  // Indices the athlete left as homework (utils/homework.ts leftHomework):
+  // what's logged stays in the session, what's left becomes homework.
+  const [homeworkBlocks, setHomeworkBlocks] = useState<Set<number>>(new Set())
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -115,12 +118,14 @@ export function useWorkout(protocolInput: Block[]) {
   // Landing on a block (via Back or Continue) means the user intends to do it,
   // so clear any prior "skipped" mark on the destination.
   const unskip = useCallback((index: number) => {
-    setSkippedBlocks((prev) => {
+    const drop = (prev: Set<number>) => {
       if (!prev.has(index)) return prev
       const next = new Set(prev)
       next.delete(index)
       return next
-    })
+    }
+    setSkippedBlocks(drop)
+    setHomeworkBlocks(drop)
   }, [])
 
   const goToNextBlock = useCallback(() => {
@@ -159,6 +164,20 @@ export function useWorkout(protocolInput: Block[]) {
     }
   }, [currentBlockIndex, protocol.length])
 
+  // Leave the current block as homework: record its time so far and advance.
+  const leaveAsHomework = useCallback(() => {
+    recordElapsed(currentBlockIndex)
+    setHomeworkBlocks((prev) => new Set(prev).add(currentBlockIndex))
+    const nextIndex = currentBlockIndex + 1
+    if (nextIndex >= protocol.length) {
+      setBlockStartTime(null)
+      setStatus("completed")
+    } else {
+      setBlockStartTime(Date.now())
+      setCurrentBlockIndex(nextIndex)
+    }
+  }, [currentBlockIndex, protocol.length, recordElapsed])
+
   const startWorkout = useCallback(() => {
     // Don't reset a workout that's already running — this guards against the
     // host's auto-start firing over a freshly restored (resumed) session.
@@ -169,6 +188,7 @@ export function useWorkout(protocolInput: Block[]) {
     setBlockStartTime(Date.now())
     setWorkoutStartTime(Date.now())
     setSkippedBlocks(new Set())
+    setHomeworkBlocks(new Set())
     setStatus("running")
   }, [status])
 
@@ -180,6 +200,7 @@ export function useWorkout(protocolInput: Block[]) {
     attempts: Attempt[]
     blockDurations: Record<number, number>
     skippedBlocks: number[]
+    homeworkBlocks?: number[]
     workoutStartTime?: number | null
   }) => {
     if (timerRef.current !== null) clearInterval(timerRef.current)
@@ -188,6 +209,7 @@ export function useWorkout(protocolInput: Block[]) {
     setAttempts(saved.attempts ?? [])
     setBlockDurations(saved.blockDurations ?? {})
     setSkippedBlocks(new Set(saved.skippedBlocks ?? []))
+    setHomeworkBlocks(new Set(saved.homeworkBlocks ?? []))
     setBlockStartTime(Date.now())
     // Keep the ORIGINAL start so total time spans the real duration.
     setWorkoutStartTime(saved.workoutStartTime ?? Date.now())
@@ -210,6 +232,7 @@ export function useWorkout(protocolInput: Block[]) {
     setBlockStartTime(null)
     setWorkoutStartTime(null)
     setSkippedBlocks(new Set())
+    setHomeworkBlocks(new Set())
   }, [])
 
   const undoLastAttempt = useCallback(() => {
@@ -316,6 +339,7 @@ export function useWorkout(protocolInput: Block[]) {
     goToNextBlock,
     goToPreviousBlock,
     skipBlock,
+    leaveAsHomework,
     logAttempt,
     undoLastAttempt,
     removeAttempt,
@@ -328,5 +352,6 @@ export function useWorkout(protocolInput: Block[]) {
     blockStartTime,
     workoutStartTime,
     skippedBlocks,
+    homeworkBlocks,
   }
 }

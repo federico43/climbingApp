@@ -633,3 +633,23 @@ match on.
   urgency bugs (1.2, 1.3), unreachable methods (1.6), merged S&C credit
   (1.1). UTC day boundaries (1.4) still apply to plan dates — fix while
   touching the plan modal.
+
+## Leave a block as homework (athlete, 2026-11-05)
+
+- Mid-workout, the block's **⋯** button (where Skip was) opens a menu:
+  **Leave as homework** / **Skip block** / Cancel (Federico 2026-11-09).
+- What was logged on the block stays in today's session (a block with
+  nothing logged is dropped, like a skip). What's left becomes a homework row
+  like the coach's (`planPart: "homework"`, 5-day deadline, same card,
+  reminders and can't-attend): S&C keeps only the rounds not done in full
+  (a half-done round is done again); every other block goes whole
+  (`utils/homework.ts` `homeworkRemainder`, `leftHomework`).
+- Each block carries `leftAsHomework: { on, from, roundsDone? }`, so the
+  coach card shows "Left by athlete on …" and the athlete's prompt says they
+  left it for later. No new Appwrite column.
+- Made from the session queue right after the session row (works offline;
+  row id = the queued session's id, so retries can't duplicate it): through
+  the function's `homeworkLeft` action (writes the row, pushes the coach);
+  if that isn't deployed, written directly (no coach push).
+- The plan counts the workout as done; the homework session feeds
+  progression like any other.

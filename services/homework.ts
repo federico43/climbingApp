@@ -1,6 +1,7 @@
-import { functions, tablesDB } from "@/components/AppWrite"
+import { account, functions, tablesDB } from "@/components/AppWrite"
 import { AI_PROTOCOL_FUNCTION_ID } from "@/services/aiProtocol"
-import { DATABASE_ID, PROTOCOLS_TABLE, type ProtocolRow } from "@/services/BoulderGraphService"
+import { createProtocol, DATABASE_ID, PROTOCOLS_TABLE, type ProtocolRow } from "@/services/BoulderGraphService"
+import { isNetworkError } from "@/utils/network"
 import { homeworkReminders, type HomeworkReminder } from "@/utils/homework"
 import type { ProgressSession } from "@/utils/planProgress"
 import { ExecutionMethod } from "appwrite"
@@ -39,6 +40,39 @@ export function notifyHomeworkAssigned(homeworkId: string, dueLabel: string, ext
       method: ExecutionMethod.POST,
     })
     .catch((e) => console.log("Homework push failed", e))
+}
+
+export interface LeftHomeworkPayload {
+  id: string // the row id — the queued session's id, so a retry can't make two
+  name: string
+  blocks: any[]
+  dueBy: string
+  planId?: string
+  planIndex?: number
+}
+
+// Athlete: make the homework they left mid-workout (utils/homework.ts
+// leftHomework). Through the function (it also pushes the coach); if that
+// isn't deployed yet, written directly — no coach push then. A row that's
+// already there (a retry) counts as done. Throws on no connection.
+export async function makeLeftHomework(p: LeftHomeworkPayload): Promise<void> {
+  try {
+    await callFunction({ action: "homeworkLeft", ...p })
+    return
+  } catch (e) {
+    if (isNetworkError(e)) throw e
+    console.log("homeworkLeft via function failed — trying a direct write", e)
+  }
+  try {
+    await createProtocol({
+      name: p.name, blocks: p.blocks, planPart: "homework", dueBy: p.dueBy,
+      ...(p.planId && p.planIndex != null ? { planId: p.planId, planIndex: p.planIndex } : {}),
+      athleteId: (await account.get()).$id,
+    }, p.id)
+  } catch (e: any) {
+    if (e?.code === 409) return
+    throw e
+  }
 }
 
 // The function writes the row and pushes the coach. If it isn't deployed yet,

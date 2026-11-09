@@ -785,6 +785,7 @@ export async function createProtocol(
     name: string; blocks: any[]; athleteId?: string; source?: "coach" | "library"
     planId?: string; planIndex?: number; planPart?: "sc" | "homework"; dueBy?: string
   },
+  rowId?: string,
 ): Promise<ProtocolRow> {
   const data: Record<string, any> = { name: input.name, blocks: JSON.stringify(input.blocks) }
   if (input.athleteId) data.athleteId = input.athleteId
@@ -796,7 +797,7 @@ export async function createProtocol(
   if (input.planPart) data.planPart = input.planPart
   if (input.dueBy) data.dueBy = input.dueBy
   const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data,
+    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: rowId ?? ID.unique(), data,
   })
   return response as unknown as ProtocolRow
 }
