@@ -178,7 +178,8 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
           )
         })}
       </View>
-      {can.ok && (
+      {/* Dev builds can start again the same day, to test the flow quickly. */}
+      {(can.ok || __DEV__) && (
         <Pressable style={({ pressed }) => [s.btn, pressed && { opacity: 0.85 }]} onPress={onStart}>
           <Ionicons name="play" size={16} color="#10251A" />
           <Text style={s.btnText}>Start</Text>

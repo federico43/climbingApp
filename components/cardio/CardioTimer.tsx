@@ -81,6 +81,12 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Dev builds only: jump past the whole timer to test the flow quickly.
+  function skipAll() {
+    clear()
+    onDoneRef.current()
+  }
+
   function togglePause() {
     if (paused) { setPaused(false); tick(pausedMs.current) }
     else { pausedMs.current = Math.max(0, endAt.current - Date.now()); clear(); setPaused(true) }
@@ -110,6 +116,11 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
       <Pressable onPress={togglePause} style={s.pause} hitSlop={8} accessibilityLabel={paused ? "Resume" : "Pause"}>
         <Ionicons name={paused ? "play" : "pause"} size={26} color={C.textPrimary} />
       </Pressable>
+      {__DEV__ && (
+        <Pressable onPress={skipAll} hitSlop={8} style={s.skip} accessibilityLabel="Skip (dev)">
+          <Text style={s.skipText}>Skip (dev)</Text>
+        </Pressable>
+      )}
     </View>
   )
 }
@@ -120,6 +131,8 @@ const s = StyleSheet.create({
   round: { fontSize: 15, color: C.textSecondary, fontWeight: "600" },
   clock: { fontSize: 72, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 15, color: C.textSecondary, fontWeight: "700" },
+  skip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.textMuted },
+  skipText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
   pause: {
     marginTop: 10, width: 64, height: 64, borderRadius: 32, backgroundColor: C.surfaceHigh,
     alignItems: "center", justifyContent: "center",
