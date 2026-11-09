@@ -416,7 +416,8 @@ function addDaysStr(date: string, n: number): string {
 export function commitPlan(plan: CardioPlan | null, days: Weekday[], reminderTime: string, nowIso: string): CardioPlan {
   const base = plan ?? emptyPlan()
   const state = base.state ?? (base.coachStartStep != null ? initialState(base.coachStartStep) : null)
-  return { ...base, days: [...days].sort((a, b) => a - b), reminderTime, committedAt: nowIso, state }
+  // Changing days later keeps the original date: the week card counts missed days from it.
+  return { ...base, days: [...days].sort((a, b) => a - b), reminderTime, committedAt: base.committedAt ?? nowIso, state }
 }
 
 /** Applies what time alone changes: a long break, the end of a held deload. */
@@ -505,6 +506,9 @@ export function reminderDates(plan: CardioPlan, today: string, nowMinutes: numbe
     if (!plan.days.includes(weekdayOf(date))) continue
     if (sessionDates.includes(date)) continue
     if (i === 0 && hour * 60 + minute <= nowMinutes) continue
+    // No ring on a day the plan won't let them train (week full under the
+    // pain cap, or a session the day before).
+    if (!canTrainToday(date, sessionDates, !!plan.state?.painCap).ok) continue
     out.push({ date, hour, minute })
   }
   return out

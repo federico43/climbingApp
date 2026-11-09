@@ -185,6 +185,13 @@ console.log("cardio plan tests passed")
   assert.deepEqual(reminderDates(plan, "2026-11-09", 19 * 60, [], 7).map((x) => x.date), ["2026-11-11", "2026-11-13"])
   assert.deepEqual(reminderDates(plan, "2026-11-09", 10 * 60, ["2026-11-09"], 7).map((x) => x.date), ["2026-11-11", "2026-11-13"])
   assert.deepEqual(reminderDates(emptyPlan(), "2026-11-09", 0, []), [])
+  // Pain cap with 2 sessions done this week: Friday's reminder doesn't ring.
+  const capped = { ...plan, state: { ...initialState(2), painCap: true } }
+  assert.deepEqual(reminderDates(capped, "2026-11-10", 10 * 60, ["2026-11-09", "2026-11-11"], 7).map((x) => x.date), ["2026-11-16"])
+  // An extra session on Thursday: no ring on Friday (two days in a row).
+  assert.deepEqual(reminderDates(plan, "2026-11-12", 20 * 60, ["2026-11-12"], 4).map((x) => x.date), [])
+  // Changing days later keeps the first commitment date.
+  assert.equal(commitPlan(plan, [1, 3], "07:00", "2026-11-20T00:00:00Z").committedAt, "2026-11-09T12:00:00Z")
 }
 console.log("cardio reminder tests passed")
 
