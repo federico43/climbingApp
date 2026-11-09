@@ -8,7 +8,7 @@ import { localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { CardioQuestions } from "./CardioQuestions"
 import { CardioTimer } from "./CardioTimer"
 
@@ -195,6 +195,9 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
+      {/* A Modal renders outside the app's SafeAreaProvider: without its own,
+          insets read as zero and the header sits under the iOS status bar. */}
+      <SafeAreaProvider>
       <SafeAreaView style={st.screen}>
         <View style={st.top}>
           <Text style={st.topTitle}>{isTest ? "Starting test" : "Jump rope cardio"}</Text>
@@ -204,6 +207,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         </View>
         {body()}
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   )
 }
