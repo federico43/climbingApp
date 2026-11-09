@@ -58,6 +58,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
   const [hasSc, setHasSc] = useState(false)
   const [hasMobility, setHasMobility] = useState(false)
+  // Mobility exercises the coach chose; none = the app picks.
+  const [mobilityIds, setMobilityIds] = useState<string[]>([])
   // In pick order — mp1…mp4.
   const [patterns, setPatterns] = useState<ScPattern[]>([])
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
@@ -77,6 +79,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setStartType(current.startType ?? DEFAULT_START_TYPE)
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
+      setMobilityIds(current.mobilityIds)
       setPatterns(current.scPatterns)
     } else {
       setName("")
@@ -86,6 +89,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setStartType(DEFAULT_START_TYPE)
       setHasSc(false)
       setHasMobility(false)
+      // A new plan starts from the athlete's current mobility picks.
+      setMobilityIds(current?.mobilityIds ?? [])
       setPatterns([])
     }
     setPickerOpen(false)
@@ -103,6 +108,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     for (const list of out.values()) list.sort((a, b) => a.name.localeCompare(b.name))
     return out
   }, [exercises])
+  const mobilityLibrary = exercisesByPattern.get("mobility") ?? []
 
   function togglePattern(m: MovementType) {
     setPatterns((prev) => {
@@ -113,6 +119,10 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       const exerciseIds = !FIXED_PATTERNS.has(m) && available.length === 1 ? [available[0].$id] : []
       return [...prev, { movementType: m, exerciseIds }]
     })
+  }
+
+  function toggleMobility(id: string) {
+    setMobilityIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   function toggleExercise(m: MovementType, id: string) {
@@ -174,6 +184,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         ...(mode === "new" ? { startType } : {}),
         hasSc: withSc,
         hasMobility: withSc && hasMobility,
+        // Only ids still in the library; kept when mobility is off, for next time.
+        mobilityIds: mobilityLibrary.length === 0 ? mobilityIds : mobilityIds.filter((id) => mobilityLibrary.some((e) => e.$id === id)),
         scPatterns: withSc ? patterns : [],
       }
       const plan = mode === "edit" && current
@@ -320,6 +332,24 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                   <Text style={s.switchLabel}>With mobility</Text>
                   <Switch value={hasMobility} onValueChange={setHasMobility} trackColor={{ true: C.green }} />
                 </View>
+                {hasMobility && (
+                  <View style={s.patternBox}>
+                    <Text style={s.patternTitle}>
+                      Mobility exercises · {mobilityIds.length === 0 ? "app picks" : `${mobilityIds.length} picked`}
+                    </Text>
+                    <Text style={s.sub2}>Only the picked ones are used. None picked: the app picks.</Text>
+                    <View style={s.chipWrap}>
+                      {mobilityLibrary.map((e) => {
+                        const sel = mobilityIds.includes(e.$id)
+                        return (
+                          <Pressable key={e.$id} style={[s.chip, sel && s.chipSelected]} onPress={() => toggleMobility(e.$id)}>
+                            <Text style={[s.chipText, sel && s.chipTextSelected]}>{e.name}</Text>
+                          </Pressable>
+                        )
+                      })}
+                    </View>
+                  </View>
+                )}
 
                 <Text style={s.label}>Movement patterns · {patterns.length}/{maxPatterns}</Text>
                 <Text style={s.sub2}>

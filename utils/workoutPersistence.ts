@@ -16,6 +16,7 @@ export interface PersistedWorkout {
   attempts: any[]
   blockDurations: Record<number, number>
   skippedBlocks: number[]
+  homeworkBlocks?: number[]
   currentBlockIndex: number
   workoutStartTime: number | null
   savedAt: number

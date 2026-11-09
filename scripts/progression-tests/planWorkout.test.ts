@@ -311,6 +311,20 @@ const scSession = (ids: string[]) => ({
 const order = mobilityByRecency(exercises, [scSession(["m4"]), scSession(["m3", "m4"])] as any).map((e) => e.$id)
 assert.deepEqual(order, ["m1", "m5", "m2", "m3", "m4"])
 
+// coach-chosen mobility: only those, least recently used first; fewer than 4 → fewer slots, no warning
+const allMob = (r: any) => r.blocks.flatMap((b: any) => b.exercises).filter((e: any) => e.movementType === "mobility").map((e: any) => e.name)
+const picked: PlanShape = { ...plan, mobilityIds: ["m2", "m4"] }
+sc = buildScBlocks(picked, spec(1), exercises, [])
+assert.deepEqual(allMob(sc).sort(), ["Cosack Squat", "pancake"])
+assert.deepEqual(sc.warnings, [])
+sc = buildScBlocks({ ...plan, mobilityIds: ["m1", "m2", "m3", "m4", "m5"] }, spec(1), exercises, [scSession(["m1"])] as any)
+assert.ok(!allMob(sc).includes("Frogs"))                                    // the one done last rests
+assert.equal(allMob(sc).length, 4)
+sc = buildScBlocks({ ...plan, scPatterns: [], mobilityIds: ["m3"] }, spec(1), exercises, [])
+assert.deepEqual(sc.blocks.map(names), [["Deep Squat"]])
+// empty list = the app picks from the whole library, as before
+assert.equal(allMob(buildScBlocks({ ...plan, mobilityIds: [] }, spec(1), exercises, [])).length, 4)
+
 // ── whole workout ──
 const row = (id: string, type: string, name: string, data: any = {}) => ({ $id: id, $createdAt: "", type, name, data: JSON.stringify({ type, blockName: name, ...data }) })
 const library: any[] = [
