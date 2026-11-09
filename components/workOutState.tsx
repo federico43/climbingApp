@@ -5,7 +5,7 @@ import { BlockRenderer } from "@/utils/blockRenderer"
 import { BlockTimerContext } from "@/utils/blockTimer"
 import { LastBlockContext } from "@/utils/blockNav"
 import { Ionicons } from "@expo/vector-icons"
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Animated, {
@@ -96,19 +96,9 @@ export function WorkOutState({
     homeworkBlocks,
   } = workout
 
-  // Skip, or leave it as homework: what's logged is kept and the rest goes to
-  // the Plan page's homework, with a deadline and reminders (utils/homework.ts).
-  function handleSkip() {
-    Alert.alert(
-      "Can't finish this block?",
-      "Leave it as homework to do on another day — what you've logged is kept and your coach is told. Or skip it: it won't be saved.",
-      [
-        { text: "Leave as homework", onPress: leaveAsHomework },
-        { text: "Skip", style: "destructive", onPress: skipBlock },
-        { text: "Cancel", style: "cancel" },
-      ]
-    )
-  }
+  // ⋯ menu on the block: leave it as homework (what's logged is kept, the
+  // rest goes to the Plan page's homework — utils/homework.ts) or skip it.
+  const [blockMenu, setBlockMenu] = useState(false)
 
   const [swapping, setSwapping] = useState(false)
   const nothingLogged = !attempts.some((a) => a.blockIndex === currentBlockIndex)
@@ -332,9 +322,8 @@ export function WorkOutState({
             {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
             )}
-            <Pressable onPress={handleSkip} style={styles.skipBtn} hitSlop={10}>
-              <Text style={styles.skipBtnText}>Skip</Text>
-              <Ionicons name="play-skip-forward" size={14} color={C.textSecondary} />
+            <Pressable onPress={() => setBlockMenu(true)} style={styles.skipBtn} hitSlop={10}>
+              <Ionicons name="ellipsis-horizontal" size={16} color={C.textSecondary} />
             </Pressable>
             {onMinimize && (
               <Pressable onPress={onMinimize} style={styles.minimizeBtn} hitSlop={10}>
@@ -422,6 +411,36 @@ export function WorkOutState({
           </LastBlockContext.Provider>
         </BlockTimerContext.Provider>
       </BlockEntry>
+      <Modal visible={blockMenu} transparent animationType="fade" onRequestClose={() => setBlockMenu(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setBlockMenu(false)}>
+          <Pressable style={[styles.menuSheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
+            <Text style={styles.menuTitle}>{currentBlock?.blockName || "This block"}</Text>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => { setBlockMenu(false); leaveAsHomework() }}
+            >
+              <Ionicons name="school-outline" size={22} color={ADAPTATION_COLOR.test} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuItemText}>Leave as homework</Text>
+                <Text style={styles.menuItemSub}>Finish it another day</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => { setBlockMenu(false); skipBlock() }}
+            >
+              <Ionicons name="play-skip-forward" size={22} color={C.red} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.menuItemText, { color: C.red }]}>Skip block</Text>
+                <Text style={styles.menuItemSub}>{"It won't be saved"}</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.menuCancel} onPress={() => setBlockMenu(false)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -576,9 +595,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     height: 28,
   },
-  skipBtnText: {
-    fontSize: 13, fontWeight: "600", color: C.textSecondary,
+  menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
+  menuSheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 20, paddingHorizontal: 16, gap: 8,
   },
+  menuTitle: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textAlign: "center", marginBottom: 4 },
+  menuItem: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: C.surfaceHigh, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+  },
+  menuItemText: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
+  menuItemSub: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
+  menuCancel: { alignItems: "center", paddingVertical: 14 },
+  menuCancelText: { fontSize: 16, fontWeight: "600", color: C.textSecondary },
   minimizeBtn: {
     backgroundColor: C.surfaceHigh,
     borderRadius: 14, width: 28, height: 28,

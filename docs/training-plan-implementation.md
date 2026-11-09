@@ -636,8 +636,8 @@ match on.
 
 ## Leave a block as homework (athlete, 2026-11-05)
 
-- Mid-workout, **Skip** now asks "Can't finish this block?" → **Leave as
-  homework** / Skip / Cancel.
+- Mid-workout, the block's **⋯** button (where Skip was) opens a menu:
+  **Leave as homework** / **Skip block** / Cancel (Federico 2026-11-09).
 - What was logged on the block stays in today's session (a block with
   nothing logged is dropped, like a skip). What's left becomes a homework row
   like the coach's (`planPart: "homework"`, 5-day deadline, same card,
