@@ -45,6 +45,8 @@ const matches = (row: Row, q: any) =>
   : q.method === "greaterThanEqual" ? row[q.attribute] >= q.values[0]
   : true
 const pushes: { to: string; title: string; body: string }[] = []
+// The cron's "already sent" marks (main.js: claimCronKey)
+const claimed = new Set<string>()
 
 const ctx = {
   db: {
@@ -75,6 +77,7 @@ const ctx = {
     for (const u of users) pushes.push({ to: u.$id, ...build(u) })
     return users.length
   },
+  claim: async (key: string) => (claimed.has(key) ? false : (claimed.add(key), true)),
   log: () => {}, error: () => {}, tz: "UTC",
 }
 
@@ -184,16 +187,33 @@ const tueNoon = new Date(Date.UTC(y, m - 1, d + 1, 12, 30))
 let report = await runClassCron(ctx, tueNoon)
 assert.equal(report.expired, 1)
 assert.equal(t("class_requests").get(exp.$id)!.status, "expired")
-// 20:00 the night before Thursday's class
+// Not before 20:00 the night before Thursday's class…
 pushes.length = 0
-report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 2, 20, 5)))
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 2, 19, 55)))
+assert.equal(report.tomorrow, 0)
+// …and a run that comes late (no run at 20:00) still sends it
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 2, 23, 38)))
 assert.equal(report.tomorrow, thu.roster.length)
+// A second run that night (overlapping or late) sends nothing again
+pushes.length = 0
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 2, 23, 50)))
+assert.equal(report.tomorrow, 0)
+assert.ok(!pushes.some((p) => p.title.startsWith("Class tomorrow")))
 // Package running low after a class ends: 3 sessions, Monday done → 2 left
 await ctx.db.create("packages", { athleteId: "ana", total: 3, startsOn: week, useBy: addDays(week, 30) })
 pushes.length = 0
 report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d, 12, 30)))
 assert.equal(report.low, 1)
 assert.ok(pushes.some((p) => p.to === "coach" && p.body === "ana has 2 sessions left."))
+// Run again later that day: already sent
+pushes.length = 0
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d, 18, 0)))
+assert.equal(report.low, 0)
+assert.equal(pushes.length, 0)
+// A run hours late still counts as of the class's end: ana's Thursday class
+// leaves 1, not a "low" level, so nothing even though it's 6 h later
+report = await runClassCron(ctx, new Date(Date.UTC(y, m - 1, d + 3, 18, 0)))
+assert.equal(report.low, 0)
 
 // ── Package used up or expired: locked until the coach renews ───────────────
 // dani's 1-session package was used on Monday; she can't ask for anything
@@ -323,6 +343,10 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   const rep = await runClassCron(ctx, new Date(Date.UTC(y4, m4 - 1, d4, 8, 5)))
   assert.equal(rep.reminded, true)
   assert.ok(pushes.some((p) => p.to === "coach" && p.title === "This week isn't published"))
+  // Once: the next run that morning stays quiet
+  pushes.length = 0
+  assert.equal((await runClassCron(ctx, new Date(Date.UTC(y4, m4 - 1, d4, 9, 40)))).reminded, false)
+  assert.ok(!pushes.some((p) => p.title === "This week isn't published"))
 }
 
 console.log("classes: all tests passed")
