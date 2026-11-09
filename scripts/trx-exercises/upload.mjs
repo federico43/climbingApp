@@ -3,8 +3,9 @@
 // goes to Cloudflare R2 and its public URL becomes the row's `photoUri`.
 //
 // Skips any exercise whose name is already in the library (case-insensitive),
-// so it's safe to re-run; on those it only fills `focuses` when still empty. Entries with "skip": true in the JSON are left out
-// (TRX Row = the existing "Inverted Row").
+// so it's safe to re-run; on those it only fills `focuses` when still empty.
+// Entries with "skip": true in the JSON are left out (TRX Row = the existing
+// "Inverted Row").
 //
 // The images are for the personal demo only — replace them with your own
 // photos (Exercise library › edit) before a store release.
