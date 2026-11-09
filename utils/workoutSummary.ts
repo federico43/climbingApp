@@ -236,7 +236,7 @@ export function summarizeBlocks(blocks: any[], history: DurationHistory): Workou
 // build time, so they're counted, not named.
 export function summarizeSpec(
   spec: WorkoutSpec,
-  plan: { focus: PlanFocus; hasMobility: boolean; scPatterns: unknown[] },
+  plan: { focus: PlanFocus | null; hasMobility: boolean; scPatterns: unknown[] },
   library: BlockRow[],
   history: DurationHistory,
 ): WorkoutSummary {
@@ -291,7 +291,7 @@ export function summarizeSpec(
   }
 
   // The Density test isn't in the workout — it's homework (§8).
-  if (spec.warmup === "constraints") {
+  if (spec.warmup === "constraints" && plan.focus) {
     const one = { type: "constraint_warmup", blockName: "", targetAttempts: 3 }
     phases.push({
       key: "warmup",
@@ -306,6 +306,8 @@ export function summarizeSpec(
     phases.push(summarizeGroup("warmup", [warm], toMinutes(estimateBlockSeconds(warm, history))))
   }
 
+  // Conditioning plans: S&C only.
+  if (!spec.mainBlock) return { phases, minutes: phases.reduce((t, p) => t + p.minutes, 0) }
   const main = fromLibrary(spec.mainBlock)
   const mainBlocks = Array.from({ length: MAIN_BLOCK_COPIES }, () => ({ ...main, adaptation: spec.mainType }))
   const mainSecs = mainBlocks.reduce((t, b) => t + estimateBlockSeconds(b, history), 0)

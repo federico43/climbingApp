@@ -48,7 +48,7 @@ export function BlockProgressCard({ plan, workouts, sessions, library, edgeLiftM
       {open && (
         <BlockReviewView
           stats={stats}
-          title={plan.focus ? `${PLAN_FOCUS_LABEL[plan.focus]} block` : plan.name}
+          title={plan.kind === "conditioning" ? "Conditioning block" : plan.focus ? `${PLAN_FOCUS_LABEL[plan.focus]} block` : plan.name}
           subtitle={`${shortDay(plan.windowStart)} → ${over ? shortDay(plan.windowEnd) : "today"}`}
         />
       )}

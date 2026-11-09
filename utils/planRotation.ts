@@ -1,6 +1,6 @@
 import type { BlockType } from "@/components/workoutBlocks"
 import type { MovementType } from "@/utils/movementTypes"
-import type { Focus } from "@/utils/scProgression"
+import { FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 import { pausedDayCount, planClockDate, type PlanPause } from "@/utils/planPauses"
 import { explorationAllowed, hasExplorationBlock } from "@/utils/routeExploration"
 
@@ -22,6 +22,24 @@ export const PLAN_FOCUS_LABEL: Record<PlanFocus, string> = {
   fear_management: "Fear management",
 }
 
+// What a plan trains. "climbing": the full workout (warm-up, main climbing
+// block, S&C). "conditioning": for athletes who can't climb — S&C (and
+// mobility) only, no climbing focus, warm-up, main block or Density test
+// (coach 2026-11-09). Conditioning is where cardio (jump rope) goes next;
+// it keeps its own plan, see docs/conditioning-plan.md.
+export type PlanKind = "climbing" | "conditioning"
+export const DEFAULT_PLAN_KIND: PlanKind = "climbing"
+
+export function isConditioningOnly(plan: { kind?: PlanKind | null }): boolean {
+  return plan.kind === "conditioning"
+}
+
+// A plan the rotation can run: conditioning plans have no climbing focus;
+// climbing plans need one (plans made before v2 don't have it).
+export function canRotate(plan: { kind?: PlanKind | null; focus: PlanFocus | null }): boolean {
+  return isConditioningOnly(plan) || !!plan.focus
+}
+
 // S&C patterns per plan: 1 to 4 (coach 2026-10-03: exactly 4; 2026-11-04:
 // at least 1). A plan with mobility can also have none — mobility only.
 export const SC_PATTERN_MAX = 4
@@ -37,8 +55,11 @@ export interface ScPattern {
 export interface PlanShape {
   windowStart: string // "YYYY-MM-DD"
   windowEnd: string   // "YYYY-MM-DD"
-  focus: PlanFocus
-  hasSc: boolean
+  // Missing / null = climbing.
+  kind?: PlanKind | null
+  // The climbing focus; null only on conditioning plans (see canRotate).
+  focus: PlanFocus | null
+  hasSc: boolean // always true on conditioning plans
   hasMobility: boolean
   scPatterns: ScPattern[]
   // Main type of workout 1; the cycle carries on from it. Missing / null =
@@ -59,17 +80,19 @@ export interface LibraryBlockRef { name: string; type: BlockType }
 
 export interface WorkoutSpec {
   index: number // 1-based position in the plan
+  // Still cycles on conditioning plans: it sets the day's S&C focus.
   mainType: MainType
-  mainBlock: LibraryBlockRef
+  mainBlock: LibraryBlockRef | null // null on conditioning plans (no climbing)
   // "exploration": route exploration, Fear management plans only — first in
-  // the workout, before S&C (utils/routeExploration.ts).
+  // the workout, before S&C (utils/routeExploration.ts). "none":
+  // conditioning plans (the warm-ups are climbing).
   warmup: WarmupKind
   scFocus: Focus | null       // null when the plan has no S&C
   exerciseSlot: 0 | 1         // which of each pattern's two exercises
   withTest: boolean
 }
 
-export type WarmupKind = "constraints" | "one_on_one_off" | "exploration"
+export type WarmupKind = "constraints" | "one_on_one_off" | "exploration" | "none"
 
 export const PLAN_WEEKS = 6
 export const WORKOUTS_PER_WEEK = 2
@@ -106,6 +129,13 @@ export const SC_FOCUS_FOR: Record<MainType, Focus> = {
   strength: "max_force",
   power_endurance: "hypertrophy",
   power: "explosiveness",
+}
+
+// How a workout's type reads to people: the climbing type, or on a
+// conditioning plan the S&C focus it sets (Max force / Hypertrophy /
+// Explosiveness).
+export function mainTypeLabel(mainType: MainType, kind?: PlanKind | null): string {
+  return kind === "conditioning" ? FOCUS_LABEL[SC_FOCUS_FOR[mainType]] : PLAN_FOCUS_LABEL[mainType]
 }
 
 // Core and the joint patterns never train explosiveness (coach 2026-10-21,
@@ -184,7 +214,13 @@ function firstIndexOf(mainType: MainType, startType?: MainType | null): number {
 }
 
 // Main type of a built plan workout, without its plan: from the main block it
-// uses, else the default cycle (plans that start with strength).
+// uses, else the default cycle (plans that start with strength). Use
+// hasBuiltMainBlock first where a workout without a climbing block (a
+// conditioning plan's) shouldn't get a climbing label.
+export function hasBuiltMainBlock(blocksJson: string | undefined): boolean {
+  return MAIN_CYCLE.some((t) => builtMainBlock(t, blocksJson) !== null)
+}
+
 export function builtMainType(planIndex: number, blocksJson: string | undefined): MainType {
   for (const t of MAIN_CYCLE) if (builtMainBlock(t, blocksJson)) return t
   return mainTypeFor(planIndex)
@@ -267,6 +303,19 @@ function warmupFor(plan: PlanShape, index: number, built: BuiltPlanWorkout[], to
 
 export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WorkoutSpec {
   const mainType = mainTypeFor(index, plan.startType)
+  // No climbing: S&C only, on the same focus cycle (no Density test either,
+  // it's a climbing test).
+  if (isConditioningOnly(plan)) {
+    return {
+      index,
+      mainType,
+      mainBlock: null,
+      warmup: "none",
+      scFocus: SC_FOCUS_FOR[mainType],
+      exerciseSlot: ((index - 1) % WORKOUTS_PER_WEEK) as 0 | 1,
+      withTest: false,
+    }
+  }
 
   // Density test: the first workout, and the first one built in the plan's
   // last week — workout 12 may never happen, since the plan ends at its date.

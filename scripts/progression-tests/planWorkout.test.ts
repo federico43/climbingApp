@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict"
 import {
-  alternateMainBlock, builtMainBlock, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
+  alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
@@ -37,14 +37,14 @@ const plan: PlanShape = {
 
 // ── rotation (the §9.6 example) ──
 const spec = (i: number, today = start, built: BuiltPlanWorkout[] = []) => workoutSpec(plan, i, built, today)
-const mains = Array.from({ length: 12 }, (_, i) => spec(i + 1).mainBlock.name)
+const mains = Array.from({ length: 12 }, (_, i) => spec(i + 1).mainBlock?.name)
 assert.deepEqual(mains, [
   "Project Bouldering", "Power endurance - 4x4", "Power boulders",
   "Max bouldering", "Base 1", "Power boulders",
   "Project Bouldering", "Power endurance - 4x4", "Power boulders",
   "Max bouldering", "Base 1", "Power boulders",
 ])
-assert.equal(spec(5).mainBlock.type, "sequence")             // the sequence Base 1, not the free session
+assert.equal(spec(5).mainBlock?.type, "sequence")             // the sequence Base 1, not the free session
 assert.deepEqual([1, 2, 3, 4].map((i) => spec(i).warmup), ["constraints", "one_on_one_off", "constraints", "one_on_one_off"])
 assert.deepEqual([1, 2, 3].map((i) => spec(i).scFocus), ["max_force", "hypertrophy", "explosiveness"])
 assert.deepEqual([1, 2, 3, 4].map((i) => spec(i).exerciseSlot), [0, 1, 0, 1])
@@ -55,7 +55,7 @@ assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i)), ["strength", "power_en
 assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i, null)), ["strength", "power_endurance", "power", "strength"])
 assert.deepEqual([1, 2, 3, 4].map((i) => mainTypeFor(i, "power")), ["power", "strength", "power_endurance", "power"])
 const pePlan: PlanShape = { ...plan, startType: "power_endurance" }
-const peMains = Array.from({ length: 12 }, (_, i) => workoutSpec(pePlan, i + 1, [], start).mainBlock.name)
+const peMains = Array.from({ length: 12 }, (_, i) => workoutSpec(pePlan, i + 1, [], start).mainBlock?.name)
 assert.deepEqual(peMains, [
   "Power endurance - 4x4", "Power boulders", "Project Bouldering",
   "Base 1", "Power boulders", "Max bouldering",
@@ -67,7 +67,7 @@ assert.equal(workoutSpec(pePlan, 1, [], start).withTest, true)
 assert.equal(workoutSpec(pePlan, 1, [], start).warmup, "constraints")
 // built slots still steer the alternation with a shifted start (workout 1 swapped to Base 1 → 4 is the 4x4)
 const base1 = { blockName: "Base 1", type: "sequence" }
-assert.equal(workoutSpec(pePlan, 4, [{ planIndex: 1, createdAt: "2026-10-05T10:00:00Z", blocks: JSON.stringify([base1]) }], start).mainBlock.name, "Power endurance - 4x4")
+assert.equal(workoutSpec(pePlan, 4, [{ planIndex: 1, createdAt: "2026-10-05T10:00:00Z", blocks: JSON.stringify([base1]) }], start).mainBlock?.name, "Power endurance - 4x4")
 // a built workout's type is read from its main block (its plan may not start with strength)
 assert.equal(builtMainType(1, JSON.stringify([base1])), "power_endurance")
 assert.equal(builtMainType(2, "[]"), "power_endurance") // nothing recognised → default cycle
@@ -79,18 +79,18 @@ const max = { blockName: "Max bouldering", type: "sequence" }
 const project = { blockName: "Project Bouldering", type: "project_bouldering" }
 // workout 1 swapped to Max → workout 4 comes up as Project, then Max, Project
 let b = [builtWith(1, [{ blockName: "Density test", type: "exploration_session" }, max, max])]
-assert.deepEqual([4, 7, 10].map((i) => spec(i, start, b).mainBlock.name), ["Project Bouldering", "Max bouldering", "Project Bouldering"])
+assert.deepEqual([4, 7, 10].map((i) => spec(i, start, b).mainBlock?.name), ["Project Bouldering", "Max bouldering", "Project Bouldering"])
 // a hand edit: workouts 1 and 4 both Project → 7 and 10 are Max (2 each by the end)
 b = [builtWith(1, [project, project]), builtWith(4, [project])]
-assert.deepEqual([7, 10].map((i) => spec(i, start, b).mainBlock.name), ["Max bouldering", "Max bouldering"])
+assert.deepEqual([7, 10].map((i) => spec(i, start, b).mainBlock?.name), ["Max bouldering", "Max bouldering"])
 // the "Base 1" free session isn't the sequence Base 1; an unrecognised block keeps the slot's own pick
 b = [builtWith(2, [{ blockName: "Base 1", type: "free_session" }])]
-assert.deepEqual([5, 8].map((i) => spec(i, start, b).mainBlock.name), ["Base 1", "Power endurance - 4x4"])
+assert.deepEqual([5, 8].map((i) => spec(i, start, b).mainBlock?.name), ["Base 1", "Power endurance - 4x4"])
 // a rebuilt slot: the newest build counts
 b = [builtWith(1, [project], "2026-10-05T10:00:00Z"), builtWith(1, [max], "2026-10-06T10:00:00Z")]
-assert.equal(spec(4, start, b).mainBlock.name, "Project Bouldering")
+assert.equal(spec(4, start, b).mainBlock?.name, "Project Bouldering")
 // rows without blocks (or bad JSON) → same as the fixed alternation
-assert.deepEqual([4, 7].map((i) => spec(i, start, [{ planIndex: 1, createdAt: "", blocks: "{" }]).mainBlock.name), ["Max bouldering", "Project Bouldering"])
+assert.deepEqual([4, 7].map((i) => spec(i, start, [{ planIndex: 1, createdAt: "", blocks: "{" }]).mainBlock?.name), ["Max bouldering", "Project Bouldering"])
 assert.deepEqual(builtMainBlock("strength", JSON.stringify([max])), MAIN_BLOCKS.strength[1])
 assert.equal(builtMainBlock("power", JSON.stringify([max])), null)
 // swap targets
@@ -365,6 +365,23 @@ assert.equal((w.blocks[w.blocks.length - 1] as any).libraryBlockId, "b1")
 w = buildPlanWorkout({ ...plan, hasSc: false }, spec(3), library.filter((r) => r.name !== "Power boulders"), exercises, [], "green")
 assert.deepEqual(types(w), ["constraint_warmup", "constraint_warmup", "constraint_warmup"])
 assert.equal(w.warnings.length, 1)
+
+// ── conditioning only: no climbing, S&C on the same focus cycle ──
+const condPlan: PlanShape = { ...plan, kind: "conditioning", focus: null, startType: "power_endurance" }
+assert.ok(canRotate(condPlan)); assert.ok(!canRotate({ ...plan, focus: null }))
+const condSpecs = [1, 2, 3, 4, 11].map((i) => workoutSpec(condPlan, i, [], i === 11 ? "2026-11-10" : start))
+assert.deepEqual(condSpecs.map((x) => x.scFocus), ["hypertrophy", "explosiveness", "max_force", "hypertrophy", "explosiveness"])
+assert.ok(condSpecs.every((x) => x.mainBlock === null && x.warmup === "none" && !x.withTest)) // no Density test either
+assert.equal(mainTypeLabel(condSpecs[0].mainType, "conditioning"), "Hypertrophy")
+assert.equal(mainTypeLabel(condSpecs[0].mainType), "Power endurance")
+// a Fear management focus left behind doesn't bring the route exploration back
+assert.equal(workoutSpec({ ...condPlan, focus: "fear_management" }, 1, [], start).warmup, "none")
+w = buildPlanWorkout(condPlan, condSpecs[0], library, exercises, [], "green")
+assert.deepEqual(w.warnings, [])
+assert.ok(w.blocks.length > 0 && w.blocks.every((b: any) => b.type === "strength_conditioning"))
+assert.deepEqual(w.homework, [])
+assert.ok(!hasBuiltMainBlock(JSON.stringify(w.blocks)))
+assert.ok(hasBuiltMainBlock(JSON.stringify(buildPlanWorkout(plan, spec(1), library, exercises, [], null).blocks)))
 
 // ── built-but-not-done workouts count as "last time" ──
 const done = { $id: "s1", $createdAt: "2026-10-06T18:00:00Z", userId: "a", attempts: "[]",

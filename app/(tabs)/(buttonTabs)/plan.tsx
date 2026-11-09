@@ -40,9 +40,13 @@ import {
   addDays,
   localDateStr,
   builtMainType,
+  canRotate,
+  isConditioningOnly,
   MAIN_CYCLE,
   mainTypeFor,
+  mainTypeLabel,
   MainType,
+  PlanKind,
   PLAN_FOCUS_LABEL,
   PLAN_WORKOUTS,
   SC_FOCUS_FOR,
@@ -269,7 +273,10 @@ function PlanBody({
   const { windowStart, windowEnd } = plan
   const notStarted = today < windowStart
   const over = today > windowEnd
-  const focusColor = plan.focus ? ADAPTATION_COLOR[plan.focus] : C.textSecondary
+  const conditioning = isConditioningOnly(plan)
+  const focusColor = conditioning
+    ? ADAPTATION_COLOR.conditioning
+    : plan.focus ? ADAPTATION_COLOR[plan.focus] : C.textSecondary
 
   const done = donePlanWorkouts(plan.$id, workouts, sessions)
   const doneCount = done.size
@@ -293,13 +300,11 @@ function PlanBody({
   const slots: Slot[] = []
   for (let n = 1; n <= PLAN_WORKOUTS; n++) {
     const workout = builtBySlot.get(n) ?? null
-    const spec = plan.focus
-      ? workoutSpec({ ...plan, focus: plan.focus }, n, built, today)
-      : null
+    const spec = canRotate(plan) ? workoutSpec(plan, n, built, today) : null
     const summary = workout
       ? summarizeBlocks(parseBlocks(workout), history)
-      : spec && plan.focus
-        ? summarizeSpec(spec, { ...plan, focus: plan.focus }, library, history)
+      : spec
+        ? summarizeSpec(spec, plan, library, history)
         : null
     const doneOn = done.get(n)
     const status: SlotStatus = doneOn ? "done" : workout && !over ? "ready" : "upcoming"
@@ -308,9 +313,9 @@ function PlanBody({
       index: n,
       status,
       mainType: spec?.mainType ?? (workout ? builtMainType(n, workout.blocks) : mainTypeFor(n, plan.startType)),
-      mainBlock: spec?.mainBlock.name ?? mainPhase?.title ?? "",
+      mainBlock: spec?.mainBlock?.name ?? mainPhase?.title ?? "",
       week: Math.ceil(n / WORKOUTS_PER_WEEK),
-      kicker: spec ? PLAN_FOCUS_LABEL[spec.mainType] : `Workout ${n}`,
+      kicker: spec ? mainTypeLabel(spec.mainType, plan.kind) : `Workout ${n}`,
       kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : C.textSecondary,
       title: workout?.name ?? mainPhase?.title ?? `Workout ${n}`,
       when: doneOn
@@ -359,9 +364,9 @@ function PlanBody({
 
       {/* ── Focus ─────────────────────────────────────────────────────────── */}
       <View style={styles.card}>
-        <Text style={styles.kicker}>This week&apos;s focus</Text>
+        <Text style={styles.kicker}>{conditioning ? "Your plan" : "This week's focus"}</Text>
         <Text style={[styles.focusName, { color: focusColor }]}>
-          {plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
+          {conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
         </Text>
         {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
           <ScSummary patterns={plan.scPatterns.map((p) => p.movementType)} hasMobility={plan.hasMobility} />
@@ -395,6 +400,7 @@ function PlanBody({
         <TypeColumns
           slots={slots}
           hasSc={plan.hasSc}
+          kind={plan.kind}
           startType={plan.startType}
           selected={selected}
           onSelect={(n) => setSelected((cur) => (cur === n ? null : n))}
@@ -501,12 +507,14 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
 function TypeColumns({
   slots,
   hasSc,
+  kind,
   startType,
   selected,
   onSelect,
 }: {
   slots: Slot[]
   hasSc: boolean
+  kind: PlanKind
   startType: MainType | null
   selected: number | null
   onSelect: (index: number) => void
@@ -521,9 +529,10 @@ function TypeColumns({
         return (
           <View key={type} style={[styles.column, { borderTopColor: color }]}>
             <Text style={[styles.columnTitle, { color }]} numberOfLines={2}>
-              {PLAN_FOCUS_LABEL[type]}
+              {mainTypeLabel(type, kind)}
             </Text>
-            {hasSc && <Text style={styles.columnSub} numberOfLines={1}>{FOCUS_LABEL[SC_FOCUS_FOR[type]]}</Text>}
+            {/* Conditioning plans: the title already is the S&C focus. */}
+            {hasSc && kind !== "conditioning" && <Text style={styles.columnSub} numberOfLines={1}>{FOCUS_LABEL[SC_FOCUS_FOR[type]]}</Text>}
             <View style={styles.dots}>
               {mine.map((s) => {
                 const isDone = s.status === "done"
@@ -587,7 +596,7 @@ function WorkoutDetail({
       </View>
       <View style={styles.detailTitleRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.slotKicker, { color }]}>{PLAN_FOCUS_LABEL[slot.mainType]}</Text>
+          <Text style={[styles.slotKicker, { color }]}>{slot.kicker}</Text>
           <Text style={styles.detailTitle}>{slot.title}</Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>

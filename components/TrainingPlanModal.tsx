@@ -2,7 +2,7 @@ import { C } from "@/utils/theme"
 import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType, isJointPattern } from "@/utils/movementTypes"
 import {
   DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN,
-  localDateStr, mainTypeFor, planEndFor, type MainType, type PlanFocus, type ScPattern,
+  localDateStr, mainTypeFor, mainTypeLabel, planEndFor, type MainType, type PlanFocus, type PlanKind, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
 import { FOCUS_LABEL } from "@/utils/scProgression"
@@ -19,7 +19,8 @@ import { useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 
 // Coach-side training plan form (docs/training-plan.md §9): 6-week window,
-// one focus, and optional S&C — mobility yes/no, 1–4 movement patterns
+// "Conditioning only" for athletes who can't climb (S&C only, no climbing
+// focus — docs/conditioning-plan.md), one focus, and optional S&C — mobility yes/no, 1–4 movement patterns
 // (none for mobility only), and 1–2 library exercises per pattern (with one,
 // both weekly workouts use it; with a single pattern, both go in every
 // workout, done by sets). Fingers has no picks: it always uses fixed exercises per S&C
@@ -51,6 +52,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [name, setName] = useState("")
   const [windowStart, setWindowStart] = useState(localDateStr(new Date()))
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [kind, setKind] = useState<PlanKind>("climbing")
   const [focus, setFocus] = useState<PlanFocus | null>(null)
   // Main type of workout 1; strength unless the coach picks another.
   const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
@@ -68,6 +70,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     if (mode === "edit" && current) {
       setName(current.name ?? "")
       setWindowStart(current.windowStart)
+      setKind(current.kind)
       setFocus(current.focus)
       setStartType(current.startType ?? DEFAULT_START_TYPE)
       setHasSc(current.hasSc)
@@ -76,6 +79,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     } else {
       setName("")
       setWindowStart(localDateStr(new Date()))
+      setKind("climbing")
       setFocus(null)
       setStartType(DEFAULT_START_TYPE)
       setHasSc(false)
@@ -138,9 +142,12 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   }
 
   // What's still missing, in order — the first one is shown under the button.
+  const conditioning = kind === "conditioning"
+  // A conditioning plan is all S&C.
+  const withSc = conditioning || hasSc
   const problems: string[] = []
-  if (!focus) problems.push("Pick a focus")
-  if (hasSc) {
+  if (!conditioning && !focus) problems.push("Pick a focus")
+  if (withSc) {
     if (patterns.length < SC_PATTERN_MIN && !hasMobility) problems.push("Pick at least 1 movement pattern, or turn on mobility")
     for (const p of patterns) {
       if (FIXED_PATTERNS.has(p.movementType)) continue
@@ -150,19 +157,20 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const canSubmit = problems.length === 0
 
   async function handleSubmit() {
-    if (!canSubmit || saving || !focus) return
+    if (!canSubmit || saving) return
     setSaving(true)
     try {
       const input = {
         name: name.trim() || `${formatDate(windowStart)} – ${formatDate(windowEnd)}`,
         windowStart,
         windowEnd,
-        focus,
+        kind,
+        focus: conditioning ? null : focus,
         // Picked once, when the plan starts — editing never changes it.
         ...(mode === "new" ? { startType } : {}),
-        hasSc,
-        hasMobility: hasSc && hasMobility,
-        scPatterns: hasSc ? patterns : [],
+        hasSc: withSc,
+        hasMobility: withSc && hasMobility,
+        scPatterns: withSc ? patterns : [],
       }
       const plan = mode === "edit" && current
         ? await updateTrainingPlan(current, input)
@@ -245,33 +253,28 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
               />
             )}
 
-            <Text style={s.label}>Focus</Text>
-            <Text style={s.sub2}>Decides the plan&apos;s constraint warm-ups</Text>
-            <View style={s.chipWrap}>
-              {PLAN_FOCUSES.map((f) => {
-                const sel = focus === f
-                return (
-                  <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => setFocus(f)}>
-                    <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[f]}</Text>
-                  </Pressable>
-                )
-              })}
+            <View style={s.switchRow}>
+              <Text style={s.switchLabel}>Conditioning only</Text>
+              <Switch
+                value={conditioning}
+                onValueChange={(on) => setKind(on ? "conditioning" : "climbing")}
+                trackColor={{ true: C.green }}
+              />
             </View>
+            <Text style={[s.sub2, { marginTop: 4 }]}>
+              {conditioning ? "No climbing: every workout is strength & conditioning" : "For athletes who can't climb"}
+            </Text>
 
-            {/* Only when starting a plan: changing it later would reshuffle
-                the rotation under workouts already built. */}
-            {mode === "new" && (
+            {!conditioning && (
               <>
-                <Text style={s.label}>First workout</Text>
-                <Text style={s.sub2}>
-                  {MAIN_CYCLE.map((_, i) => PLAN_FOCUS_LABEL[mainTypeFor(i + 1, startType)]).join(" → ")} → …
-                </Text>
+                <Text style={s.label}>Focus</Text>
+                <Text style={s.sub2}>Decides the plan&apos;s constraint warm-ups</Text>
                 <View style={s.chipWrap}>
-                  {MAIN_CYCLE.map((t) => {
-                    const sel = startType === t
+                  {PLAN_FOCUSES.map((f) => {
+                    const sel = focus === f
                     return (
-                      <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
-                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[t]}</Text>
+                      <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => setFocus(f)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[f]}</Text>
                       </Pressable>
                     )
                   })}
@@ -279,12 +282,35 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
               </>
             )}
 
-            <View style={s.switchRow}>
-              <Text style={s.switchLabel}>Strength & conditioning</Text>
-              <Switch value={hasSc} onValueChange={setHasSc} trackColor={{ true: C.green }} />
-            </View>
+            {/* Only when starting a plan: changing it later would reshuffle
+                the rotation under workouts already built. */}
+            {mode === "new" && (
+              <>
+                <Text style={s.label}>First workout</Text>
+                <Text style={s.sub2}>
+                  {MAIN_CYCLE.map((_, i) => mainTypeLabel(mainTypeFor(i + 1, startType), kind)).join(" → ")} → …
+                </Text>
+                <View style={s.chipWrap}>
+                  {MAIN_CYCLE.map((t) => {
+                    const sel = startType === t
+                    return (
+                      <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{mainTypeLabel(t, kind)}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </>
+            )}
 
-            {hasSc && (
+            {!conditioning && (
+              <View style={s.switchRow}>
+                <Text style={s.switchLabel}>Strength & conditioning</Text>
+                <Switch value={hasSc} onValueChange={setHasSc} trackColor={{ true: C.green }} />
+              </View>
+            )}
+
+            {withSc && (
               <>
                 <View style={s.switchRow}>
                   <Text style={s.switchLabel}>With mobility</Text>

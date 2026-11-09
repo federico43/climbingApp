@@ -3,7 +3,7 @@ import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
 import type { Focus, LevelStep } from "@/utils/scProgression"
-import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
+import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 
@@ -427,6 +427,10 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // strength plans save even before the column exists. pauses (string, JSON
 // PlanPause[], optional) are the weeks the coach paused the plan; written
 // only by the climbingApp function (classPause), which also moves windowEnd.
+// kind (string, PlanKind, optional): "conditioning" for a plan with no
+// climbing (S&C only; focus is null) — missing/null = climbing; only written
+// on conditioning plans (or ones that were), like startType. Column made by
+// scripts/conditioning-plan/create-column.mjs.
 
 export interface TrainingPlanRow {
   $id: string
@@ -436,7 +440,8 @@ export interface TrainingPlanRow {
   windowStart: string
   windowEnd: string
   status: "active" | "archived"
-  focus: PlanFocus | null   // null on plans made before v2
+  kind: PlanKind             // "climbing" unless the row says "conditioning"
+  focus: PlanFocus | null   // null on plans made before v2, and on conditioning plans
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
@@ -458,6 +463,7 @@ function parseJsonArray(raw: unknown): any[] {
 function toTrainingPlan(row: any): TrainingPlanRow {
   return {
     ...row,
+    kind: row.kind === "conditioning" ? "conditioning" : "climbing",
     focus: row.focus ?? null,
     hasSc: !!row.hasSc,
     hasMobility: !!row.hasMobility,
@@ -499,7 +505,8 @@ export interface TrainingPlanInput {
   name: string
   windowStart: string
   windowEnd: string
-  focus: PlanFocus
+  kind?: PlanKind
+  focus: PlanFocus | null // null only with kind "conditioning"
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
@@ -517,6 +524,12 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (start || previous?.startType) data.startType = start
     else delete data.startType
   }
+  // Same for kind: climbing plans don't need the column.
+  if ("kind" in input) {
+    const conditioning = input.kind === "conditioning"
+    if (conditioning || previous?.kind === "conditioning") data.kind = conditioning ? "conditioning" : null
+    else delete data.kind
+  }
   return data
 }
 
@@ -525,6 +538,12 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
 function planWriteError(e: unknown): unknown {
   if (/Unknown attribute:?\s*"?startType/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "startType" to the training_plans table in Appwrite to start a plan with something other than strength.')
+  }
+  if (/Unknown attribute:?\s*"?kind/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans needs the "kind" column for conditioning-only plans.')
+  }
+  if (/focus/i.test(String((e as any)?.message ?? "")) && /required/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans.focus must be optional for conditioning-only plans.')
   }
   return e
 }

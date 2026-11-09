@@ -10,6 +10,7 @@ import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 //   S&C → warm-up → main block × 2 (the same library block twice)
 // or, on a Fear management route exploration day:
 //   route exploration → S&C → main block × 2
+// or, on a conditioning plan (no climbing): S&C only.
 // On a test day (first workout, and the first one of the last week) the
 // Density test comes back separately in `homework` — the athlete does it on
 // a day of their own (coach 2026-10-07).
@@ -78,7 +79,8 @@ function warmupDrafts(plan: PlanShape, spec: WorkoutSpec, library: BlockRow[], s
     const { adaptation: _adaptation, ...base } = cloneLibraryBlock(row) as any
     return [{ ...base, kind: "warmup", series: INTERVALS_RULES.warmupSeries }]
   }
-  const pillar = warmupPillarFor(plan.focus)
+  if (spec.warmup === "none") return []
+  const pillar = plan.focus ? warmupPillarFor(plan.focus) : null
   const candidates = warmupCandidates(library)
   const picks = pillar ? suggestWarmup(candidates, pillar, warmupUsage(sessions, candidates), flash) : null
   if (!picks) {
@@ -141,6 +143,7 @@ export function buildPlanWorkout(
   }
 
   const homework: PlanBlockDraft[] = []
+  if (!spec.mainBlock) return { blocks, homework, warnings } // conditioning: S&C only
   if (spec.withTest) libraryBlock(TEST_BLOCK, 1, homework)
   if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
   libraryBlock(spec.mainBlock, MAIN_BLOCK_COPIES)
