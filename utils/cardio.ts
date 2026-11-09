@@ -354,3 +354,127 @@ export function weekStatus(today: string, days: Weekday[], sessionDates: string[
     return i < todayIdx ? "missed" : "planned"
   })
 }
+
+// ── the whole plan (stored as JSON on users.cardioPlan) ──────────────────
+
+export interface CardioPlan {
+  /** Set by the coach before the athlete starts: skips the starting test. */
+  coachStartStep?: CardioStep | null
+  days: Weekday[]
+  /** "HH:MM", local time of the reminder on training days. */
+  reminderTime: string
+  /** When the athlete said "I'm in" (ISO). Null = not started. */
+  committedAt: string | null
+  /** First session's date ("YYYY-MM-DD"). */
+  startedAt: string | null
+  /** Null = the next session is the starting test. */
+  state: CardioState | null
+  lastDeloadWeek: string | null
+  /** A deload week asked for by a held promotion (its Monday). */
+  forcedDeloadWeek: string | null
+  lastSessionDate: string | null
+}
+
+export const DEFAULT_REMINDER = "18:00"
+
+export function parseCardioPlan(raw: string | null | undefined): CardioPlan | null {
+  if (!raw) return null
+  try {
+    const p = JSON.parse(raw)
+    if (!p || typeof p !== "object") return null
+    return {
+      coachStartStep: p.coachStartStep ?? null,
+      days: Array.isArray(p.days) ? p.days : [],
+      reminderTime: typeof p.reminderTime === "string" ? p.reminderTime : DEFAULT_REMINDER,
+      committedAt: p.committedAt ?? null,
+      startedAt: p.startedAt ?? null,
+      state: p.state ?? null,
+      lastDeloadWeek: p.lastDeloadWeek ?? null,
+      forcedDeloadWeek: p.forcedDeloadWeek ?? null,
+      lastSessionDate: p.lastSessionDate ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function emptyPlan(): CardioPlan {
+  return {
+    coachStartStep: null, days: [], reminderTime: DEFAULT_REMINDER, committedAt: null, startedAt: null,
+    state: null, lastDeloadWeek: null, forcedDeloadWeek: null, lastSessionDate: null,
+  }
+}
+
+function addDaysStr(date: string, n: number): string {
+  const [y, m, d] = date.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+/** The athlete commits: days, reminder, and the coach's start step if any. */
+export function commitPlan(plan: CardioPlan | null, days: Weekday[], reminderTime: string, nowIso: string): CardioPlan {
+  const base = plan ?? emptyPlan()
+  const state = base.state ?? (base.coachStartStep != null ? initialState(base.coachStartStep) : null)
+  return { ...base, days: [...days].sort((a, b) => a - b), reminderTime, committedAt: nowIso, state }
+}
+
+/** Applies what time alone changes: a long break, the end of a held deload. */
+export function normalizePlan(plan: CardioPlan, today: string): CardioPlan {
+  if (!plan.state) return plan
+  let state = plan.state
+  let forcedDeloadWeek = plan.forcedDeloadWeek
+  if (plan.lastSessionDate) state = afterLongBreak(state, daysBetween(plan.lastSessionDate, today))
+  if (state.pendingUp && forcedDeloadWeek && weekStart(today) > forcedDeloadWeek) {
+    state = afterDeload(state)
+    forcedDeloadWeek = null
+  }
+  if (!state.pendingUp) forcedDeloadWeek = null
+  return { ...plan, state, forcedDeloadWeek }
+}
+
+export interface TodaySession {
+  kind: "test" | "session" | "deload"
+  step: CardioStep
+  cycle: number
+  protocol: CardioProtocol
+  slowDown: boolean
+}
+
+/** What today's session is (the plan already normalized for today). */
+export function todaySession(plan: CardioPlan, today: string, climbedHard: boolean): TodaySession {
+  const p = normalizePlan(plan, today)
+  if (!p.state) return { kind: "test", step: 0, cycle: 1, protocol: CAPACITY_TEST, slowDown: false }
+  const deload = isDeloadWeek(today, p.startedAt ?? today, p.lastDeloadWeek, p.forcedDeloadWeek)
+  return {
+    kind: deload ? "deload" : "session",
+    step: p.state.step,
+    cycle: p.state.cycle,
+    protocol: sessionProtocol(p.state.step, p.state.cycle, { deload, climbedHard }),
+    slowDown: p.state.slowDown,
+  }
+}
+
+/** Records the starting test: coordination attempts, then capacity answers (null if it stopped at coordination). */
+export function recordTest(plan: CardioPlan, today: string, attempts: StopCount[], capacity: CardioAnswers | null): { plan: CardioPlan; step: CardioStep } {
+  const step: CardioStep = !coordinationPassed(attempts) || !capacity ? 0 : startStepFromCapacity(capacity)
+  const state = { ...initialState(step), painCap: capacity?.pain === "pain" }
+  return { plan: { ...plan, state, startedAt: plan.startedAt ?? today, lastSessionDate: today }, step }
+}
+
+/** Records a regular (or deload) session and moves the plan on. */
+export function recordSession(plan: CardioPlan, today: string, answers: CardioAnswers, climbedHard: boolean): { plan: CardioPlan; result: SessionResult; session: TodaySession } {
+  const p = normalizePlan(plan, today)
+  if (!p.state) throw new Error("recordSession before the starting test")
+  const session = todaySession(p, today, climbedHard)
+  const deload = session.kind === "deload"
+  const lastDeloadWeek = deload ? weekStart(today) : p.lastDeloadWeek
+  const result = gradeSession(p.state, answers, {
+    counts: !deload && !climbedHard,
+    deloadDueSoon: deloadDueBeforePromotion(today, lastDeloadWeek),
+  })
+  const forcedDeloadWeek = result.needsDeload ? addDaysStr(weekStart(today), 7) : result.next.pendingUp ? p.forcedDeloadWeek : null
+  return {
+    plan: { ...p, state: result.next, lastDeloadWeek, forcedDeloadWeek, lastSessionDate: today, startedAt: p.startedAt ?? today },
+    result,
+    session,
+  }
+}

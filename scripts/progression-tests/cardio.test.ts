@@ -6,6 +6,7 @@ import {
   afterDeload, afterLongBreak, canTrainToday, coordinationPassed, deloadDueBeforePromotion, deloadSeries,
   gradeSession, initialState, isDeloadWeek, protocolFor, protocolLabel, protocolMinutes, sessionProtocol,
   startStepFromCapacity, validDays, weekStart, weekStatus, type CardioAnswers, type CardioState,
+  commitPlan, emptyPlan, normalizePlan, parseCardioPlan, recordSession, recordTest, todaySession, type CardioPlan,
 } from "@/utils/cardio"
 
 const GREEN: CardioAnswers = { rest: "enough", pain: "none", pace: "all", effort: "steady" }
@@ -125,3 +126,45 @@ assert.deepEqual(
 assert.deepEqual(weekStatus("2026-11-12", [0, 2, 4], []).slice(0, 3), ["missed", "rest", "missed"])
 
 console.log("cardio tests passed")
+
+// ── whole plan ──
+{
+  let plan = commitPlan(null, [4, 0, 2], "07:30", "2026-11-09T12:00:00Z")
+  assert.deepEqual(plan.days, [0, 2, 4])
+  assert.equal(plan.state, null)
+  assert.equal(todaySession(plan, "2026-11-09", false).kind, "test")
+  // Coach set the start step → no test.
+  const coachSet = commitPlan({ ...emptyPlan(), coachStartStep: 4 }, [0, 2], "18:00", "2026-11-09T12:00:00Z")
+  assert.equal(coachSet.state?.step, 4)
+  assert.equal(todaySession(coachSet, "2026-11-09", false).protocol.restSec, 20)
+  // Test: coordination fails → step 0; passes + green → step 3.
+  assert.equal(recordTest(plan, "2026-11-09", ["6+", "6+", "1-3"], null).step, 0)
+  plan = recordTest(plan, "2026-11-09", ["0", "1-3", "4-5"], GREEN).plan
+  assert.equal(plan.state?.step, 3); assert.equal(plan.startedAt, "2026-11-09")
+  // Two greens → step 4.
+  plan = recordSession(plan, "2026-11-11", GREEN, false).plan
+  const r = recordSession(plan, "2026-11-13", GREEN, false)
+  assert.equal(r.result.outcome, "up"); plan = r.plan
+  assert.equal(plan.state?.step, 4)
+  // Climbed hard: step 3's protocol, doesn't count.
+  const hard = recordSession(plan, "2026-11-16", GREEN, true)
+  assert.equal(hard.session.protocol.restSec, 30); assert.equal(hard.plan.state?.greenStreak, 0)
+  // Round trip through JSON.
+  assert.deepEqual(parseCardioPlan(JSON.stringify(plan)), plan)
+  assert.equal(parseCardioPlan("nope"), null)
+  // Promotion to step 6 waits for next week's deload, then applies.
+  let p5: CardioPlan = { ...plan, state: { ...plan.state!, step: 5, greenStreak: 1 } }
+  const held = recordSession(p5, "2026-11-18", GREEN, false)
+  assert.equal(held.result.outcome, "deloadHold")
+  assert.equal(held.plan.forcedDeloadWeek, "2026-11-23")
+  const dl = todaySession(held.plan, "2026-11-23", false)
+  assert.equal(dl.kind, "deload"); assert.equal(dl.protocol.series, 6); assert.equal(dl.step, 5)
+  p5 = recordSession(held.plan, "2026-11-23", GREEN, false).plan
+  assert.equal(p5.lastDeloadWeek, "2026-11-23")
+  const after = normalizePlan(p5, "2026-11-30")
+  assert.equal(after.state?.step, 6); assert.equal(after.forcedDeloadWeek, null)
+  assert.equal(todaySession(after, "2026-11-30", false).kind, "session")
+  // Long break.
+  assert.equal(normalizePlan({ ...plan, lastSessionDate: "2026-11-01" }, "2026-11-20").state?.step, 3)
+}
+console.log("cardio plan tests passed")
