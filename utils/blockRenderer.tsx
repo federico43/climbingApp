@@ -8,7 +8,8 @@ import { RouteExplorationBlock } from "@/components/RouteExplorationBlock"
 import { IntervalsBlock } from "@/components/IntervalsBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { ProjectBoulderingBlock } from "@/components/ProjectBoulderingBlock"
-import { CoachedBlock } from "@/components/CoachedBlock"
+import { CoachedBlock, SprayBlock } from "@/components/CoachedBlock"
+import { sprayRouteTypeFor } from "@/utils/sprayBlocks"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
@@ -71,6 +72,24 @@ export function BlockRenderer({
 
   const blockAttempts = attempts.filter((a) => a.blockIndex === currentBlockIndex)
   const onPrevBlock = currentBlockIndex > 0 ? goToPreviousBlock : undefined
+
+  // The spray-wall blocks (Max bouldering, Base 1, Power and Coordination
+  // boulders): add / choose sequences and log them (utils/sprayBlocks.ts).
+  // Never coached — a legacy coached flag on one is ignored.
+  const sprayType = sprayRouteTypeFor(block)
+  if (sprayType) {
+    return (
+      <SprayBlock
+        key={currentBlockIndex}
+        block={block as any}
+        routeType={sprayType}
+        attempts={blockAttempts}
+        logAttempt={logAttempt}
+        goToNextBlock={goToNextBlock}
+        goToPreviousBlock={onPrevBlock}
+      />
+    )
+  }
 
   // Run by the coach in person: title + Done (+ the coach's sequences),
   // whatever the block's type (docs/training-plan-implementation.md §12b).

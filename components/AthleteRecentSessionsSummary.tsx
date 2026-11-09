@@ -6,6 +6,7 @@ import { fallReasonLabel, PROJECT_V2, summarizeProjectAttempts } from "@/utils/p
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // Collapsible "what did they do last time" panel for the workout builder —
 // so a coach can see the athlete's last two training days (S&C average
@@ -119,7 +120,9 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
   const blocks: SummaryBlock[] = protocol.map((block: any, blockIndex: number) => {
     // A coached block's Done marker isn't an attempt (§12) — only the coach's
     // sequences, which carry a routeId, are.
-    const blockAttempts = attempts.filter((a: any) => a.blockIndex === blockIndex && !(a.coached && !a.routeId))
+    // Same for a spray block's Done marker (utils/sprayBlocks.ts).
+    const marker = (a: any) => (a.coached || isSprayBlock(block)) && !a.routeId
+    const blockAttempts = attempts.filter((a: any) => a.blockIndex === blockIndex && !marker(a))
     const isSC = block.type === "strength_conditioning"
     const name = block.blockName ?? formatBlockType(block.type ?? "")
     return {

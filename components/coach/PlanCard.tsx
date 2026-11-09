@@ -9,7 +9,7 @@ import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
 import { pauseOn } from "@/utils/planPauses"
 import {
-  alternateMainBlock, canRotate, isConditioningOnly, localDateStr, MAIN_BLOCK_COPIES, mainTypeLabel, nextPlanIndex, planIsOver, planWeek, workoutSpec,
+  alternateMainBlock, canRotate, isConditioningOnly, localDateStr, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainTypeLabel, nextPlanIndex, planIsOver, planWeek, workoutSpec,
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
   type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
@@ -337,7 +337,7 @@ export function PlanCard({
                 {nextSpec.mainBlock && (
                   <PickRow
                     color={ADAPTATION_COLOR[nextSpec.mainType]}
-                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} × ${MAIN_BLOCK_COPIES}`}
+                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} × ${MAIN_BLOCK_COPIES}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
                     onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
                   />
                 )}

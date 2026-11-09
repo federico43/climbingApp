@@ -3,11 +3,12 @@ import type { BlockRow, ExerciseRow, SessionRow } from "@/services/BoulderGraphS
 import { suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage, type WarmupPick } from "@/utils/progression/constraintWarmup"
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
-import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
+import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
 //   S&C → warm-up → main block × 2 (the same library block twice)
+//   (Power days: + Coordination boulders × 2 after it)
 // or, on a Fear management route exploration day:
 //   route exploration → S&C → main block × 2
 // or, on a conditioning plan (no climbing): S&C only.
@@ -147,6 +148,8 @@ export function buildPlanWorkout(
   if (spec.withTest) libraryBlock(TEST_BLOCK, 1, homework)
   if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
   libraryBlock(spec.mainBlock, MAIN_BLOCK_COPIES)
+  const companion = MAIN_COMPANION_BLOCK[spec.mainType]
+  if (companion) libraryBlock(companion, MAIN_BLOCK_COPIES)
 
   return { blocks, homework, warnings }
 }

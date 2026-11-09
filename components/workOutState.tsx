@@ -19,6 +19,7 @@ import CustomButton from "./customButton"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -366,7 +367,7 @@ export function WorkOutState({
       </View>
       {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
       <View style={styles.blockSwitches}>
-        {onSetCoached && currentBlock && nothingLogged && (
+        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && (
           <Pressable
             style={[styles.coachSwitch, currentBlock.coached && styles.coachSwitchOn]}
             onPress={() => onSetCoached(currentBlockIndex, !currentBlock.coached)}

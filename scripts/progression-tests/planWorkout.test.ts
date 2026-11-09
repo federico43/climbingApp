@@ -334,6 +334,7 @@ const library: any[] = [
   row("b1", "sequence", "Base 1"),
   row("b1f", "free_session", "Base 1"),
   row("pw", "free_session", "Power boulders"),
+  row("co", "free_session", "Coordination boulders"),
   row("dt", "exploration_session", "Density test"),
   row("io", "intervals", "1 on 1 off ", { series: 8, workTime: 30, restTime: 60, adaptation: "power_endurance" }),
   row("sf", "constraint_warmup", "Silent Feet"), row("fm", "constraint_warmup", "foot moves"),
@@ -354,7 +355,10 @@ assert.equal((w.blocks[7] as any).libraryBlockId, "pb")                         
 
 // workout 3, no flash level: S&C → 3 constraints on orange → main
 w = buildPlanWorkout(plan, spec(3), library, exercises, [], null)
-assert.deepEqual(types(w).slice(3), ["constraint_warmup", "constraint_warmup", "constraint_warmup", "free_session", "free_session"])
+assert.deepEqual(types(w).slice(3), ["constraint_warmup", "constraint_warmup", "constraint_warmup", "free_session", "free_session", "free_session", "free_session"])
+// Power day: 2 Power boulders, then 2 Coordination boulders
+assert.deepEqual(w.blocks.slice(6).map((b: any) => b.libraryBlockId), ["pw", "pw", "co", "co"])
+assert.deepEqual(w.warnings, [])
 const warm = w.blocks.filter((b: any) => b.type === "constraint_warmup") as any[]
 assert.deepEqual(warm.map((b) => b.libraryBlockId).sort(), ["fm", "of", "sf"])    // technique focus
 assert.ok(warm.every((b) => b.level === "orange"))
@@ -378,7 +382,7 @@ assert.equal((w.blocks[w.blocks.length - 1] as any).libraryBlockId, "b1")
 
 // missing library block → left out with a warning
 w = buildPlanWorkout({ ...plan, hasSc: false }, spec(3), library.filter((r) => r.name !== "Power boulders"), exercises, [], "green")
-assert.deepEqual(types(w), ["constraint_warmup", "constraint_warmup", "constraint_warmup"])
+assert.deepEqual(types(w), ["constraint_warmup", "constraint_warmup", "constraint_warmup", "free_session", "free_session"])
 assert.equal(w.warnings.length, 1)
 
 // ── conditioning only: no climbing, S&C on the same focus cycle ──
