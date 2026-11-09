@@ -12,7 +12,10 @@
     "why": "Trabaja trapecio inferior y estabilizadores de la escápula, que en escaladores suelen estar débiles frente al dorsal. Ayuda a prevenir dolor de hombro en techos y bloqueos altos.",
     "image": "images/y-fly.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/TRX_Deltoid_Y_Fly-1-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-deltoid-y-flyes/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-deltoid-y-flyes/",
+    "focuses": [
+      "hypertrophy"
+    ]
   },
   {
     "key": "t-fly",
@@ -27,7 +30,10 @@
     "why": "Deltoides posterior y romboides: el lado de la espalda que la escalada casi no trabaja. Mejora la postura de hombros (hombros adelante).",
     "image": "images/t-fly.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/TRX_Suspension_Strap_T_Flyes-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-t-flyes/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-t-flyes/",
+    "focuses": [
+      "hypertrophy"
+    ]
   },
   {
     "key": "face-pull",
@@ -42,7 +48,10 @@
     "why": "Combina retracción escapular con rotación externa del hombro (manguito rotador). Es de los ejercicios de 'prehab' más recomendados para escaladores.",
     "image": "images/face-pull.jpg",
     "imageSource": "https://apilyfta.com/static/GymvisualPNG/11131101-Suspender-Face-Pull_Shoulders_small.png",
-    "imagePage": "https://www.lyfta.app/exercise/suspensie-face-pul-6dt"
+    "imagePage": "https://www.lyfta.app/exercise/suspensie-face-pul-6dt",
+    "focuses": [
+      "hypertrophy"
+    ]
   },
   {
     "key": "row",
@@ -75,7 +84,11 @@
     "why": "Tirón a un brazo con rotación de tronco: parecido a los movimientos de bloqueo con giro de cadera en la pared.",
     "image": "images/power-pull.jpg",
     "imageSource": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjl8-j8k1kMM9d9y-T7lY8N103T8hBa1gm7E80LfPoIQfzZ9hqA5Xp4nBGdy1VrRruFVrL1twVshiCZClzQJvIGn8qMn3qnDQdlac2CQN5I80v6bzBfj6NcOJ-By17XY-kBS_ewVsH0xRm_/s1600/trx-power-pull.png",
-    "imagePage": "https://trxtraining101.blogspot.com/2013/11/trx-power-pull.html"
+    "imagePage": "https://trxtraining101.blogspot.com/2013/11/trx-power-pull.html",
+    "focuses": [
+      "hypertrophy",
+      "explosiveness"
+    ]
   },
   {
     "key": "biceps-curl",
@@ -105,7 +118,11 @@
     "why": "Antagonistas (pecho, tríceps, serrato) con inestabilidad: protege el hombro y equilibra tanto tirón.",
     "image": "images/push-up.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/TRX_Suspension_Straps_Chest_Press-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-chest-press/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-chest-press/",
+    "focuses": [
+      "max_force",
+      "hypertrophy"
+    ]
   },
   {
     "key": "triceps-ext",
@@ -211,7 +228,11 @@
     "why": "Isquiotibiales en flexión de rodilla: es exactamente el gesto del heel hook. Previene lesiones de isquios.",
     "image": "images/hamstring-curl.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/TRX_Suspension_Strap_Hamstring_Curls-1-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-hamstring-leg-curls/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-hamstring-leg-curls/",
+    "focuses": [
+      "max_force",
+      "hypertrophy"
+    ]
   },
   {
     "key": "bulgarian",
@@ -226,7 +247,11 @@
     "why": "Pierna a una pierna con equilibrio: fuerza para empujar con una pierna en pasos altos.",
     "image": "images/bulgarian.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/TRX_Suspended_Lunge-1-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-suspended-lunges/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-straps-suspended-lunges/",
+    "focuses": [
+      "max_force",
+      "hypertrophy"
+    ]
   },
   {
     "key": "lat-stretch",

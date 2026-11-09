@@ -123,13 +123,17 @@ for (const ex of exercises) {
       data.loadMode = "weight"
       if (ex.settingHarder) data.settingHarder = ex.settingHarder
       if (ex.settingEasier) data.settingEasier = ex.settingEasier
+      // Unset = every focus the pattern allows (core and joints never get
+      // explosiveness, see focusesFor in utils/scProgression.ts).
+      if (ex.focuses?.length) data.focuses = JSON.stringify(ex.focuses)
     }
     if (APPLY) {
       await putR2(key, bytes, "image/jpeg")
       await call(base, { method: "POST", body: JSON.stringify({ rowId: "unique()", data }) })
     }
     totals.created++
-    console.log(`  ${APPLY ? "created   " : "would add "} ${ex.name} [${ex.movementType}, ${ex.type}, ${Math.round(bytes.length / 1024)} KB image]`)
+    const focus = ex.movementType === "mobility" ? "mobility" : (ex.focuses ?? ["pattern default"]).join("+")
+    console.log(`  ${APPLY ? "created   " : "would add "} ${ex.name} [${ex.movementType}, ${focus}, ${ex.type}, ${Math.round(bytes.length / 1024)} KB image]`)
   } catch (e) {
     totals.failed++
     console.warn(`  FAILED     ${ex.name}: ${e?.message ?? e}`)
