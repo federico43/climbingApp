@@ -3,7 +3,7 @@
 // goes to Cloudflare R2 and its public URL becomes the row's `photoUri`.
 //
 // Skips any exercise whose name is already in the library (case-insensitive),
-// so it's safe to re-run. Entries with "skip": true in the JSON are left out
+// so it's safe to re-run; on those it only fills `focuses` when still empty. Entries with "skip": true in the JSON are left out
 // (TRX Row = the existing "Inverted Row").
 //
 // The images are for the personal demo only — replace them with your own
@@ -90,11 +90,11 @@ async function putR2(key, bytes, contentType) {
 
 const limit = encodeURIComponent(JSON.stringify({ method: "limit", values: [1000] }))
 const { rows } = await call(`${base}?queries[]=${limit}`)
-const existing = new Set(rows.map((r) => r.name.trim().toLowerCase()))
+const existing = new Map(rows.map((r) => [r.name.trim().toLowerCase(), r]))
 const publicBase = env.R2_PUBLIC_BASE.replace(/\/$/, "")
 
 console.log(APPLY ? "── LIVE — uploading images and creating rows ──" : "── DRY RUN — nothing will be written ──")
-const totals = { created: 0, skipped: 0, failed: 0 }
+const totals = { created: 0, updated: 0, skipped: 0, failed: 0 }
 
 for (const ex of exercises) {
   if (ex.skip) {
@@ -102,7 +102,24 @@ for (const ex of exercises) {
     console.log(`  skip       ${ex.name} (${ex.skipReason ?? "marked skip"})`)
     continue
   }
-  if (existing.has(ex.name.trim().toLowerCase())) {
+  const row = existing.get(ex.name.trim().toLowerCase())
+  if (row) {
+    // Already loaded (e.g. by a run before focuses were added): only fill
+    // focuses if the row has none — never touches anything a coach edited.
+    const blank = !row.focuses || row.focuses === "[]"
+    if (ex.focuses?.length && blank) {
+      try {
+        if (APPLY) {
+          await call(`${base}/${row.$id}`, { method: "PATCH", body: JSON.stringify({ data: { focuses: JSON.stringify(ex.focuses) } }) })
+        }
+        totals.updated++
+        console.log(`  ${APPLY ? "updated   " : "would set "} ${ex.name}: focuses ${ex.focuses.join("+")}`)
+      } catch (e) {
+        totals.failed++
+        console.warn(`  FAILED     ${ex.name}: ${e?.message ?? e}`)
+      }
+      continue
+    }
     totals.skipped++
     console.log(`  skip       ${ex.name} (already in the library)`)
     continue
@@ -140,5 +157,5 @@ for (const ex of exercises) {
   }
 }
 
-console.log(`\n${totals.created} ${APPLY ? "created" : "to create"}, ${totals.skipped} skipped, ${totals.failed} failed`)
+console.log(`\n${totals.created} ${APPLY ? "created" : "to create"}, ${totals.updated} ${APPLY ? "updated" : "to update"}, ${totals.skipped} skipped, ${totals.failed} failed`)
 if (!APPLY) console.log("Dry run — nothing written. Re-run with --apply.")
