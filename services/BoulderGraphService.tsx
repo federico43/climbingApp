@@ -427,6 +427,10 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // strength plans save even before the column exists. pauses (string, JSON
 // PlanPause[], optional) are the weeks the coach paused the plan; written
 // only by the climbingApp function (classPause), which also moves windowEnd.
+// mobilityIds (string, JSON string[], optional) are the mobility exercises
+// the coach chose for the athlete — empty = the app picks from the whole
+// library; only written once a plan has some, so plans save before the
+// column exists (scripts/plan-mobility/create-column.mjs).
 
 export interface TrainingPlanRow {
   $id: string
@@ -440,6 +444,7 @@ export interface TrainingPlanRow {
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  mobilityIds: string[]       // coach-chosen mobility exercises; empty = app picks
   startType: MainType | null  // null = strength (the default cycle)
   pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
@@ -462,6 +467,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasSc: !!row.hasSc,
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
+    mobilityIds: parseJsonArray(row.mobilityIds).filter((id): id is string => typeof id === "string"),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
     pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
@@ -503,6 +509,7 @@ export interface TrainingPlanInput {
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  mobilityIds?: string[]
   startType?: MainType | null
 }
 
@@ -517,6 +524,11 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (start || previous?.startType) data.startType = start
     else delete data.startType
   }
+  if ("mobilityIds" in input) {
+    const ids = input.mobilityIds ?? []
+    if (ids.length > 0 || previous?.mobilityIds.length) data.mobilityIds = JSON.stringify(ids)
+    else delete data.mobilityIds
+  }
   return data
 }
 
@@ -525,6 +537,9 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
 function planWriteError(e: unknown): unknown {
   if (/Unknown attribute:?\s*"?startType/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "startType" to the training_plans table in Appwrite to start a plan with something other than strength.')
+  }
+  if (/Unknown attribute:?\s*"?mobilityIds/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Add the optional string column "mobilityIds" to the training_plans table in Appwrite (scripts/plan-mobility/create-column.mjs) to choose the mobility exercises.')
   }
   return e
 }
