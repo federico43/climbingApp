@@ -501,3 +501,27 @@ export function reminderDates(plan: CardioPlan, today: string, nowMinutes: numbe
   }
   return out
 }
+
+// ── coach ────────────────────────────────────────────────────────────────
+
+/**
+ * The coach sets the step (and cycle). Before the athlete's first session it
+ * fixes the starting step and skips the test; after, it moves the plan there
+ * with fresh streaks.
+ */
+export function coachSetStep(plan: CardioPlan | null, step: CardioStep | null, cycle = 1): CardioPlan {
+  const base = plan ?? emptyPlan()
+  if (!base.state) {
+    if (step == null) return { ...base, coachStartStep: null }
+    return { ...base, coachStartStep: step, state: base.committedAt ? initialState(step, cycle) : null }
+  }
+  if (step == null) return base
+  return { ...base, state: { ...base.state, step, cycle: Math.max(1, cycle), greenStreak: 0, easyStreak: 0, pendingUp: null }, forcedDeloadWeek: null }
+}
+
+/** Pain in the same zone in the last two sessions (newest first): the zone, else null. */
+export function repeatedPainZone(answersNewestFirst: (CardioAnswers | null)[]): PainZone | null {
+  const [a, b] = answersNewestFirst
+  if (a?.pain === "pain" && b?.pain === "pain" && a.painZone && a.painZone === b.painZone) return a.painZone
+  return null
+}

@@ -7,6 +7,7 @@ import {
   gradeSession, initialState, isDeloadWeek, protocolFor, protocolLabel, protocolMinutes, sessionProtocol,
   startStepFromCapacity, validDays, weekStart, weekStatus, type CardioAnswers, type CardioState,
   commitPlan, emptyPlan, normalizePlan, parseCardioPlan, recordSession, recordTest, reminderDates, todaySession, type CardioPlan,
+  coachSetStep, repeatedPainZone,
 } from "@/utils/cardio"
 
 const GREEN: CardioAnswers = { rest: "enough", pain: "none", pace: "all", effort: "steady" }
@@ -180,3 +181,24 @@ console.log("cardio plan tests passed")
   assert.deepEqual(reminderDates(emptyPlan(), "2026-11-09", 0, []), [])
 }
 console.log("cardio reminder tests passed")
+
+// ── coach ──
+{
+  // Before commit: only fixes the start step; commit then uses it.
+  const pre = coachSetStep(null, 4)
+  assert.equal(pre.coachStartStep, 4); assert.equal(pre.state, null)
+  assert.equal(commitPlan(pre, [0, 2], "18:00", "x").state?.step, 4)
+  assert.equal(coachSetStep(pre, null).coachStartStep, null)
+  // Committed, test not done yet: starts there right away.
+  const committed = commitPlan(null, [0, 2], "18:00", "x")
+  assert.equal(coachSetStep(committed, 2).state?.step, 2)
+  // Running plan: moves it, streaks reset.
+  const running = { ...committed, state: { ...initialState(3), greenStreak: 1, pendingUp: { step: 4 as const, cycle: 1 } } }
+  const moved = coachSetStep(running, 5, 2)
+  assert.equal(moved.state?.step, 5); assert.equal(moved.state?.cycle, 2); assert.equal(moved.state?.greenStreak, 0); assert.equal(moved.state?.pendingUp, null)
+  const pain = (z: "shin" | "calf") => ({ ...GREEN, pain: "pain" as const, painZone: z })
+  assert.equal(repeatedPainZone([pain("shin"), pain("shin")]), "shin")
+  assert.equal(repeatedPainZone([pain("shin"), pain("calf")]), null)
+  assert.equal(repeatedPainZone([pain("shin")]), null)
+}
+console.log("cardio coach tests passed")
