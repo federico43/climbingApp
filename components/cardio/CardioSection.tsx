@@ -71,6 +71,8 @@ export function CardioSection() {
   }
 
   const committed = !!plan?.committedAt
+  // Invite hidden for the week and nothing started: no empty "Cardio" header.
+  if (!committed && dismissed) return null
 
   return (
     <View style={s.group}>
@@ -153,7 +155,7 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
   return (
     <View style={s.card}>
       <View style={s.row}>
-        <Text style={s.kicker}>{next.kind === "deload" ? "Light week" : status}</Text>
+        <Text style={s.kicker}>{next.kind === "deload" ? `Light week · ${status}` : status}</Text>
         <Pressable onPress={onEdit} hitSlop={10} accessibilityLabel="Change days and reminder">
           <Ionicons name="pencil" size={16} color={C.textSecondary} />
         </Pressable>

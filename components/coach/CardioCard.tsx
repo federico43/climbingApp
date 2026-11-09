@@ -57,12 +57,16 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
     }
   }
 
-  async function savePlan(next: CardioPlan) {
-    const prev = plan
-    setPlan(next)
+  // The athlete's app writes the same JSON after every session: apply the
+  // change to a fresh copy, so a card left open doesn't undo their progress.
+  async function savePlan(change: (p: CardioPlan | null) => CardioPlan) {
     setSaving(true)
-    try { await saveCardioPlan(athlete.$id, next) } catch (e) {
-      setPlan(prev)
+    try {
+      const fresh = (await getCardioUser(athlete.$id)).plan
+      const next = change(fresh)
+      await saveCardioPlan(athlete.$id, next)
+      setPlan(next)
+    } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : "Try again.")
     } finally { setSaving(false) }
   }
@@ -119,10 +123,10 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
               <View style={{ gap: 8 }}>
                 <Text style={s.label}>Starting step</Text>
                 <View style={s.chips}>
-                  <Chip label="App's test" on={plan?.coachStartStep == null} onPress={() => savePlan(coachSetStep(plan, null))} />
+                  <Chip label="App's test" disabled={saving} on={plan?.coachStartStep == null} onPress={() => savePlan((p) => coachSetStep(p, null))} />
                   {Array.from({ length: MAX_STEP + 1 }, (_, n) => (
-                    <Chip key={n} label={String(n)} on={plan?.coachStartStep === n}
-                      onPress={() => savePlan(coachSetStep(plan, n as CardioStep))} />
+                    <Chip key={n} label={String(n)} disabled={saving} on={plan?.coachStartStep === n}
+                      onPress={() => savePlan((p) => coachSetStep(p, n as CardioStep))} />
                   ))}
                 </View>
               </View>
@@ -130,9 +134,9 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
               <View style={{ gap: 8 }}>
                 <View style={s.stepRow}>
                   <Stepper label="Step" value={state.step} min={0} max={MAX_STEP} disabled={saving}
-                    onChange={(v) => savePlan(coachSetStep(plan, v as CardioStep, state.cycle))} />
+                    onChange={(v) => savePlan((p) => coachSetStep(p, v as CardioStep, p?.state?.cycle ?? state.cycle))} />
                   <Stepper label="Cycle" value={state.cycle} min={1} max={20} disabled={saving}
-                    onChange={(v) => savePlan(coachSetStep(plan, state.step, v))} />
+                    onChange={(v) => savePlan((p) => coachSetStep(p, (p?.state?.step ?? state.step) as CardioStep, v))} />
                 </View>
                 <Text style={s.protocol}>{protocolLabel(protocolFor(state.step, state.cycle))}</Text>
                 {state.painCap && <Text style={s.warn}>Pain cap: at most 2 sessions a week.</Text>}
@@ -181,9 +185,9 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
   )
 }
 
-function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={[s.chip, on && s.chipOn]}>
+    <Pressable disabled={disabled} onPress={onPress} style={[s.chip, on && s.chipOn, disabled && { opacity: 0.5 }]}>
       <Text style={[s.chipText, on && { color: C.green }]}>{label}</Text>
     </Pressable>
   )

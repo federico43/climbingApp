@@ -82,6 +82,8 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
       unmounted = true
       clear()
       // A moment later: the last beep plays right as the timer closes.
+      // Read at cleanup on purpose: the sounds load after the effect starts.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       const sounds = [workSound.current, restSound.current]
       setTimeout(() => sounds.forEach((x) => x?.unloadAsync().catch(() => {})), 2000)
     }
