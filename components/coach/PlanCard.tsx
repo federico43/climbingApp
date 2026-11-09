@@ -273,7 +273,7 @@ export function PlanCard({
               ))}
               {plan.hasMobility && (
                 <View style={styles.chip}>
-                  <Text style={styles.chipText}>+ mobility</Text>
+                  <Text style={styles.chipText}>+ mobility{plan.mobilityIds.length > 0 ? ` · ${plan.mobilityIds.length} picked` : ""}</Text>
                 </View>
               )}
             </View>

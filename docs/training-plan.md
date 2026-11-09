@@ -56,6 +56,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `focus` | string | `strength` \| `power_endurance` \| `power` \| `technique` \| `fear_management`. Null on pre-v2 plans |
 | `hasSc`, `hasMobility` | boolean | |
 | `scPatterns` | string (JSON) | `[{ movementType, exerciseIds: [id1, id2?] }]` × 1–4 (none = mobility only), in pick order. Fingers has `[]`. One pattern → both picks every workout, by sets (coach 2026-11-04) |
+| `mobilityIds` | string (JSON, optional) | Mobility exercises the coach chose for the athlete. Only these fill the mobility slots (least recently used first; fewer than 4 → fewer slots). Empty / missing = the app picks from the whole library (coach 2026-11-09) |
 | `movementTypeFocus` | string (JSON) | Pre-v2 only — read, never written |
 | `startType` | string, optional | Main type of workout 1: `strength` \| `power_endurance` \| `power`. Missing / null = strength. Only written when not strength (or to clear it) |
 | `pauses` | string (JSON), optional | `[{ start, end, reason? }]`, `YYYY-MM-DD`, inclusive. Written only by the climbingApp function (`classPause`), which also moves `windowEnd`. See §4.1 |

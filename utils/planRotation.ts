@@ -40,6 +40,9 @@ export interface PlanShape {
   focus: PlanFocus
   hasSc: boolean
   hasMobility: boolean
+  // Mobility exercises the coach chose; missing / empty = the app picks from
+  // the whole library.
+  mobilityIds?: string[]
   scPatterns: ScPattern[]
   // Main type of workout 1; the cycle carries on from it. Missing / null =
   // strength, so plans made before it existed keep their rotation.
