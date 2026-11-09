@@ -6,6 +6,7 @@ import {
 } from "@/utils/cardio"
 import { localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake"
 import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
@@ -26,6 +27,8 @@ type Step =
   | { k: "intervals" }
   | { k: "questions" }
   | { k: "result"; title: string; lines: string[] }
+
+const KEEP_AWAKE_TAG = "cardio-session"
 
 const STOP_LABEL: Record<StopCount, string> = { "0": "None", "1-3": "1 to 3", "4-5": "4 or 5", "6+": "More than 5" }
 
@@ -51,6 +54,10 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
   const [climbedHard, setClimbedHard] = useState<boolean | null>(null)
   const [stops, setStops] = useState<StopCount[]>([])
   const [saving, setSaving] = useState(false)
+  // A ref too: a quick double tap on the last stop count (or Done) fires
+  // before `saving` re-renders, and would save the session twice.
+  const savingRef = useRef(false)
+  const savedRef = useRef(false)
   const today = localDateStr(new Date())
 
   // Today's session is fixed when the screen opens: saving the plan mid-way
@@ -65,6 +72,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
     setStops([])
     setClimbedHard(null)
     setSession(null)
+    savedRef.current = false
     let cancelled = false
     hasWorkoutToday(userId).then((hard) => {
       if (cancelled) return
@@ -73,6 +81,14 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
     })
     return () => { cancelled = true }
   }, [visible, userId])
+
+  // 10–20 minutes of rope with the phone on the floor: without this the
+  // screen locks mid-session and the timer and its beeps stop.
+  useEffect(() => {
+    if (!visible) return
+    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {})
+    return () => { deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {}) }
+  }, [visible])
 
   const isTest = session?.kind === "test"
 
@@ -85,16 +101,20 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
   }
 
   async function persist(next: CardioPlan, row: Parameters<typeof saveCardioSession>[0]) {
+    if (savingRef.current || savedRef.current) return false
+    savingRef.current = true
     setSaving(true)
     try {
       await saveCardioPlan(userId, next)
       await saveCardioSession(row).catch((e) => console.log("cardio session row failed", e))
+      savedRef.current = true
       onSaved(next)
       return true
     } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : "Try again.")
       return false
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -162,7 +182,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         <View style={st.center}>
           <Text style={st.h1}>How many times did the rope stop?</Text>
           {STOP_COUNTS.map((c) => (
-            <Pressable key={c} onPress={() => afterAttempt(step.i, c)} style={st.choice}>
+            <Pressable key={c} disabled={saving} onPress={() => afterAttempt(step.i, c)} style={[st.choice, saving && { opacity: 0.5 }]}>
               <Text style={st.choiceText}>{STOP_LABEL[c]}</Text>
             </Pressable>
           ))}

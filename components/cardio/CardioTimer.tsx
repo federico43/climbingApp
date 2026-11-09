@@ -64,18 +64,26 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
   }
 
   useEffect(() => {
+    let unmounted = false
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {})
-    ;(async () => {
+    // Each sound is unloaded even when it finishes loading after the timer
+    // is gone (a quick Skip, or a 30 s piece): otherwise it leaks.
+    const load = async (file: number, into: React.MutableRefObject<Audio.Sound | null>) => {
       try {
-        workSound.current = (await Audio.Sound.createAsync(require("@/assets/images/sounds/beepExercise.mp3"))).sound
-        restSound.current = (await Audio.Sound.createAsync(require("@/assets/images/sounds/beepRest.mp3"))).sound
+        const { sound } = await Audio.Sound.createAsync(file)
+        if (unmounted) sound.unloadAsync().catch(() => {})
+        else into.current = sound
       } catch { /* sounds optional */ }
-    })()
+    }
+    load(require("@/assets/images/sounds/beepExercise.mp3"), workSound)
+    load(require("@/assets/images/sounds/beepRest.mp3"), restSound)
     run(PREPARE_SECS, () => { play(workSound); work(0) })
     return () => {
+      unmounted = true
       clear()
-      workSound.current?.unloadAsync()
-      restSound.current?.unloadAsync()
+      // A moment later: the last beep plays right as the timer closes.
+      const sounds = [workSound.current, restSound.current]
+      setTimeout(() => sounds.forEach((x) => x?.unloadAsync().catch(() => {})), 2000)
     }
     // Runs once: the timer owns its own sequence.
     // eslint-disable-next-line react-hooks/exhaustive-deps
