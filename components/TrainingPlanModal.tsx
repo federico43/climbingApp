@@ -1,7 +1,7 @@
 import { C } from "@/utils/theme"
 import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType, isJointPattern } from "@/utils/movementTypes"
 import {
-  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN,
+  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN, scPatternMax,
   localDateStr, mainTypeFor, mainTypeLabel, planEndFor, type MainType, type PlanFocus, type PlanKind, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
@@ -62,6 +62,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [patterns, setPatterns] = useState<ScPattern[]>([])
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [saving, setSaving] = useState(false)
+  // 4 on climbing plans, 6 on conditioning ones.
+  const maxPatterns = scPatternMax(kind)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   function togglePattern(m: MovementType) {
     setPatterns((prev) => {
       if (prev.some((p) => p.movementType === m)) return prev.filter((p) => p.movementType !== m)
-      if (prev.length >= SC_PATTERN_MAX) return prev
+      if (prev.length >= maxPatterns) return prev
       // Only one exercise in the library for this pattern → it's the pick.
       const available = exercisesByPattern.get(m) ?? []
       const exerciseIds = !FIXED_PATTERNS.has(m) && available.length === 1 ? [available[0].$id] : []
@@ -126,7 +128,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     const sel = patterns.some((p) => p.movementType === m)
     const count = (exercisesByPattern.get(m) ?? []).length
     const empty = count === 0 && !FIXED_PATTERNS.has(m)
-    const full = !sel && patterns.length >= SC_PATTERN_MAX
+    const full = !sel && patterns.length >= maxPatterns
     return (
       <Pressable
         key={m}
@@ -149,6 +151,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   if (!conditioning && !focus) problems.push("Pick a focus")
   if (withSc) {
     if (patterns.length < SC_PATTERN_MIN && !hasMobility) problems.push("Pick at least 1 movement pattern, or turn on mobility")
+    // Turning Conditioning only off with 5–6 picked.
+    if (patterns.length > maxPatterns) problems.push(`Climbing plans take up to ${SC_PATTERN_MAX} movement patterns`)
     for (const p of patterns) {
       if (FIXED_PATTERNS.has(p.movementType)) continue
       if (p.exerciseIds.length === 0) problems.push(`Pick at least 1 ${MOVEMENT_TYPE_LABEL[p.movementType]} exercise`)
@@ -317,9 +321,9 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                   <Switch value={hasMobility} onValueChange={setHasMobility} trackColor={{ true: C.green }} />
                 </View>
 
-                <Text style={s.label}>Movement patterns · {patterns.length}/{SC_PATTERN_MAX}</Text>
+                <Text style={s.label}>Movement patterns · {patterns.length}/{maxPatterns}</Text>
                 <Text style={s.sub2}>
-                  1 to {SC_PATTERN_MAX}{hasMobility ? ", or none for mobility only" : ""}. Squat and hinge are kept in separate blocks
+                  1 to {maxPatterns}{hasMobility ? ", or none for mobility only" : ""}. Squat and hinge are kept in separate blocks
                 </Text>
                 <View style={s.chipWrap}>{PICKABLE_PATTERNS.map(patternChip)}</View>
                 <Text style={s.sub2}>Joints · max force ↔ hypertrophy, no explosiveness</Text>

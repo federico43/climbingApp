@@ -43,6 +43,13 @@ export function canRotate(plan: { kind?: PlanKind | null; focus: PlanFocus | nul
 // S&C patterns per plan: 1 to 4 (coach 2026-10-03: exactly 4; 2026-11-04:
 // at least 1). A plan with mobility can also have none — mobility only.
 export const SC_PATTERN_MAX = 4
+// Conditioning plans: S&C is the whole workout, so up to 6 — 3 blocks of
+// two (coach 2026-11-09).
+export const SC_PATTERN_MAX_CONDITIONING = 6
+
+export function scPatternMax(kind?: PlanKind | null): number {
+  return kind === "conditioning" ? SC_PATTERN_MAX_CONDITIONING : SC_PATTERN_MAX
+}
 export const SC_PATTERN_MIN = 1
 export const EXERCISES_PER_PATTERN = 2
 

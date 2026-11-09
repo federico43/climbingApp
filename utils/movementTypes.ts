@@ -25,6 +25,7 @@ export type MovementType =
   | "core"
   | "carry_grip"
   | "rotational"
+  | "balance"
   | "wrist"
   | "elbow"
   | "shoulder"
@@ -40,6 +41,7 @@ export const MOVEMENT_TYPES: MovementType[] = [
   "core",
   "carry_grip",
   "rotational",
+  "balance",
   "wrist",
   "elbow",
   "shoulder",
@@ -53,10 +55,10 @@ export function isJointPattern(m?: string | null): boolean {
   return !!m && (JOINT_PATTERNS as string[]).includes(m)
 }
 
-// Patterns that never train explosiveness: core (coach 2026-10-21) and the
-// joints (coach 2026-11-04).
+// Patterns that never train explosiveness: core (coach 2026-10-21), the
+// joints (coach 2026-11-04) and balance (2026-11-09).
 export function skipsExplosiveness(m?: string | null): boolean {
-  return m === "core" || isJointPattern(m)
+  return m === "core" || m === "balance" || isJointPattern(m)
 }
 
 export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
@@ -68,6 +70,7 @@ export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
   core:             "Core",
   carry_grip:       "Fingers / grip",
   rotational:       "Rotational",
+  balance:          "Balance",
   wrist:            "Wrist",
   elbow:            "Elbow",
   shoulder:         "Shoulder",
@@ -84,6 +87,7 @@ export const MOVEMENT_TYPE_COLOR: Record<MovementType, string> = {
   core:             "#FED766",  // yellow
   carry_grip:       "#5DBDB3",  // teal
   rotational:       "#C2577A",  // wine
+  balance:          "#C9B79C",  // sand
   wrist:            "#D68C4F",  // amber — sibling of carry/grip, distinct from it
   elbow:            "#B88A5A",  // tan — joint sibling of wrist
   shoulder:         "#8FA35A",  // olive — joint

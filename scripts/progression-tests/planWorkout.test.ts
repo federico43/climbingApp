@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict"
 import {
-  alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
+  alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, scPatternMax, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
@@ -193,6 +193,7 @@ assert.equal(buildScBlocks(corePlan, workoutSpec(corePlan, 3, [], start), coreLi
 assert.equal(buildScBlocks(corePlan, workoutSpec(corePlan, 1, [], start), coreLib.map((e) => e.$id === "c1" ? { ...e, focuses: ["hypertrophy"] } : e), []).blocks
   .flatMap((b) => b.exercises).find((e) => e.movementType === "core")!.name, "Ab wheel")
 assert.deepEqual(focusesFor("core"), ["max_force", "hypertrophy"])
+assert.deepEqual(focusesFor("balance"), ["max_force", "hypertrophy"])     // balance: no explosiveness either
 assert.deepEqual(focusesFor("push"), ["max_force", "hypertrophy", "explosiveness"])
 
 // no S&C
@@ -382,6 +383,25 @@ assert.ok(w.blocks.length > 0 && w.blocks.every((b: any) => b.type === "strength
 assert.deepEqual(w.homework, [])
 assert.ok(!hasBuiltMainBlock(JSON.stringify(w.blocks)))
 assert.ok(hasBuiltMainBlock(JSON.stringify(buildPlanWorkout(plan, spec(1), library, exercises, [], null).blocks)))
+
+// up to 6 patterns on conditioning plans (4 on climbing ones): 3 blocks of two
+assert.equal(scPatternMax("conditioning"), 6); assert.equal(scPatternMax("climbing"), 4); assert.equal(scPatternMax(null), 4)
+const six = [
+  { movementType: "push", exerciseIds: ["p1"] }, { movementType: "carry_grip", exerciseIds: [] },
+  { movementType: "pull_vertical", exerciseIds: ["pv1"] }, { movementType: "pull_horizontal", exerciseIds: ["ph1"] },
+  { movementType: "squat", exerciseIds: ["sq2"] }, { movementType: "hinge", exerciseIds: ["h1"] },
+] as PlanShape["scPatterns"]
+// squat + hinge in the 3rd pair → the hinge swaps with the first pattern of pair 1
+assert.deepEqual(orderPatterns(six).map((p) => p.movementType), ["hinge", "carry_grip", "pull_vertical", "pull_horizontal", "squat", "push"])
+// 5: squat + hinge share pair 2 → the hinge swaps with the first pattern
+assert.deepEqual(orderPatterns([six[2], six[3], six[4], six[5], six[0]]).map((p) => p.movementType), ["hinge", "pull_horizontal", "squat", "pull_vertical", "push"])
+const sixLib = [...exercises, ex("pv1", "Pull-ups", "pull_vertical"), ex("ph1", "Rows", "pull_horizontal")]
+const sixPlan: PlanShape = { ...condPlan, hasMobility: true, scPatterns: six }
+const sixSc = buildScBlocks(sixPlan, workoutSpec(sixPlan, 1, [], start), sixLib, [])
+assert.deepEqual(sixSc.warnings, [])
+assert.deepEqual(sixSc.blocks.map((b) => b.blockName), ["S&C 1", "S&C 2", "S&C 3", "Mobility"])
+assert.deepEqual(sixSc.blocks.map((b) => b.exercises.length), [3, 3, 2, 2]) // a held mobility in blocks 1–2
+assert.ok(sixSc.blocks.every((b) => !(names(b).includes("Split Squat") && names(b).includes("KettleBell Deadlift"))))
 
 // ── built-but-not-done workouts count as "last time" ──
 const done = { $id: "s1", $createdAt: "2026-10-06T18:00:00Z", userId: "a", attempts: "[]",

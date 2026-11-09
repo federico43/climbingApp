@@ -7,8 +7,9 @@ For athletes who can't climb (an injury, no access to a wall). Coach 2026-11-09.
 A training plan with `kind: "conditioning"` (`training_plans.kind`; unset = climbing).
 The coach turns on **Conditioning only** in the plan form (components/TrainingPlanModal.tsx).
 
-Same as a climbing plan: 6 weeks, 2 workouts a week, pauses, movement patterns (1–4),
-mobility, mobility only, the S&C progression.
+Same as a climbing plan: 6 weeks, 2 workouts a week, pauses, mobility, mobility only,
+the S&C progression. Movement patterns: 1 to 6 (climbing plans: 1 to 4), since S&C is
+the whole workout — 5–6 patterns make 3 blocks (`scPatternMax`).
 
 Different:
 
