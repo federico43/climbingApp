@@ -58,7 +58,9 @@
     "duplicateOf": "Inverted Row",
     "image": "images/row.jpg",
     "imageSource": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Suspension_Strap_Row_M_WorkoutLabs-c.svg",
-    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-rows/"
+    "imagePage": "https://workoutlabs.com/exercise-guide/trx-suspension-strap-rows/",
+    "skip": true,
+    "skipReason": "same as the existing \"Inverted Row\""
   },
   {
     "key": "power-pull",
