@@ -1,6 +1,6 @@
 import { tablesDB } from "@/components/AppWrite"
 import { ID, Query } from "appwrite"
-import { DATABASE_ID, listAllRows, USERS_TABLE } from "@/services/BoulderGraphService"
+import { DATABASE_ID, listAllRows, SESSION_TABLE, USERS_TABLE } from "@/services/BoulderGraphService"
 import { parseCardioPlan, type CardioPlan } from "@/utils/cardio"
 
 // Jump rope cardio data (docs/cardio-rope.md): the plan lives as JSON on the
@@ -63,4 +63,19 @@ export async function saveCardioSession(data: CardioSessionInput): Promise<Cardi
   return tablesDB.createRow({
     databaseId: DATABASE_ID, tableId: CARDIO_SESSIONS_TABLE, rowId: ID.unique(), data,
   }) as unknown as Promise<CardioSessionRow>
+}
+
+/** Did the athlete log a climbing workout today (local day)? Then cardio drops a step. */
+export async function hasWorkoutToday(userId: string): Promise<boolean> {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  try {
+    const res = await tablesDB.listRows({
+      databaseId: DATABASE_ID, tableId: SESSION_TABLE,
+      queries: [Query.equal("userId", userId), Query.greaterThanEqual("$createdAt", start.toISOString()), Query.limit(1)],
+    })
+    return res.rows.length > 0
+  } catch {
+    return false
+  }
 }

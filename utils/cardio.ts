@@ -478,3 +478,26 @@ export function recordSession(plan: CardioPlan, today: string, answers: CardioAn
     session,
   }
 }
+
+// ── reminders ────────────────────────────────────────────────────────────
+
+/**
+ * The next reminders to schedule: training days in the next `horizon` days at
+ * the plan's time, skipping today if a session is already done or the time
+ * has passed. Rescheduled every time the app opens or the plan changes, so a
+ * day with a session done never rings. `nowMinutes` = minutes since local
+ * midnight.
+ */
+export function reminderDates(plan: CardioPlan, today: string, nowMinutes: number, sessionDates: string[], horizon = 14): { date: string; hour: number; minute: number }[] {
+  if (!plan.committedAt || plan.days.length === 0) return []
+  const [hour, minute] = plan.reminderTime.split(":").map(Number)
+  const out: { date: string; hour: number; minute: number }[] = []
+  for (let i = 0; i < horizon; i++) {
+    const date = addDaysStr(today, i)
+    if (!plan.days.includes(weekdayOf(date))) continue
+    if (sessionDates.includes(date)) continue
+    if (i === 0 && hour * 60 + minute <= nowMinutes) continue
+    out.push({ date, hour, minute })
+  }
+  return out
+}

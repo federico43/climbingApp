@@ -6,7 +6,7 @@ import {
   afterDeload, afterLongBreak, canTrainToday, coordinationPassed, deloadDueBeforePromotion, deloadSeries,
   gradeSession, initialState, isDeloadWeek, protocolFor, protocolLabel, protocolMinutes, sessionProtocol,
   startStepFromCapacity, validDays, weekStart, weekStatus, type CardioAnswers, type CardioState,
-  commitPlan, emptyPlan, normalizePlan, parseCardioPlan, recordSession, recordTest, todaySession, type CardioPlan,
+  commitPlan, emptyPlan, normalizePlan, parseCardioPlan, recordSession, recordTest, reminderDates, todaySession, type CardioPlan,
 } from "@/utils/cardio"
 
 const GREEN: CardioAnswers = { rest: "enough", pain: "none", pace: "all", effort: "steady" }
@@ -168,3 +168,15 @@ console.log("cardio tests passed")
   assert.equal(normalizePlan({ ...plan, lastSessionDate: "2026-11-01" }, "2026-11-20").state?.step, 3)
 }
 console.log("cardio plan tests passed")
+
+// ── reminders ──
+{
+  const plan = commitPlan(null, [0, 2, 4], "18:00", "2026-11-09T12:00:00Z")
+  const r = reminderDates(plan, "2026-11-09", 10 * 60, [], 7)
+  assert.deepEqual(r.map((x) => x.date), ["2026-11-09", "2026-11-11", "2026-11-13"])
+  assert.deepEqual(r[0], { date: "2026-11-09", hour: 18, minute: 0 })
+  assert.deepEqual(reminderDates(plan, "2026-11-09", 19 * 60, [], 7).map((x) => x.date), ["2026-11-11", "2026-11-13"])
+  assert.deepEqual(reminderDates(plan, "2026-11-09", 10 * 60, ["2026-11-09"], 7).map((x) => x.date), ["2026-11-11", "2026-11-13"])
+  assert.deepEqual(reminderDates(emptyPlan(), "2026-11-09", 0, []), [])
+}
+console.log("cardio reminder tests passed")
