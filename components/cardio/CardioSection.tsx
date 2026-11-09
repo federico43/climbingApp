@@ -3,7 +3,7 @@ import { ConsumeAuth } from "@/components/auth-context"
 import { getCardioUser, listCardioSessions, saveCardioPlan, type CardioSessionRow } from "@/services/cardio"
 import { syncCardioReminders } from "@/services/cardioReminders"
 import {
-  canTrainToday, commitPlan, protocolLabel, protocolMinutes, todaySession, weekStatus, WEEKDAY_SHORT,
+  canTrainToday, commitPlan, formatTime12, protocolLabel, protocolMinutes, todaySession, weekStatus, WEEKDAY_SHORT,
   type CardioPlan, type DayStatus, type Weekday,
 } from "@/utils/cardio"
 import { localDateStr } from "@/utils/planRotation"
@@ -185,7 +185,7 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
           <Text style={s.btnText}>Start</Text>
         </Pressable>
       )}
-      <Text style={s.small}>Reminder at {plan.reminderTime}</Text>
+      <Text style={s.small}>Reminder at {formatTime12(plan.reminderTime)}</Text>
     </View>
   )
 }

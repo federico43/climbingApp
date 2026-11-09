@@ -2,7 +2,7 @@ import { C } from "@/utils/theme"
 import type { AppUser } from "@/services/BoulderGraphService"
 import { getCardioUser, listCardioSessions, saveCardioPlan, setCardioEnabled, type CardioSessionRow } from "@/services/cardio"
 import {
-  coachSetStep, lights, MAX_STEP, protocolFor, protocolLabel, repeatedPainZone, WEEKDAY_SHORT,
+  coachSetStep, formatTime12, lights, MAX_STEP, protocolFor, protocolLabel, repeatedPainZone, WEEKDAY_SHORT,
   type CardioAnswers, type CardioPlan, type CardioStep, type Light,
 } from "@/utils/cardio"
 import { Ionicons } from "@expo/vector-icons"
@@ -88,7 +88,7 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
             {!plan?.committedAt && <Text style={card.sub}>Waiting for {athlete.username || "the athlete"} to start it.</Text>}
             {plan?.committedAt && (
               <Text style={card.sub}>
-                {plan.days.map((d) => WEEKDAY_SHORT[d]).join(", ")} · reminder {plan.reminderTime}
+                {plan.days.map((d) => WEEKDAY_SHORT[d]).join(", ")} · reminder {formatTime12(plan.reminderTime)}
                 {!enabled ? " · switched off" : ""}
               </Text>
             )}

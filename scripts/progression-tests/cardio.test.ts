@@ -7,7 +7,7 @@ import {
   gradeSession, initialState, isDeloadWeek, protocolFor, protocolLabel, protocolMinutes, sessionProtocol,
   startStepFromCapacity, validDays, weekStart, weekStatus, type CardioAnswers, type CardioState,
   commitPlan, emptyPlan, normalizePlan, parseCardioPlan, recordSession, recordTest, reminderDates, todaySession, type CardioPlan,
-  coachSetStep, repeatedPainZone,
+  coachSetStep, repeatedPainZone, formatTime12,
 } from "@/utils/cardio"
 
 const GREEN: CardioAnswers = { rest: "enough", pain: "none", pace: "all", effort: "steady" }
@@ -208,3 +208,9 @@ console.log("cardio reminder tests passed")
   assert.equal(repeatedPainZone([pain("shin")]), null)
 }
 console.log("cardio coach tests passed")
+
+assert.equal(formatTime12("18:00"), "6:00 PM")
+assert.equal(formatTime12("06:30"), "6:30 AM")
+assert.equal(formatTime12("00:00"), "12:00 AM")
+assert.equal(formatTime12("12:00"), "12:00 PM")
+console.log("cardio time tests passed")

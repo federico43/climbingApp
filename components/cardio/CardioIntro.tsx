@@ -1,5 +1,5 @@
 import { C } from "@/utils/theme"
-import { validDays, WEEKDAY_SHORT, type Weekday } from "@/utils/cardio"
+import { formatTime12, validDays, WEEKDAY_SHORT, type Weekday } from "@/utils/cardio"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -94,7 +94,7 @@ export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, in
           <View style={s.times}>
             {TIMES.map((t) => (
               <Pressable key={t} onPress={() => setTime(t)} style={[s.time, time === t && s.on]}>
-                <Text style={[s.timeText, time === t && s.onText]}>{t}</Text>
+                <Text style={[s.timeText, time === t && s.onText]}>{formatTime12(t)}</Text>
               </Pressable>
             ))}
           </View>
@@ -173,7 +173,7 @@ const s = StyleSheet.create({
   close: { position: "absolute", top: 14, right: 14 },
   body: { paddingHorizontal: 24, paddingTop: 22, alignItems: "center", gap: 12 },
   title: { fontSize: 22, fontWeight: "800", color: C.textPrimary, textAlign: "center", letterSpacing: -0.3 },
-  text: { fontSize: 15, lineHeight: 21, color: C.textSecondary, textAlign: "center" },
+  text: { fontSize: 16, lineHeight: 23, color: C.textPrimary, textAlign: "center" },
   label: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4 },
   days: { flexDirection: "row", gap: 6 },
   day: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "transparent" },

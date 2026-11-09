@@ -533,3 +533,12 @@ export function repeatedPainZone(answersNewestFirst: (CardioAnswers | null)[]): 
   if (a?.pain === "pain" && b?.pain === "pain" && a.painZone && a.painZone === b.painZone) return a.painZone
   return null
 }
+
+/** "18:00" → "6:00 PM", "06:30" → "6:30 AM". */
+export function formatTime12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm
+  const suffix = h < 12 ? "AM" : "PM"
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`
+}

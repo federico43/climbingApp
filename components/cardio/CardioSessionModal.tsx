@@ -149,12 +149,12 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
     switch (step.k) {
       case "intro": return <Intro session={session} climbedHard={!!climbedHard} onStart={() => setStep(isTest || session.protocol.dryJumps ? { k: "dry" } : { k: "intervals" })} />
       case "dry": return (
-        <Timed title="Rope-less jumps" text="Jump and turn your wrists as if you had the rope.">
+        <Timed key="dry" title="Rope-less jumps" text="30 seconds. Jump and turn your wrists as if you had the rope.">
           <CardioTimer series={1} workSec={30} restSec={0} label="Jump, no rope" onDone={() => setStep(isTest ? { k: "attempt", i: 0 } : { k: "intervals" })} />
         </Timed>
       )
       case "attempt": return (
-        <Timed key={step.i} title={`Attempt ${step.i + 1} of 3`} text="30 seconds with the rope. Count every time it stops.">
+        <Timed key={`attempt-${step.i}`} title={`Attempt ${step.i + 1} of 3`} text="30 seconds with the rope. Count every time it stops — you'll enter the number at the end.">
           <CardioTimer series={1} workSec={30} restSec={0} label="Jump rope" onDone={() => setStep({ k: "stops", i: step.i })} />
         </Timed>
       )
@@ -169,12 +169,12 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         </View>
       )
       case "capacity": return (
-        <Timed title="5 × 30 s / 30 s" text="Pick a pace you think you could keep for 10 series.">
+        <Timed key="capacity" title="5 × 30 s on / 30 s off" text="Jump 30 s, rest 30 s, 5 times. Pick a pace you think you could keep for 10 series.">
           <CardioTimer series={5} workSec={30} restSec={30} label="Jump rope" onDone={() => setStep({ k: "questions" })} />
         </Timed>
       )
       case "intervals": return (
-        <Timed title={protocolLabel(session.protocol)} text={session.slowDown ? "Go a bit slower this time." : null}>
+        <Timed key="intervals" title={protocolLabel(session.protocol)} text={intervalsText(session)}>
           <CardioTimer
             series={session.protocol.series} workSec={session.protocol.workSec} restSec={session.protocol.restSec}
             doublesEverySec={session.protocol.doublesEverySec} label="Jump rope" onDone={() => setStep({ k: "questions" })}
@@ -228,16 +228,37 @@ function Intro({ session, climbedHard, onStart }: { session: TodaySession; climb
       <Text style={st.h1}>{session.kind === "test" ? "Let's find your starting point" : protocolLabel(session.protocol)}</Text>
       {session.kind !== "test" && <Text style={st.kicker}>Step {session.step} · Cycle {session.cycle}</Text>}
       {lines.map((l) => <Text key={l} style={st.text}>{l}</Text>)}
-      <Pressable onPress={onStart} style={st.btn}><Text style={st.btnText}>Start</Text></Pressable>
+      <Pressable onPress={onStart} style={st.btn}><Text style={st.btnText}>Next</Text></Pressable>
     </ScrollView>
   )
 }
 
+function intervalsText(session: TodaySession): string {
+  const p = session.protocol
+  let t = `Jump ${p.workSec} s, rest ${p.restSec} s, ${p.series} times.`
+  if (p.triplesOrHeavy) t += " Use triples or a heavy rope."
+  else if (p.doublesEverySec) t += ` Do doubles or crosses every ${p.doublesEverySec} s.`
+  if (session.slowDown) t += " Go a bit slower than last time."
+  return t
+}
+
+// A timed piece: first its instructions and a Start button, so the clock
+// doesn't run while the athlete is still reading; then the timer. Each step
+// gets its own key so a new piece always starts a fresh timer.
 function Timed({ title, text, children }: { title: string; text: string | null; children: React.ReactNode }) {
+  const [started, setStarted] = useState(false)
+  if (!started) {
+    return (
+      <ScrollView contentContainerStyle={st.center}>
+        <Text style={st.h1}>{title}</Text>
+        {text ? <Text style={st.lead}>{text}</Text> : null}
+        <Pressable onPress={() => setStarted(true)} style={st.btn}><Text style={st.btnText}>Start</Text></Pressable>
+      </ScrollView>
+    )
+  }
   return (
     <ScrollView contentContainerStyle={st.timed}>
       <Text style={st.h2}>{title}</Text>
-      {text ? <Text style={st.text}>{text}</Text> : null}
       {children}
     </ScrollView>
   )
@@ -256,7 +277,8 @@ const st = StyleSheet.create({
   h1: { fontSize: 24, fontWeight: "800", color: C.textPrimary, textAlign: "center", letterSpacing: -0.3 },
   h2: { fontSize: 20, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
   kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  text: { fontSize: 15, lineHeight: 21, color: C.textSecondary, textAlign: "center" },
+  text: { fontSize: 16, lineHeight: 23, color: C.textPrimary, textAlign: "center" },
+  lead: { fontSize: 18, lineHeight: 26, color: C.textPrimary, textAlign: "center", fontWeight: "600" },
   choice: { width: "100%", maxWidth: 320, backgroundColor: C.surfaceHigh, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
   choiceText: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
   btn: { marginTop: 10, backgroundColor: C.green, borderRadius: 24, paddingVertical: 14, paddingHorizontal: 56 },
