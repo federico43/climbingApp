@@ -148,7 +148,7 @@ export function AthleteDetail({
   const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const statsCard = <StatsCard key={athlete.$id} columns={wide ? 3 : 2} data={stats} />
   const videos = <AthleteVideos athlete={athlete} />
-  const cardioCard = <CardioCard key={athlete.$id} athlete={athlete} />
+  const cardioCard = <CardioCard key={`cardio-${athlete.$id}`} athlete={athlete} />
 
   return (
     <View style={{ flex: 1 }}>
