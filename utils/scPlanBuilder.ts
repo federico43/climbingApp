@@ -72,16 +72,17 @@ function withFocus(ex: ExerciseDraft, focus: Focus): ExerciseDraft {
 }
 
 // Squat and hinge can't share a block: blocks take patterns in pairs
-// (1+2, 3+4), so if both land in one pair, swap one with the other pair.
-// With only 2 patterns there's no other pair — patternGroups splits them.
+// (1+2, 3+4, 5+6), so if both land in one pair, swap the hinge with the
+// first pattern of another pair. With only 2 patterns there's no other
+// pair — patternGroups splits them.
 export function orderPatterns(patterns: ScPattern[]): ScPattern[] {
   const out = [...patterns]
-  const pairOf = (i: number) => (i < 2 ? 0 : 1)
+  const pairOf = (i: number) => Math.floor(i / 2)
   const squat = out.findIndex((p) => p.movementType === "squat")
   const hinge = out.findIndex((p) => p.movementType === "hinge")
   if (squat < 0 || hinge < 0 || pairOf(squat) !== pairOf(hinge)) return out
-  const target = pairOf(hinge) === 0 ? 2 : 0
-  if (target >= out.length) return out
+  const target = out.findIndex((_, i) => i % 2 === 0 && pairOf(i) !== pairOf(hinge))
+  if (target < 0) return out
   ;[out[hinge], out[target]] = [out[target], out[hinge]]
   return out
 }

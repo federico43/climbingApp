@@ -84,4 +84,8 @@ const mob = summarizeSpec(spec, { focus: "technique", hasMobility: true, scPatte
 assert.equal(mob.phases[0].title, "Mobility")
 assert.equal(mob.phases[0].detail, "4 mobility exercises · 3 rounds")
 
+// Conditioning plan: S&C only, no warm-up or main block
+const cond = summarizeSpec({ ...spec, mainBlock: null, warmup: "none", scFocus: "max_force" }, { focus: null, hasMobility: false, scPatterns: [1, 2] }, library, empty)
+assert.deepEqual(cond.phases.map((p) => [p.key, p.title]), [["sc", "Max force"]])
+
 console.log("workoutSummary: all tests passed")

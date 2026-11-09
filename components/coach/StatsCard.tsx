@@ -100,12 +100,14 @@ export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<
 }
 
 function planTitle(p: TrainingPlanRow): string {
+  if (p.kind === "conditioning") return "Conditioning block"
   return p.focus ? `${PLAN_FOCUS_LABEL[p.focus]} block` : p.name
 }
 
 function planChipLabel(p: TrainingPlanRow): string {
   const running = localDateStr(new Date()) <= p.windowEnd
-  return `${shortDay(p.windowStart)}${p.focus ? ` · ${PLAN_FOCUS_LABEL[p.focus]}` : ""}${running ? " · now" : ""}`
+  const label = p.kind === "conditioning" ? "Conditioning" : p.focus ? PLAN_FOCUS_LABEL[p.focus] : null
+  return `${shortDay(p.windowStart)}${label ? ` · ${label}` : ""}${running ? " · now" : ""}`
 }
 
 function planStatus(p: TrainingPlanRow): string {
