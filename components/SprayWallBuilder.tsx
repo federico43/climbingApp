@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import React, { useMemo, useRef, useState } from "react"
-import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { Image } from "expo-image"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -939,24 +939,30 @@ function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack,
           {!!name.trim() && <Text style={styles.lvlSub} numberOfLines={1}>{name.trim()}</Text>}
         </View>
       </View>
-      <ScrollView contentContainerStyle={styles.lvlList}>
-        {levels.map((n) => {
-          const opt = BoulderLevelOptions.find((o) => o.value === sequenceLevelColour(n))
-          const on = level === n
-          return (
-            <Pressable key={n} onPress={() => onPick(n)} style={[styles.lvlRow, on && styles.lvlRowOn]}>
-              <Text style={[styles.lvlNum, on && styles.lvlNumOn]}>{n}</Text>
-              <View style={[styles.lvlSwatch, { backgroundColor: opt?.color ?? "#333" },
-                opt?.value === "black" && styles.lvlSwatchBlack]} />
-              <Text style={[styles.lvlColour, on && styles.lvlColourOn]}>{opt?.label ?? ""}</Text>
-            </Pressable>
-          )
-        })}
-      </ScrollView>
+      {/* 2 × 4 grid of tiles painted in the level's flash colour. */}
+      <View style={styles.lvlGrid}>
+        {[0, 1, 2, 3].map((r) => (
+          <View key={r} style={styles.lvlGridRow}>
+            {levels.slice(r * 2, r * 2 + 2).map((n) => {
+              const opt = BoulderLevelOptions.find((o) => o.value === sequenceLevelColour(n))
+              const on = level === n
+              const dim = level != null && !on
+              return (
+                <Pressable key={n} onPress={() => onPick(n)}
+                  style={[styles.lvlTile, { backgroundColor: opt?.color ?? C.surface },
+                    opt?.value === "black" && styles.lvlTileBlack, on && styles.lvlTileOn, dim && styles.lvlTileDim]}>
+                  <Text style={[styles.lvlNum, { color: opt?.on ?? "#fff" }]}>{n}</Text>
+                  {on && <Text style={[styles.lvlCheck, { color: opt?.on ?? "#fff" }]}>✓</Text>}
+                </Pressable>
+              )
+            })}
+          </View>
+        ))}
+      </View>
       <View style={[styles.lvlFooter, { paddingBottom: bottomInset + 12 }]}>
         <Pressable onPress={onSave} disabled={!canSave} style={[styles.lvlSave, !canSave && styles.lvlSaveOff]}>
           <Text style={[styles.lvlSaveTxt, !canSave && styles.lvlSaveTxtOff]}>
-            {saving ? "Saving…" : level == null ? "Pick a level" : "Save sequence"}
+            {saving ? "Saving…" : level == null ? "Pick a level" : `Save · level ${level}`}
           </Text>
         </Pressable>
       </View>
@@ -1013,18 +1019,17 @@ const styles = StyleSheet.create({
   },
   lvlTitle: { fontSize: 20, fontWeight: "800", color: "#fff" },
   lvlSub: { fontSize: 13, color: "#888", marginTop: 2 },
-  lvlList: { padding: 16, gap: 8 },
-  lvlRow: {
-    flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 12, paddingHorizontal: 16,
-    borderRadius: 14, backgroundColor: C.surface, borderWidth: 2, borderColor: "transparent",
+  lvlGrid: { flex: 1, padding: 16, gap: 12 },
+  lvlGridRow: { flex: 1, flexDirection: "row", gap: 12, maxHeight: 150 },
+  lvlTile: {
+    flex: 1, borderRadius: 18, alignItems: "center", justifyContent: "center",
+    borderWidth: 3, borderColor: "transparent",
   },
-  lvlRowOn: { borderColor: C.green, backgroundColor: C.surfaceHigh },
-  lvlNum: { fontSize: 26, fontWeight: "800", color: "#ccc", width: 30, textAlign: "center" },
-  lvlNumOn: { color: "#fff" },
-  lvlSwatch: { width: 28, height: 28, borderRadius: 14 },
-  lvlSwatchBlack: { borderWidth: 1, borderColor: "#555" },
-  lvlColour: { fontSize: 16, fontWeight: "600", color: "#999" },
-  lvlColourOn: { color: "#fff" },
+  lvlTileBlack: { borderColor: "#3a3a3a" },
+  lvlTileOn: { borderColor: "#fff", transform: [{ scale: 1.03 }] },
+  lvlTileDim: { opacity: 0.35 },
+  lvlNum: { fontSize: 44, fontWeight: "800" },
+  lvlCheck: { position: "absolute", top: 8, right: 12, fontSize: 18, fontWeight: "800" },
   lvlFooter: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#2a2a2a" },
   lvlSave: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 16, alignItems: "center" },
   lvlSaveOff: { backgroundColor: "#1c1c1c" },
