@@ -20,11 +20,11 @@ import { CardioTimer } from "./CardioTimer"
 
 type Step =
   | { k: "intro" }
-  | { k: "dry" }
+  | { k: "dry"; auto?: boolean }
   | { k: "attempt"; i: number }
   | { k: "stops"; i: number }
   | { k: "capacity" }
-  | { k: "intervals" }
+  | { k: "intervals"; auto?: boolean }
   | { k: "questions" }
   | { k: "result"; title: string; lines: string[] }
 
@@ -167,9 +167,9 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
   function body() {
     if (!session) return <ActivityIndicator style={{ marginTop: 80 }} color={C.green} />
     switch (step.k) {
-      case "intro": return <Intro session={session} climbedHard={!!climbedHard} onStart={() => setStep(isTest || session.protocol.dryJumps ? { k: "dry" } : { k: "intervals" })} />
+      case "intro": return <Intro session={session} climbedHard={!!climbedHard} onStart={() => setStep(isTest || session.protocol.dryJumps ? { k: "dry", auto: true } : { k: "intervals", auto: true })} />
       case "dry": return (
-        <Timed key="dry" title="Rope-less jumps" text="30 seconds. Jump and turn your wrists as if you had the rope.">
+        <Timed key="dry" autoStart={step.auto} title="Rope-less jumps" text="30 seconds. Jump and turn your wrists as if you had the rope.">
           <CardioTimer series={1} workSec={30} restSec={0} label="Jump, no rope" onDone={() => setStep(isTest ? { k: "attempt", i: 0 } : { k: "intervals" })} />
         </Timed>
       )
@@ -195,7 +195,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         </Timed>
       )
       case "intervals": return (
-        <Timed key="intervals" title={protocolLabel(session.protocol)} text={intervalsText(session)}>
+        <Timed key="intervals" autoStart={step.auto} title={protocolLabel(session.protocol)} text={intervalsText(session)}>
           <CardioTimer
             series={session.protocol.series} workSec={session.protocol.workSec} restSec={session.protocol.restSec}
             doublesEverySec={session.protocol.doublesEverySec} label="Jump rope" onDone={() => setStep({ k: "questions" })}
@@ -233,23 +233,30 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
   )
 }
 
+// The session's only screen before the first timer: what today holds and
+// the first piece's instructions; Start runs that piece's timer directly.
 function Intro({ session, climbedHard, onStart }: { session: TodaySession; climbedHard: boolean; onStart: () => void }) {
   const lines: string[] = []
+  let lead: string | null = null
   if (session.kind === "test") {
-    lines.push("1. 30 s of jumps without the rope.", "2. Three 30 s attempts with the rope, counting stops.", "3. If the rope flows, 5 × 30 s on / 30 s off and 4 quick questions.")
+    lines.push(
+      "1. 30 s of jumps without the rope: jump and turn your wrists as if you had it.",
+      "2. Three 30 s attempts with the rope, counting stops.",
+      "3. If the rope flows, 5 × 30 s on / 30 s off and 4 quick questions.",
+    )
   } else {
-    if (session.protocol.dryJumps) lines.push("Starts with 30 s of jumps without the rope.")
+    lead = intervalsText(session)
     if (session.kind === "deload") lines.push("Light week: fewer series than usual.")
     if (climbedHard) lines.push("You trained today, so this one is a bit lighter.")
-    if (session.slowDown) lines.push("Go a bit slower this time.")
+    if (session.protocol.dryJumps) lines.push("First, 30 s of jumps without the rope: jump and turn your wrists as if you had it.")
   }
   return (
     <ScrollView contentContainerStyle={st.center}>
       <View style={st.ring}><Ionicons name="pulse" size={48} color={C.green} /></View>
       <Text style={st.h1}>{session.kind === "test" ? "Let's find your starting point" : protocolLabel(session.protocol)}</Text>
-      {session.kind !== "test" && <Text style={st.kicker}>Step {session.step} · Cycle {session.cycle}</Text>}
+      {lead ? <Text style={st.lead}>{lead}</Text> : null}
       {lines.map((l) => <Text key={l} style={st.text}>{l}</Text>)}
-      <Pressable onPress={onStart} style={st.btn}><Text style={st.btnText}>Next</Text></Pressable>
+      <Pressable onPress={onStart} style={st.btn}><Text style={st.btnText}>Start</Text></Pressable>
     </ScrollView>
   )
 }
@@ -266,8 +273,11 @@ function intervalsText(session: TodaySession): string {
 // A timed piece: first its instructions and a Start button, so the clock
 // doesn't run while the athlete is still reading; then the timer. Each step
 // gets its own key so a new piece always starts a fresh timer.
-function Timed({ title, text, children }: { title: string; text: string | null; children: React.ReactNode }) {
-  const [started, setStarted] = useState(false)
+// `autoStart`: the session intro already showed these instructions.
+function Timed({ title, text, autoStart, children }: {
+  title: string; text: string | null; autoStart?: boolean; children: React.ReactNode
+}) {
+  const [started, setStarted] = useState(!!autoStart)
   if (!started) {
     return (
       <ScrollView contentContainerStyle={st.center}>

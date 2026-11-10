@@ -136,6 +136,13 @@ const DOT: Record<DayStatus, { bg: string; fg: string; border?: string }> = {
   rest: { bg: "transparent", fg: C.textMuted },
 }
 
+const LEGEND: { st: DayStatus; label: string }[] = [
+  { st: "done", label: "Done" },
+  { st: "today", label: "Today" },
+  { st: "planned", label: "Planned" },
+  { st: "missed", label: "Missed" },
+]
+
 function PlanCard({ plan, sessions, onStart, onEdit }: {
   plan: CardioPlan; sessions: CardioSessionRow[]; onStart: () => void; onEdit: () => void
 }) {
@@ -165,7 +172,7 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
         <Text style={s.muted}>About 10 min · finds your starting point</Text>
       ) : (
         <Text style={s.muted}>
-          About {protocolMinutes(next.protocol)} min · Step {next.step} · Cycle {next.cycle}
+          About {protocolMinutes(next.protocol)} min
         </Text>
       )}
       <View style={s.week}>
@@ -178,6 +185,20 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
                 {st === "done" ? <Ionicons name="checkmark" size={14} color={d.fg} />
                   : st === "missed" ? <Ionicons name="remove" size={14} color={d.fg} /> : null}
               </View>
+            </View>
+          )
+        })}
+      </View>
+      <View style={s.legend}>
+        {LEGEND.map(({ st, label }) => {
+          const d = DOT[st]
+          return (
+            <View key={st} style={s.legendItem}>
+              <View style={[s.legendDot, { backgroundColor: d.bg, borderColor: d.border ?? "transparent" }]}>
+                {st === "done" ? <Ionicons name="checkmark" size={9} color={d.fg} />
+                  : st === "missed" ? <Ionicons name="remove" size={9} color={d.fg} /> : null}
+              </View>
+              <Text style={s.legendText}>{label}</Text>
             </View>
           )
         })}
@@ -215,6 +236,10 @@ const s = StyleSheet.create({
   dayCol: { alignItems: "center", gap: 6 },
   dayLabel: { fontSize: 11, fontWeight: "700", color: C.textSecondary },
   dot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  legend: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 14, marginTop: -4 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  legendText: { fontSize: 11, color: C.textSecondary },
   btn: {
     flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center",
     backgroundColor: C.green, borderRadius: 24, paddingVertical: 13,
