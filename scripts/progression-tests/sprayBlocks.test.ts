@@ -3,7 +3,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/sprayBlocks.test.ts
 
 import assert from "node:assert/strict"
-import { isSprayBlock, routeRecords, sprayRouteTypeFor, spraySettings, suggestSprayRoutes } from "@/utils/sprayBlocks"
+import { isSprayBlock, routeRecords, sprayRouteTypeFor, spraySettings, sprayTargetLevel, suggestSprayRoutes } from "@/utils/sprayBlocks"
 import { findBlockRuns } from "@/utils/blockHistory"
 
 // which blocks are spray blocks — name AND type
@@ -69,5 +69,30 @@ const sprayRun = [{
 }]
 const runs = findBlockRuns(sprayRun as any, { type: "free_session", blockName: "Power boulders", libraryBlockId: "pw" })
 assert.deepEqual(runs.map((r) => r.attempts.map((a: any) => a.routeId)), [["b"], ["a"]])
+
+
+// ── level from the athlete's flash (coach 2026-11-10) ──
+assert.equal(sprayTargetLevel("green", "power"), 3)
+assert.equal(sprayTargetLevel("green", "base"), 2)
+assert.equal(sprayTargetLevel("green", "coordination"), 2)
+assert.equal(sprayTargetLevel("green", "max_bouldering"), 4)
+assert.equal(sprayTargetLevel("orange", "base"), 1) // floor 1
+assert.equal(sprayTargetLevel("black", "max_bouldering"), 8)
+assert.equal(sprayTargetLevel(null, "power"), null)
+assert.equal(sprayTargetLevel("purple", "power"), null)
+
+// with a target: every route of the type, closest level first, never tried before tried, no level last
+const leveled = new Map<string, { id: string; type?: string; level?: number | null }>([
+  ["a", { id: "a", type: "power", level: 3 }], // 2 sends
+  ["b", { id: "b", type: "power", level: 4 }], // 1 send
+  ["d", { id: "d", type: "power", level: 3 }], // 0 sends, tried
+  ["e", { id: "e", type: "power", level: 3 }], // never tried
+  ["f", { id: "f", type: "power", level: 6 }],
+  ["g", { id: "g", type: "power" }], // no level
+  ["x", { id: "x", type: "coordination", level: 3 }],
+])
+assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", [], 10, 3).map((r) => r.routeId), ["e", "d", "a", "b", "f", "g"])
+assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", ["e"], 2, 3).map((r) => r.routeId), ["d", "a"])
+assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", [], 10, 3)[0], { routeId: "e", tries: 0, sends: 0, lastAt: "" })
 
 console.log("sprayBlocks: all tests passed")

@@ -101,20 +101,65 @@ export function routeRecords(sessions: SessionRow[]): Map<string, RouteRecord> {
   return map
 }
 
-// The sequences to suggest for a block of `routeType`: ones of that type the
-// athlete has already logged, fewest sends first (ties: the one climbed
-// longest ago first, so they rotate). `routes` is what the athlete can see
-// (routesVisibleTo); `exclude` the ones already picked in this block.
+// ─── Level from the athlete's flash (coach 2026-11-10) ───────────────────────
+
+// The sequence level (1–8) that matches each flash colour. Red and black
+// span two levels each (red 5–6, black 7–8); the lower one is the target.
+export const FLASH_SEQUENCE_LEVEL: Record<string, number> = {
+  orange: 1, blue: 2, green: 3, yellow: 4, red: 5, black: 7,
+}
+
+// Levels above (+) or below (−) the flash level, per route type: Base and
+// Coordination a level easier (volume, technique), Power at the flash level,
+// Max bouldering a level harder (at the limit). To be tuned with use.
+export const SPRAY_LEVEL_OFFSET: Record<RouteType, number> = {
+  base: -1, coordination: -1, power: 0, max_bouldering: 1,
+}
+
+// The level to suggest sequences at for a block of `routeType`, from the
+// athlete's flash colour. null without a (known) flash colour.
+export function sprayTargetLevel(flash: string | null | undefined, routeType: RouteType): number | null {
+  const base = flash ? FLASH_SEQUENCE_LEVEL[flash] : undefined
+  if (base == null) return null
+  return Math.max(1, Math.min(8, base + (SPRAY_LEVEL_OFFSET[routeType] ?? 0)))
+}
+
+// The sequences to suggest for a block of `routeType`. `routes` is what the
+// athlete can see (routesVisibleTo); `exclude` the ones already picked in
+// this block.
+// · No target level (no flash colour): ones of that type the athlete has
+//   already logged, fewest sends first (ties: the one climbed longest ago
+//   first, so they rotate).
+// · With a target level: every sequence of that type, closest level first
+//   (no level set → last), then fewest sends — so ones they've never tried
+//   come first — then climbed longest ago.
 export function suggestSprayRoutes(
   records: Map<string, RouteRecord>,
-  routes: Map<string, { id: string; type?: string }>,
+  routes: Map<string, { id: string; type?: string; level?: number | null }>,
   routeType: RouteType,
   exclude: Iterable<string> = [],
   limit = SPRAY_SUGGESTION_COUNT,
+  targetLevel: number | null = null,
 ): RouteRecord[] {
   const skip = new Set(exclude)
-  return [...records.values()]
-    .filter((r) => !skip.has(r.routeId) && routes.get(r.routeId)?.type === routeType)
-    .sort((a, b) => a.sends - b.sends || a.lastAt.localeCompare(b.lastAt) || a.routeId.localeCompare(b.routeId))
+  const bySends = (a: RouteRecord, b: RouteRecord) =>
+    a.sends - b.sends || a.lastAt.localeCompare(b.lastAt) || a.routeId.localeCompare(b.routeId)
+  if (targetLevel == null) {
+    return [...records.values()]
+      .filter((r) => !skip.has(r.routeId) && routes.get(r.routeId)?.type === routeType)
+      .sort(bySends)
+      .slice(0, limit)
+  }
+  const distance = (id: string) => {
+    const level = routes.get(id)?.level
+    return typeof level === "number" ? Math.abs(level - targetLevel) : Infinity
+  }
+  return [...routes.values()]
+    .filter((r) => r.type === routeType && !skip.has(r.id))
+    .map((r) => records.get(r.id) ?? { routeId: r.id, tries: 0, sends: 0, lastAt: "" })
+    .sort((a, b) => {
+      const da = distance(a.routeId), db = distance(b.routeId)
+      return (da === db ? 0 : da < db ? -1 : 1) || bySends(a, b)
+    })
     .slice(0, limit)
 }
