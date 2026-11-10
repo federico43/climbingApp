@@ -1,8 +1,9 @@
+import CustomButton from "@/components/customButton"
 import { C } from "@/utils/theme"
 import { hasWorkoutToday, saveCardioPlan, saveCardioSession } from "@/services/cardio"
 import {
   CAPACITY_TEST, coordinationPassed, protocolFor, protocolLabel, recordSession, recordTest, STOP_COUNTS, todaySession,
-  type CardioAnswers, type CardioPlan, type Outcome, type StopCount, type TodaySession,
+  type CardioAnswers, type CardioPlan, type CardioProtocol, type Outcome, type StopCount, type TodaySession,
 } from "@/utils/cardio"
 import { localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
@@ -12,6 +13,7 @@ import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Tex
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { CardioQuestions } from "./CardioQuestions"
 import { CardioTimer } from "./CardioTimer"
+import { NoteRow, ProtocolCard, StepList, type CardioNote } from "./CardioVisuals"
 
 // One jump rope session, full screen: the starting test (dry jumps, 3
 // attempts counting stops, then 5 × 30/30) or a regular session (the plan's
@@ -26,7 +28,7 @@ type Step =
   | { k: "capacity" }
   | { k: "intervals"; auto?: boolean }
   | { k: "questions" }
-  | { k: "result"; title: string; lines: string[] }
+  | { k: "result"; title: string; next: CardioProtocol; notes: CardioNote[] }
 
 const KEEP_AWAKE_TAG = "cardio-session"
 
@@ -127,14 +129,13 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
       outcome: "start", rule: null, nextStep: start, nextCycle: 1, climbedHard: false,
     })
     if (!ok) return
-    const p = protocolFor(start, 1)
     setStep({
       k: "result",
-      title: `You start at step ${start}`,
-      lines: [
-        start === 0 ? "First we learn the move: rope-less jumps, then short rounds with the rope." : "Your plan is ready.",
-        `Next session: ${protocolLabel(p)}`,
-      ],
+      title: "Your plan is ready",
+      next: protocolFor(start, 1),
+      notes: start === 0
+        ? [{ icon: "school-outline", text: "First we learn the move: rope-less jumps, then short rounds with the rope." }]
+        : [],
     })
   }
 
@@ -148,12 +149,12 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
     })
     if (!ok) return
     const upcoming = todaySession(next, today, false)
-    const lines = [`Next session: ${protocolLabel(protocolFor(result.next.step, result.next.cycle))}`]
-    if (upcoming.kind === "deload" || result.needsDeload) lines.push("Next week is a light week: fewer series, same move.")
-    if (result.next.slowDown) lines.push("Go a bit slower next time — a pace you could keep for all the series.")
-    if (result.next.painCap) lines.push("At most 2 sessions a week until it stops hurting.")
-    if (a.pain === "pain") lines.push("If it keeps hurting, tell your coach.")
-    setStep({ k: "result", title: outcomeTitle(result.outcome), lines })
+    const notes: CardioNote[] = []
+    if (upcoming.kind === "deload" || result.needsDeload) notes.push({ icon: "leaf-outline", text: "Next week is a light week: fewer series, same move." })
+    if (result.next.slowDown) notes.push({ icon: "speedometer-outline", text: "Go a bit slower next time — a pace you could keep for all the series.", tone: "warn" })
+    if (result.next.painCap) notes.push({ icon: "calendar-outline", text: "At most 2 sessions a week until it stops hurting.", tone: "warn" })
+    if (a.pain === "pain") notes.push({ icon: "medkit-outline", text: "If it keeps hurting, tell your coach.", tone: "warn" })
+    setStep({ k: "result", title: outcomeTitle(result.outcome), next: protocolFor(result.next.step, result.next.cycle), notes })
   }
 
   function afterAttempt(i: number, c: StopCount) {
@@ -169,12 +170,12 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
     switch (step.k) {
       case "intro": return <Intro session={session} climbedHard={!!climbedHard} onStart={() => setStep(isTest || session.protocol.dryJumps ? { k: "dry", auto: true } : { k: "intervals", auto: true })} />
       case "dry": return (
-        <Timed key="dry" autoStart={step.auto} title="Rope-less jumps" text="30 seconds. Jump and turn your wrists as if you had the rope.">
+        <Timed key="dry" autoStart={step.auto} icon="footsteps-outline" title="Rope-less jumps" text="30 seconds. Jump and turn your wrists as if you had the rope.">
           <CardioTimer series={1} workSec={30} restSec={0} label="Jump, no rope" onDone={() => setStep(isTest ? { k: "attempt", i: 0 } : { k: "intervals" })} />
         </Timed>
       )
       case "attempt": return (
-        <Timed key={`attempt-${step.i}`} title={`Attempt ${step.i + 1} of 3`} text="30 seconds with the rope. Count every time it stops — you'll enter the number at the end.">
+        <Timed key={`attempt-${step.i}`} icon="repeat-outline" title={`Attempt ${step.i + 1} of 3`} text="30 seconds with the rope. Count every time it stops — you'll enter the number at the end.">
           <CardioTimer series={1} workSec={30} restSec={0} label="Jump rope" onDone={() => setStep({ k: "stops", i: step.i })} />
         </Timed>
       )
@@ -190,12 +191,12 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         </View>
       )
       case "capacity": return (
-        <Timed key="capacity" title="5 × 30 s on / 30 s off" text="Jump 30 s, rest 30 s, 5 times. Pick a pace you think you could keep for 10 series.">
+        <Timed key="capacity" icon="pulse" title="5 × 30 s on / 30 s off" text="Jump 30 s, rest 30 s, 5 times. Pick a pace you think you could keep for 10 series.">
           <CardioTimer series={5} workSec={30} restSec={30} label="Jump rope" onDone={() => setStep({ k: "questions" })} />
         </Timed>
       )
       case "intervals": return (
-        <Timed key="intervals" autoStart={step.auto} title={protocolLabel(session.protocol)} text={intervalsText(session)}>
+        <Timed key="intervals" autoStart={step.auto} icon="pulse" title={protocolLabel(session.protocol)} text={intervalsText(session)}>
           <CardioTimer
             series={session.protocol.series} workSec={session.protocol.workSec} restSec={session.protocol.restSec}
             doublesEverySec={session.protocol.doublesEverySec} label="Jump rope" onDone={() => setStep({ k: "questions" })}
@@ -204,12 +205,15 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
       )
       case "questions": return <CardioQuestions saving={saving} onDone={(a) => (isTest ? finishTest(a, stops) : finishSession(a))} />
       case "result": return (
-        <View style={st.center}>
-          <View style={st.ring}><Ionicons name="checkmark" size={48} color={C.green} /></View>
-          <Text style={st.h1}>{step.title}</Text>
-          {step.lines.map((l) => <Text key={l} style={st.text}>{l}</Text>)}
-          <Pressable onPress={onClose} style={st.btn}><Text style={st.btnText}>Done</Text></Pressable>
-        </View>
+        <Page footer={<CustomButton title="Done" onPress={onClose} />}>
+          <View style={st.hero}>
+            <View style={st.ring}><Ionicons name="checkmark" size={44} color={C.green} /></View>
+            <Text style={st.kicker}>Session saved</Text>
+            <Text style={st.h1}>{step.title}</Text>
+          </View>
+          <ProtocolCard p={step.next} kicker="Next session" />
+          {step.notes.map((n) => <NoteRow key={n.text} note={n} />)}
+        </Page>
       )
     }
   }
@@ -236,28 +240,47 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
 // The session's only screen before the first timer: what today holds and
 // the first piece's instructions; Start runs that piece's timer directly.
 function Intro({ session, climbedHard, onStart }: { session: TodaySession; climbedHard: boolean; onStart: () => void }) {
-  const lines: string[] = []
-  let lead: string | null = null
+  const footer = <CustomButton title="Start" onPress={onStart} />
   if (session.kind === "test") {
-    lines.push(
-      "1. 30 s of jumps without the rope: jump and turn your wrists as if you had it.",
-      "2. Three 30 s attempts with the rope, counting stops.",
-      "3. If the rope flows, 5 × 30 s on / 30 s off and 4 quick questions.",
+    return (
+      <Page footer={footer}>
+        <View style={st.heading}>
+          <Text style={st.kicker}>Session 1 · about 10 min</Text>
+          <Text style={st.h1Left}>{"Let's find your starting point"}</Text>
+        </View>
+        <StepList steps={[
+          { title: "Jumps without the rope", text: "30 s. Jump and turn your wrists as if you had it." },
+          { title: "Three attempts with the rope", text: "30 s each. Count every time the rope stops." },
+          { title: "5 × 30 s on / 30 s off", text: "Only if the rope flows. Then 4 quick questions." },
+        ]} />
+      </Page>
     )
-  } else {
-    lead = intervalsText(session)
-    if (session.kind === "deload") lines.push("Light week: fewer series than usual.")
-    if (climbedHard) lines.push("You trained today, so this one is a bit lighter.")
-    if (session.protocol.dryJumps) lines.push("First, 30 s of jumps without the rope: jump and turn your wrists as if you had it.")
   }
+  const notes: CardioNote[] = []
+  if (session.kind === "deload") notes.push({ icon: "leaf-outline", text: "Light week: fewer series than usual." })
+  if (climbedHard) notes.push({ icon: "barbell-outline", text: "You trained today, so this one is a bit lighter." })
+  if (session.slowDown) notes.push({ icon: "speedometer-outline", text: "Go a bit slower than last time.", tone: "warn" })
+  if (session.protocol.dryJumps) notes.push({ icon: "footsteps-outline", text: "First, 30 s of jumps without the rope: jump and turn your wrists as if you had it." })
   return (
-    <ScrollView contentContainerStyle={st.center}>
-      <View style={st.ring}><Ionicons name="pulse" size={48} color={C.green} /></View>
-      <Text style={st.h1}>{session.kind === "test" ? "Let's find your starting point" : protocolLabel(session.protocol)}</Text>
-      {lead ? <Text style={st.lead}>{lead}</Text> : null}
-      {lines.map((l) => <Text key={l} style={st.text}>{l}</Text>)}
-      <Pressable onPress={onStart} style={st.btn}><Text style={st.btnText}>Start</Text></Pressable>
-    </ScrollView>
+    <Page footer={footer}>
+      <View style={st.heading}>
+        <Text style={st.kicker}>{session.kind === "deload" ? "Light week" : "Today"}</Text>
+        <Text style={st.h1Left}>Jump rope intervals</Text>
+      </View>
+      <ProtocolCard p={session.protocol} />
+      {notes.map((n) => <NoteRow key={n.text} note={n} />)}
+    </Page>
+  )
+}
+
+// A scrolling page with its button pinned at the bottom, like the workout
+// blocks' screens.
+function Page({ children, footer }: { children: React.ReactNode; footer: React.ReactNode }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={st.page}>{children}</ScrollView>
+      <View style={st.footer}>{footer}</View>
+    </View>
   )
 }
 
@@ -274,22 +297,25 @@ function intervalsText(session: TodaySession): string {
 // doesn't run while the athlete is still reading; then the timer. Each step
 // gets its own key so a new piece always starts a fresh timer.
 // `autoStart`: the session intro already showed these instructions.
-function Timed({ title, text, autoStart, children }: {
-  title: string; text: string | null; autoStart?: boolean; children: React.ReactNode
+function Timed({ title, text, icon, autoStart, children }: {
+  title: string; text: string | null; icon: React.ComponentProps<typeof Ionicons>["name"]
+  autoStart?: boolean; children: React.ReactNode
 }) {
   const [started, setStarted] = useState(!!autoStart)
   if (!started) {
     return (
-      <ScrollView contentContainerStyle={st.center}>
-        <Text style={st.h1}>{title}</Text>
-        {text ? <Text style={st.lead}>{text}</Text> : null}
-        <Pressable onPress={() => setStarted(true)} style={st.btn}><Text style={st.btnText}>Start</Text></Pressable>
-      </ScrollView>
+      <Page footer={<CustomButton title="Start" onPress={() => setStarted(true)} />}>
+        <View style={[st.hero, { flexGrow: 1, justifyContent: "center" }]}>
+          <View style={st.ring}><Ionicons name={icon} size={44} color={C.green} /></View>
+          <Text style={st.h1}>{title}</Text>
+          {text ? <Text style={st.lead}>{text}</Text> : null}
+        </View>
+      </Page>
     )
   }
   return (
     <ScrollView contentContainerStyle={st.timed}>
-      <Text style={st.h2}>{title}</Text>
+      <Text style={st.kicker}>{title}</Text>
       {children}
     </ScrollView>
   )
@@ -299,6 +325,11 @@ const st = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12 },
   topTitle: { fontSize: 13, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
+  page: { flexGrow: 1, padding: 20, gap: 12 },
+  footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  heading: { gap: 6, marginBottom: 6, marginTop: 4 },
+  hero: { alignItems: "center", gap: 10, paddingVertical: 12 },
+  h1Left: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.4 },
   center: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 28, gap: 14 },
   timed: { alignItems: "center", padding: 24, gap: 8 },
   ring: {
@@ -306,12 +337,8 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(111,207,151,0.35)", alignItems: "center", justifyContent: "center",
   },
   h1: { fontSize: 24, fontWeight: "800", color: C.textPrimary, textAlign: "center", letterSpacing: -0.3 },
-  h2: { fontSize: 20, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
   kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  text: { fontSize: 16, lineHeight: 23, color: C.textPrimary, textAlign: "center" },
   lead: { fontSize: 18, lineHeight: 26, color: C.textPrimary, textAlign: "center", fontWeight: "600" },
-  choice: { width: "100%", maxWidth: 320, backgroundColor: C.surfaceHigh, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
+  choice: { width: "100%", maxWidth: 340, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingVertical: 16, alignItems: "center" },
   choiceText: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
-  btn: { marginTop: 10, backgroundColor: C.green, borderRadius: 24, paddingVertical: 14, paddingHorizontal: 56 },
-  btnText: { fontSize: 16, fontWeight: "800", color: "#10251A" },
 })
