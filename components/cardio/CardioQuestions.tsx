@@ -95,9 +95,9 @@ export function CardioQuestions({ onDone, saving }: { onDone: (a: CardioAnswers)
 }
 
 export const s = StyleSheet.create({
-  scroll: { padding: 20, gap: 22, paddingBottom: 48 },
-  title: { fontSize: 26, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
-  q: { gap: 10 },
+  scroll: { padding: 20, gap: 12, paddingBottom: 48 },
+  title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.4, marginBottom: 6 },
+  q: { gap: 12, backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
   qTitle: { fontSize: 17, fontWeight: "700", color: C.textPrimary },
   opts: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   opt: { backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: "transparent" },

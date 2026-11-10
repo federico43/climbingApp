@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { Audio } from "expo-av"
 import { useEffect, useRef, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
+import { fmtSec, PauseButton, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
 
 // Work / rest countdown for jump rope cardio: 5 s to get ready, then
 // `series` rounds of work and rest, with the interval blocks' beeps. Also
@@ -107,25 +107,33 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
   const title = paused ? "Paused" : phase === "prepare" ? "Get ready" : phase === "work" ? label : "Rest"
   const elapsedInWork = workSec - left
   const doubles = phase === "work" && !!doublesEverySec && elapsedInWork > 0 && elapsedInWork % doublesEverySec === 0
+  // Series already finished: during rest the one just jumped counts.
+  const done = phase === "rest" ? round + 1 : phase === "work" ? round : 0
+  const last = round + 1 >= series
+  const next = phase === "prepare"
+    ? `Then: jump ${fmtSec(workSec)}`
+    : phase === "work"
+      ? (last ? (series > 1 ? "Last one!" : null) : restSec > 0 ? `Then: rest ${fmtSec(restSec)}` : null)
+      : `Then: series ${round + 2} of ${series}`
 
   return (
     <View style={s.wrap}>
-      <Text style={[s.phase, { color }]}>{title}</Text>
-      {series > 1 && <Text style={s.round}>Series {Math.min(round + 1, series)} of {series}</Text>}
-      <AnimatedCircularProgress
-        size={240} width={14} fill={dur ? ((dur - left) / dur) * 100 : 0}
-        tintColor={color} backgroundColor={C.surfaceHigh} rotation={0} lineCap="round"
-      >
-        {() => <Text style={s.clock}>{left}</Text>}
-      </AnimatedCircularProgress>
+      {series > 1 && (
+        <SeriesBar total={series} done={done} current={phase === "work" ? round : null} now={round + 1} />
+      )}
+      <TimerRing
+        fill={dur ? ((dur - left) / dur) * 100 : 0} color={color} title={title} seconds={left}
+        next={next} glow={phase === "work" && !paused}
+      />
       {doublesEverySec ? (
-        <Text style={[s.hint, doubles && { color: C.yellow }]}>
-          {doubles ? "Doubles now!" : `Doubles every ${doublesEverySec}s`}
-        </Text>
+        <View style={[s.hint, doubles && s.hintOn]}>
+          <Ionicons name="flash" size={14} color={doubles ? C.bg : C.yellow} />
+          <Text style={[s.hintText, doubles && { color: C.bg }]}>
+            {doubles ? "Doubles now!" : `Doubles every ${doublesEverySec}s`}
+          </Text>
+        </View>
       ) : null}
-      <Pressable onPress={togglePause} style={s.pause} hitSlop={8} accessibilityLabel={paused ? "Resume" : "Pause"}>
-        <Ionicons name={paused ? "play" : "pause"} size={26} color={C.textPrimary} />
-      </Pressable>
+      <PauseButton paused={paused} onPress={togglePause} />
       {__DEV__ && (
         <Pressable onPress={skipAll} hitSlop={8} style={s.skip} accessibilityLabel="Skip (dev)">
           <Text style={s.skipText}>Skip (dev)</Text>
@@ -136,15 +144,13 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
 }
 
 const s = StyleSheet.create({
-  wrap: { alignItems: "center", gap: 14, paddingTop: 20 },
-  phase: { fontSize: 28, fontWeight: "800", letterSpacing: -0.3 },
-  round: { fontSize: 15, color: C.textSecondary, fontWeight: "600" },
-  clock: { fontSize: 72, fontWeight: "800", color: C.textPrimary },
-  hint: { fontSize: 15, color: C.textSecondary, fontWeight: "700" },
+  wrap: { alignItems: "center", gap: 18, paddingTop: 12, width: "100%" },
+  hint: {
+    flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 16, backgroundColor: "rgba(254,215,102,0.12)",
+  },
+  hintOn: { backgroundColor: C.yellow },
+  hintText: { fontSize: 15, color: C.yellow, fontWeight: "800" },
   skip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.textMuted },
   skipText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
-  pause: {
-    marginTop: 10, width: 64, height: 64, borderRadius: 32, backgroundColor: C.surfaceHigh,
-    alignItems: "center", justifyContent: "center",
-  },
 })
