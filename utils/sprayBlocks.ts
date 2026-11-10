@@ -109,6 +109,17 @@ export const FLASH_SEQUENCE_LEVEL: Record<string, number> = {
   orange: 1, blue: 2, green: 3, yellow: 4, red: 5, black: 7,
 }
 
+// The other way round: the flash colour a sequence level (1–8) belongs to —
+// 1 orange, 2 blue, 3 green, 4 yellow, 5–6 red, 7–8 black. Shown next to the
+// number wherever the level is picked, so the 1–8 scale reads as the gym's
+// colours (coach 2026-11-10). null for a level off the scale.
+export function sequenceLevelColour(level: number | null | undefined): string | null {
+  if (level == null || !Number.isFinite(level) || level < 1 || level > 8) return null
+  let colour: string | null = null
+  for (const [c, l] of Object.entries(FLASH_SEQUENCE_LEVEL)) if (l <= level) colour = c
+  return colour
+}
+
 // Levels above (+) or below (−) the flash level, per route type: Base and
 // Coordination a level easier (volume, technique), Power at the flash level,
 // Max bouldering a level harder (at the limit). To be tuned with use.

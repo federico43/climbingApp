@@ -1,4 +1,6 @@
 import { useHoldUpdates } from "@/utils/updateHold"
+import { BoulderLevelOptions } from "@/utils/boulderColours"
+import { sequenceLevelColour } from "@/utils/sprayBlocks"
 import { C } from "@/utils/theme"
 import { getDisplayRadius, pixelsToFractionRadius } from "@/utils/holdRadius"
 import { useImageSize } from "@/utils/useImageSize"
@@ -8,6 +10,8 @@ import {
   ROUTE_TYPES,
   ROUTE_TYPE_LABEL,
   clampLevel,
+  MIN_LEVEL,
+  MAX_LEVEL,
   type VariationKey,
   type RouteVariations,
 } from "@/utils/sequenceVariations"
@@ -18,7 +22,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import React, { useMemo, useRef, useState } from "react"
-import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { Image } from "expo-image"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -141,7 +145,12 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   const initialVars: RouteVariations = initialVariations ?? { original: initialHolds }
   const [variations, setVariations] = useState<RouteVariations>(initialVars)
   const [activeVariation, setActiveVariation] = useState<VariationKey>("original")
-  const [routeLevel, setRouteLevel] = useState<number>(clampLevel(initialLevel ?? 4))
+  // No silent default: a new sequence has no level until the coach picks one
+  // on the level screen (most were left on the old default 4 — coach
+  // 2026-11-10). Editing keeps the saved level preselected.
+  const [routeLevel, setRouteLevel] = useState<number | null>(initialLevel != null ? clampLevel(initialLevel) : null)
+  // Save opens a full-screen level step; the sequence is saved from there.
+  const [pickingLevel, setPickingLevel] = useState(false)
   const [routeType, setRouteType] = useState<string>(initialType ?? "base")
 
   const [containerW, setContainerW] = useState(0)
@@ -258,6 +267,12 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
 
   function handleSave() {
     if (saving) return
+    Keyboard.dismiss()
+    setPickingLevel(true)
+  }
+
+  function confirmSave() {
+    if (saving || routeLevel == null) return
     const finalVariations: RouteVariations = { ...variations, [activeVariation]: holds }
     if (!finalVariations.original) finalVariations.original = []
     onSave?.(routeName, { variations: finalVariations, level: routeLevel, type: routeType })
@@ -670,16 +685,6 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
           })}
         </View>
         <View style={styles.metaRow}>
-          <View style={styles.levelCtrl}>
-            <Text style={styles.metaLabel}>Lvl</Text>
-            <Pressable style={styles.stepBtn} onPress={() => setRouteLevel((l) => clampLevel(l - 1))}>
-              <Text style={styles.stepTxt}>−</Text>
-            </Pressable>
-            <Text style={styles.levelVal}>{routeLevel}</Text>
-            <Pressable style={styles.stepBtn} onPress={() => setRouteLevel((l) => clampLevel(l + 1))}>
-              <Text style={styles.stepTxt}>+</Text>
-            </Pressable>
-          </View>
           <View style={styles.typeCtrl}>
             {ROUTE_TYPES.map((t) => (
               <Pressable
@@ -892,7 +897,70 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
           </View>
         </View>
       )}
+      {pickingLevel && (
+        <LevelStep
+          name={routeName}
+          level={routeLevel}
+          saving={saving}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onPick={setRouteLevel}
+          onBack={() => setPickingLevel(false)}
+          onSave={confirmSave}
+        />
+      )}
     </Root>
+  )
+}
+
+// Full-screen level step shown on Save: the eight levels as big rows, each
+// with its flash colour (1 orange … 5–6 red, 7–8 black). Nothing is
+// preselected for a new sequence, so the level can't be skipped.
+function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack, onSave }: {
+  name: string
+  level: number | null
+  saving: boolean
+  topInset: number
+  bottomInset: number
+  onPick: (level: number) => void
+  onBack: () => void
+  onSave: () => void
+}) {
+  const levels = Array.from({ length: MAX_LEVEL - MIN_LEVEL + 1 }, (_, i) => MIN_LEVEL + i)
+  const canSave = level != null && !saving
+  return (
+    <View style={[StyleSheet.absoluteFill, styles.lvlScreen]}>
+      <View style={[styles.lvlHeader, { paddingTop: topInset + 12 }]}>
+        <Pressable onPress={onBack} hitSlop={10} style={styles.topBarIconBtn}>
+          <Text style={styles.topBarBack}>←</Text>
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.lvlTitle}>Level</Text>
+          {!!name.trim() && <Text style={styles.lvlSub} numberOfLines={1}>{name.trim()}</Text>}
+        </View>
+      </View>
+      <ScrollView contentContainerStyle={styles.lvlList}>
+        {levels.map((n) => {
+          const opt = BoulderLevelOptions.find((o) => o.value === sequenceLevelColour(n))
+          const on = level === n
+          return (
+            <Pressable key={n} onPress={() => onPick(n)} style={[styles.lvlRow, on && styles.lvlRowOn]}>
+              <Text style={[styles.lvlNum, on && styles.lvlNumOn]}>{n}</Text>
+              <View style={[styles.lvlSwatch, { backgroundColor: opt?.color ?? "#333" },
+                opt?.value === "black" && styles.lvlSwatchBlack]} />
+              <Text style={[styles.lvlColour, on && styles.lvlColourOn]}>{opt?.label ?? ""}</Text>
+            </Pressable>
+          )
+        })}
+      </ScrollView>
+      <View style={[styles.lvlFooter, { paddingBottom: bottomInset + 12 }]}>
+        <Pressable onPress={onSave} disabled={!canSave} style={[styles.lvlSave, !canSave && styles.lvlSaveOff]}>
+          <Text style={[styles.lvlSaveTxt, !canSave && styles.lvlSaveTxtOff]}>
+            {saving ? "Saving…" : level == null ? "Pick a level" : "Save sequence"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   )
 }
 
@@ -934,17 +1002,34 @@ const styles = StyleSheet.create({
   varTabTextActive: { color: C.bg },
   varDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
   metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  levelCtrl: { flexDirection: "row", alignItems: "center", gap: 8 },
-  metaLabel: { fontSize: 12, fontWeight: "700", color: "#666", textTransform: "uppercase" },
-  stepBtn: {
-    width: 30, height: 30, borderRadius: 8, backgroundColor: "#1c1c1c",
-    alignItems: "center", justifyContent: "center",
+  // Wraps to a second line on narrow screens.
+  typeCtrl: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 6 },
+
+  // Level step (full screen on Save)
+  lvlScreen: { backgroundColor: C.bg, zIndex: 20, elevation: 20 },
+  lvlHeader: {
+    flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#2a2a2a",
   },
-  stepTxt: { fontSize: 18, fontWeight: "700", color: "#fff" },
-  levelVal: { fontSize: 16, fontWeight: "800", color: "#fff", minWidth: 20, textAlign: "center" },
-  // Wraps to a second line on narrow screens — four types don't fit beside
-  // the level stepper on a phone.
-  typeCtrl: { flex: 1, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 6, marginLeft: 12 },
+  lvlTitle: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  lvlSub: { fontSize: 13, color: "#888", marginTop: 2 },
+  lvlList: { padding: 16, gap: 8 },
+  lvlRow: {
+    flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 12, paddingHorizontal: 16,
+    borderRadius: 14, backgroundColor: C.surface, borderWidth: 2, borderColor: "transparent",
+  },
+  lvlRowOn: { borderColor: C.green, backgroundColor: C.surfaceHigh },
+  lvlNum: { fontSize: 26, fontWeight: "800", color: "#ccc", width: 30, textAlign: "center" },
+  lvlNumOn: { color: "#fff" },
+  lvlSwatch: { width: 28, height: 28, borderRadius: 14 },
+  lvlSwatchBlack: { borderWidth: 1, borderColor: "#555" },
+  lvlColour: { fontSize: 16, fontWeight: "600", color: "#999" },
+  lvlColourOn: { color: "#fff" },
+  lvlFooter: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#2a2a2a" },
+  lvlSave: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 16, alignItems: "center" },
+  lvlSaveOff: { backgroundColor: "#1c1c1c" },
+  lvlSaveTxt: { fontSize: 16, fontWeight: "800", color: C.bg },
+  lvlSaveTxtOff: { color: "#666" },
   typePill: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: "#1c1c1c",
   },
