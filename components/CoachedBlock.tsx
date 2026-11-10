@@ -15,6 +15,7 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Style
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { useBlockTimer } from "@/utils/blockTimer"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -90,7 +91,7 @@ export function SprayBlock({ block, routeType, attempts, logAttempt, goToNextBlo
           <Text style={s.badgeText}>Spray wall · {ROUTE_TYPE_LABEL[routeType] ?? routeType}</Text>
         </View>
         <Text style={s.title}>{block.blockName || "Block"}</Text>
-        {!!block.timeLimit && <Text style={s.seqMeta}>{block.timeLimit} min</Text>}
+        {(block.timeLimit ?? 0) > 0 && <SprayTimer minutes={block.timeLimit!} />}
         {!!block.description?.trim() && <Text style={s.description}>{block.description.trim()}</Text>}
         <CoachSequences
           block={block}
@@ -105,6 +106,43 @@ export function SprayBlock({ block, routeType, attempts, logAttempt, goToNextBlo
           <Text style={s.doneBtnText}>{nextLabel}</Text>
         </Pressable>
       </ScrollView>
+    </View>
+  )
+}
+
+// The block's time limit as a countdown the athlete starts. Red "Time's up"
+// at zero; it never moves on by itself. Also arms the workout's own block
+// timer (utils/blockTimer.ts), so the block's time counts from Start.
+function SprayTimer({ minutes }: { minutes: number }) {
+  const blockTimer = useBlockTimer()
+  const total = Math.max(0, Math.round(minutes * 60))
+  const [endAt, setEndAt] = useState<number | null>(null)
+  const [remaining, setRemaining] = useState(total)
+  useEffect(() => {
+    if (endAt === null) return
+    const tick = () => {
+      const r = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+      setRemaining(r)
+      return r
+    }
+    tick()
+    const id = setInterval(() => { if (tick() <= 0) clearInterval(id) }, 250)
+    return () => clearInterval(id)
+  }, [endAt])
+  const over = endAt !== null && remaining <= 0
+  const m = Math.floor(remaining / 60)
+  const sec = remaining % 60
+  return (
+    <View style={[s.timerBox, over && s.timerBoxOver]}>
+      <Ionicons name="time-outline" size={20} color={over ? C.bg : C.green} />
+      <Text style={[s.timerText, over && { color: C.bg }]}>
+        {over ? "Time's up" : `${m}:${String(sec).padStart(2, "0")}`}
+      </Text>
+      {endAt === null && (
+        <Pressable style={s.timerBtn} onPress={() => { blockTimer.start(); setEndAt(Date.now() + total * 1000) }} hitSlop={6}>
+          <Text style={s.timerBtnText}>Start</Text>
+        </Pressable>
+      )}
     </View>
   )
 }
@@ -487,6 +525,14 @@ const s = StyleSheet.create({
   },
   badgeText: { fontSize: 12, fontWeight: "800", color: C.green, letterSpacing: 0.5, textTransform: "uppercase" },
   title: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
+  timerBox: {
+    flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "stretch", justifyContent: "center",
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 14, borderWidth: 1, borderColor: C.green,
+  },
+  timerBoxOver: { backgroundColor: C.red, borderColor: C.red },
+  timerText: { fontSize: 28, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
+  timerBtn: { marginLeft: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
+  timerBtnText: { fontSize: 14, fontWeight: "800", color: C.bg },
   description: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
   doneBtn: { width: "100%", backgroundColor: C.green, borderRadius: 16, paddingVertical: 18, alignItems: "center", marginTop: 8 },
   doneBtnText: { fontSize: 18, fontWeight: "700", color: C.bg, letterSpacing: 0.3 },

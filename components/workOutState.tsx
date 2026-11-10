@@ -321,7 +321,7 @@ export function WorkOutState({
             Block {currentBlockIndex + 1} of {totalBlocks}
           </Text>
           <View style={styles.progressActions}>
-            {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && timerStartedAt !== null && (
+            {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && !isSprayBlock(currentBlock) && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} />
             )}
             <Pressable onPress={() => setBlockMenu(true)} style={styles.skipBtn} hitSlop={10}>
