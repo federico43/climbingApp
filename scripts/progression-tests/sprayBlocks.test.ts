@@ -17,12 +17,14 @@ assert.ok(!isSprayBlock(null))
 
 // by time (Power, Coordination) or by attempts (Max, Base 1), with defaults
 assert.deepEqual(spraySettings({ type: "free_session", blockName: "Power boulders", timeLimit: 25 }),
-  { mode: "time", routeType: "power", minutes: 25, attempts: 5, rest: 120 })
+  { mode: "time", routeType: "power", minutes: 25, timeCap: null, attempts: 5, rest: 120 })
 assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).minutes, 20)
 assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).mode, "time")
 assert.deepEqual(spraySettings({ type: "sequence", blockName: "Base 1", targetAttempts: 6, restTime: 90 }),
-  { mode: "attempts", routeType: "base", minutes: 20, attempts: 6, rest: 90 })
+  { mode: "attempts", routeType: "base", minutes: 20, timeCap: null, attempts: 6, rest: 90 })
 assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering" }).mode, "attempts")
+// attempts block with a time limit (Max bouldering in the plan): ends at whichever comes first
+assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering", timeLimit: 15 }).timeCap, 15)
 
 // records across sessions (any block), totals and last time
 const session = (id: string, at: string, attempts: any[]) => ({ $id: id, $createdAt: at, userId: "u", protocol: "[]", attempts: JSON.stringify(attempts) })

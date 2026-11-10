@@ -63,6 +63,9 @@ export function spraySettings(block: { type?: string; blockName?: string; timeLi
     mode,
     routeType: ref?.routeType ?? null,
     minutes: (block.timeLimit ?? 0) > 0 ? block.timeLimit! : SPRAY_DEFAULT_MINUTES,
+    // Attempts blocks with a time limit too (Max bouldering in the plan:
+    // 15 min) end at whichever comes first. null = no time limit.
+    timeCap: mode === "attempts" && (block.timeLimit ?? 0) > 0 ? block.timeLimit! : null,
     attempts: (block.targetAttempts ?? 0) > 0 ? block.targetAttempts! : SPRAY_DEFAULT_ATTEMPTS,
     rest: (block.restTime ?? 0) > 0 ? block.restTime! : SPRAY_DEFAULT_REST_S,
   }

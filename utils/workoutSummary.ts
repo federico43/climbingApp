@@ -9,6 +9,7 @@ import { findLibraryBlock } from "@/utils/planWorkout"
 import {
   MAIN_BLOCK_COPIES,
   MAIN_COMPANION_BLOCK,
+  mainBlockRun,
   PLAN_FOCUS_LABEL,
   type PlanFocus,
   TEST_BLOCK,
@@ -145,7 +146,8 @@ function mainDetail(b: any, copies: number): string {
     case "project_bouldering":
       return projectDetail(b) + each
     case "sequence":
-      return b.targetAttempts ? `${plural(b.targetAttempts, "attempt")}${each}` : ""
+      return [b.timeLimit ? `${b.timeLimit} min` : "", b.targetAttempts ? plural(b.targetAttempts, "attempt") : ""]
+        .filter(Boolean).join(" · ") + (b.timeLimit || b.targetAttempts ? each : "")
     case "four_by_four":
       return b.sets && b.bouldersPerSet ? `${b.sets} sets of ${b.bouldersPerSet} boulders${each}` : ""
     case "intervals":
@@ -314,7 +316,10 @@ export function summarizeSpec(
   // Conditioning plans: S&C only.
   if (!spec.mainBlock) return { phases, minutes: phases.reduce((t, p) => t + p.minutes, 0) }
   const main = fromLibrary(spec.mainBlock)
-  const mainBlocks = Array.from({ length: MAIN_BLOCK_COPIES }, () => ({ ...main, adaptation: spec.mainType }))
+  const run = mainBlockRun(spec.mainBlock)
+  const mainBlocks = Array.from({ length: run.copies }, () => ({
+    ...main, adaptation: spec.mainType, ...(run.timeLimit ? { timeLimit: run.timeLimit } : {}),
+  }))
   // Power days: Coordination boulders × 2 after Power boulders × 2.
   const companionRef = MAIN_COMPANION_BLOCK[spec.mainType]
   if (companionRef) {

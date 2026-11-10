@@ -74,7 +74,9 @@ export function SprayBlock({
   const routeType = settings.routeType as RouteType
   const title = block.blockName || "Spray wall"
   const isTime = settings.mode === "time"
-  const limitSecs = settings.minutes * 60
+  // A clock runs on time blocks, and on attempts blocks with a time limit.
+  const timed = isTime || settings.timeCap != null
+  const limitSecs = (isTime ? settings.minutes : settings.timeCap ?? 0) * 60
 
   // Resuming: clock rebuilt from the attempts, back on the last sequence.
   const [startedAt, setStartedAt] = useState<number | null>(() => resumedBlockStart(attempts.map((a) => a.timestamp)))
@@ -105,14 +107,15 @@ export function SprayBlock({
 
   // Tick the block clock (time blocks).
   useEffect(() => {
-    if (!isTime || startedAt == null) return
+    if (!timed || startedAt == null) return
     const id = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(id)
-  }, [isTime, startedAt])
+  }, [timed, startedAt])
 
   // The end: time's up (time blocks) or the attempt target reached — asked
   // once the athlete is between attempts, never mid-rest.
-  const reachedEnd = isTime ? startedAt != null && secondsLeft <= 0 : attempts.filter((a) => a.routeId).length >= settings.attempts
+  const timeUp = timed && startedAt != null && secondsLeft <= 0
+  const reachedEnd = timeUp || (!isTime && attempts.filter((a) => a.routeId).length >= settings.attempts)
   useEffect(() => {
     if (phase === "work" && reachedEnd && !overtime) setPhase("end")
   }, [phase, reachedEnd, overtime])
@@ -226,7 +229,7 @@ export function SprayBlock({
   const pendingPreviewChoose = useRef<string | null>(null)
   const previewRow = preview ? routes?.get(preview) ?? null : null
 
-  const timeChip = isTime && startedAt != null && (
+  const timeChip = timed && startedAt != null && (
     <View style={[s.chip, secondsLeft <= 60 && s.chipUrgent]}>
       <Ionicons name="time-outline" size={16} color={secondsLeft <= 60 ? C.bg : C.green} />
       <Text style={[s.chipText, secondsLeft <= 60 && { color: C.bg }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
@@ -350,13 +353,14 @@ export function SprayBlock({
             <View style={s.pill}>
               <Text style={s.pillText}>{isTime ? `⏱ ${settings.minutes} min` : `${settings.attempts} attempts`}</Text>
             </View>
+            {settings.timeCap != null && <View style={s.pill}><Text style={s.pillText}>⏱ {settings.timeCap} min</Text></View>}
             <View style={s.pill}><Text style={s.pillText}>{clock(settings.rest)} rest</Text></View>
           </View>
           <BlockNotes text={block.description} />
           <Text style={s.hint}>
             {isTime
               ? "Choose a sequence and climb it until the time runs out. Tap Top or Fell after every attempt — rest starts on its own."
-              : `Choose a sequence and give it ${settings.attempts} attempts. Tap Top or Fell after every attempt — rest starts on its own.`}
+              : `Choose a sequence and give it ${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} minutes` : ""}. Tap Top or Fell after every attempt — rest starts on its own.`}
           </Text>
         </ScrollView>
         <View style={shared_styles.footer}>
@@ -507,8 +511,8 @@ export function SprayBlock({
       <View style={shared_styles.screen}>
         <TopBar title={title} />
         <View style={[shared_styles.container, { justifyContent: "center", gap: 14 }]}>
-          <Ionicons name={isTime ? "alarm-outline" : "checkmark-circle-outline"} size={56} color={isTime ? C.red : C.green} />
-          <Text style={s.heading}>{isTime ? "Time's up" : "Attempts done"}</Text>
+          <Ionicons name={timeUp ? "alarm-outline" : "checkmark-circle-outline"} size={56} color={timeUp ? C.red : C.green} />
+          <Text style={s.heading}>{timeUp ? "Time's up" : "Attempts done"}</Text>
           <Text style={s.hint}>{loggedTops} top{loggedTops !== 1 ? "s" : ""} in {loggedTries} attempt{loggedTries !== 1 ? "s" : ""}.</Text>
           <View style={{ width: "100%", gap: 12, marginTop: 12 }}>
             <CustomButton title="Finish block" onPress={finish} />

@@ -6,6 +6,7 @@
 import assert from "node:assert/strict"
 import {
   alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, scPatternMax, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
+  mainBlockRun,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
@@ -375,6 +376,14 @@ assert.deepEqual(w.homework, [])                                                
 const io = w.blocks[3] as any
 assert.equal(io.kind, "warmup"); assert.equal(io.series, 4); assert.equal(io.adaptation, undefined)
 assert.equal(io.workTime, 30)
+
+// Max bouldering: 3 blocks of 15 min (coach 2026-11-10)
+w = buildPlanWorkout(plan, spec(4), library, exercises, [], "green")
+const mainBlocks = w.blocks.filter((b: any) => b.libraryBlockId === "mb") as any[]
+assert.equal(mainBlocks.length, 3)
+assert.ok(mainBlocks.every((b) => b.timeLimit === 15))
+assert.deepEqual(mainBlockRun({ name: "Max bouldering", type: "sequence" }), { copies: 3, timeLimit: 15 })
+assert.deepEqual(mainBlockRun({ name: "Project Bouldering", type: "project_bouldering" }), { copies: 2 })
 
 // workout 5: Base 1 is the sequence one
 w = buildPlanWorkout(plan, spec(5), library, exercises, [], "green")
