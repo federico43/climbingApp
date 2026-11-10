@@ -83,6 +83,7 @@ export function BlockRenderer({
         key={currentBlockIndex}
         block={block as any}
         attempts={blockAttempts}
+        workoutAttempts={attempts}
         logAttempt={logAttempt}
         undoLastAttempt={undoLastAttempt}
         restTimeRemaining={restTimeRemaining}

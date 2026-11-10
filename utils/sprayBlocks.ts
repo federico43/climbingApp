@@ -83,21 +83,26 @@ export interface RouteRecord {
 }
 
 // Every sequence the athlete has logged attempts on (any block), with totals.
-export function routeRecords(sessions: SessionRow[]): Map<string, RouteRecord> {
+// `current` — the workout in progress (not saved yet), so a sequence added
+// on the first Power boulders shows up on the second one.
+export function routeRecords(sessions: SessionRow[], current: Attempt[] = [], now = new Date().toISOString()): Map<string, RouteRecord> {
   const map = new Map<string, RouteRecord>()
-  for (const s of sessions) {
-    let attempts: Attempt[] = []
-    try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
-    if (!Array.isArray(attempts)) continue
+  const add = (attempts: Attempt[], at: string) => {
     for (const a of attempts) {
       if (!a?.routeId) continue
       const r = map.get(a.routeId) ?? { routeId: a.routeId, tries: 0, sends: 0, lastAt: "" }
       r.tries++
       if (a.success) r.sends++
-      if (s.$createdAt > r.lastAt) r.lastAt = s.$createdAt
+      if (at > r.lastAt) r.lastAt = at
       map.set(a.routeId, r)
     }
   }
+  for (const s of sessions) {
+    let attempts: Attempt[] = []
+    try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
+    if (Array.isArray(attempts)) add(attempts, s.$createdAt)
+  }
+  add(current, now)
   return map
 }
 
@@ -105,16 +110,22 @@ export function routeRecords(sessions: SessionRow[]): Map<string, RouteRecord> {
 // athlete has already logged, fewest sends first (ties: the one climbed
 // longest ago first, so they rotate). `routes` is what the athlete can see
 // (routesVisibleTo); `exclude` the ones already picked in this block.
+// `pinned` — a sequence the coach set on the block (its routeId): listed
+// first whatever its type or record, as long as the athlete can see it.
 export function suggestSprayRoutes(
   records: Map<string, RouteRecord>,
   routes: Map<string, { id: string; type?: string }>,
   routeType: RouteType,
   exclude: Iterable<string> = [],
   limit = SPRAY_SUGGESTION_COUNT,
+  pinned?: string | null,
 ): RouteRecord[] {
   const skip = new Set(exclude)
-  return [...records.values()]
-    .filter((r) => !skip.has(r.routeId) && routes.get(r.routeId)?.type === routeType)
+  const first = pinned && !skip.has(pinned) && routes.has(pinned)
+    ? [records.get(pinned) ?? { routeId: pinned, tries: 0, sends: 0, lastAt: "" }]
+    : []
+  const rest = [...records.values()]
+    .filter((r) => !skip.has(r.routeId) && r.routeId !== pinned && routes.get(r.routeId)?.type === routeType)
     .sort((a, b) => a.sends - b.sends || a.lastAt.localeCompare(b.lastAt) || a.routeId.localeCompare(b.routeId))
-    .slice(0, limit)
+  return [...first, ...rest].slice(0, limit)
 }

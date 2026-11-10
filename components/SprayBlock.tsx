@@ -5,7 +5,7 @@ import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import {
-  getSessions, getSprayRoutes, getSprayWalls, saveSprayRoute, type SprayRouteRow, type SprayWallRow,
+  getSessions, getSprayRoutes, getSprayWalls, saveSprayRoute, type SessionRow, type SprayRouteRow, type SprayWallRow,
 } from "@/services/BoulderGraphService"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
@@ -13,7 +13,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import {
-  routeRecords, SPRAY_REST_OPTIONS_S, spraySettings, suggestSprayRoutes, type RouteRecord,
+  routeRecords, SPRAY_REST_OPTIONS_S, spraySettings, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
@@ -41,8 +41,10 @@ interface Props {
   block: {
     type: string; blockName?: string; description?: string
     timeLimit?: number; targetAttempts?: number; restTime?: number
+    routeId?: string // a sequence the coach set on the block (listed first)
   }
   attempts: Attempt[] // this block's
+  workoutAttempts: Attempt[] // the whole workout's (suggestions)
   logAttempt: (attempt: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => void
   undoLastAttempt?: () => void
   restTimeRemaining: number | null
@@ -64,7 +66,7 @@ function ModalRoot({ children }: { children: React.ReactNode }) {
 }
 
 export function SprayBlock({
-  block, attempts, logAttempt, undoLastAttempt, restTimeRemaining, startRestTimer, goToNextBlock, goToPreviousBlock,
+  block, attempts, workoutAttempts, logAttempt, undoLastAttempt, restTimeRemaining, startRestTimer, goToNextBlock, goToPreviousBlock,
 }: Props) {
   const { User } = ConsumeAuth()
   const athleteId = User?.$id
@@ -89,7 +91,7 @@ export function SprayBlock({
 
   // Routes (names, holds, types), walls, and the athlete's record per route.
   const [routes, setRoutes] = useState<Map<string, SprayRouteRow> | null>(null)
-  const [records, setRecords] = useState<Map<string, RouteRecord>>(new Map())
+  const [sessions, setSessions] = useState<SessionRow[]>([])
   const [walls, setWalls] = useState<SprayWallRow[] | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -98,7 +100,7 @@ export function SprayBlock({
         if (cancelled) return
         const visible = rows.filter((r) => !r.athleteId || r.athleteId === athleteId)
         setRoutes(new Map(visible.map((r) => [r.$id, r])))
-        setRecords(routeRecords(sessions))
+        setSessions(sessions)
       })
       .catch((e) => { console.error(e); if (!cancelled) setRoutes(new Map()) })
     getSprayWalls().then((w) => { if (!cancelled) setWalls(w) }).catch(() => { if (!cancelled) setWalls([]) })
@@ -142,11 +144,14 @@ export function SprayBlock({
   const loggedTops = perRoute.reduce((n, r) => n + r.sends, 0)
   const onRoute = perRoute.find((r) => r.id === routeId) ?? { tries: 0, sends: 0 }
 
+  // Saved sessions + this workout so far, so a sequence added on the first
+  // copy of the block is there on the second one.
+  const records = useMemo(() => routeRecords(sessions, workoutAttempts), [sessions, workoutAttempts])
   const suggestions = useMemo(() => {
     if (!routes || !routeType) return []
     const info = new Map([...routes.values()].map((r) => [r.$id, { id: r.$id, type: r.type ?? undefined }]))
-    return suggestSprayRoutes(records, info, routeType, routeId ? [routeId] : [])
-  }, [routes, records, routeType, routeId])
+    return suggestSprayRoutes(records, info, routeType, routeId ? [routeId] : [], undefined, block.routeId || null)
+  }, [routes, records, routeType, routeId, block.routeId])
 
   const route = routeId ? routes?.get(routeId) ?? null : null
   const wallFor = (r: SprayRouteRow | null | undefined) => (r?.wallId ? walls?.find((w) => w.$id === r.wallId) ?? null : null)
@@ -170,8 +175,19 @@ export function SprayBlock({
     if (!routeId) return
     Haptics.impactAsync(success ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {})
     logAttempt({ success, routeId, variation: "original" })
+    // The last attempt (target reached, time's up, or the "one more" after
+    // the end) goes straight to the end — no rest to sit through first.
+    const endsNow = overtime || timeUp || (!isTime && loggedTries + 1 >= settings.attempts)
+    if (endsNow) { setOvertime(false); setPhase("end"); return }
     startRestTimer(restLength)
     setPhase("rest")
+  }
+
+  // Leaving the rest early stops the workout's rest timer too, or its
+  // "rest over" beep / notification would still go off mid-attempt.
+  function stopRest() {
+    startRestTimer(0)
+    setPhase("work")
   }
 
   function setRest(secs: number) {
@@ -181,7 +197,7 @@ export function SprayBlock({
 
   function undo() {
     undoLastAttempt?.()
-    setPhase("work")
+    stopRest()
   }
 
   function finish() {
@@ -389,11 +405,14 @@ export function SprayBlock({
           )}
           {suggestions.map((r) => {
             const row = routes?.get(r.routeId)
+            const fromCoach = !!block.routeId && r.routeId === block.routeId
             return (
               <Pressable key={r.routeId} style={s.row} onPress={() => setPreview(r.routeId)}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.rowName} numberOfLines={1}>{row?.name ?? "Sequence"}</Text>
-                  {row?.level != null && <Text style={s.meta}>Level {row.level}</Text>}
+                  {(fromCoach || row?.level != null) && (
+                    <Text style={s.meta}>{[fromCoach && "Set by your coach", row?.level != null && `Level ${row.level}`].filter(Boolean).join(" · ")}</Text>
+                  )}
                 </View>
                 <Text style={s.rowRecord}>{r.sends} top{r.sends !== 1 ? "s" : ""} · {r.tries} tr{r.tries !== 1 ? "ies" : "y"}</Text>
                 <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
@@ -496,7 +515,7 @@ export function SprayBlock({
           <Pressable onPress={undo} hitSlop={8}>
             <Text style={s.link}>Undo attempt</Text>
           </Pressable>
-          <Pressable style={s.skipBtn} onPress={() => setPhase("work")}>
+          <Pressable style={s.skipBtn} onPress={stopRest}>
             <Text style={s.skipText}>Skip rest</Text>
           </Pressable>
         </View>
@@ -519,6 +538,12 @@ export function SprayBlock({
             <Pressable onPress={() => { setOvertime(true); setPhase("work") }} style={{ alignItems: "center" }} hitSlop={8}>
               <Text style={s.link}>One more attempt</Text>
             </Pressable>
+            {loggedTries > 0 && (
+              // The last attempt skips the rest screen, so its Undo lives here.
+              <Pressable onPress={() => { undoLastAttempt?.(); setOvertime(true); setPhase("work") }} style={{ alignItems: "center" }} hitSlop={8}>
+                <Text style={s.link}>Undo last attempt</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       </View>
