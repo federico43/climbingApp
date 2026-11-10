@@ -1,49 +1,16 @@
 import { C } from "@/utils/theme"
 import { protocolMinutes, type CardioProtocol } from "@/utils/cardio"
+import { IntervalStats } from "@/components/IntervalVisuals"
 import { Ionicons } from "@expo/vector-icons"
 import { StyleSheet, Text, View } from "react-native"
 
 // Building blocks for the jump rope screens: the session as three big
-// numbers (series · jump · rest), a strip that draws the whole session as
-// work and rest bars, and short notes with an icon instead of plain lines.
+// numbers (series · jump · rest) and short notes with an icon instead of
+// plain lines.
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"]
 
 export type CardioNote = { icon: IconName; text: string; tone?: "info" | "warn" }
-
-export function fmtSec(sec: number): string {
-  if (sec >= 60) return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`
-  return `${sec}s`
-}
-
-function Stat({ value, label, color }: { value: string; label: string; color: string }) {
-  return (
-    <View style={s.stat}>
-      <Text style={[s.statValue, { color }]}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
-    </View>
-  )
-}
-
-/** The whole session drawn to scale: green = jump, grey = rest. */
-export function SessionStrip({ p }: { p: CardioProtocol }) {
-  const bars: { flex: number; work: boolean; dry?: boolean }[] = []
-  if (p.dryJumps) bars.push({ flex: 30, work: true, dry: true }, { flex: Math.max(p.restSec, 10), work: false })
-  for (let i = 0; i < p.series; i++) {
-    bars.push({ flex: p.workSec, work: true })
-    if (i < p.series - 1 && p.restSec > 0) bars.push({ flex: p.restSec, work: false })
-  }
-  return (
-    <View style={s.strip}>
-      {bars.map((b, i) => (
-        <View
-          key={i}
-          style={[s.bar, { flex: b.flex }, b.work ? s.barWork : s.barRest, b.dry && { opacity: 0.45 }]}
-        />
-      ))}
-    </View>
-  )
-}
 
 /** A card with the session's three numbers, its strip and its total time. */
 export function ProtocolCard({ p, kicker }: { p: CardioProtocol; kicker?: string }) {
@@ -53,14 +20,7 @@ export function ProtocolCard({ p, kicker }: { p: CardioProtocol; kicker?: string
   return (
     <View style={s.card}>
       {kicker ? <Text style={s.cardKicker}>{kicker}</Text> : null}
-      <View style={s.stats}>
-        <Stat value={String(p.series)} label="series" color={C.textPrimary} />
-        <View style={s.divider} />
-        <Stat value={fmtSec(p.workSec)} label="jump" color={C.green} />
-        <View style={s.divider} />
-        <Stat value={fmtSec(p.restSec)} label="rest" color={C.textSecondary} />
-      </View>
-      <SessionStrip p={p} />
+      <IntervalStats series={p.series} workSec={p.workSec} restSec={p.restSec} workLabel="jump" />
       <View style={s.footRow}>
         <Ionicons name="time-outline" size={14} color={C.textSecondary} />
         <Text style={s.foot}>About {protocolMinutes(p)} min</Text>
@@ -110,15 +70,6 @@ export function StepList({ steps }: { steps: { title: string; text: string }[] }
 const s = StyleSheet.create({
   card: { width: "100%", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 18, gap: 16 },
   cardKicker: { fontSize: 12, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
-  stats: { flexDirection: "row", alignItems: "center" },
-  stat: { flex: 1, alignItems: "center", gap: 2 },
-  statValue: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"] },
-  statLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  divider: { width: 1, alignSelf: "stretch", backgroundColor: C.border },
-  strip: { flexDirection: "row", height: 14, gap: 2 },
-  bar: { borderRadius: 3 },
-  barWork: { backgroundColor: C.green },
-  barRest: { backgroundColor: C.surfaceHigh },
   footRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
   foot: { fontSize: 13, fontWeight: "600", color: C.textSecondary, marginRight: 6 },
   tag: {
