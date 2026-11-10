@@ -13,6 +13,7 @@ import type { StatsLibraryExercise } from "@/utils/athleteStatsData"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { currentOrNextPause, pauseOn, type PlanPause } from "@/utils/planPauses"
 import { ThisWeekCard } from "@/components/schedule/ThisWeekCard"
+import { CardioSection } from "@/components/cardio/CardioSection"
 import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
 import { refreshClassSchedule } from "@/utils/classScheduleStore"
@@ -212,6 +213,7 @@ export default function PlanScreen() {
               }
             >
               <ThisWeekCard />
+              <CardioSection />
               {error ? (
                 <Empty icon="cloud-offline-outline" title="Couldn't load your plan" text="Pull down to try again." />
               ) : !plan ? (

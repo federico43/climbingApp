@@ -12,6 +12,7 @@ import { RolePill } from "@/components/coach/RolePill"
 import { StatsCard } from "@/components/coach/StatsCard"
 import { useAthleteStats } from "@/hooks/useAthleteStats"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
+import { CardioCard } from "./CardioCard"
 import { card } from "@/components/coach/styles"
 import {
   AppUser,
@@ -147,6 +148,7 @@ export function AthleteDetail({
   const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const statsCard = <StatsCard key={athlete.$id} columns={wide ? 3 : 2} data={stats} />
   const videos = <AthleteVideos athlete={athlete} />
+  const cardioCard = <CardioCard key={`cardio-${athlete.$id}`} athlete={athlete} />
 
   return (
     <View style={{ flex: 1 }}>
@@ -186,6 +188,7 @@ export function AthleteDetail({
             <View style={styles.sideCol}>
               {homeworkCard}
               {activityCard}
+              {cardioCard}
               {athleteCard}
             </View>
           </View>
@@ -197,6 +200,7 @@ export function AthleteDetail({
             {timelineCard}
             {statsCard}
             {activityCard}
+            {cardioCard}
             {athleteCard}
             {templatesCard}
             {videos}
