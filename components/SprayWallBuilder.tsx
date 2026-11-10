@@ -939,7 +939,7 @@ function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack,
           {!!name.trim() && <Text style={styles.lvlSub} numberOfLines={1}>{name.trim()}</Text>}
         </View>
       </View>
-      {/* 2 × 4 grid of tiles painted in the level's flash colour. */}
+      {/* 2 × 4 grid: dark tiles, number and border in the flash colour. */}
       <View style={styles.lvlGrid}>
         {[0, 1, 2, 3].map((r) => (
           <View key={r} style={styles.lvlGridRow}>
@@ -947,12 +947,14 @@ function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack,
               const opt = BoulderLevelOptions.find((o) => o.value === sequenceLevelColour(n))
               const on = level === n
               const dim = level != null && !on
+              // Black would vanish on the dark screen: it shows as light grey.
+              const accent = opt?.value === "black" ? "#BDBDBD" : opt?.color ?? "#888"
               return (
                 <Pressable key={n} onPress={() => onPick(n)}
-                  style={[styles.lvlTile, { backgroundColor: opt?.color ?? C.surface },
-                    opt?.value === "black" && styles.lvlTileBlack, on && styles.lvlTileOn, dim && styles.lvlTileDim]}>
-                  <Text style={[styles.lvlNum, { color: opt?.on ?? "#fff" }]}>{n}</Text>
-                  {on && <Text style={[styles.lvlCheck, { color: opt?.on ?? "#fff" }]}>✓</Text>}
+                  style={[styles.lvlTile, { borderColor: accent + "80" },
+                    on && { borderColor: accent, backgroundColor: accent + "26" }, dim && styles.lvlTileDim]}>
+                  <Text style={[styles.lvlNum, { color: accent }]}>{n}</Text>
+                  {on && <Text style={[styles.lvlCheck, { color: accent }]}>✓</Text>}
                 </Pressable>
               )
             })}
@@ -1023,11 +1025,9 @@ const styles = StyleSheet.create({
   lvlGridRow: { flex: 1, flexDirection: "row", gap: 12, maxHeight: 150 },
   lvlTile: {
     flex: 1, borderRadius: 18, alignItems: "center", justifyContent: "center",
-    borderWidth: 3, borderColor: "transparent",
+    backgroundColor: C.surface, borderWidth: 2,
   },
-  lvlTileBlack: { borderColor: "#3a3a3a" },
-  lvlTileOn: { borderColor: "#fff", transform: [{ scale: 1.03 }] },
-  lvlTileDim: { opacity: 0.35 },
+  lvlTileDim: { opacity: 0.45 },
   lvlNum: { fontSize: 44, fontWeight: "800" },
   lvlCheck: { position: "absolute", top: 8, right: 12, fontSize: 18, fontWeight: "800" },
   lvlFooter: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#2a2a2a" },
