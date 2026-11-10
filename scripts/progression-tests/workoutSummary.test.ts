@@ -61,6 +61,7 @@ assert.deepEqual(t.phases.map((p) => [p.key, p.adaptation]), [["test", "test"], 
 const library: any[] = [
   { $id: "1", $createdAt: "", name: "Power boulders", type: "free_session", data: JSON.stringify({ timeLimit: 25 }) },
   { $id: "2", $createdAt: "", name: "1 on 1 off", type: "intervals", data: JSON.stringify({ series: 4, workTime: 60, restTime: 60 }) },
+  { $id: "3", $createdAt: "", name: "Coordination boulders", type: "free_session", data: JSON.stringify({ timeLimit: 20 }) },
 ]
 const spec: any = { index: 3, mainType: "power", mainBlock: { name: "Power boulders", type: "free_session" },
   warmup: "one_on_one_off", scFocus: "explosiveness", exerciseSlot: 0, withTest: false }
@@ -69,13 +70,15 @@ assert.deepEqual(u.phases.map((p) => p.key), ["sc", "warmup", "main"])
 assert.equal(u.phases[0].title, "Explosiveness")
 assert.equal(u.phases[0].detail, "4 exercises + mobility · 3 rounds")
 assert.equal(u.phases[1].title, "1 on 1 off")
-assert.equal(u.phases[2].title, "Power boulders ×2")
-assert.equal(u.phases[2].minutes, 50)
+// Power days: 2 Power boulders + 2 Coordination boulders
+assert.equal(u.phases[2].title, "Power boulders ×2 · Coordination boulders ×2")
+assert.equal(u.phases[2].detail, "4 blocks")
+assert.equal(u.phases[2].minutes, 90)
 assert.equal(u.phases[2].adaptation, "power")
 
 // Constraint warm-up takes the plan's focus colour; no S&C when the plan has none
 const c = summarizeSpec({ ...spec, warmup: "constraints", scFocus: null }, { focus: "technique", hasMobility: false, scPatterns: [] }, library, empty)
-assert.deepEqual(c.phases.map((p) => [p.key, p.adaptation, p.title]), [["warmup", "technique", "3 constraints"], ["main", "power", "Power boulders ×2"]])
+assert.deepEqual(c.phases.map((p) => [p.key, p.adaptation, p.title]), [["warmup", "technique", "3 constraints"], ["main", "power", "Power boulders ×2 · Coordination boulders ×2"]])
 
 // One pattern: its 2 exercises by sets; mobility only: just mobility
 const one = summarizeSpec(spec, { focus: "technique", hasMobility: false, scPatterns: [{ exerciseIds: ["a", "b"] }] }, library, empty)

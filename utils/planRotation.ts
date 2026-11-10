@@ -128,6 +128,24 @@ export const MAIN_BLOCKS: Record<MainType, LibraryBlockRef[]> = {
 // Every workout runs its main block twice, back to back (coach 2026-10-04).
 export const MAIN_BLOCK_COPIES = 2
 
+// Main blocks that run differently from the × MAIN_BLOCK_COPIES default:
+// Max bouldering is 3 blocks of 15 minutes each (coach 2026-11-10).
+export interface MainBlockRun { copies: number; timeLimit?: number }
+const MAIN_BLOCK_RUNS: { ref: LibraryBlockRef; run: MainBlockRun }[] = [
+  { ref: { name: "Max bouldering", type: "sequence" }, run: { copies: 3, timeLimit: 15 } },
+]
+
+export function mainBlockRun(ref: LibraryBlockRef): MainBlockRun {
+  return MAIN_BLOCK_RUNS.find((r) => sameRef(r.ref, ref))?.run ?? { copies: MAIN_BLOCK_COPIES }
+}
+
+// A second block that follows the main block's copies, also × MAIN_BLOCK_COPIES:
+// Power days are 2 Power boulders + 2 Coordination boulders (coach 2026-11-09).
+export const COORDINATION_BLOCK: LibraryBlockRef = { name: "Coordination boulders", type: "free_session" }
+export const MAIN_COMPANION_BLOCK: Partial<Record<MainType, LibraryBlockRef>> = {
+  power: COORDINATION_BLOCK,
+}
+
 export const WARMUP_INTERVALS_BLOCK: LibraryBlockRef = { name: "1 on 1 off", type: "intervals" }
 export const TEST_BLOCK: LibraryBlockRef = { name: "Density test", type: "exploration_session" }
 // Library copy of the route exploration, if the coach saved one (its notes
