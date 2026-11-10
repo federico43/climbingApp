@@ -6,7 +6,6 @@ import {
 } from "@/components/paper"
 import type { DayState } from "@/components/paper"
 import { useRouter } from "expo-router"
-import { StatusBar } from "expo-status-bar"
 import React, { useState } from "react"
 import { View } from "react-native"
 
@@ -37,8 +36,6 @@ export default function PaperPreview() {
         </View>
       }
     >
-      <StatusBar style={t.mode === "dark" ? "light" : "dark"} />
-
       {/* Appearance */}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
         {(["system", "light", "dark"] as const).map((p) =>

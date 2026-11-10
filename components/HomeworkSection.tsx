@@ -1,5 +1,6 @@
-import { C } from "@/utils/theme"
-import { ADAPTATION_COLOR } from "@/utils/adaptations"
+import { Card, GhostButton, MintButton, usePaper, usePaperStyles } from "@/components/paper"
+import type { PaperTheme } from "@/theme/paper/tokens"
+import { font } from "@/theme/paper/tokens"
 import { getSessions, type ProtocolRow, type SessionRow } from "@/services/BoulderGraphService"
 import {
   cantAttendHomework,
@@ -114,12 +115,8 @@ export function HomeworkSection({
 
   return (
     <>
-      <View style={s.card}>
-        <View style={s.headerRow}>
-          <Ionicons name="school-outline" size={16} color={ADAPTATION_COLOR.test} />
-          <Text style={s.title}>Homework</Text>
-        </View>
-        {items.map(({ hw, status }) => (
+      <Card homework style={{ gap: 4 }}>
+        {items.map(({ hw, status }, i) => (
           <HomeworkItem
             key={hw.$id}
             hw={hw}
@@ -128,9 +125,10 @@ export function HomeworkSection({
             onPick={() => setScheduling(hw)}
             onDecline={() => setDeclining(hw)}
             onStart={() => onStart(hw)}
+            first={i === 0}
           />
         ))}
-      </View>
+      </Card>
 
       <PromptModal hw={prompt} onClose={() => closePrompt()} onPick={() => closePrompt(() => setScheduling(prompt))} />
       {scheduling && (
@@ -148,70 +146,64 @@ export function HomeworkSection({
   )
 }
 
-function statusLine(hw: ProtocolRow, status: HomeworkStatus, today: string): { text: string; color: string } {
+function statusLine(t: PaperTheme, hw: ProtocolRow, status: HomeworkStatus, today: string): { text: string; color: string } {
   const due = dueByOf(hw)
   const daysLeft = daysToPick(today, due).length > 0
   switch (status.state) {
     case "scheduled": {
       const when = new Date(hw.scheduledFor!)
       const day = status.date === today ? "Today" : status.date === addDays(today, 1) ? "Tomorrow" : shortDay(status.date!)
-      return { text: `${day} at ${timeLabel(when)}`, color: C.green }
+      return { text: `${day} at ${timeLabel(when)}`, color: t.mintText }
     }
     case "missed":
-      return { text: `Missed ${shortDay(status.date!)} — pick another day before ${shortDay(due)}`, color: C.yellow }
+      return { text: `Missed ${shortDay(status.date!)} — pick another day before ${shortDay(due)}`, color: t.pink }
     case "cant_attend":
       return daysLeft
-        ? { text: `You can't make it — pick another day before ${shortDay(due)}`, color: C.yellow }
-        : { text: "Your coach knows you can't make it", color: C.textSecondary }
+        ? { text: `You can't make it — pick another day before ${shortDay(due)}`, color: t.pink }
+        : { text: "Your coach knows you can't make it", color: t.textMuted }
     case "overdue":
-      return { text: `Overdue since ${shortDay(due)}`, color: C.red }
+      return { text: `Overdue since ${shortDay(due)}`, color: t.pink }
     default:
-      return { text: `Pick a day before ${shortDay(due)}`, color: C.textSecondary }
+      return { text: `Pick a day before ${shortDay(due)}`, color: t.textMuted }
   }
 }
 
-function HomeworkItem({ hw, status, today, onPick, onDecline, onStart }: {
+function HomeworkItem({ hw, status, today, onPick, onDecline, onStart, first }: {
   hw: ProtocolRow; status: HomeworkStatus; today: string
-  onPick: () => void; onDecline: () => void; onStart: () => void
+  onPick: () => void; onDecline: () => void; onStart: () => void; first?: boolean
 }) {
-  const line = statusLine(hw, status, today)
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
+  const line = statusLine(t, hw, status, today)
   const canPick = daysToPick(today, dueByOf(hw)).length > 0
   const scheduled = status.state === "scheduled" || status.state === "missed"
   return (
-    <View style={s.item}>
-      <Text style={s.itemName} numberOfLines={1}>{hw.name}</Text>
+    <View style={[s.item, first && { paddingTop: 0, borderTopWidth: 0 }]}>
+      <Text style={s.itemName} numberOfLines={2}>{hw.name}</Text>
       <Text style={[s.itemLine, { color: line.color }]}>{line.text}</Text>
       <View style={s.actions}>
         {canPick && (
-          <Pressable style={s.btn} onPress={onPick} hitSlop={4}>
-            <Ionicons name="calendar-outline" size={14} color={C.textPrimary} />
-            <Text style={s.btnText}>{status.state === "scheduled" ? "Move" : "Pick a day"}</Text>
-          </Pressable>
+          <GhostButton compact icon="calendar-outline" label={status.state === "scheduled" ? "Move" : "Pick a day"} onPress={onPick} />
         )}
-        {scheduled && (
-          <Pressable style={s.btn} onPress={onDecline} hitSlop={4}>
-            <Text style={s.btnText}>{"I can't attend"}</Text>
-          </Pressable>
-        )}
-        <Pressable style={[s.btn, s.btnPrimary]} onPress={onStart} hitSlop={4}>
-          <Ionicons name="play" size={13} color={C.bg} />
-          <Text style={[s.btnText, { color: C.bg }]}>Start</Text>
-        </Pressable>
+        {scheduled && <GhostButton compact label="I can't attend" onPress={onDecline} />}
+        <MintButton compact icon="play" label="Start" onPress={onStart} style={{ marginLeft: "auto" }} />
       </View>
     </View>
   )
 }
 
 function PromptModal({ hw, onClose, onPick }: { hw: ProtocolRow | null; onClose: () => void; onPick: () => void }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   return (
     <Modal visible={!!hw} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={s.sheet} onPress={() => {}}>
-          <Ionicons name="school-outline" size={28} color={ADAPTATION_COLOR.test} />
+          <Ionicons name="school-outline" size={28} color={t.pink} />
           <Text style={s.sheetTitle}>{"You've got homework"}</Text>
           {hw && (
             <Text style={s.sheetText}>
-              <Text style={{ fontWeight: "800", color: C.textPrimary }}>{hw.name}</Text>
+              <Text style={{ fontFamily: font.bold, color: t.ink }}>{hw.name}</Text>
               {leftByAthlete(hw)
                 ? ` is waiting — you left it for later. Pick a day to finish it before ${shortDay(dueByOf(hw))} and we'll remind you.`
                 : ` from your coach. Pick a day to do it before ${shortDay(dueByOf(hw))} and we'll remind you.`}
@@ -230,6 +222,8 @@ function PromptModal({ hw, onClose, onPick }: { hw: ProtocolRow | null; onClose:
 function ScheduleModal({ hw, today, onClose, onSaved }: {
   hw: ProtocolRow; today: string; onClose: () => void; onSaved: () => void
 }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   const days = daysToPick(today, dueByOf(hw))
   const prev = hw.scheduledFor ? new Date(hw.scheduledFor) : null
   const prevDay = prev ? localDateStr(prev) : null
@@ -271,8 +265,8 @@ function ScheduleModal({ hw, today, onClose, onSaved }: {
                   const [wd, dn] = shortDay(d).split(" ")
                   return (
                     <Pressable key={d} style={[s.day, sel && s.daySel]} onPress={() => setDay(d)}>
-                      <Text style={[s.dayWd, sel && { color: C.bg }]}>{d === today ? "Today" : wd}</Text>
-                      <Text style={[s.dayNum, sel && { color: C.bg }]}>{dn}</Text>
+                      <Text style={[s.dayWd, sel && { color: t.onMint }]}>{d === today ? "Today" : wd}</Text>
+                      <Text style={[s.dayNum, sel && { color: t.onMint }]}>{dn}</Text>
                     </Pressable>
                   )
                 })}
@@ -286,7 +280,7 @@ function ScheduleModal({ hw, today, onClose, onSaved }: {
               </View>
               <Text style={s.hint}>{"We'll remind you the day before and 1 hour before."}</Text>
               <Pressable style={[s.primary, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
-                {saving ? <ActivityIndicator color={C.bg} /> : <Text style={s.primaryText}>Save</Text>}
+                {saving ? <ActivityIndicator color={t.onMint} /> : <Text style={s.primaryText}>Save</Text>}
               </Pressable>
             </>
           )}
@@ -298,6 +292,7 @@ function ScheduleModal({ hw, today, onClose, onSaved }: {
 }
 
 function TimeStep({ label, onPress }: { label: string; onPress: () => void }) {
+  const s = usePaperStyles(makeStyles)
   return (
     <Pressable style={s.timeStep} onPress={onPress} hitSlop={4}>
       <Text style={s.timeStepText}>{label}</Text>
@@ -311,6 +306,8 @@ function TimeStep({ label, onPress }: { label: string; onPress: () => void }) {
 function CantAttendModal({ hw, today, onClose, onPick }: {
   hw: ProtocolRow; today: string; onClose: (changed: boolean) => void; onPick: () => void
 }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -344,18 +341,18 @@ function CantAttendModal({ hw, today, onClose, onPick }: {
                 value={note}
                 onChangeText={setNote}
                 placeholder="e.g. Sick, work trip… (optional)"
-                placeholderTextColor={C.textMuted}
+                placeholderTextColor={t.label}
                 multiline
                 maxLength={300}
               />
               <Pressable style={[s.primary, sending && { opacity: 0.6 }]} onPress={send} disabled={sending}>
-                {sending ? <ActivityIndicator color={C.bg} /> : <Text style={s.primaryText}>Send</Text>}
+                {sending ? <ActivityIndicator color={t.onMint} /> : <Text style={s.primaryText}>Send</Text>}
               </Pressable>
               <Pressable onPress={() => onClose(false)} hitSlop={8}><Text style={s.secondaryText}>Cancel</Text></Pressable>
             </>
           ) : (
             <>
-              <Ionicons name="checkmark-circle" size={30} color={C.green} />
+              <Ionicons name="checkmark-circle" size={30} color={t.mintText} />
               <Text style={s.sheetTitle}>Your coach will be notified</Text>
               {left.length > 0 ? (
                 <>
@@ -381,48 +378,42 @@ function CantAttendModal({ hw, today, onClose, onPick }: {
   )
 }
 
-const s = StyleSheet.create({
-  card: {
-    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: `${ADAPTATION_COLOR.test}55`,
-    padding: 16, gap: 12,
-  },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  title: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
-  item: { gap: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border },
-  itemName: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
-  itemLine: { fontSize: 13, fontWeight: "600" },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
-  btn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: C.surfaceHigh,
-  },
-  btnPrimary: { backgroundColor: C.green, marginLeft: "auto" },
-  btnText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+const makeStyles = (t: PaperTheme) => StyleSheet.create({
+  item: { gap: 4, paddingTop: 12, marginTop: 8, borderTopWidth: 1, borderTopColor: t.hairline },
+  itemName: { fontFamily: font.title, fontSize: 24, lineHeight: 24, color: t.ink, textTransform: "uppercase" },
+  itemLine: { fontFamily: font.mono, fontSize: 10.5, letterSpacing: 1.2, textTransform: "uppercase" },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
 
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 20 },
-  sheet: { width: "100%", maxWidth: 420, backgroundColor: C.surface, borderRadius: 20, padding: 20, gap: 12, alignItems: "center" },
-  sheetTitle: { fontSize: 19, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
-  sheetText: { fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 20 },
-  primary: { alignSelf: "stretch", backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
-  primaryText: { fontSize: 15, fontWeight: "800", color: C.bg },
-  secondaryText: { fontSize: 14, fontWeight: "700", color: C.textSecondary, paddingVertical: 4 },
+  sheet: {
+    width: "100%", maxWidth: 420, backgroundColor: t.paper, borderRadius: 26, borderWidth: 1.5, borderColor: t.mode === "dark" ? t.cardBorder : t.ink,
+    padding: 20, gap: 12, alignItems: "center",
+  },
+  sheetTitle: { fontFamily: font.title, fontSize: 26, color: t.ink, textAlign: "center", textTransform: "uppercase" },
+  sheetText: { fontFamily: font.body, fontSize: 14, color: t.textMuted, textAlign: "center", lineHeight: 20 },
+  primary: {
+    alignSelf: "stretch", backgroundColor: t.mint, borderRadius: 21, borderWidth: 1.5, borderColor: t.mode === "dark" ? t.mint : t.ink,
+    height: 48, alignItems: "center", justifyContent: "center", marginTop: 4,
+  },
+  primaryText: { fontFamily: font.bold, fontSize: 15, color: t.onMint },
+  secondaryText: { fontFamily: font.bodyBold, fontSize: 14, color: t.textMuted, paddingVertical: 4 },
 
   daysScroll: { alignSelf: "stretch", flexGrow: 0 },
   days: { gap: 8, paddingVertical: 4 },
   day: {
-    width: 58, paddingVertical: 10, borderRadius: 12, alignItems: "center", gap: 2,
-    backgroundColor: C.surfaceHigh, borderWidth: 1, borderColor: C.border,
+    width: 58, paddingVertical: 10, borderRadius: 16, alignItems: "center", gap: 2,
+    borderWidth: 1.5, borderColor: t.ghostBorder,
   },
-  daySel: { backgroundColor: C.green, borderColor: C.green },
-  dayWd: { fontSize: 11, fontWeight: "700", color: C.textSecondary },
-  dayNum: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
+  daySel: { backgroundColor: t.mint, borderColor: t.mode === "dark" ? t.mint : t.ink },
+  dayWd: { fontFamily: font.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: t.label },
+  dayNum: { fontFamily: font.title, fontSize: 22, color: t.ink },
   timeRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  time: { fontSize: 22, fontWeight: "800", color: C.textPrimary, minWidth: 96, textAlign: "center", fontVariant: ["tabular-nums"] },
-  timeStep: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: C.surfaceHigh },
-  timeStepText: { fontSize: 12, fontWeight: "700", color: C.textPrimary },
-  hint: { fontSize: 12, color: C.textMuted, textAlign: "center" },
+  time: { fontFamily: font.title, fontSize: 28, color: t.ink, minWidth: 96, textAlign: "center" },
+  timeStep: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 14, borderWidth: 1.5, borderColor: t.ghostBorder },
+  timeStepText: { fontFamily: font.bodyBold, fontSize: 12, color: t.ink },
+  hint: { fontFamily: font.body, fontSize: 12, color: t.label, textAlign: "center" },
   input: {
-    alignSelf: "stretch", minHeight: 80, backgroundColor: C.surfaceHigh, borderRadius: 12,
-    padding: 12, fontSize: 15, color: C.textPrimary, textAlignVertical: "top",
+    alignSelf: "stretch", minHeight: 80, backgroundColor: t.inputFill, borderRadius: 16, borderWidth: 1.5, borderColor: t.inputBorder,
+    padding: 12, fontFamily: font.body, fontSize: 15, color: t.ink, textAlignVertical: "top",
   },
 })

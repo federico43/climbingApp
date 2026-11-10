@@ -4,7 +4,7 @@ import React from "react"
 import { StyleProp, Text, View, ViewStyle } from "react-native"
 import { Mono } from "./Type"
 
-export type DayState = "upcoming" | "trained" | "today" | "homework"
+export type DayState = "upcoming" | "trained" | "today" | "homework" | "past" | "paused"
 
 /**
  * 30pt calendar / timeline circle. States differ by fill AND ring weight,
@@ -17,9 +17,11 @@ export function DayCircle({ state, label, size = 30 }: { state: DayState; label?
     state === "trained" ? { borderWidth: 1.5, borderColor: dark ? t.mint : t.ink, backgroundColor: t.mint }
     : state === "today" ? { borderWidth: 2.5, borderColor: t.mintDeep }
     : state === "homework" ? { borderWidth: 2, borderColor: t.pink }
+    : state === "past" ? { backgroundColor: t.hairline }
+    : state === "paused" ? { borderWidth: 1, borderStyle: "dashed" as const, borderColor: t.ringIdle }
     : { borderWidth: 1.5, borderColor: t.ringIdle }
   const glow = state === "trained" && t.glow ? { shadowColor: t.glow, shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } } : null
-  const a11y = { upcoming: "to come", trained: "trained", today: "today", homework: "homework" }[state]
+  const a11y = { upcoming: "to come", trained: "trained", today: "today", homework: "homework", past: "not trained", paused: "paused" }[state]
   return (
     <View
       accessible
@@ -68,7 +70,7 @@ export function WeekPill({ children }: { children: string }) {
 
 /** Legend for the timeline states (labels make the states readable without colour). */
 export function TimelineLegend({ states = ["trained", "today", "homework", "upcoming"] }: { states?: DayState[] }) {
-  const names: Record<DayState, string> = { trained: "Trained", today: "Today", homework: "Homework", upcoming: "To come" }
+  const names: Record<DayState, string> = { trained: "Trained", today: "Today", homework: "Homework", upcoming: "To come", past: "Missed", paused: "Paused" }
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 12 }}>
       {states.map((s) => (

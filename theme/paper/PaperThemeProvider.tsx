@@ -56,3 +56,26 @@ export function usePaperPreference() {
     setPreference: ctx?.setPreference ?? (() => {}),
   }
 }
+
+/**
+ * Forces a mode for everything inside. Screens not redesigned yet wrap
+ * Paper components in mode="dark" so they match the old dark look.
+ */
+export function PaperThemeOverride({ mode, children }: { mode: PaperMode; children: React.ReactNode }) {
+  const parent = useContext(PaperThemeContext)
+  const value = useMemo(
+    () => ({
+      theme: paperThemes[mode],
+      preference: parent?.preference ?? ("system" as PaperPreference),
+      setPreference: parent?.setPreference ?? (() => {}),
+    }),
+    [mode, parent]
+  )
+  return <PaperThemeContext.Provider value={value}>{children}</PaperThemeContext.Provider>
+}
+
+/** StyleSheet built from the current theme: `const s = usePaperStyles(makeStyles)`. */
+export function usePaperStyles<T>(make: (t: PaperTheme) => T): T {
+  const t = usePaper()
+  return useMemo(() => make(t), [make, t])
+}

@@ -3,13 +3,15 @@ import { CreateSequenceModal } from "@/components/AthleteSequenceCreator"
 import { useAuth } from "@/components/auth-context"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { SprayRouteRow } from "@/services/BoulderGraphService"
+import { MintButton } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
 import { useState } from "react"
 import { Alert, Pressable, StyleSheet, Text } from "react-native"
 
 // "+ Sequence" in the home screen's header: build a sequence, then try it
 // now or find it later in Settings › My sequences.
-export function NewSequenceButton() {
+// `paper`: the Paper Mint small mint button (redesigned screens).
+export function NewSequenceButton({ paper }: { paper?: boolean } = {}) {
   const { User } = useAuth()
   const workoutCtx = useWorkoutContext()
   const [open, setOpen] = useState(false)
@@ -34,14 +36,18 @@ export function NewSequenceButton() {
 
   return (
     <>
-      <Pressable
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [styles.btn, pressed && { opacity: 0.6 }]}
-        hitSlop={6}
-      >
-        <Ionicons name="add" size={16} color={C.green} />
-        <Text style={styles.text}>Sequence</Text>
-      </Pressable>
+      {paper ? (
+        <MintButton compact icon="add" label="Sequence" onPress={() => setOpen(true)} />
+      ) : (
+        <Pressable
+          onPress={() => setOpen(true)}
+          style={({ pressed }) => [styles.btn, pressed && { opacity: 0.6 }]}
+          hitSlop={6}
+        >
+          <Ionicons name="add" size={16} color={C.green} />
+          <Text style={styles.text}>Sequence</Text>
+        </Pressable>
+      )}
       {User && (
         <CreateSequenceModal
           visible={open}

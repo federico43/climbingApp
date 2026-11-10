@@ -1,5 +1,5 @@
 // Paper Send · Mint components (docs/design-system.md §5).
-export { PaperBackground, PaperScreen, Grain, Melt } from "./Surface"
+export { PaperBackground, PaperScreen, Grain, Melt, usePaperStatusBar } from "./Surface"
 export { PosterHeadline, posterSize, Mono, SectionHeader, SpecsRow, CardTitle, Body } from "./Type"
 export { PrimaryCTA, MintButton, GhostButton, IconButton, TextButton } from "./Buttons"
 export { Card, CollapsibleBlockCard, hexAlpha } from "./Cards"
@@ -8,4 +8,4 @@ export { TextField, HeadlineInput, Stepper, PaperSwitch } from "./Inputs"
 export { DayCircle, ProgressBar, WeekPill, TimelineLegend } from "./Timeline"
 export type { DayState } from "./Timeline"
 export { NavBar, AddBar, StickyFooter, PaperTabBar } from "./Bars"
-export { usePaper, usePaperPreference, PaperThemeProvider } from "@/theme/paper/PaperThemeProvider"
+export { usePaper, usePaperPreference, usePaperStyles, PaperThemeProvider, PaperThemeOverride } from "@/theme/paper/PaperThemeProvider"

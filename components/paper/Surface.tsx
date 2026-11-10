@@ -1,6 +1,8 @@
 import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { space } from "@/theme/paper/tokens"
-import React from "react"
+import { useFocusEffect } from "@react-navigation/native"
+import { setStatusBarStyle } from "expo-status-bar"
+import React, { useCallback } from "react"
 import { Image, ScrollView, ScrollViewProps, StyleProp, StyleSheet, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg"
@@ -69,6 +71,7 @@ type ScreenProps = {
 
 /** A full Paper Mint screen: paper, safe area, scrolling content, grain on top. */
 export function PaperScreen({ children, header, footer, scrollProps, bottomPad = space.bottomPad, scroll = true }: ScreenProps) {
+  usePaperStatusBar()
   return (
     <PaperBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -87,5 +90,19 @@ export function PaperScreen({ children, header, footer, scrollProps, bottomPad =
         {footer}
       </SafeAreaView>
     </PaperBackground>
+  )
+}
+
+/**
+ * Status bar text that reads on this screen's paper while it's focused;
+ * back to light text (the old dark screens) when it loses focus.
+ */
+export function usePaperStatusBar() {
+  const t = usePaper()
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle(t.mode === "dark" ? "light" : "dark", true)
+      return () => setStatusBarStyle("light", true)
+    }, [t.mode])
   )
 }
