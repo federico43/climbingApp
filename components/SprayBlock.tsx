@@ -22,7 +22,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
-import { SafeAreaView } from "react-native-safe-area-context"
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -287,8 +287,11 @@ export function SprayBlock({
           if (id) choose(id)
         }}
       >
+        {/* A Modal is its own native window, outside the app's SafeAreaProvider:
+            without one here the insets read 0 on iOS and the header sits under
+            the status bar. The builder pads its own top bar from the insets. */}
         {building && (
-          <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={["top"]}>
+          <SafeAreaProvider style={{ flex: 1, backgroundColor: C.bg }}>
             <SprayWallBuilder
               imageSource={building.wall?.imageUri ? { uri: building.wall.imageUri } : WALL_IMAGE}
               initialType={routeType ?? "base"}
@@ -297,7 +300,7 @@ export function SprayBlock({
               onBack={() => setBuilding(null)}
               onSave={save}
             />
-          </SafeAreaView>
+          </SafeAreaProvider>
         )}
       </Modal>
 
@@ -315,6 +318,7 @@ export function SprayBlock({
       >
         {previewRow && (
           <ModalRoot>
+            <SafeAreaProvider>
             <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={["top", "bottom"]}>
               <View style={s.previewTop}>
                 <Pressable onPress={() => setPreview(null)} hitSlop={10}>
@@ -351,6 +355,7 @@ export function SprayBlock({
                 </Pressable>
               </View>
             </SafeAreaView>
+            </SafeAreaProvider>
           </ModalRoot>
         )}
       </Modal>
