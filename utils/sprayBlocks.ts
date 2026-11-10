@@ -83,21 +83,26 @@ export interface RouteRecord {
 }
 
 // Every sequence the athlete has logged attempts on (any block), with totals.
-export function routeRecords(sessions: SessionRow[]): Map<string, RouteRecord> {
+// `current` — the workout in progress (not saved yet), so a sequence added
+// on the first Power boulders shows up on the second one.
+export function routeRecords(sessions: SessionRow[], current: Attempt[] = [], now = new Date().toISOString()): Map<string, RouteRecord> {
   const map = new Map<string, RouteRecord>()
-  for (const s of sessions) {
-    let attempts: Attempt[] = []
-    try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
-    if (!Array.isArray(attempts)) continue
+  const add = (attempts: Attempt[], at: string) => {
     for (const a of attempts) {
       if (!a?.routeId) continue
       const r = map.get(a.routeId) ?? { routeId: a.routeId, tries: 0, sends: 0, lastAt: "" }
       r.tries++
       if (a.success) r.sends++
-      if (s.$createdAt > r.lastAt) r.lastAt = s.$createdAt
+      if (at > r.lastAt) r.lastAt = at
       map.set(a.routeId, r)
     }
   }
+  for (const s of sessions) {
+    let attempts: Attempt[] = []
+    try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
+    if (Array.isArray(attempts)) add(attempts, s.$createdAt)
+  }
+  add(current, now)
   return map
 }
 
@@ -144,6 +149,8 @@ export function sprayTargetLevel(flash: string | null | undefined, routeType: Ro
 // · With a target level: every sequence of that type, closest level first
 //   (no level set → last), then fewest sends — so ones they've never tried
 //   come first — then climbed longest ago.
+// `pinned` — a sequence the coach set on the block (its routeId): listed
+// first whatever its type, level or record, as long as the athlete can see it.
 export function suggestSprayRoutes(
   records: Map<string, RouteRecord>,
   routes: Map<string, { id: string; type?: string; level?: number | null }>,
@@ -151,26 +158,31 @@ export function suggestSprayRoutes(
   exclude: Iterable<string> = [],
   limit = SPRAY_SUGGESTION_COUNT,
   targetLevel: number | null = null,
+  pinned: string | null = null,
 ): RouteRecord[] {
   const skip = new Set(exclude)
+  const first = pinned && !skip.has(pinned) && routes.has(pinned)
+    ? [records.get(pinned) ?? { routeId: pinned, tries: 0, sends: 0, lastAt: "" }]
+    : []
   const bySends = (a: RouteRecord, b: RouteRecord) =>
     a.sends - b.sends || a.lastAt.localeCompare(b.lastAt) || a.routeId.localeCompare(b.routeId)
+  let rest: RouteRecord[]
   if (targetLevel == null) {
-    return [...records.values()]
-      .filter((r) => !skip.has(r.routeId) && routes.get(r.routeId)?.type === routeType)
+    rest = [...records.values()]
+      .filter((r) => !skip.has(r.routeId) && r.routeId !== pinned && routes.get(r.routeId)?.type === routeType)
       .sort(bySends)
-      .slice(0, limit)
+  } else {
+    const distance = (id: string) => {
+      const level = routes.get(id)?.level
+      return typeof level === "number" ? Math.abs(level - targetLevel) : Infinity
+    }
+    rest = [...routes.values()]
+      .filter((r) => r.type === routeType && !skip.has(r.id) && r.id !== pinned)
+      .map((r) => records.get(r.id) ?? { routeId: r.id, tries: 0, sends: 0, lastAt: "" })
+      .sort((a, b) => {
+        const da = distance(a.routeId), db = distance(b.routeId)
+        return (da === db ? 0 : da < db ? -1 : 1) || bySends(a, b)
+      })
   }
-  const distance = (id: string) => {
-    const level = routes.get(id)?.level
-    return typeof level === "number" ? Math.abs(level - targetLevel) : Infinity
-  }
-  return [...routes.values()]
-    .filter((r) => r.type === routeType && !skip.has(r.id))
-    .map((r) => records.get(r.id) ?? { routeId: r.id, tries: 0, sends: 0, lastAt: "" })
-    .sort((a, b) => {
-      const da = distance(a.routeId), db = distance(b.routeId)
-      return (da === db ? 0 : da < db ? -1 : 1) || bySends(a, b)
-    })
-    .slice(0, limit)
+  return [...first, ...rest].slice(0, limit)
 }

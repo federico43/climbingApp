@@ -58,6 +58,18 @@ assert.deepEqual(suggestSprayRoutes(rec, routes, "coordination"), [])
 // a route the athlete can't see (another athlete's, deleted) is left out
 assert.deepEqual(suggestSprayRoutes(rec, new Map([["a", { id: "a", type: "power" }]]), "power").map((r) => r.routeId), ["a"])
 
+// the workout in progress counts too (a sequence added on the first copy of the block)
+const withCurrent = routeRecords(sessions, [{ blockIndex: 3, routeId: "new", success: false } as any], "2026-11-10T10:00:00Z")
+assert.deepEqual(withCurrent.get("new"), { routeId: "new", tries: 1, sends: 0, lastAt: "2026-11-10T10:00:00Z" })
+assert.deepEqual(suggestSprayRoutes(withCurrent, new Map([...routes, ["new", { id: "new", type: "power" }]]), "power").map((r) => r.routeId),
+  ["d", "c", "new", "b", "a"])
+
+// the coach's sequence on the block goes first, whatever its type or record
+assert.deepEqual(suggestSprayRoutes(rec, routes, "power", [], 5, null, "a").map((r) => r.routeId), ["a", "d", "c", "b"])
+assert.deepEqual(suggestSprayRoutes(rec, routes, "power", [], 5, null, "x").map((r) => r.routeId), ["x", "d", "c", "b", "a"])
+assert.deepEqual(suggestSprayRoutes(rec, routes, "power", ["a"], 5, null, "a").map((r) => r.routeId), ["d", "c", "b"]) // already on it
+assert.deepEqual(suggestSprayRoutes(rec, routes, "power", [], 5, null, "gone").map((r) => r.routeId), ["d", "c", "b", "a"]) // can't see it
+
 // progression history: a spray block gives one run per sequence, marker left out
 const sprayRun = [{
   $id: "s", $createdAt: "2026-11-09T10:00:00Z", userId: "u",
