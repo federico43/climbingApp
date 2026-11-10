@@ -2,7 +2,9 @@ import { C } from "@/utils/theme"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { card } from "@/components/coach/styles"
 import { EdgeLiftMaxSection } from "@/components/coach/EdgeLiftMaxSection"
-import { AppUser, CheckinRow, getCheckinForToday, getUsers, setFlashLevel } from "@/services/BoulderGraphService"
+import { AppUser, CheckinRow, getCheckinForToday, getSessionsByUserId, getUsers, setFlashLevel } from "@/services/BoulderGraphService"
+import { colourLabel } from "@/utils/boulderColours"
+import { DENSITY_FLASHES_FOR_COLOUR, densityFlashColour, densitySummary, latestDensityTest, type DensityClimb } from "@/utils/densityFlash"
 import { useEffect, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -51,8 +53,51 @@ export function AthleteCard({ athlete, flashLevel, onPickFlashLevel, onHomeworkC
             )
           })}
         </View>
+        <DensityFlashSuggestion athleteId={athlete.$id} flashLevel={flashLevel} onApply={onPickFlashLevel} />
       </View>
       <EdgeLiftMaxSection athlete={athlete} onHomeworkChanged={onHomeworkChanged} />
+    </View>
+  )
+}
+
+// The flash colour the latest Density test gives (coach 2026-11-10: the
+// hardest colour with DENSITY_FLASHES_FOR_COLOUR+ flashes), and the flashes
+// per colour behind it. The coach applies it with a tap — never on its own.
+function DensityFlashSuggestion({ athleteId, flashLevel, onApply }: {
+  athleteId: string
+  flashLevel: string | null
+  onApply: (value: string) => void
+}) {
+  const [test, setTest] = useState<{ at: string; climbs: DensityClimb[] } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setTest(null)
+    getSessionsByUserId(athleteId)
+      .then((sessions) => { if (!cancelled) setTest(latestDensityTest(sessions)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [athleteId])
+  if (!test) return null
+
+  const colour = densityFlashColour(test.climbs)
+  const flashes = densitySummary(test.climbs)
+    .filter((s) => s.flashes > 0)
+    .map((s) => `${s.flashes} ${colourLabel(s.colour).toLowerCase()}`)
+    .join(" · ")
+  const date = new Date(test.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+  return (
+    <View style={styles.densityBox}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={styles.densityTitle}>
+          Density test {date}: {colour ? colourLabel(colour) : `no colour with ${DENSITY_FLASHES_FOR_COLOUR}+ flashes`}
+        </Text>
+        <Text style={card.sub}>Flashes: {flashes || "none"}</Text>
+      </View>
+      {colour && colour !== flashLevel && (
+        <Pressable style={styles.applyBtn} onPress={() => onApply(colour)}>
+          <Text style={styles.applyText}>Apply</Text>
+        </Pressable>
+      )}
     </View>
   )
 }
@@ -97,4 +142,11 @@ const styles = StyleSheet.create({
   },
   gradeDot: { width: 9, height: 9, borderRadius: 5 },
   gradeText: { fontSize: 12.5, color: C.textSecondary },
+  densityBox: {
+    flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6,
+    borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10,
+  },
+  densityTitle: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+  applyBtn: { backgroundColor: C.green, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  applyText: { fontSize: 13, fontWeight: "700", color: C.bg },
 })

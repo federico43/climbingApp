@@ -5,7 +5,7 @@ import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import {
-  getSessions, getSprayRoutes, getSprayWalls, saveSprayRoute, type SprayRouteRow, type SprayWallRow,
+  getSessions, getSprayRoutes, getSprayWalls, getUsers, saveSprayRoute, type SprayRouteRow, type SprayWallRow,
 } from "@/services/BoulderGraphService"
 import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
@@ -13,7 +13,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import {
-  routeRecords, SPRAY_REST_OPTIONS_S, spraySettings, suggestSprayRoutes, type RouteRecord,
+  routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes, type RouteRecord,
 } from "@/utils/sprayBlocks"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
@@ -91,8 +91,11 @@ export function SprayBlock({
   const [routes, setRoutes] = useState<Map<string, SprayRouteRow> | null>(null)
   const [records, setRecords] = useState<Map<string, RouteRecord>>(new Map())
   const [walls, setWalls] = useState<SprayWallRow[] | null>(null)
+  // The athlete's flash colour → the level to suggest sequences at.
+  const [flash, setFlash] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
+    if (athleteId) getUsers(athleteId).then((u: any) => { if (!cancelled) setFlash(u?.flashLevel ?? null) }).catch(() => {})
     Promise.all([getSessions(), getSprayRoutes()])
       .then(([sessions, rows]) => {
         if (cancelled) return
@@ -142,11 +145,12 @@ export function SprayBlock({
   const loggedTops = perRoute.reduce((n, r) => n + r.sends, 0)
   const onRoute = perRoute.find((r) => r.id === routeId) ?? { tries: 0, sends: 0 }
 
+  const targetLevel = routeType ? sprayTargetLevel(flash, routeType) : null
   const suggestions = useMemo(() => {
     if (!routes || !routeType) return []
-    const info = new Map([...routes.values()].map((r) => [r.$id, { id: r.$id, type: r.type ?? undefined }]))
-    return suggestSprayRoutes(records, info, routeType, routeId ? [routeId] : [])
-  }, [routes, records, routeType, routeId])
+    const info = new Map([...routes.values()].map((r) => [r.$id, { id: r.$id, type: r.type ?? undefined, level: r.level ?? null }]))
+    return suggestSprayRoutes(records, info, routeType, routeId ? [routeId] : [], SPRAY_SUGGESTION_COUNT, targetLevel)
+  }, [routes, records, routeType, routeId, targetLevel])
 
   const route = routeId ? routes?.get(routeId) ?? null : null
   const wallFor = (r: SprayRouteRow | null | undefined) => (r?.wallId ? walls?.find((w) => w.$id === r.wallId) ?? null : null)
@@ -380,11 +384,13 @@ export function SprayBlock({
           <Pressable style={[s.addBtn, !walls && { opacity: 0.5 }]} onPress={add} disabled={!walls}>
             {walls ? <Text style={s.addBtnText}>+ Add a new sequence</Text> : <ActivityIndicator color={C.green} />}
           </Pressable>
-          <Text style={s.sectionLabel}>Suggested</Text>
+          <Text style={s.sectionLabel}>Suggested{targetLevel != null ? ` · around level ${targetLevel}` : ""}</Text>
           {!routes && <ActivityIndicator color={C.green} />}
           {routes && suggestions.length === 0 && (
             <Text style={s.empty}>
-              {`The ${(ROUTE_TYPE_LABEL[routeType] ?? "").toLowerCase()} sequences you climb show up here — the ones you’ve topped least first.`}
+              {targetLevel != null
+                ? `No ${(ROUTE_TYPE_LABEL[routeType] ?? "").toLowerCase()} sequences on the wall yet.`
+                : `The ${(ROUTE_TYPE_LABEL[routeType] ?? "").toLowerCase()} sequences you climb show up here — the ones you’ve topped least first.`}
             </Text>
           )}
           {suggestions.map((r) => {
@@ -395,7 +401,7 @@ export function SprayBlock({
                   <Text style={s.rowName} numberOfLines={1}>{row?.name ?? "Sequence"}</Text>
                   {row?.level != null && <Text style={s.meta}>Level {row.level}</Text>}
                 </View>
-                <Text style={s.rowRecord}>{r.sends} top{r.sends !== 1 ? "s" : ""} · {r.tries} tr{r.tries !== 1 ? "ies" : "y"}</Text>
+                <Text style={s.rowRecord}>{r.tries === 0 ? "New" : `${r.sends} top${r.sends !== 1 ? "s" : ""} · ${r.tries} tr${r.tries !== 1 ? "ies" : "y"}`}</Text>
                 <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
               </Pressable>
             )
