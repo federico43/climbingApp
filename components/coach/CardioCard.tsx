@@ -20,6 +20,13 @@ const OUTCOME: Record<string, string> = {
   start: "Test", up: "Up", skip: "Skip up", cycleUp: "New cycle", repeat: "Repeat", down: "Down", deloadHold: "Light week next",
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+/** "2026-11-09" → "Nov 9". */
+function shortDate(ymd: string): string {
+  const [, m, d] = ymd.split("-").map(Number)
+  return MONTHS[m - 1] ? `${MONTHS[m - 1]} ${d}` : ymd
+}
+
 function parseAnswers(raw: string | null): CardioAnswers | null {
   try {
     const a = raw ? JSON.parse(raw) : null
@@ -129,6 +136,11 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
                       onPress={() => savePlan((p) => coachSetStep(p, n as CardioStep))} />
                   ))}
                 </View>
+                <Text style={s.sessionText}>
+                  {plan?.coachStartStep == null
+                    ? "First session is the app's short test."
+                    : `Starts with ${protocolLabel(protocolFor(plan.coachStartStep as CardioStep, 1))}`}
+                </Text>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
@@ -152,13 +164,16 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
 
             {sessions.length > 0 && (
               <View style={{ gap: 6 }}>
-                <Text style={s.label}>Last sessions</Text>
+                <View style={s.row}>
+                  <Text style={s.label}>Last sessions</Text>
+                  <Text style={s.legend}>Rest · Pain · Rhythm · Effort</Text>
+                </View>
                 {sessions.slice(0, 5).map((r, i) => {
                   const a = answers[i]
                   const l = a ? lights(a) : null
                   return (
                     <View key={r.$id} style={s.sessionRow}>
-                      <Text style={s.date}>{r.date.slice(5)}</Text>
+                      <Text style={s.date}>{shortDate(r.date)}</Text>
                       <Text style={s.sessionText} numberOfLines={1}>
                         {r.kind === "test" ? "Test" : `Step ${r.step}${r.kind === "deload" ? " · light" : ""}`} → {OUTCOME[r.outcome ?? ""] ?? r.outcome}
                       </Text>
@@ -227,7 +242,9 @@ const s = StyleSheet.create({
   alert: { flexDirection: "row", alignItems: "center", gap: 6 },
   alertText: { fontSize: 13, fontWeight: "700", color: C.red },
   sessionRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  date: { fontSize: 12, color: C.textSecondary, width: 40 },
+  date: { fontSize: 12, color: C.textSecondary, width: 46 },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  legend: { fontSize: 11, color: C.textSecondary },
   sessionText: { flex: 1, fontSize: 13, color: C.textPrimary },
   lights: { flexDirection: "row", gap: 3 },
   light: { width: 8, height: 8, borderRadius: 4 },

@@ -85,7 +85,7 @@ export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, in
           <View style={s.days}>
             {WEEKDAY_SHORT.map((label, d) => (
               <Pressable key={label} onPress={() => toggle(d as Weekday)} style={[s.day, days.includes(d as Weekday) && s.on]}>
-                <Text style={[s.dayText, days.includes(d as Weekday) && s.onText]}>{label[0]}</Text>
+                <Text style={[s.dayText, days.includes(d as Weekday) && s.onText]}>{label}</Text>
               </Pressable>
             ))}
           </View>
@@ -175,9 +175,9 @@ const s = StyleSheet.create({
   title: { fontSize: 22, fontWeight: "800", color: C.textPrimary, textAlign: "center", letterSpacing: -0.3 },
   text: { fontSize: 16, lineHeight: 23, color: C.textPrimary, textAlign: "center" },
   label: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4 },
-  days: { flexDirection: "row", gap: 6 },
-  day: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "transparent" },
-  dayText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  days: { flexDirection: "row", gap: 5 },
+  day: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "transparent" },
+  dayText: { fontSize: 12, fontWeight: "700", color: C.textPrimary },
   times: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 },
   time: { backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: "transparent" },
   timeText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },

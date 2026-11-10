@@ -161,7 +161,9 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
         </Pressable>
       </View>
       <Text style={s.title}>{title}</Text>
-      {next.kind !== "test" && (
+      {next.kind === "test" ? (
+        <Text style={s.muted}>About 10 min · finds your starting point</Text>
+      ) : (
         <Text style={s.muted}>
           About {protocolMinutes(next.protocol)} min · Step {next.step} · Cycle {next.cycle}
         </Text>
@@ -208,7 +210,7 @@ const s = StyleSheet.create({
   kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
   title: { marginTop: -6, fontSize: 22, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
   muted: { fontSize: 13, color: C.textSecondary },
-  small: { fontSize: 12, color: C.textMuted, textAlign: "center" },
+  small: { fontSize: 13, color: C.textSecondary, textAlign: "center" },
   week: { flexDirection: "row", justifyContent: "space-between" },
   dayCol: { alignItems: "center", gap: 6 },
   dayLabel: { fontSize: 11, fontWeight: "700", color: C.textSecondary },

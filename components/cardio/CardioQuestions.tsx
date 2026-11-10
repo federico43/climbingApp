@@ -98,7 +98,7 @@ export const s = StyleSheet.create({
   scroll: { padding: 20, gap: 22, paddingBottom: 48 },
   title: { fontSize: 26, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
   q: { gap: 10 },
-  qTitle: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
+  qTitle: { fontSize: 17, fontWeight: "700", color: C.textPrimary },
   opts: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   opt: { backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: "transparent" },
   optOn: { borderColor: C.green, backgroundColor: "rgba(111,207,151,0.12)" },

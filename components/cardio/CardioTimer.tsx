@@ -103,8 +103,8 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
   }
 
   const dur = phase === "prepare" ? PREPARE_SECS : phase === "work" ? workSec : restSec
-  const color = phase === "work" ? C.green : phase === "rest" ? C.yellow : C.textSecondary
-  const title = phase === "prepare" ? "Get ready" : phase === "work" ? label : "Rest"
+  const color = paused ? C.textPrimary : phase === "work" ? C.green : phase === "rest" ? C.yellow : C.textSecondary
+  const title = paused ? "Paused" : phase === "prepare" ? "Get ready" : phase === "work" ? label : "Rest"
   const elapsedInWork = workSec - left
   const doubles = phase === "work" && !!doublesEverySec && elapsedInWork > 0 && elapsedInWork % doublesEverySec === 0
 

@@ -180,6 +180,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
       )
       case "stops": return (
         <View style={st.center}>
+          <Text style={st.kicker}>Attempt {step.i + 1} of 3</Text>
           <Text style={st.h1}>How many times did the rope stop?</Text>
           {STOP_COUNTS.map((c) => (
             <Pressable key={c} disabled={saving} onPress={() => afterAttempt(step.i, c)} style={[st.choice, saving && { opacity: 0.5 }]}>
