@@ -23,6 +23,7 @@ import {
 } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType } from "@/utils/movementTypes"
 import { Focus, FOCUS_LABEL, FOCUS_REP_RANGE, focusesFor, LevelStep } from "@/utils/scProgression"
+import { HANG_EDGES, hangEdgeOf, isMaxHang } from "@/utils/maxHangs"
 import { authoredGrades, fitGrades, suggestNextFourByFour, type FourByFourSuggestion } from "@/utils/progression/fourByFour"
 import { normalizeProjectBlock, PROJECT_DEFAULT_REST_S, PROJECT_DEFAULT_TIME_MIN, PROJECT_MAX_TIME_MIN, PROJECT_MIN_TIME_MIN } from "@/utils/progression/projectBouldering"
 import { INTERVALS_KIND_LABEL, intervalsDescription, suggestNextIntervals, type IntervalsKind, type IntervalsSuggestion } from "@/utils/progression/intervals"
@@ -143,8 +144,9 @@ export interface Exercise {
   // Programmed fresh each time this exercise is placed in a block — the same
   // exercise can be max force this cycle and hypertrophy next cycle.
   focus?: Focus
-  // Edge Lifts in the max test homework (utils/edgeWarmup.ts): the athlete
-  // logs the heaviest weight held and it becomes their max.
+  // Edge Lifts / Max Hangs in the max test homework (utils/edgeWarmup.ts,
+  // utils/maxHangs.ts): the athlete logs the heaviest weight held and it
+  // becomes their max (Max Hangs: for the exercise's edge).
   maxTest?: boolean
 }
 
@@ -2603,6 +2605,28 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
           )
         })}
       </View>}
+
+      {/* Max Hangs: the grip is the edge size; each edge has its own max
+          (utils/maxHangs.ts). */}
+      {isMaxHang(exercise) && (
+        <>
+          <FieldLabel label="Grip (edge size)" />
+          <View style={styles.adaptationRow}>
+            {HANG_EDGES.map((edge) => {
+              const selected = hangEdgeOf(exercise) === edge
+              return (
+                <Pressable
+                  key={edge}
+                  onPress={() => { if (!selected) update({ edge }) }}
+                  style={[styles.adaptationChip, selected && { backgroundColor: C.green, borderColor: C.green }]}
+                >
+                  <Text style={[styles.adaptationChipText, selected && { color: C.bg, fontWeight: "700" }]}>{edge}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </>
+      )}
 
       {/* Mobility can be done by reps (active) or held (passive): the coach
           picks here; a hold gets the athlete's countdown timer. */}

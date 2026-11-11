@@ -4,9 +4,12 @@ import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, setHangMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
+import { hangEdgeOf, hangLoadLabel, hangMaxFor, hangWarmupRamp, isMaxHang, MAX_HANGS, needsHangWarmup, parseHangLog, withHangMax, type HangMaxEntry } from "@/utils/maxHangs"
+import { loadCachedHangLog, saveCachedHangLog } from "@/utils/hangMaxCache"
+import { localDateStr } from "@/utils/planRotation"
 import {
   BAND_HEX, BAND_LADDER, bandRoundChange, comboId, comboLabel, DEFAULT_START_INDEX, isBandAssisted, ladderIndexOf, nextTestStep,
   parseSavedBands, planBandNext, withSavedBand, type BandCombo, type SavedBands, type TestAttempt,
@@ -72,7 +75,8 @@ export interface RepExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
-  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
+  maxTest?: boolean     // Edge Lifts / Max Hangs max test (utils/edgeWarmup.ts, utils/maxHangs.ts)
+  edge?: string         // Max Hangs: the grip, as an edge size (utils/maxHangs.ts)
 }
 
 export interface BothSidesExercise {
@@ -90,7 +94,8 @@ export interface BothSidesExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
-  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
+  maxTest?: boolean     // Edge Lifts / Max Hangs max test (utils/edgeWarmup.ts, utils/maxHangs.ts)
+  edge?: string         // Max Hangs: the grip, as an edge size (utils/maxHangs.ts)
 }
 
 export interface SevenThreesExercise {
@@ -137,7 +142,7 @@ interface ExerciseLog {
   weightRight?: string
   rpeLeft?: string
   rpeRight?: string
-  // 7/3s
+  // 7/3s, and Max Hangs' grip
   edge?: string
   seriesDone?: number
   // Set when this round ran at an automatic easier load (planRoundDrop) and
@@ -266,6 +271,16 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   const savedBandsRef = useRef<SavedBands>({})
   const [bandStarts, setBandStarts] = useState<Record<number, number>>({})
   const [lastBands, setLastBands] = useState<Record<number, number>>({})
+  // The athlete's Max Hangs maxes, one per edge (undefined = couldn't read
+  // them) — max force hangs start on the max for their edge
+  // (utils/maxHangs.ts).
+  const [hangLog, setHangLog] = useState<HangMaxEntry[] | undefined>(undefined)
+  // Max Hangs: the max for the exercise's edge (kg added; null = none yet,
+  // undefined = not a max force hang, or the maxes couldn't be read).
+  function hangMaxOf(ex: Exercise, log: HangMaxEntry[] | undefined = hangLog): number | null | undefined {
+    if (ex.type === "7/3s" || !needsHangWarmup(ex) || !log) return undefined
+    return hangMaxFor(log, hangEdgeOf(ex))
+  }
 
   // The setting hints for the exercise as it's being done (a swap's prefill
   // brings its own).
@@ -374,11 +389,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       loadWeightUnit(),
       User?.$id ? readEdgeMax(User.$id) : Promise.resolve(undefined),
       User?.$id ? readBands(User.$id) : Promise.resolve({} as SavedBands),
+      User?.$id ? readHangLog(User.$id) : Promise.resolve(undefined),
     ])
-      .then(([sessions, library, unit, max, savedBands]) => {
+      .then(([sessions, library, unit, max, savedBands, hangs]) => {
         if (cancelled) return
         setWeightUnitState(unit)
         setEdgeMax(max)
+        setHangLog(hangs)
         savedBandsRef.current = savedBands
         const bandIdx: Record<number, number> = {}
         const resolved: Record<number, ResolvedChain> = {}
@@ -420,6 +437,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           // time's weight.
           if (max != null && ex.type !== "7/3s" && needsWarmup(ex)) {
             weights[idx] = String(convertWeight(max, "kg", unit))
+            delete notes[idx]
+            delete details[idx]
+          }
+          // Max Hangs with a max for their edge: the same (kg added).
+          const hangMax = hangMaxOf(ex, hangs)
+          if (hangMax != null) {
+            weights[idx] = String(convertWeight(hangMax, "kg", unit))
             delete notes[idx]
             delete details[idx]
           }
@@ -765,9 +789,19 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             key={roundKey}
             exercise={exercise}
             userId={User?.$id}
-            currentMaxKg={edgeMax}
+            currentMaxKg={isMaxHang(exercise) ? (hangLog ? hangMaxFor(hangLog, hangEdgeOf(exercise)) : undefined) : edgeMax}
+            hangEdge={isMaxHang(exercise) ? hangEdgeOf(exercise) : undefined}
             weightUnit={weightUnit}
-            onSaved={(kg) => { setEdgeMax(kg); if (User?.$id) saveCachedEdgeMax(User.$id, kg) }}
+            onSaved={(kg) => {
+              if (isMaxHang(exercise)) {
+                const next = withHangMax(hangLog ?? [], { edge: hangEdgeOf(exercise), kg, date: localDateStr(new Date()), source: "test" })
+                setHangLog(next)
+                if (User?.$id) saveCachedHangLog(User.$id, next)
+              } else {
+                setEdgeMax(kg)
+                if (User?.$id) saveCachedEdgeMax(User.$id, kg)
+              }
+            }}
             onDone={(log) => handleExerciseDone(log)}
           />
         ) : exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
@@ -803,8 +837,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             swapNote={swapNote}
             onUndoSwap={undoCurrentSwap}
             startOnBrief={startOnBrief}
-            warmup={currentRound === 0 && !swapped && edgeMax != null && needsWarmup(exercise) ? warmupRamp(edgeMax, weightUnit, loadSteps[currentExerciseIndex]) : undefined}
-            noMax={currentRound === 0 && !swapped && edgeMax === null && needsWarmup(exercise)}
+            warmup={currentRound !== 0 || swapped ? undefined
+              : edgeMax != null && needsWarmup(exercise) ? warmupRamp(edgeMax, weightUnit, loadSteps[currentExerciseIndex])
+              : hangMaxOf(exercise) != null ? hangWarmupRamp(hangMaxOf(exercise), weightUnit, loadSteps[currentExerciseIndex])
+              : undefined}
+            noMax={currentRound === 0 && !swapped && ((edgeMax === null && needsWarmup(exercise)) || hangMaxOf(exercise) === null)}
+            grip={isMaxHang(exercise) ? hangEdgeOf(exercise) : undefined}
             showSwitchCard={!switchCardSeen}
             onSwitchCardShown={() => setSwitchCardSeen(true)}
             onDone={(log) => handleExerciseDone(log)}
@@ -845,7 +883,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       if (ex.type === "7/3s" || ex.movementType === "mobility") return ""
       // The max decides Edge Lifts' weight (utils/edgeWarmup.ts), not the
       // progression rule.
-      if (ex.maxTest || (edgeMax != null && needsWarmup(ex))) return ""
+      if (ex.maxTest || (edgeMax != null && needsWarmup(ex)) || hangMaxOf(ex) != null) return ""
       const summary = todaySets(ex, roundLogs)
       const today: FocusEntry | null = summary ? { focus: ex.focus, date: new Date().toISOString(), prescribed: ex.reps, unit: ex.unit === "seconds" ? "seconds" : "reps", summary } : null
       return today ? planNextForFocus({ ...ex, setting: p.setting }, p.chain, p.loadStep, weightUnit, [today, ...(p.past ?? [])], "today").note : ""
@@ -2120,7 +2158,8 @@ interface LoggedExerciseUIProps {
   initialHardest?: boolean   // the "hardest setting" switch to start on
   startOnBrief: boolean    // false in round 2+ unless something changed
   warmup?: WarmupSet[]     // Edge Lifts, round 1: the warm-up holds before it
-  noMax?: boolean          // Edge Lifts, round 1, and the athlete has no max yet
+  noMax?: boolean          // Edge Lifts / Max Hangs, round 1, and the athlete has no max yet
+  grip?: string            // Max Hangs: the edge size it's done on
   showSwitchCard: boolean  // timed both-sides: first switch of the block only
   onSwitchCardShown: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
@@ -2128,7 +2167,7 @@ interface LoggedExerciseUIProps {
 
 function LoggedExerciseUI({
   exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, suggestionNote, suggestionDetail,
-  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, showSwitchCard, onSwitchCardShown, onDone,
+  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, grip, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const C = useC()
   const styles = useSheet(sheet)
@@ -2208,6 +2247,7 @@ function LoggedExerciseUI({
       ...(bandFocus && band >= 0 ? { band: comboId(BAND_LADDER[band]) } : {}),
       adjustedFrom: adjustedFromFor(activeDrop, weight, level, band),
       ...(setting ? { atHardestSetting: hardest } : {}),
+      ...(grip ? { edge: grip } : {}),
     }
     onDone(sides
       // Both sides share the load and the effort (readRound takes the weaker
@@ -2240,10 +2280,11 @@ function LoggedExerciseUI({
       >
         <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
         <ExerciseHeader name={displayName} exercise={exercise} />
+        {!!grip && <GripCard edge={grip} secs={timerTarget} />}
         {hasWarmup && !warmedUp ? <WarmupList sets={warmup!} unit={weightUnit} /> : <FocusCue exercise={exercise} />}
         {!!noMax && (
           <View style={styles.noMaxCard}>
-            <Text style={styles.noMaxTitle}>No max yet</Text>
+            <Text style={styles.noMaxTitle}>{grip ? `No max yet on ${grip}` : "No max yet"}</Text>
             <Text style={styles.noMaxText}>Warm up by feel today. Your coach will set up a test.</Text>
           </View>
         )}
@@ -2311,7 +2352,7 @@ function LoggedExerciseUI({
         <View style={[{ gap: 4 }, sideAlign(sides ? warmSide : undefined)]}>
           <Text style={[styles.sectionLabel, { color: C.yellow }, sideAlign(sides ? warmSide : undefined)]}>Warm-up {warmIdx + 1} of {warmup!.length}</Text>
           <Text style={[styles.timedBig, { color: C.textPrimary }, sideAlign(sides ? warmSide : undefined)]}>
-            {set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text>
+            {set.weight > 0 ? <>{set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text></> : "Bodyweight"}
           </Text>
         </View>
         {sides && <Text style={[styles.timerSideTitle, sideAlign(warmSide)]}>{warmSide === "left" ? "Left side" : "Right side"}</Text>}
@@ -2341,7 +2382,7 @@ function LoggedExerciseUI({
         upNext={<ExerciseRow
           exercise={exercise}
           name={last ? displayName : `${displayName} · warm-up ${warmIdx + 2}`}
-          load={last ? loadLabel : `${next!.weight} ${weightUnit} · ${next!.secs} s`}
+          load={last ? loadLabel : `${next!.weight > 0 ? `${next!.weight} ${weightUnit}` : "Bodyweight"} · ${next!.secs} s`}
         />}
         onDone={done}
       />
@@ -2450,6 +2491,31 @@ async function readBands(userId: string): Promise<SavedBands> {
   return saved
 }
 
+// The athlete's Max Hangs log, the same way (undefined = neither the row
+// nor a device copy).
+async function readHangLog(userId: string): Promise<HangMaxEntry[] | undefined> {
+  const me = await withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null)
+  if (!me) return loadCachedHangLog(userId)
+  const log = parseHangLog((me as any).hangMaxLog)
+  saveCachedHangLog(userId, log)
+  return log
+}
+
+// Max Hangs' brief: the grip (edge size) and the hang.
+function GripCard({ edge, secs }: { edge: string; secs: number }) {
+  const styles = useSheet(sheet)
+  return (
+    <View style={styles.inputSection}>
+      <Text style={styles.sectionLabel}>Grip</Text>
+      <View style={styles.warmupRow}>
+        <Text style={styles.warmupRowWeight}>{edge} edge</Text>
+        <Text style={styles.warmupRowSecs}>{secs || MAX_HANGS.holdSecs} s hangs</Text>
+      </View>
+      <Text style={styles.warmupRowNote}>Weight is added to your bodyweight.</Text>
+    </View>
+  )
+}
+
 // The brief's warm-up: one line per hold, weight and seconds only.
 function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
   const styles = useSheet(sheet)
@@ -2460,7 +2526,7 @@ function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
         {sets.map((s, i) => (
           <View key={i} style={styles.warmupRow}>
             <Text style={styles.warmupRowNum}>{i + 1}</Text>
-            <Text style={styles.warmupRowWeight}>{s.weight} {unit}</Text>
+            <Text style={styles.warmupRowWeight}>{s.weight > 0 ? `${s.weight} ${unit}` : "Bodyweight"}</Text>
             <Text style={styles.warmupRowSecs}>{s.secs} s</Text>
           </View>
         ))}
@@ -2528,10 +2594,13 @@ function WarmedUpNote() {
 // the usual hold timer (fixed to the test's length; "Redo hold" for the
 // next try), then the athlete logs the heaviest weight held and it becomes
 // their max.
-function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone }: {
+// Max Hangs (hangEdge set): the max is for that edge, added to bodyweight,
+// so bodyweight (0) is a valid max.
+function MaxTestUI({ exercise, userId, currentMaxKg, hangEdge, weightUnit, onSaved, onDone }: {
   exercise: RepExercise | BothSidesExercise
   userId?: string
   currentMaxKg: number | null | undefined
+  hangEdge?: string
   weightUnit: WeightUnit
   onSaved: (kg: number) => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
@@ -2540,16 +2609,18 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
   const start = currentMaxKg ? convertWeight(currentMaxKg, "kg", weightUnit) : 0
   const [weight, setWeight] = useState(start)
   const [saving, setSaving] = useState(false)
-  const secs = EDGE_WARMUP.testHoldSecs
+  const secs = hangEdge ? MAX_HANGS.holdSecs : EDGE_WARMUP.testHoldSecs
+  const valid = hangEdge ? weight >= 0 : weight > 0
   function finish() {
-    onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit })
+    onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit, ...(hangEdge ? { edge: hangEdge } : {}) })
   }
   async function save() {
-    if (!(weight > 0) || !userId) return
+    if (!valid || !userId) return
     const kg = weightUnit === "kg" ? weight : convertWeight(weight, "lb", "kg")
     setSaving(true)
     try {
-      await setEdgeLiftMax(userId, kg, "test")
+      if (hangEdge) await setHangMax(userId, hangEdge, kg, "test")
+      else await setEdgeLiftMax(userId, kg, "test")
       onSaved(kg)
       finish()
     } catch (e: any) {
@@ -2563,19 +2634,21 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
   return (
     <ExerciseScreen
       scrollKey="max-test"
-      footer={<PillButton title={saving ? "Saving…" : weight > 0 ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !(weight > 0)} />}
+      footer={<PillButton title={saving ? "Saving…" : valid ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !valid} />}
     >
       <View style={{ marginTop: 16 }}>
-        <ExerciseRow exercise={exercise} name={`${exercise.name} · max test`} />
+        <ExerciseRow exercise={exercise} name={`${exercise.name}${hangEdge ? ` · ${hangEdge}` : ""} · max test`} />
       </View>
       <View style={styles.inputSection}>
         <Text style={styles.sectionLabel}>Hold timer</Text>
         <TimedAmountControl target={secs} fixed onChange={() => {}} />
       </View>
       <View style={styles.inputSection}>
-        <Text style={styles.sectionLabel}>Heaviest weight held {secs} s</Text>
+        <Text style={styles.sectionLabel}>{hangEdge ? `Heaviest weight added, held ${secs} s on ${hangEdge}` : `Heaviest weight held ${secs} s`}</Text>
         <Stepper value={weight} onChange={setWeight} step={DEFAULT_LOAD_STEP[weightUnit]} suffix={` ${weightUnit}`} />
-        {!!currentMaxKg && <Text style={styles.warmupRowNote}>Last max: {start} {weightUnit}</Text>}
+        {hangEdge
+          ? <Text style={styles.warmupRowNote}>{hangLoadLabel(weight, weightUnit)}{currentMaxKg != null ? ` · last max ${hangLoadLabel(start, weightUnit)}` : ""}</Text>
+          : !!currentMaxKg && <Text style={styles.warmupRowNote}>Last max: {start} {weightUnit}</Text>}
       </View>
     </ExerciseScreen>
   )
