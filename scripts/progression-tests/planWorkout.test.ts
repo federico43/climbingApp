@@ -343,14 +343,24 @@ const library: any[] = [
 ]
 const types = (w: any) => w.blocks.map((b: any) => b.type)
 
-// workout 1 is a test day: normal warm-up, the Density test comes back as homework
+// workout 1 is a test day: normal warm-up, the benchmark (Density test + Edge lift max test) comes back as homework
 let w = buildPlanWorkout(plan, spec(1), library, exercises, [], null)
 assert.deepEqual(w.warnings, [])
 assert.deepEqual(types(w), [
   "strength_conditioning", "strength_conditioning", "strength_conditioning",
   "constraint_warmup", "constraint_warmup", "constraint_warmup", "project_bouldering", "project_bouldering",
 ])
-assert.deepEqual(w.homework.map((b: any) => b.libraryBlockId), ["dt"])
+assert.deepEqual(w.homework.map((b: any) => b.blockName), ["Density test", "Edge lift max test"])
+assert.equal((w.homework[0] as any).libraryBlockId, "dt")
+const maxTest = w.homework[1] as any
+assert.equal(maxTest.type, "strength_conditioning")
+assert.equal(maxTest.rounds, 1)
+assert.deepEqual(maxTest.exercises.map((e: any) => [e.exerciseId, e.maxTest]), [["el", true]])
+// no Edge Lifts in the library → Density test only, with a warning
+w = buildPlanWorkout(plan, spec(1), library, exercises.filter((e) => e.name !== "Edge Lifts"), [], null)
+assert.deepEqual(w.homework.map((b: any) => b.blockName), ["Density test"])
+assert.ok(w.warnings.some((x) => x.includes("Edge lift max test")))
+w = buildPlanWorkout(plan, spec(1), library, exercises, [], null)
 assert.equal((w.blocks[6] as any).libraryBlockId, "pb")
 assert.equal((w.blocks[7] as any).libraryBlockId, "pb")                         // main block twice
 
@@ -367,7 +377,7 @@ assert.ok(warm.every((b) => b.level === "orange"))
 // first workout of week 6 (here workout 11, a constraints day): warm-up kept, test as homework
 w = buildPlanWorkout(plan, spec(11, "2026-11-10", [{ planIndex: 10, createdAt: "2026-11-04T10:00:00Z" }]), library, exercises, [], "green")
 assert.deepEqual(types(w).slice(3), ["constraint_warmup", "constraint_warmup", "constraint_warmup", "sequence", "sequence"])
-assert.deepEqual(w.homework.map((b: any) => b.type), ["exploration_session"])
+assert.deepEqual(w.homework.map((b: any) => b.type), ["exploration_session", "strength_conditioning"])
 
 // workout 2: 1 on 1 off as a warm-up (warm-up kind and rounds, no PE tag)
 w = buildPlanWorkout(plan, spec(2), library, exercises, [], "green")
