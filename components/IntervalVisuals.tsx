@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { font } from "@/theme/paper/tokens"
 import { Ionicons } from "@expo/vector-icons"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -17,6 +18,8 @@ export function fmtSec(sec: number): string {
 export function IntervalStats({ series, workSec, restSec, seriesLabel = "series", workLabel = "work" }: {
   series: number; workSec: number; restSec: number; seriesLabel?: string; workLabel?: string
 }) {
+  const C = useC()
+  const s = useSheet(sheet)
   return (
     <View style={s.stats}>
       <Stat value={String(series)} label={seriesLabel} color={C.textPrimary} />
@@ -29,6 +32,7 @@ export function IntervalStats({ series, workSec, restSec, seriesLabel = "series"
 }
 
 function Stat({ value, label, color }: { value: string; label: string; color: string }) {
+  const s = useSheet(sheet)
   return (
     <View style={s.stat}>
       <Text style={[s.statValue, { color }]}>{value}</Text>
@@ -43,6 +47,8 @@ function Stat({ value, label, color }: { value: string; label: string; color: st
 export function SeriesBar({ total, done, current, now, word = "Series" }: {
   total: number; done: number; current: number | null; now: number; word?: string
 }) {
+  const C = useC()
+  const s = useSheet(sheet)
   return (
     <View style={s.seriesBox}>
       <Text style={s.round}>
@@ -55,7 +61,7 @@ export function SeriesBar({ total, done, current, now, word = "Series" }: {
             style={[
               s.segment,
               i < done && { backgroundColor: C.green },
-              i === current && { backgroundColor: "rgba(111,207,151,0.4)" },
+              i === current && { backgroundColor: C.tint("rgba(111,207,151,0.4)") },
             ]}
           />
         ))}
@@ -68,8 +74,10 @@ export function SeriesBar({ total, done, current, now, word = "Series" }: {
 export function TimerRing({ fill, color, title, seconds, next, glow }: {
   fill: number; color: string; title: string; seconds: number; next?: string | null; glow?: boolean
 }) {
+  const C = useC()
+  const s = useSheet(sheet)
   return (
-    <View style={[s.ringWrap, glow && { backgroundColor: "rgba(111,207,151,0.06)" }]}>
+    <View style={[s.ringWrap, glow && { backgroundColor: C.tint("rgba(111,207,151,0.06)") }]}>
       <AnimatedCircularProgress
         size={260} width={16} fill={fill}
         tintColor={color} backgroundColor={C.surfaceHigh} rotation={0} lineCap="round"
@@ -87,6 +95,8 @@ export function TimerRing({ fill, color, title, seconds, next, glow }: {
 }
 
 export function PauseButton({ paused, onPress }: { paused: boolean; onPress: () => void }) {
+  const C = useC()
+  const s = useSheet(sheet)
   return (
     <Pressable onPress={onPress} style={s.pause} hitSlop={8} accessibilityLabel={paused ? "Resume" : "Pause"}>
       <Ionicons name={paused ? "play" : "pause"} size={26} color={C.textPrimary} />
@@ -94,24 +104,25 @@ export function PauseButton({ paused, onPress }: { paused: boolean; onPress: () 
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C, P) => StyleSheet.create({
   stats: { flexDirection: "row", alignItems: "center" },
   stat: { flex: 1, alignItems: "center", gap: 2 },
   statValue: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"] },
   statLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
   divider: { width: 1, alignSelf: "stretch", backgroundColor: C.border },
   seriesBox: { width: "100%", gap: 10, alignItems: "center" },
-  round: { fontSize: 15, color: C.textSecondary, fontWeight: "600" },
+  round: { fontSize: 15, color: C.textSecondary, fontWeight: "600", ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3, textTransform: "uppercase" }) },
   roundNow: { color: C.textPrimary, fontWeight: "800" },
   segments: { flexDirection: "row", gap: 4, width: "100%" },
-  segment: { flex: 1, height: 8, borderRadius: 4, backgroundColor: C.surfaceHigh },
+  segment: { flex: 1, height: 8, borderRadius: 4, backgroundColor: C.surfaceHigh, ...(P && { height: 6, borderRadius: 3, backgroundColor: P.hairline }) },
   ringWrap: { borderRadius: 160, padding: 14 },
   inner: { alignItems: "center", paddingHorizontal: 28 },
-  phase: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2 },
-  clock: { fontSize: 84, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], lineHeight: 96 },
-  next: { fontSize: 14, color: C.textSecondary, fontWeight: "600" },
+  phase: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2, ...(P && { fontFamily: font.title, textTransform: "uppercase", fontSize: 24 }) },
+  clock: { fontSize: 84, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], lineHeight: 96, ...(P && { fontFamily: font.poster, fontSize: 108, lineHeight: 108, letterSpacing: -2 }) },
+  next: { fontSize: 14, color: C.textSecondary, fontWeight: "600", ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3, textTransform: "uppercase" }) },
   pause: {
     width: 64, height: 64, borderRadius: 32, backgroundColor: C.surfaceHigh,
     alignItems: "center", justifyContent: "center",
+    ...(P && { backgroundColor: "transparent", borderWidth: 1.5, borderColor: P.ink }),
   },
-})
+}))

@@ -1,8 +1,10 @@
-import { C } from "@/utils/theme";
+import { PrimaryCTA } from "@/components/paper/Buttons"
+import { paperSheet, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { font } from "@/theme/paper/tokens"
 import { spacing } from '@/theme/spacing';
 import { StyleSheet, Pressable,Text } from "react-native";
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   base: {
     paddingVertical: 14,
     paddingHorizontal: 20,
@@ -15,7 +17,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   text:{
-    color: C.bg,
+    color: C.onAccent,
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
@@ -24,7 +26,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   containedLabel: {
-    color: C.bg,
+    color: C.onAccent,
   },
 
   textLabel: {
@@ -34,7 +36,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
 
-});
+}));
 
 type Props = {
   title: string;
@@ -47,6 +49,12 @@ type Props = {
 //add the functionality 
 export default function CustomButton({ title, onPress, mode = "contained",
   disabled = false, fontSize = 16 }: Props) {
+  const styles = useSheet(sheet)
+  const paper = usePaperScope()
+  // Workout flow (Paper Mint): the primary CTA; "Start" gets the play circle.
+  if (paper && mode === "contained") {
+    return <PrimaryCTA label={title} icon={/^start\b/i.test(title) ? "play" : null} onPress={onPress} disabled={disabled} />
+  }
   return (
     <Pressable
       onPress={onPress}
@@ -64,6 +72,7 @@ export default function CustomButton({ title, onPress, mode = "contained",
           styles.text,
           mode === "contained" && styles.containedLabel,
           mode === "text" && styles.textLabel,
+          paper && { fontFamily: font.bold, fontWeight: undefined },
         ]}
       >
         {title}
@@ -71,4 +80,3 @@ export default function CustomButton({ title, onPress, mode = "contained",
     </Pressable>
   );
 }
-

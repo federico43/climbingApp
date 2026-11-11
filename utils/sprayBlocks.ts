@@ -29,6 +29,9 @@ export const SPRAY_BLOCKS: SprayBlockRef[] = [
   { name: "Base 1", type: "sequence", routeType: "base", mode: "attempts" },
   { name: "Power boulders", type: "free_session", routeType: "power", mode: "time" },
   { name: "Coordination boulders", type: "free_session", routeType: "coordination", mode: "time" },
+  // The plan's Benchmark (utils/benchmark.ts): a sequence at the limit,
+  // tried at the start of the plan and again at its end.
+  { name: "Benchmark", type: "sequence", routeType: "max_bouldering", mode: "attempts" },
 ]
 
 // Defaults when the block doesn't set them.
@@ -185,4 +188,29 @@ export function suggestSprayRoutes(
       })
   }
   return [...first, ...rest].slice(0, limit)
+}
+
+// ─── Sequences on the shared wall (coach 2026-11-11) ─────────────────────────
+
+// The spray wall is the gym's: a sequence one athlete adds in a spray block
+// is for everyone doing that kind of block, not only for them. (A sequence's
+// athleteId still says who built it — My sequences, edit / delete.)
+
+// Sequences of `routeType` the athlete hasn't climbed yet, newest first, so
+// one a teammate just added is on the choose screen right away — whatever
+// its level, and even without a flash colour (the suggestions then only
+// list ones already climbed). `exclude`: already listed or picked.
+export function newSprayRoutes(
+  routes: Iterable<{ $id: string; $createdAt?: string; type?: string | null }>,
+  records: Map<string, RouteRecord>,
+  routeType: RouteType,
+  exclude: Iterable<string> = [],
+  limit = 10,
+): string[] {
+  const skip = new Set(exclude)
+  return [...routes]
+    .filter((r) => r.type === routeType && !skip.has(r.$id) && !records.has(r.$id))
+    .sort((a, b) => (b.$createdAt ?? "").localeCompare(a.$createdAt ?? "") || a.$id.localeCompare(b.$id))
+    .slice(0, limit)
+    .map((r) => r.$id)
 }

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import type { CardioAnswers, Effort, Pace, Pain, PainZone, Rest, StopReason } from "@/utils/cardio"
 import { useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -45,6 +45,7 @@ const EFFORT: Opt<Effort>[] = [
 function Question<T extends string>({ title, options, value, onPick }: {
   title: string; options: Opt<T>[]; value: T | undefined; onPick: (v: T) => void
 }) {
+  const s = useSheet(sheet)
   return (
     <View style={s.q}>
       <Text style={s.qTitle}>{title}</Text>
@@ -60,6 +61,7 @@ function Question<T extends string>({ title, options, value, onPick }: {
 }
 
 export function CardioQuestions({ onDone, saving }: { onDone: (a: CardioAnswers) => void; saving?: boolean }) {
+  const s = useSheet(sheet)
   const [rest, setRest] = useState<Rest>()
   const [pain, setPain] = useState<Pain>()
   const [zone, setZone] = useState<PainZone>()
@@ -94,7 +96,7 @@ export function CardioQuestions({ onDone, saving }: { onDone: (a: CardioAnswers)
   )
 }
 
-export const s = StyleSheet.create({
+export const sheet = paperSheet((C) => StyleSheet.create({
   scroll: { padding: 20, gap: 12, paddingBottom: 48 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.4, marginBottom: 6 },
   q: { gap: 12, backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
@@ -106,4 +108,4 @@ export const s = StyleSheet.create({
   optTextOn: { color: C.green },
   btn: { marginTop: 8, backgroundColor: C.green, borderRadius: 24, paddingVertical: 14, alignItems: "center" },
   btnText: { fontSize: 16, fontWeight: "800", color: "#10251A" },
-})
+}))

@@ -36,7 +36,7 @@ export const ADAPTATION_LABEL: Record<Adaptation, string> = {
   power_endurance:   "Power endurance",
   conditioning:      "Conditioning",
   balance:           "Balance",
-  fear_management:   "Fear management",
+  fear_management:   "Mental",
   general:           "General",
   test:              "Test",
 }

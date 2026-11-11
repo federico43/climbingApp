@@ -6,10 +6,18 @@ import { DailyCheckInModal } from "@/components/DailyCheckInModal"
 import { VersionFooter } from "@/components/VersionFooter"
 import { Ionicons } from "@expo/vector-icons"
 import { CheckinRow, getCheckinForToday } from "@/services/BoulderGraphService"
+import { usePaperPreference, type PaperPreference } from "@/theme/paper/PaperThemeProvider"
 import { useRouter } from "expo-router"
 import { useEffect, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+
+// Paper Mint screens: follow the phone, or always light / dark.
+const APPEARANCE: { value: PaperPreference; label: string }[] = [
+  { value: "system", label: "Phone" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+]
 
 const TRAINING_ROWS = [
   { label: "My week", route: "/(tabs)/(buttonTabs)/schedule" },
@@ -22,6 +30,7 @@ const TRAINING_ROWS = [
 export default function SettingsScreen() {
   const { User, signOut, role } = useAuth()
   const router = useRouter()
+  const { preference, setPreference } = usePaperPreference()
 
   const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
   const [checkinVisible, setCheckinVisible] = useState(false)
@@ -74,6 +83,29 @@ export default function SettingsScreen() {
               <Text style={styles.rowLabel}>Daily check-in</Text>
               <Text style={styles.rowValue}>{todayCheckin ? "Done ✓" : "Not done yet"}</Text>
             </Pressable>
+          </View>
+        </View>
+
+        {/* Appearance (redesigned screens) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Appearance</Text>
+          <View style={styles.card}>
+            <View style={[styles.row, styles.rowLast]}>
+              <Text style={styles.rowLabel}>Theme</Text>
+              <View style={styles.segments}>
+                {APPEARANCE.map((o) => (
+                  <Pressable
+                    key={o.value}
+                    onPress={() => setPreference(o.value)}
+                    style={[styles.segment, preference === o.value && styles.segmentOn]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: preference === o.value }}
+                  >
+                    <Text style={[styles.segmentText, preference === o.value && styles.segmentTextOn]}>{o.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
 
@@ -177,6 +209,11 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
+  segments: { flexDirection: "row", gap: 6 },
+  segment: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surfaceHigh },
+  segmentOn: { backgroundColor: C.green },
+  segmentText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  segmentTextOn: { color: C.bg },
 
   header: {
     flexDirection: "row",

@@ -1,5 +1,7 @@
 import CustomButton from "@/components/customButton"
-import { C } from "@/utils/theme"
+import { PaperBackground, usePaper } from "@/components/paper"
+import { PaperScope, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { StatusBar } from "expo-status-bar"
 import { hasWorkoutToday, saveCardioPlan, saveCardioSession } from "@/services/cardio"
 import {
   CAPACITY_TEST, coordinationPassed, protocolFor, protocolLabel, recordSession, recordTest, STOP_COUNTS, todaySession,
@@ -45,13 +47,27 @@ function outcomeTitle(o: Outcome): string {
   }
 }
 
-export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: {
+type ModalProps = {
   visible: boolean
   userId: string
   plan: CardioPlan
   onClose: () => void
   onSaved: (plan: CardioPlan) => void
-}) {
+}
+
+// The session is part of the athlete workout flow: Paper Mint (theme/paper/legacy.tsx).
+export function CardioSessionModal(props: ModalProps) {
+  return (
+    <PaperScope>
+      <SessionModal {...props} />
+    </PaperScope>
+  )
+}
+
+function SessionModal({ visible, userId, plan, onClose, onSaved }: ModalProps) {
+  const C = useC()
+  const paper = usePaper()
+  const st = useSheet(stSheet)
   const [step, setStep] = useState<Step>({ k: "intro" })
   const [climbedHard, setClimbedHard] = useState<boolean | null>(null)
   const [stops, setStops] = useState<StopCount[]>([])
@@ -223,6 +239,8 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
       {/* A Modal renders outside the app's SafeAreaProvider: without its own,
           insets read as zero and the header sits under the iOS status bar. */}
       <SafeAreaProvider>
+      <PaperBackground>
+      {visible && <StatusBar style={paper.mode === "dark" ? "light" : "dark"} />}
       <SafeAreaView style={st.screen}>
         <View style={st.top}>
           <Text style={st.topTitle}>{isTest ? "Starting test" : "Jump rope cardio"}</Text>
@@ -232,6 +250,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
         </View>
         {body()}
       </SafeAreaView>
+      </PaperBackground>
       </SafeAreaProvider>
     </Modal>
   )
@@ -240,6 +259,7 @@ export function CardioSessionModal({ visible, userId, plan, onClose, onSaved }: 
 // The session's only screen before the first timer: what today holds and
 // the first piece's instructions; Start runs that piece's timer directly.
 function Intro({ session, climbedHard, onStart }: { session: TodaySession; climbedHard: boolean; onStart: () => void }) {
+  const st = useSheet(stSheet)
   const footer = <CustomButton title="Start" onPress={onStart} />
   if (session.kind === "test") {
     return (
@@ -276,6 +296,7 @@ function Intro({ session, climbedHard, onStart }: { session: TodaySession; climb
 // A scrolling page with its button pinned at the bottom, like the workout
 // blocks' screens.
 function Page({ children, footer }: { children: React.ReactNode; footer: React.ReactNode }) {
+  const st = useSheet(stSheet)
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={st.page}>{children}</ScrollView>
@@ -301,6 +322,8 @@ function Timed({ title, text, icon, autoStart, children }: {
   title: string; text: string | null; icon: React.ComponentProps<typeof Ionicons>["name"]
   autoStart?: boolean; children: React.ReactNode
 }) {
+  const C = useC()
+  const st = useSheet(stSheet)
   const [started, setStarted] = useState(!!autoStart)
   if (!started) {
     return (
@@ -321,7 +344,7 @@ function Timed({ title, text, icon, autoStart, children }: {
   )
 }
 
-const st = StyleSheet.create({
+const stSheet = paperSheet((C) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12 },
   topTitle: { fontSize: 13, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
@@ -341,4 +364,4 @@ const st = StyleSheet.create({
   lead: { fontSize: 18, lineHeight: 26, color: C.textPrimary, textAlign: "center", fontWeight: "600" },
   choice: { width: "100%", maxWidth: 340, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingVertical: 16, alignItems: "center" },
   choiceText: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
-})
+}))

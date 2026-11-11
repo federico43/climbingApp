@@ -280,8 +280,8 @@ function DraggableBlock({
 
 const tones = StyleSheet.create({
   mine: { backgroundColor: C.green },
-  other: { backgroundColor: "#2F3A35" },
-  full: { backgroundColor: "#26282A" },
+  other: { backgroundColor: "#2F3A35", borderWidth: 1, borderColor: "rgba(111,207,151,0.45)" },
+  full: { backgroundColor: "#26282A", borderWidth: 1, borderColor: C.border },
   pending: { backgroundColor: C.yellow },
   skip: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border },
   pick: { backgroundColor: "#2F3A35", borderWidth: 2, borderColor: C.yellow },
@@ -289,8 +289,8 @@ const tones = StyleSheet.create({
 })
 const toneText = StyleSheet.create({
   mine: { color: "#10251A" },
-  other: { color: C.textSecondary },
-  full: { color: C.textMuted },
+  other: { color: C.textPrimary },
+  full: { color: C.textSecondary },
   pending: { color: "#3A2E00" },
   skip: { color: C.textMuted, textDecorationLine: "line-through" },
   pick: { color: C.textPrimary },
@@ -298,22 +298,23 @@ const toneText = StyleSheet.create({
 })
 
 const s = StyleSheet.create({
-  heads: { flexDirection: "row", paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
-  gutter: { width: 30 },
+  // Left padding: thick screen-protector rims cover the screen's very edge.
+  heads: { flexDirection: "row", paddingLeft: 12, paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  gutter: { width: 34 },
   head: { flex: 1, alignItems: "center", gap: 2 },
-  letter: { fontSize: 11, fontWeight: "700", color: C.textSecondary },
+  letter: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
   num: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   numToday: { backgroundColor: C.green },
   numText: { fontSize: 17, fontWeight: "500", color: C.textSecondary, fontVariant: ["tabular-nums"] },
   numTextToday: { color: "#10251A", fontWeight: "800" },
   numOff: { textDecorationLine: "line-through", color: C.textMuted },
-  body: { flexDirection: "row", paddingRight: 6 },
-  hour: { position: "absolute", right: 3, fontSize: 9, color: C.textMuted, fontVariant: ["tabular-nums"] },
-  col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
-  line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.05)" },
+  body: { flexDirection: "row", paddingLeft: 12, paddingRight: 6 },
+  hour: { position: "absolute", right: 4, fontSize: 10, fontWeight: "600", color: C.textSecondary, fontVariant: ["tabular-nums"] },
+  col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.08)" },
+  line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.08)" },
   block: { position: "absolute", left: 1, right: 1, borderRadius: 5, padding: 3, overflow: "hidden" },
   handle: { position: "absolute", left: 1, right: 1, height: HANDLE, alignItems: "center", justifyContent: "center" },
   grip: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.textMuted },
   dragging: { opacity: 0.9, borderWidth: 2, borderColor: C.green, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  blockText: { fontSize: 9, fontWeight: "700", lineHeight: 11 },
+  blockText: { fontSize: 10.5, fontWeight: "700", lineHeight: 13 },
 })

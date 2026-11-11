@@ -8,6 +8,7 @@ import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { SettingsButton } from "@/components/SettingsButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
+import { PaperThemeOverride } from "@/components/paper"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { getUsers, listAthleteTemplates, ProtocolRow } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
@@ -96,6 +97,8 @@ function HomeContent() {
         {!ready ? (
           introDone ? <ActivityIndicator style={{ marginTop: 60 }} color={C.green} /> : null
         ) : (
+          // Home isn't redesigned yet: its Paper Mint cards stay dark.
+          <PaperThemeOverride mode="dark">
           <View style={{ flex: 1 }}>
             <ScrollView
               contentContainerStyle={styles.scroll}
@@ -149,6 +152,7 @@ function HomeContent() {
               </View>
             )}
           </View>
+          </PaperThemeOverride>
         )}
       </SafeAreaView>
       </LinearGradient>

@@ -1,3 +1,4 @@
+import { usePopupTurn } from "@/utils/popupTurn"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
@@ -13,6 +14,23 @@ export interface IntroPage {
 const KEY = (id: string) => `feature-intro-seen:${id}`
 // Pop-ups asked to show again (the "i" button), by id.
 const replay = new Set<(id: string) => void>()
+// Told when a pop-up closes, so a screen can wait for it before showing another.
+const closed = new Set<(id: string) => void>()
+
+// Whether this device has already seen (and closed) a pop-up; undefined while
+// it's still being read. Another Modal must not open while one is showing.
+export function useIntroSeen(id: string): boolean | undefined {
+  const [seen, setSeen] = useState<boolean | undefined>(undefined)
+  useEffect(() => {
+    AsyncStorage.getItem(KEY(id)).then((v) => setSeen(v === "1")).catch(() => setSeen(true))
+    const l = (which: string) => { if (which === id) setSeen(true) }
+    const r = (which: string) => { if (which === id) setSeen(false) }
+    closed.add(l)
+    replay.add(r)
+    return () => { closed.delete(l); replay.delete(r) }
+  }, [id])
+  return seen
+}
 
 // Small "i" button that opens the screen's pop-ups again.
 export function IntroButton({ id }: { id: string }) {
@@ -45,12 +63,15 @@ export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) 
   const close = () => {
     setShow(false)
     AsyncStorage.setItem(KEY(id), "1").catch(() => {})
+    closed.forEach((l) => l(id))
   }
+  // Waits for any other pop-up (e.g. the daily check-in) to close first.
+  const visible = usePopupTurn(show)
   const page = pages[i]
   const last = i === pages.length - 1
 
   return (
-    <Modal visible={show} transparent animationType="fade" onRequestClose={close}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <View style={s.scrim}>
         <View style={s.card}>
           <View style={s.art}>

@@ -1,8 +1,9 @@
+import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
 import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions, getUsers } from "@/services/BoulderGraphService"
-import { shared_styles, topBar_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
@@ -11,8 +12,9 @@ import {
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
-import { C } from "@/utils/theme"
+import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import * as Haptics from "expo-haptics"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
@@ -42,7 +44,7 @@ interface Props {
   goToPreviousBlock?: () => void
 }
 
-function swatch(value: string): string {
+function swatch(value: string, C: Palette): string {
   return BoulderLevelOptions.find((o) => o.value === value)?.color ?? C.border
 }
 
@@ -55,26 +57,34 @@ function formatTime(seconds: number): string {
   return `${m}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-// Countdown from `minutes` while `running`; calls onEnd once at zero.
-function useCountdown(minutes: number, running: boolean, onEnd: () => void) {
+// Countdown from `minutes` while `running`; calls onEnd once at zero. Beeps at
+// zero, and notifies (as `label`) when it runs out with the app in the background.
+function useCountdown(minutes: number, running: boolean, label: string, onEnd: () => void) {
   const [left, setLeft] = useState(minutes * 60)
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  useBlockTimerAlert(running ? endsAt : null, label)
   const onEndRef = useRef(onEnd)
   onEndRef.current = onEnd
   useEffect(() => {
     if (!running) return
     const end = Date.now() + minutes * 60 * 1000
+    setEndsAt(end)
     setLeft(minutes * 60)
     const id = setInterval(() => {
       const s = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setLeft(s)
       if (s === 0) { clearInterval(id); onEndRef.current() }
     }, 250)
-    return () => clearInterval(id)
+    return () => { clearInterval(id); setEndsAt(null) }
   }, [running, minutes])
   return left
 }
 
 export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
+  const topBar_styles = useSheet(topBar_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const { User } = ConsumeAuth()
   const flashMin = block?.timeLimit || EXPLORATION_PART_MIN
@@ -123,11 +133,11 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const flashLeft = useCountdown(flashMin, phase === "flash", () => {
+  const flashLeft = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("review")
   })
-  const projectLeft = useCountdown(projectMin, phase === "project", () => {
+  const projectLeft = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("question")
   })
@@ -187,7 +197,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   const routeRows = (list: typeof routes, withResult: boolean, deletable = false) =>
     [...list].reverse().map((r, i) => (
       <View key={list.length - i} style={styles.climbRow}>
-        <View style={[styles.climbLevelBar, { backgroundColor: swatch(r.colour) }]} />
+        <View style={[styles.climbLevelBar, { backgroundColor: swatch(r.colour, C) }]} />
         <Text style={styles.climbLevelText}>{colourLabel(r.colour)} · {wallLabel(r.wall)}</Text>
         {withResult && (
           <Text style={[styles.climbAttemptsText, r.sent && { color: C.green }]}>{resultLabel(r)}</Text>
@@ -206,7 +216,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} />
+        <TopBar title={title} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <BlockNotes text={text} title="Coach notes" />
           <View style={styles.timeLimitPill}>
@@ -214,9 +224,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           </View>
         </ScrollView>
         <View style={shared_styles.footer}>
-          <Pressable style={styles.startButton} onPress={() => setPhase("flash")}>
-            <Text style={styles.startButtonText}>Start</Text>
-          </Pressable>
+          <CustomButton title="Start" onPress={() => setPhase("flash")} />
         </View>
       </View>
     )
@@ -312,9 +320,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
             <View style={styles.climbListContent}>{list}</View>
           </ScrollView>
           <View style={shared_styles.footer}>
-            <Pressable style={styles.startButton} onPress={() => setPhase("project")}>
-              <Text style={styles.startButtonText}>Start part 2 · {projectMin} min</Text>
-            </Pressable>
+            <CustomButton title={`Start part 2 · ${projectMin} min`} onPress={() => setPhase("project")} />
           </View>
         </View>
       )
@@ -364,9 +370,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           />
         </ScrollView>
         <View style={shared_styles.footer}>
-          <Pressable style={styles.startButton} onPress={save}>
-            <Text style={styles.startButtonText}>Save</Text>
-          </Pressable>
+          <CustomButton title="Save" onPress={save} />
         </View>
       </View>
     )
@@ -429,7 +433,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
             <Text style={styles.breakdownTitle}>By colour</Text>
             {summary.byColour.map((b) => (
               <View key={b.colour} style={styles.breakdownRow}>
-                <View style={[styles.levelDot, { backgroundColor: swatch(b.colour) }]} />
+                <View style={[styles.levelDot, { backgroundColor: swatch(b.colour, C) }]} />
                 <Text style={styles.breakdownLabel}>{colourLabel(b.colour)}</Text>
                 <Text style={styles.breakdownCount}>{b.sent}/{b.tried} sent</Text>
                 <Text style={styles.breakdownPts}>{formatPoints(b.points)} pts</Text>
@@ -454,7 +458,7 @@ function shortDate(iso: string): string {
 }
 
 // Same values as ExplorationSessionBlock (the Density test).
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   container: { flex: 1, width: "100%", paddingHorizontal: 20, paddingTop: 8 },
   notice: { fontSize: 15, fontWeight: "700", color: C.green, marginBottom: 10 },
 
@@ -470,14 +474,14 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   gradeChip: { borderWidth: 2, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   gradeChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  gradeChipTextSelected: { color: C.bg },
+  gradeChipTextSelected: { color: C.onAccent },
   attemptsChip: {
     borderWidth: 1.5, borderColor: C.border, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 7, backgroundColor: C.surfaceHigh,
   },
   attemptsChipSelected: { borderColor: C.green, backgroundColor: C.green },
   attemptsChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  attemptsChipTextSelected: { color: C.bg },
+  attemptsChipTextSelected: { color: C.onAccent },
 
   climbList: { flex: 1 },
   climbListContent: { gap: 8, paddingBottom: 8 },
@@ -495,14 +499,14 @@ const styles = StyleSheet.create({
 
   footer: { paddingTop: 10, paddingBottom: 24, flexDirection: "row", alignItems: "center", gap: 10 },
   logBoulderBtn: { flex: 1, backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
-  logBoulderBtnText: { fontSize: 15, fontWeight: "700", color: C.bg },
+  logBoulderBtnText: { fontSize: 15, fontWeight: "700", color: C.onAccent },
   finishPill: {
     borderRadius: 22, borderWidth: 1, borderColor: C.border,
     paddingHorizontal: 18, paddingVertical: 11, backgroundColor: C.surface,
   },
   finishPillText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   startButton: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
-  startButtonText: { color: C.bg, fontSize: 16, fontWeight: "700", padding: 10 },
+  startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
   timeLimitPill: { alignSelf: "flex-start", backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
@@ -537,4 +541,4 @@ const styles = StyleSheet.create({
   lastCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
   lastValue: { fontSize: 22, fontWeight: "800", color: C.textPrimary, marginTop: 2 },
   diff: { fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
-})
+}))

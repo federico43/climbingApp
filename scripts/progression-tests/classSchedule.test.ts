@@ -133,3 +133,26 @@ assert.equal(packageLocked(pkgs[1], 3, "2026-10-25"), false)
 assert.equal(packageLocked(pkgs[0], 3, "2026-10-25"), true)
 
 console.log("classSchedule tests passed")
+
+// ── Usual (fixed) schedule: missing times and classes to join instead
+{
+  const { CLASS_STARTS, classesToJoin, missingUsual, usualDayOk } = await import("@/utils/classSchedule")
+  assert.equal(CLASS_STARTS[0], GRID_START)
+  assert.equal(CLASS_STARTS.at(-1), 17.5)
+  assert.equal(usualDayOk([0], 1), false)        // no days in a row
+  assert.equal(usualDayOk([0, 2, 4], 6), false)  // 3 at most (and Sun next to Mon)
+  assert.equal(usualDayOk([0], 2), true)
+  const none = athleteWeek(EXAMPLE_CLASSES, [], {}, null)
+  // Mon 9:30 exists; Wed 7:00 doesn't.
+  assert.deepEqual(missingUsual(["0@9.5", "2@7"], EXAMPLE_CLASSES, none, 0), [{ day: 2, start: 7 }])
+  // A day already gone isn't missing any more.
+  assert.deepEqual(missingUsual(["2@7"], EXAMPLE_CLASSES, none, 3), [])
+  // Already in a class that day: nothing to offer.
+  const inThu = athleteWeek(EXAMPLE_CLASSES, ["c8"], {}, null)
+  assert.deepEqual(missingUsual(["3@7"], EXAMPLE_CLASSES, inThu, 0), [])
+  // Instead of Wed 7:00: classes with room, nearest first, none full (c2) and
+  // none next to the athlete's Thu class.
+  const join = classesToJoin(EXAMPLE_CLASSES, inThu, 0, { day: 2, start: 7 }).map((c) => c.id)
+  assert.deepEqual(join, ["c3", "c1", "c13"])
+}
+console.log("usual schedule ok")

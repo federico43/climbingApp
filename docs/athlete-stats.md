@@ -25,7 +25,8 @@ En This block y All blocks se ve:
   con su color y su línea. Los focos nunca se mezclan.
 - **Blocks**: en *Project bouldering*, una barra por sesión: la altura es la
   duración, el color es el grado y lleva ✓ si se logró. En *1 on 1 off*, los
-  minutos de trabajo por sesión.
+  minutos de trabajo por sesión. En *Density test*, el puntaje de cada test
+  (sesión a sesión) y cuánto cambió del primero al último.
 
 Si no hay nada registrado, aparece "Nothing logged yet" con un botón **Preview
 with sample data**, que muestra los datos de ejemplo (marcados como "Sample
@@ -77,6 +78,7 @@ en la semana anterior.
 | S&C | Rondas S&C, foco con `loggedFocus` (sin foco → "No focus"), patrón con `movementType` (bloque, o biblioteca por id o por nombre) | Por sesión: el peso de la carga final (kg); el paso en la cadena de niveles; o, sin peso (peso corporal), las reps o segundos máximos de un set, como "Ejercicio (bodyweight)". All blocks incluye todas las sesiones, con plan o sin plan |
 | Project bouldering | Intentos del bloque | Minutos del primer al último intento (con uno solo, el tiempo límite del bloque); grado del último intento con color, o el del bloque; ✓ si algún intento fue logrado |
 | 1 on 1 off | Intervals con `kind: warmup` o llamados "1 on 1 off" | `series × workTime` en minutos |
+| Density test | Bloques `exploration_session` cuyo nombre dice "Density" (la tarea del plan) | Puntaje = suma de `difficulty` (`niveles_boulder`) de cada boulder registrado, como al final del test; uno por sesión |
 | Workouts | `donePlanWorkouts` | Hechos por semana; planeados = 2 por semana terminada; la semana en curso solo cuenta lo ya hecho (todavía no hay "missed") |
 
 En la **review**, solo entra lo que tiene al menos dos puntos en el bloque,

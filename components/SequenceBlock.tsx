@@ -1,5 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
@@ -18,7 +18,7 @@ import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
 import {
   parseVariations,
@@ -62,6 +62,9 @@ export function SequenceBlock({
   goToNextBlock,
   goToPreviousBlock,
 }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
   const nextLabel = useNextBlockLabel("Continue")
   const targetAttempts: number = block.targetAttempts ?? 5
   const restTime: number       = block.restTime ?? 120
@@ -516,7 +519,7 @@ export function SequenceBlock({
           >
             {suggestionReady
               ? <Text style={styles.startBtnText}>Start</Text>
-              : <ActivityIndicator color={C.bg} />}
+              : <ActivityIndicator color={C.onAccent} />}
           </Pressable>
         </View>
       </View>
@@ -577,7 +580,7 @@ export function SequenceBlock({
           {resting ? (
             <View style={[styles.restBar, styles.restBarResting]}>
               <Animated.View style={[styles.restBarFill, restBarFillStyle, {
-                backgroundColor: "rgba(98,201,154,0.5)",
+                backgroundColor: C.tint("rgba(98,201,154,0.5)"),
               }]} />
               <View style={styles.restBarContent}>
                 <Text style={[styles.restBarText, { color: C.textPrimary }]}>
@@ -839,7 +842,7 @@ export function SequenceBlock({
   return null
 }
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   // ── Intro
   introContent: { padding: 20, gap: 16, paddingBottom: 8 },
   // Full-bleed hero: negative margins cancel the introContent padding so the
@@ -882,7 +885,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, borderRadius: 24,
     paddingVertical: 14, alignItems: "center",
   },
-  startBtnText: { color: C.bg, fontSize: 16, fontWeight: "700" },
+  startBtnText: { color: C.onAccent, fontSize: 16, fontWeight: "700" },
   rest1Footer: {
     backgroundColor: C.bg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36,
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
@@ -909,7 +912,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: C.green, borderRadius: 22,
     paddingVertical: 12, alignItems: "center", justifyContent: "center",
   },
-  registerBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  registerBtnText: { fontSize: 15, fontWeight: "800", color: C.onAccent },
   controlDisabled: { opacity: 0.4 },
 
   // Attempt dots (top of the active phase)
@@ -994,7 +997,7 @@ const styles = StyleSheet.create({
   outcomeChipSent: { backgroundColor: C.green, borderColor: C.green },
   outcomeChipFell: { backgroundColor: C.red, borderColor: C.red },
   outcomeChipText: { fontSize: 16, fontWeight: "700", color: C.textSecondary },
-  outcomeChipTextSelected: { color: C.bg },
+  outcomeChipTextSelected: { color: C.onAccent },
   stepperRow: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: C.surface, borderRadius: 14, overflow: "hidden",
@@ -1013,7 +1016,7 @@ const styles = StyleSheet.create({
   },
   rpeChipSelected: { backgroundColor: C.green, borderColor: C.green },
   rpeChipText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
-  rpeChipTextSelected: { color: C.bg },
+  rpeChipTextSelected: { color: C.onAccent },
   rpeNote: { fontSize: 12, color: C.textMuted, fontStyle: "italic" },
 
   // ── Review
@@ -1030,4 +1033,4 @@ const styles = StyleSheet.create({
   reviewFell: { color: C.red },
   reviewDetail: { fontSize: 13, color: C.textSecondary },
   reviewFellAt: { fontSize: 12, color: C.textMuted, marginTop: 2 },
-})
+}))

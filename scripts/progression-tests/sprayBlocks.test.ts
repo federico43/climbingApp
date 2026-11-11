@@ -3,7 +3,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/sprayBlocks.test.ts
 
 import assert from "node:assert/strict"
-import { isSprayBlock, routeRecords, sprayRouteTypeFor, spraySettings, sprayTargetLevel, suggestSprayRoutes } from "@/utils/sprayBlocks"
+import { isSprayBlock, newSprayRoutes, routeRecords, sprayRouteTypeFor, spraySettings, sprayTargetLevel, suggestSprayRoutes } from "@/utils/sprayBlocks"
 import { findBlockRuns } from "@/utils/blockHistory"
 
 // which blocks are spray blocks — name AND type
@@ -106,5 +106,18 @@ const leveled = new Map<string, { id: string; type?: string; level?: number | nu
 assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", [], 10, 3).map((r) => r.routeId), ["e", "d", "a", "b", "f", "g"])
 assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", ["e"], 2, 3).map((r) => r.routeId), ["d", "a"])
 assert.deepEqual(suggestSprayRoutes(rec, leveled, "power", [], 10, 3)[0], { routeId: "e", tries: 0, sends: 0, lastAt: "" })
+
+// a teammate's new sequence: on the choose screen whatever its owner or level,
+// newest first; ones this athlete already climbed / listed are left out
+const wall = [
+  { $id: "old", $createdAt: "2026-11-01T10:00:00Z", type: "power" },
+  { $id: "mate", $createdAt: "2026-11-11T18:00:00Z", type: "power", athleteId: "other" },
+  { $id: "a", $createdAt: "2026-11-11T19:00:00Z", type: "power" }, // climbed (in rec)
+  { $id: "coord", $createdAt: "2026-11-11T20:00:00Z", type: "coordination" },
+]
+assert.deepEqual(newSprayRoutes(wall, rec, "power"), ["mate", "old"])
+assert.deepEqual(newSprayRoutes(wall, rec, "power", ["mate"]), ["old"])
+assert.deepEqual(newSprayRoutes(wall, rec, "power", [], 1), ["mate"])
+assert.deepEqual(newSprayRoutes(wall, new Map(), "coordination"), ["coord"])
 
 console.log("sprayBlocks: all tests passed")

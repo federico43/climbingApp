@@ -3,6 +3,7 @@ import { chainIds, findLibraryRow, resolveExerciseChain, type ChainSource, type 
 import { findScSessions } from "@/utils/scHistory"
 import { planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
 import type { Focus, WeightUnit } from "@/utils/scProgression"
+import { isPullupLadder, stepForVariation, testIsNewer, variationFor, type SavedPullupTest } from "@/utils/pullupAssessment"
 
 // What an S&C exercise starts on, from the athlete's history — the one rule
 // both the workout's prefill (StrengthConditioningBlock) and the plan's
@@ -78,4 +79,22 @@ export function startingLevelRow(
     current = next
   }
   return current
+}
+
+// Pull-up ladders start where the athlete's pull-up test puts them
+// (utils/pullupAssessment.ts) when there's no history at this focus, or
+// the test (a retest) is newer than it; otherwise history wins (coach
+// 2026-11-11). null = not a pull-up ladder, newer history, or the ladder
+// lacks the step.
+export function testLevelRow(
+  row: ExerciseRow, draft: PrefillExercise, focus: Focus | undefined, sessions: SessionRow[], library: ExerciseRow[], test: SavedPullupTest | null | undefined,
+): ExerciseRow | null {
+  if (!test || !focus) return null
+  const chain = resolveExerciseChain(draft, library)
+  if (!chain || !isPullupLadder(chain.chain)) return null
+  const last = findScSessions(sessions, chainIds(chain, row.$id), row.name, { focus, limit: 1 })[0]
+  if (!testIsNewer(test, last?.date)) return null
+  const at = stepForVariation(chain.chain, variationFor(focus, test))
+  if (at < 0) return null
+  return library.find((r) => r.$id === chain.chain[at].exerciseId) ?? null
 }

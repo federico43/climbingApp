@@ -3,8 +3,10 @@ import type { ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { MOVEMENT_TYPE_LABEL, skipsExplosiveness, type MovementType } from "@/utils/movementTypes"
 import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
+import { DEFAULT_HANG_EDGE, isMaxHang, normalizeEdge } from "@/utils/maxHangs"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
-import { startingLevelRow } from "@/utils/scPrefill"
+import { startingLevelRow, testLevelRow } from "@/utils/scPrefill"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 1–4 movement patterns plus
@@ -53,6 +55,9 @@ export function exerciseDraftFromLibrary(ex: ExerciseRow): ExerciseDraft {
   // range to fall back on, so it still uses the library's own default.
   // Mobility has no focus, so its target is always the library default.
   if (ex.type === "7/3s") return { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
+  // Max Hangs: the grip (edge size) is picked per block, starting on the
+  // library's default (utils/maxHangs.ts).
+  if (isMaxHang(ex)) return { ...base, reps: ex.defaultReps ?? "10", edge: normalizeEdge(ex.defaultEdge) || DEFAULT_HANG_EDGE }
   if (ex.unit === "seconds") return { ...base, reps: ex.defaultReps ?? "20-30" }
   return { ...base, reps: ex.movementType === "mobility" ? (ex.defaultReps ?? "") : "" }
 }
@@ -196,6 +201,9 @@ export function buildScBlocks(
   spec: WorkoutSpec,
   exercises: ExerciseRow[],
   sessions: SessionRow[],
+  // The athlete's pull-up test: pull-up ladders with no history at the
+  // focus start on the variation it assigns (testLevelRow).
+  pullupTest?: SavedPullupTest | null,
 ): { blocks: ScBlockDraft[]; warnings: string[] } {
   const warnings: string[] = []
   const focus = spec.scFocus
@@ -206,7 +214,7 @@ export function buildScBlocks(
   const focusOf = (p: ScPattern) => (skipsExplosiveness(p.movementType) ? noPowerFocusFor(spec.index) : focus)
   const draftFor = (row: ExerciseRow, f: Focus): ExerciseDraft => {
     const draftOf = (r: ExerciseRow) => withFocus(exerciseDraftFromLibrary(r), f)
-    return draftOf(startingLevelRow(row, draftOf, sessions, exercises))
+    return draftOf(testLevelRow(row, draftOf(row), f, sessions, exercises, pullupTest) ?? startingLevelRow(row, draftOf, sessions, exercises))
   }
   // Edge Lifts (max force) go first in their block: their warm-up runs
   // before the block's first round (utils/edgeWarmup.ts).

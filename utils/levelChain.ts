@@ -222,3 +222,10 @@ export function chainIds(resolved: ResolvedChain, ownId?: string): string[] {
 export function chainIndexOf(resolved: ResolvedChain, exerciseId: string | undefined): number {
   return resolved.chain.findIndex((l) => l.exerciseId === (exerciseId ?? ""))
 }
+
+// A ladder step that also carries a weight (e.g. "Weighted pull-ups" on top
+// of the pull-up ladder): its rounds log a weight and progress it before
+// the level moves.
+export function isWeightedStep(name: string | null | undefined): boolean {
+  return /\bweighted\b/i.test(name ?? "")
+}
