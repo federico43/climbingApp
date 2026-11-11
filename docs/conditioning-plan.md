@@ -39,3 +39,29 @@ pages can show its card next to the S&C workouts.
 `node --env-file=.env.local scripts/conditioning-plan/create-column.mjs --apply` creates
 `training_plans.kind` and makes `training_plans.focus` optional if it isn't. Climbing plans
 never write `kind`, so they keep saving before the script runs.
+
+## Smarter conditioning (coach 2026-11-11)
+
+**Conditioning basics slides.** On the athlete's Plan page, any plan with S&C shows six
+slides once (components/ConditioningBasics.tsx, built on FeatureIntro): get close to
+failure, use the full range, it shouldn't hurt, be consistent, and spread it over the
+week (in the athlete's own days when the app knows them). "How to train S&C" under the
+focus card opens them again. They wait while a homework without a day is pending, so
+they don't fight the "You've got homework" pop-up.
+
+**Extra session on their own.** Results come faster when conditioning is spread over the
+week, not just tied to gym days. utils/extraSession.ts works out the athlete's gym days
+(their default classes, else weekdays they trained on at least twice in the last 4
+weeks) and suggests the middle of the longest gap with a rest day either side: Tue + Thu
+→ Sat or Sun; Mon + Thu → Sat; 3+ gym days → nothing to suggest.
+
+On the coach's Plan card, "Extra session on their own" shows the days and a Send button.
+One tap builds it (the S&C of the latest built workout, same focus, the other exercise of
+each pattern; never climbing, warm-up or test) and creates a homework row due the last
+suggested day, with a push. It is not a plan workout: no planId / planIndex, so it never
+shows on Home or counts towards the 12. Each block carries an `extraSession` note (like
+`leftAsHomework`), which the homework cards read to say "Extra session on their own ·
+Sat or Sun" and to start the day picker on the first suggested day. While one is open,
+the row shows "✓ Sent as homework" instead of the button.
+
+No Appwrite changes: it uses the existing homework columns.

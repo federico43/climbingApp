@@ -8,6 +8,8 @@ import { font, type PaperTheme } from "@/theme/paper/tokens"
 import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkoutCard"
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
+import { ConditioningBasics, ConditioningBasicsLink } from "@/components/ConditioningBasics"
+import { trainingDays } from "@/utils/extraSession"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { BlockProgressCard } from "@/components/BlockProgressCard"
 import type { StatsLibraryExercise } from "@/utils/athleteStatsData"
@@ -118,6 +120,8 @@ export default function PlanScreen() {
   const [exercises, setExercises] = useState<StatsLibraryExercise[]>([])
   const [edgeLiftMaxLog, setEdgeLiftMaxLog] = useState<string | null>(null)
   const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(null)
+  // The athlete's fixed classes ("day@start"), for the conditioning slides.
+  const [defaultClasses, setDefaultClasses] = useState<string[]>([])
   const activePlan = useActivePlan()
   // Read through a ref so load() doesn't change (and re-fire) whenever the context re-renders.
   const activePlanRef = useRef(activePlan)
@@ -149,6 +153,7 @@ export default function PlanScreen() {
       setEdgeLiftMaxLog((userRow as any)?.edgeLiftMaxLog ?? null)
       setTemplates(templateRows)
       setHomeWorkoutId((userRow as any)?.homeWorkoutId ?? null)
+      setDefaultClasses((userRow as any)?.defaultClasses ?? [])
       setLibrary(blocks)
       setWorkouts(planWorkouts)
       setSessions(sessionRows)
@@ -225,6 +230,7 @@ export default function PlanScreen() {
             library={library}
             exercises={exercises}
             edgeLiftMaxLog={edgeLiftMaxLog}
+            defaultClasses={defaultClasses}
             onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
             onChanged={load}
           />
@@ -247,6 +253,7 @@ function PlanBody({
   library,
   exercises,
   edgeLiftMaxLog,
+  defaultClasses,
   onStart,
   onChanged,
 }: {
@@ -258,6 +265,7 @@ function PlanBody({
   library: BlockRow[]
   exercises: StatsLibraryExercise[]
   edgeLiftMaxLog: string | null
+  defaultClasses: string[]
   onStart: (w: ProtocolRow) => void
   onChanged: () => void
 }) {
@@ -336,7 +344,10 @@ function PlanBody({
   // Homework rides on the athlete's templates (planPart "homework"); its
   // picked days show on the timeline like events.
   const homework = templates.filter((t) => t.planPart === "homework")
-
+  // The conditioning slides wait while "You've got homework" may want the
+  // screen (a homework without a day yet).
+  const homeworkPrompt = homework.some((h) => !h.scheduledFor)
+  const gymDays = useMemo(() => trainingDays(defaultClasses, sessions, today), [defaultClasses, sessions, today])
 
   const specsRight = notStarted
     ? [`Starts *${shortDate(windowStart)}*`]
@@ -360,6 +371,7 @@ function PlanBody({
         {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
           <ScSummary patterns={plan.scPatterns.map((p) => p.movementType)} hasMobility={plan.hasMobility} />
         )}
+        {plan.hasSc && <ConditioningBasicsLink />}
       </View>
 
       {/* ── Now: homework (it has a deadline), then the next workout ────── */}
@@ -379,6 +391,7 @@ function PlanBody({
         <ThisWeekCard />
         <CardioSection />
       </View>
+      {plan.hasSc && <ConditioningBasics gymDays={gymDays} ready={!homeworkPrompt} />}
 
       {/* ── The plan as a whole ───────────────────────────────────────────── */}
       <RailAnchor label="Training plan">

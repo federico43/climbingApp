@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
+import { ExtraSessionRow } from "@/components/coach/ExtraSessionRow"
 import { PlanPauses } from "@/components/coach/PlanPauses"
 import { Block, injectLocalIds } from "@/components/workoutBlocks"
 import { card } from "@/components/coach/styles"
@@ -58,6 +59,7 @@ export function PlanCard({
   loading,
   planWorkouts,
   sessions,
+  homework,
   flashLevel,
   onPlanChanged,
   onSessions,
@@ -69,6 +71,8 @@ export function PlanCard({
   loading: boolean
   planWorkouts: ProtocolRow[]
   sessions: SessionRow[]
+  // The athlete's homework — for the extra session's "already sent" line.
+  homework: ProtocolRow[]
   flashLevel: string | null
   onPlanChanged: (plan: TrainingPlanRow | null) => void
   onSessions: (rows: SessionRow[]) => void
@@ -352,6 +356,16 @@ export function PlanCard({
                 </Pressable>
               </View>
             </View>
+          )}
+          {planShape && !planEnded && (
+            <ExtraSessionRow
+              athlete={athlete}
+              plan={plan}
+              sessions={sessions}
+              homework={homework}
+              flashLevel={flashLevel}
+              onSent={onHomeworkChanged}
+            />
           )}
         </>
       )}

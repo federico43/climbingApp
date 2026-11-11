@@ -133,6 +133,7 @@ export function AthleteDetail({
       loading={loadingPlan}
       planWorkouts={planWorkouts}
       sessions={sessions}
+      homework={homework}
       flashLevel={flashLevel}
       onPlanChanged={(p) => { setPlan(p); onChanged() }}
       onSessions={setSessions}
