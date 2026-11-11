@@ -177,6 +177,13 @@ the final set has no set left to lower, so it's carried to next session.
 | No fall in any set | Next slot in order goes up one colour. |
 | Fall in set 1 or 2 | **The colours they finished on** (already lowered live). A drop owed but not applied live (fall in the final set, older logs) is applied now, same way. |
 | Falls only in set 3+ | Same boulders. |
+| Missed tops down to pump (any set) | Same boulders: no drop, live or carried, and no upgrade. |
+
+**Pump (coach 2026-11-06):** whenever a set isn't fully topped, the rest
+screen asks "Why did you miss some tops?" — **Pumped** / **Something else**
+(Save waits for an answer). Logged as `scData.missReason: "pump" | "other"`.
+Pumped → the boulder isn't lowered; something else (or older logs with no
+answer) → the rules above.
 
 The earlier "undo the last swap" rule (confirmed 2026-10-02) is **superseded**
 by the live rule: the coach chose "last boulder" for the drop and "start next
