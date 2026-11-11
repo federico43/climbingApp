@@ -41,9 +41,9 @@ assert.equal(shortDay("2026-10-12"), "Mon 12 Oct")
 assert.equal(homeworkName("Workout 1 · Strength", [{ blockName: "Density test" }]), "Density test")
 assert.equal(homeworkName("Workout 1 · Strength", [{ blockName: "A" }, { blockName: "B" }]), "Workout 1 · Strength · Homework")
 assert.equal(homeworkName("W", [{ blockName: " " }]), "W · Homework")
-// the plan's benchmark (utils/benchmark.ts) is named "Benchmark"
+// the plan's test day (Density test + Benchmark, utils/benchmark.ts) is named "Benchmark"
 assert.equal(homeworkName("Workout 1 · Strength", [
-  { type: "exploration_session", blockName: "Density test" }, { type: "strength_conditioning", blockName: "Edge lift max test" },
+  { type: "exploration_session", blockName: "Density test" }, { type: "sequence", blockName: "Benchmark" },
 ]), "Benchmark")
 assert.equal(homeworkName("Workout 1 · Strength", [
   { type: "exploration_session", blockName: "Density test" }, { type: "strength_conditioning", blockName: "S&C 1" },

@@ -3,12 +3,14 @@ import { card } from "@/components/coach/styles"
 import { AppUser, createProtocol, getUsers, setEdgeLiftMax } from "@/services/BoulderGraphService"
 import { notifyHomeworkAssigned } from "@/services/homework"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
-import { edgeLiftMaxTestBlock, MAX_TEST_NAME } from "@/utils/benchmark"
-import { currentMax, EDGE_LIFT_NAME, EDGE_WARMUP, parseMaxLog, type MaxEntry } from "@/utils/edgeWarmup"
+import { currentMax, EDGE_LIFT_NAME, EDGE_WARMUP, isEdgeLift, parseMaxLog, type MaxEntry } from "@/utils/edgeWarmup"
 import { defaultDueBy, shortDay } from "@/utils/homework"
 import { localDateStr } from "@/utils/planRotation"
+import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+
+export const MAX_TEST_NAME = "Edge lift max test"
 
 // Coach: the athlete's Edge Lifts max (utils/edgeWarmup.ts) — type it, or
 // send the max test as homework (done together; the athlete logs the
@@ -56,12 +58,18 @@ export function EdgeLiftMaxSection({ athlete, onHomeworkChanged }: {
     setBusy("test")
     try {
       const library = await getExerciseLibrary()
-      const test = edgeLiftMaxTestBlock(library)
-      if (!test) {
+      const row = library.find((e) => isEdgeLift(e))
+      if (!row) {
         Alert.alert("Edge Lifts not found", `There's no "${EDGE_LIFT_NAME}" exercise in the library.`)
         return
       }
       const dueBy = defaultDueBy(localDateStr(new Date()))
+      const test = {
+        type: "strength_conditioning", blockName: MAX_TEST_NAME,
+        description: `Warm up by feel, then add weight each try (3 min rest) until you can't hold ${EDGE_WARMUP.testHoldSecs} s.`,
+        rounds: 1, restBetweenRounds: 0,
+        exercises: [{ ...exerciseDraftFromLibrary(row), maxTest: true }],
+      }
       const hw = await createProtocol({ name: MAX_TEST_NAME, blocks: [test], athleteId: athlete.$id, planPart: "homework", dueBy })
       notifyHomeworkAssigned(hw.$id, shortDay(dueBy))
       onHomeworkChanged?.()
