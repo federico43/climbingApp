@@ -5,7 +5,7 @@
 // questions (form, tiredness, what could be better). The block's existing
 // summary ("Next time" + every round) is the last slide.
 
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
 import {
   asksQuestions, FORM_LABEL, overviewLine, tally,
   type ExerciseReview, type FormAnswer, type ReviewAnswers, type Trend, type Verdict,
@@ -15,14 +15,14 @@ import { Ionicons } from "@expo/vector-icons"
 import React, { useState } from "react"
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
-const VERDICT: Record<Verdict, { label: string; color: string; icon: React.ComponentProps<typeof Ionicons>["name"] }> = {
+const verdictOf = (C: Palette): Record<Verdict, { label: string; color: string; icon: React.ComponentProps<typeof Ionicons>["name"] }> => ({
   improved: { label: "Improved", color: C.green, icon: "trending-up" },
   same: { label: "Same", color: C.yellow, icon: "remove" },
   declined: { label: "Below last time", color: C.red, icon: "trending-down" },
   first: { label: "Baseline", color: C.textSecondary, icon: "flag-outline" },
-}
+})
 
-const TREND_COLOR: Record<Trend, string> = { up: C.green, same: C.textSecondary, down: C.red }
+const trendColorOf = (C: Palette): Record<Trend, string> => ({ up: C.green, same: C.textSecondary, down: C.red })
 const TREND_ICON: Record<Trend, React.ComponentProps<typeof Ionicons>["name"]> = { up: "arrow-up", same: "remove", down: "arrow-down" }
 
 const FORMS: FormAnswer[] = ["good", "unsure", "off"]
@@ -39,6 +39,8 @@ export function ScReviewSlides({ reviews, details, finishLabel, onFinish }: {
   finishLabel: string
   onFinish: (answers: Record<string, ReviewAnswers>) => void
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   // overview, one per exercise, then the summary
   const count = reviews.length ? reviews.length + 2 : 1
   const [slide, setSlide] = useState(0)
@@ -83,7 +85,7 @@ export function ScReviewSlides({ reviews, details, finishLabel, onFinish }: {
           onPress={() => (last ? onFinish(answers) : setSlide((s) => s + 1))}
         >
           <Text style={styles.btnText}>{last ? finishLabel : "Next"}</Text>
-          <Ionicons name="arrow-forward" size={18} color={C.bg} />
+          <Ionicons name="arrow-forward" size={18} color={C.onAccent} />
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -91,6 +93,9 @@ export function ScReviewSlides({ reviews, details, finishLabel, onFinish }: {
 }
 
 function Overview({ reviews, line, counts }: { reviews: ExerciseReview[]; line: string; counts: ReturnType<typeof tally> }) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  const VERDICT = verdictOf(C)
   const chips: { v: Verdict; n: number }[] = (["improved", "same", "declined", "first"] as Verdict[])
     .map((v) => ({ v, n: counts[v] })).filter((c) => c.n > 0)
   return (
@@ -124,6 +129,10 @@ function Overview({ reviews, line, counts }: { reviews: ExerciseReview[]; line: 
 function ExerciseSlide({ review, answers, onAnswer }: {
   review: ExerciseReview; answers?: ReviewAnswers; onAnswer: (p: Partial<ReviewAnswers>) => void
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  const VERDICT = verdictOf(C)
+  const TREND_COLOR = trendColorOf(C)
   const v = VERDICT[review.verdict]
   const compared = review.verdict !== "first"
   return (
@@ -192,6 +201,7 @@ function ExerciseSlide({ review, answers, onAnswer }: {
 }
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const styles = useSheet(sheet)
   return (
     <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
@@ -199,7 +209,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   )
 }
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   dots: { flexDirection: "row", justifyContent: "center", gap: 6, paddingTop: 12, paddingBottom: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.surfaceHigh },
@@ -237,5 +247,5 @@ const styles = StyleSheet.create({
   footer: { flexDirection: "row", gap: 10, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, backgroundColor: C.bg },
   btn: { height: 52, minWidth: 52, borderRadius: 16, backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingHorizontal: 16 },
   btnSecondary: { backgroundColor: C.surfaceHigh },
-  btnText: { fontSize: 16, fontWeight: "800", color: C.bg },
-})
+  btnText: { fontSize: 16, fontWeight: "800", color: C.onAccent },
+}))
