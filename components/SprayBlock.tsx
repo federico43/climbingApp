@@ -1,4 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
+import { StepList } from "@/components/cardio/CardioVisuals"
 import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
@@ -255,11 +256,33 @@ export function SprayBlock({
       <Text style={[s.chipText, secondsLeft <= 60 && { color: C.bg }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
     </View>
   )
-  const attemptsChip = !isTime && (
-    <View style={s.chip}>
-      <Text style={s.chipText}>{Math.min(loggedTries, settings.attempts)} / {settings.attempts}</Text>
-      <Text style={s.chipSub}>attempts</Text>
-    </View>
+  // Attempts blocks: one segment per attempt, green = top, red = fell.
+  const results = attempts.filter((a) => a.routeId).map((a) => !!a.success)
+  const attemptBar = (label: string) => !isTime && (
+    <AttemptBar results={results} target={settings.attempts} label={label} />
+  )
+  const nextAttempt = Math.min(loggedTries + 1, settings.attempts)
+
+  // Finishing before the end asks first — it's one tap away from Top / Fell.
+  function finishEarly() {
+    if (reachedEnd || loggedTries === 0) { finish(); return }
+    const left = isTime
+      ? `${clock(secondsLeft)} left`
+      : `${settings.attempts - loggedTries} attempt${settings.attempts - loggedTries !== 1 ? "s" : ""} left`
+    Alert.alert("Finish the block?", `You still have ${left}.`, [
+      { text: "Keep climbing", style: "cancel" },
+      { text: "Finish", style: "destructive", onPress: finish },
+    ])
+  }
+
+  const totals = (
+    <StatsCard
+      items={[
+        { value: String(loggedTops), label: loggedTops === 1 ? "top" : "tops", color: C.green },
+        { value: String(loggedTries), label: loggedTries === 1 ? "attempt" : "attempts", color: C.textPrimary },
+        ...(perRoute.length > 1 ? [{ value: String(perRoute.length), label: "sequences", color: C.textSecondary }] : []),
+      ]}
+    />
   )
 
   const modals = (
@@ -373,20 +396,27 @@ export function SprayBlock({
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={goToPreviousBlock} />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <View style={s.pills}>
-            <View style={s.pill}><Text style={s.pillText}>{ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"}</Text></View>
-            <View style={s.pill}>
-              <Text style={s.pillText}>{isTime ? `⏱ ${settings.minutes} min` : `${settings.attempts} attempts`}</Text>
-            </View>
-            {settings.timeCap != null && <View style={s.pill}><Text style={s.pillText}>⏱ {settings.timeCap} min</Text></View>}
-            <View style={s.pill}><Text style={s.pillText}>{clock(settings.rest)} rest</Text></View>
-          </View>
+          <StatsCard
+            kicker={`${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`}
+            items={[
+              ...(isTime ? [] : [{ value: String(settings.attempts), label: "attempts", color: C.textPrimary }]),
+              ...(timed ? [{ value: `${isTime ? settings.minutes : settings.timeCap}`, label: "min", color: C.green }] : []),
+              { value: restLabel(settings.rest), label: "rest", color: C.textSecondary },
+            ]}
+          />
           <BlockNotes text={block.description} />
-          <Text style={s.hint}>
-            {isTime
-              ? "Choose a sequence and climb it until the time runs out. Tap Top or Fell after every attempt — rest starts on its own."
-              : `Choose a sequence and give it ${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} minutes` : ""}. Tap Top or Fell after every attempt — rest starts on its own.`}
-          </Text>
+          <StepList
+            steps={[
+              { title: "Choose a sequence", text: "A new one, or one of the suggested ones." },
+              {
+                title: "Climb it",
+                text: isTime
+                  ? `As many attempts as you can in ${settings.minutes} min. Tap Top or Fell after each one.`
+                  : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}. Tap Top or Fell after each one.`,
+              },
+              { title: "Rest", text: "The rest timer starts on its own." },
+            ]}
+          />
         </ScrollView>
         <View style={shared_styles.footer}>
           <CustomButton title="Choose sequence" onPress={() => setPhase("choose")} />
@@ -419,13 +449,23 @@ export function SprayBlock({
             const fromCoach = !!block.routeId && r.routeId === block.routeId
             return (
               <Pressable key={r.routeId} style={s.row} onPress={() => setPreview(r.routeId)}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, gap: 4 }}>
                   <Text style={s.rowName} numberOfLines={1}>{row?.name ?? "Sequence"}</Text>
-                  {(fromCoach || row?.level != null) && (
-                    <Text style={s.meta}>{[fromCoach && "Set by your coach", row?.level != null && `Level ${row.level}`].filter(Boolean).join(" · ")}</Text>
-                  )}
+                  <View style={s.rowMeta}>
+                    {fromCoach && (
+                      <View style={s.coachTag}>
+                        <Ionicons name="person" size={11} color={C.green} />
+                        <Text style={s.coachTagText}>Set by your coach</Text>
+                      </View>
+                    )}
+                    {row?.level != null && <Text style={s.meta}>Level {row.level}</Text>}
+                  </View>
                 </View>
-                <Text style={s.rowRecord}>{r.tries === 0 ? "New" : `${r.sends} top${r.sends !== 1 ? "s" : ""} · ${r.tries} tr${r.tries !== 1 ? "ies" : "y"}`}</Text>
+                {r.tries === 0 ? <Text style={s.rowRecord}>Not tried yet</Text> : (
+                  <Text style={s.rowRecord}>
+                    <Text style={r.sends > 0 && { color: C.green }}>{r.sends} top{r.sends !== 1 ? "s" : ""}</Text> · {r.tries} tr{r.tries !== 1 ? "ies" : "y"}
+                  </Text>
+                )}
                 <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
               </Pressable>
             )
@@ -446,12 +486,14 @@ export function SprayBlock({
           <View style={{ flex: 1 }}>
             <Text style={s.routeName} numberOfLines={1}>{route?.name ?? "Sequence"}</Text>
             <Text style={s.meta}>
-              {onRoute.sends} top{onRoute.sends !== 1 ? "s" : ""} · {onRoute.tries} attempt{onRoute.tries !== 1 ? "s" : ""}
+              {onRoute.tries === 0
+                ? "First attempt on this one"
+                : `This one: ${onRoute.sends} top${onRoute.sends !== 1 ? "s" : ""} · ${onRoute.tries} attempt${onRoute.tries !== 1 ? "s" : ""}`}
             </Text>
           </View>
           {timeChip}
-          {attemptsChip}
         </View>
+        {attemptBar(`Attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.wall}>
           {route ? (
             <SprayWallViewer
@@ -465,17 +507,20 @@ export function SprayBlock({
         </View>
         <View style={s.actions}>
           <Pressable style={({ pressed }) => [s.bigBtn, s.fellBtn, pressed && s.pressed]} onPress={() => record(false)}>
+            <Ionicons name="arrow-down" size={22} color={C.red} />
             <Text style={s.fellText}>Fell</Text>
           </Pressable>
           <Pressable style={({ pressed }) => [s.bigBtn, s.topBtn, pressed && s.pressed]} onPress={() => record(true)}>
+            <Ionicons name="checkmark" size={24} color={C.bg} />
             <Text style={s.topText}>Top</Text>
           </Pressable>
         </View>
         <View style={s.footerRow}>
-          <Pressable onPress={() => setPhase("choose")} hitSlop={8}>
+          <Pressable onPress={() => setPhase("choose")} hitSlop={8} style={s.linkRow}>
+            <Ionicons name="swap-horizontal" size={16} color={C.textSecondary} />
             <Text style={s.link}>Change sequence</Text>
           </Pressable>
-          <Pressable onPress={finish} hitSlop={8}>
+          <Pressable onPress={finishEarly} hitSlop={8}>
             <Text style={s.link}>Finish block</Text>
           </Pressable>
         </View>
@@ -492,10 +537,19 @@ export function SprayBlock({
     const last = attempts[attempts.length - 1]
     return (
       <View style={shared_styles.screen}>
+        <TopBar title={title} />
         <View style={s.restHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={s.restTitle}>{last?.success ? "Top! 🎉" : "Fell"}</Text>
-            <Text style={s.meta}>Rest · {route?.name ?? "Sequence"}</Text>
+            <View style={s.resultRow}>
+              <Ionicons name={last?.success ? "checkmark-circle" : "arrow-down-circle"} size={28} color={last?.success ? C.green : C.red} />
+              <Text style={[s.restTitle, { color: last?.success ? C.green : C.red }]}>{last?.success ? "Top" : "Fell"}</Text>
+            </View>
+            <Text style={s.meta} numberOfLines={1}>Rest · {route?.name ?? "Sequence"}</Text>
+            {timed && startedAt != null && (
+              <Text style={[s.meta, secondsLeft <= 60 && { color: C.red }]}>
+                {secondsLeft > 0 ? `Block: ${clock(secondsLeft)} left` : "Time's up after this rest"}
+              </Text>
+            )}
           </View>
           <AnimatedCircularProgress
             size={92} width={6} fill={fill} rotation={0}
@@ -504,7 +558,9 @@ export function SprayBlock({
             {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
           </AnimatedCircularProgress>
         </View>
+        {attemptBar(`Next: attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.restOptions}>
+          <Text style={s.restOptionsLabel}>Rest</Text>
           {SPRAY_REST_OPTIONS_S.map((secs) => (
             <Pressable key={secs} style={[s.restChip, restLength === secs && s.restChipOn]} onPress={() => setRest(secs)}>
               <Text style={[s.restChipText, restLength === secs && { color: C.bg }]}>{secs / 60} min</Text>
@@ -543,7 +599,10 @@ export function SprayBlock({
         <View style={[shared_styles.container, { justifyContent: "center", gap: 14 }]}>
           <Ionicons name={timeUp ? "alarm-outline" : "checkmark-circle-outline"} size={56} color={timeUp ? C.red : C.green} />
           <Text style={s.heading}>{timeUp ? "Time's up" : "Attempts done"}</Text>
-          <Text style={s.hint}>{loggedTops} top{loggedTops !== 1 ? "s" : ""} in {loggedTries} attempt{loggedTries !== 1 ? "s" : ""}.</Text>
+          <View style={{ width: "100%", gap: 14, marginTop: 6 }}>
+            {totals}
+            {!isTime && <AttemptBar results={results} target={settings.attempts} />}
+          </View>
           <View style={{ width: "100%", gap: 12, marginTop: 12 }}>
             <CustomButton title="Finish block" onPress={finish} />
             <Pressable onPress={() => { setOvertime(true); setPhase("work") }} style={{ alignItems: "center" }} hitSlop={8}>
@@ -568,13 +627,23 @@ export function SprayBlock({
       <TopBar title="Review" onBack={reachedEnd ? undefined : () => setPhase(routeId ? "work" : "intro")} />
       <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
         <Text style={s.sectionLabel}>{title}</Text>
-        {perRoute.length === 0 && <Text style={s.empty}>No sequences logged.</Text>}
-        {perRoute.map((r) => (
-          <View key={r.id} style={s.row}>
-            <Text style={[s.rowName, { flex: 1 }]} numberOfLines={1}>{routes?.get(r.id)?.name ?? "Sequence"}</Text>
-            <Text style={s.rowTops}>{r.sends}/{r.tries} tops</Text>
-          </View>
-        ))}
+        {perRoute.length === 0 ? <Text style={s.empty}>No sequences logged.</Text> : totals}
+        {perRoute.map((r) => {
+          const marks = attempts.filter((a) => a.routeId === r.id).map((a) => !!a.success)
+          return (
+            <View key={r.id} style={[s.row, { flexDirection: "column", alignItems: "stretch", gap: 10 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Text style={[s.rowName, { flex: 1 }]} numberOfLines={1}>{routes?.get(r.id)?.name ?? "Sequence"}</Text>
+                <Text style={s.rowRecord}>
+                  <Text style={r.sends > 0 && { color: C.green }}>{r.sends} top{r.sends !== 1 ? "s" : ""}</Text> · {r.tries} attempt{r.tries !== 1 ? "s" : ""}
+                </Text>
+              </View>
+              <View style={s.dots}>
+                {marks.map((ok, i) => <View key={i} style={[s.dot, { backgroundColor: ok ? C.green : C.red }]} />)}
+              </View>
+            </View>
+          )
+        })}
         <View style={{ marginTop: 8 }}>
           <CustomButton title={nextLabel} onPress={goToNextBlock} />
         </View>
@@ -583,12 +652,75 @@ export function SprayBlock({
   )
 }
 
+// "2 min", "1:30".
+function restLabel(secs: number): string {
+  return secs % 60 === 0 ? `${secs / 60} min` : clock(secs)
+}
+
+/** Big numbers side by side in a card (same look as the cardio screens). */
+function StatsCard({ items, kicker }: { items: { value: string; label: string; color: string }[]; kicker?: string }) {
+  return (
+    <View style={s.card}>
+      {kicker ? <Text style={s.cardKicker}>{kicker}</Text> : null}
+      <View style={s.stats}>
+        {items.map((it, i) => (
+          <React.Fragment key={it.label}>
+            {i > 0 && <View style={s.divider} />}
+            <View style={s.stat}>
+              <Text style={[s.statValue, { color: it.color }]}>{it.value}</Text>
+              <Text style={s.statLabel}>{it.label}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+/** One segment per attempt of the target: green = top, red = fell, grey =
+ *  still to go. Attempts past the target ("One more attempt") add segments. */
+function AttemptBar({ results, target, label }: { results: boolean[]; target: number; label?: string }) {
+  const total = Math.max(target, results.length)
+  return (
+    <View style={s.barBox}>
+      {label ? <Text style={s.barLabel}>{label}</Text> : null}
+      <View style={s.segments}>
+        {Array.from({ length: total }, (_, i) => (
+          <View
+            key={i}
+            style={[s.segment, i < results.length && { backgroundColor: results[i] ? C.green : C.red }]}
+          />
+        ))}
+      </View>
+    </View>
+  )
+}
+
 const s = StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
-  pills: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  pill: { backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  pillText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  card: { width: "100%", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 18, gap: 14 },
+  cardKicker: { fontSize: 12, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
+  stats: { flexDirection: "row", alignItems: "center" },
+  stat: { flex: 1, alignItems: "center", gap: 2 },
+  statValue: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5, fontVariant: ["tabular-nums"] },
+  statLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
+  divider: { width: 1, alignSelf: "stretch", backgroundColor: C.border },
+  barBox: { gap: 8, paddingHorizontal: 20, paddingBottom: 10, width: "100%" },
+  barLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  segments: { flexDirection: "row", gap: 4 },
+  segment: { flex: 1, height: 8, borderRadius: 4, backgroundColor: C.surfaceHigh },
+  dots: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  rowMeta: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  coachTag: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10, backgroundColor: "rgba(111,207,151,0.12)",
+  },
+  coachTagText: { fontSize: 12, fontWeight: "700", color: C.green },
+  resultRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  restOptionsLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, marginRight: 4 },
+  linkRow: { flexDirection: "row", alignItems: "center", gap: 6 },
 
   chooseContent: { padding: 20, gap: 10 },
   addBtn: {
@@ -604,8 +736,7 @@ const s = StyleSheet.create({
   },
   rowName: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   rowRecord: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
-  rowTops: { fontSize: 14, fontWeight: "800", color: C.green },
-  meta: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  meta: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
 
   workHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
   routeName: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
@@ -615,12 +746,11 @@ const s = StyleSheet.create({
   },
   chipUrgent: { backgroundColor: C.red },
   chipText: { fontSize: 18, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
-  chipSub: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
   wall: { flex: 1, marginHorizontal: 12, borderRadius: 14, overflow: "hidden", backgroundColor: "#000" },
   actions: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 14 },
-  bigBtn: { flex: 1, height: 84, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  bigBtn: { flex: 1, height: 84, borderRadius: 20, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   topBtn: { backgroundColor: C.green },
-  fellBtn: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.border },
+  fellBtn: { backgroundColor: "rgba(219,80,74,0.10)", borderWidth: 2, borderColor: "rgba(219,80,74,0.45)" },
   pressed: { transform: [{ scale: 0.97 }] },
   topText: { fontSize: 26, fontWeight: "900", color: C.bg },
   fellText: { fontSize: 26, fontWeight: "900", color: C.textPrimary },
@@ -630,10 +760,10 @@ const s = StyleSheet.create({
   },
   link: { fontSize: 15, fontWeight: "700", color: C.textSecondary },
 
-  restHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8, gap: 12 },
+  restHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 8, gap: 12 },
   restTitle: { fontSize: 28, fontWeight: "800", color: C.textPrimary },
   restTimer: { fontSize: 20, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
-  restOptions: { flexDirection: "row", gap: 8, paddingHorizontal: 24, paddingBottom: 12 },
+  restOptions: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingBottom: 12 },
   restChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   restChipOn: { backgroundColor: C.green, borderColor: C.green },
   restChipText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
