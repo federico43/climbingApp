@@ -8,7 +8,7 @@ import { font, type PaperTheme } from "@/theme/paper/tokens"
 import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkoutCard"
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
-import { ConditioningBasics, ConditioningBasicsLink } from "@/components/ConditioningBasics"
+import { ConditioningBasics, ConditioningBasicsCard } from "@/components/ConditioningBasics"
 import { trainingDays } from "@/utils/extraSession"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { BlockProgressCard } from "@/components/BlockProgressCard"
@@ -371,7 +371,6 @@ function PlanBody({
         {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
           <ScSummary patterns={plan.scPatterns.map((p) => p.movementType)} hasMobility={plan.hasMobility} />
         )}
-        {plan.hasSc && <ConditioningBasicsLink />}
       </View>
 
       {/* ── Now: homework (it has a deadline), then the next workout ────── */}
@@ -390,6 +389,7 @@ function PlanBody({
         )}
         <ThisWeekCard />
         <CardioSection />
+        {plan.hasSc && <ConditioningBasicsCard />}
       </View>
       {plan.hasSc && <ConditioningBasics gymDays={gymDays} ready={!homeworkPrompt} />}
 
