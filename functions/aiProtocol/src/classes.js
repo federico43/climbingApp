@@ -167,6 +167,81 @@ async function cancel(ctx, userId, body) {
   return ok({})
 }
 
+// ── Athlete: join a class with a free spot, right away ──────────────────────
+// body: { classId }. Same checks as a move (room, a rest day around their
+// other classes, not paused, package not locked), plus a session left for
+// every class they're booked in that hasn't ended. The coach is told.
+async function join(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  const pkg = await athletePackage(ctx, userId, now)
+  if (pkg.locked) return fail(409, "Your package is used up or expired. Ask your coach to renew it.")
+  const to = await ctx.db.get(CLASSES, String(body.classId ?? ""))
+  if (!to) return fail(404, "No such class.")
+  if (!(await weekRow(ctx, to.weekStart))?.published) return fail(409, "This week isn't published yet.")
+  if (classMs(to) <= now.ms) return fail(409, "That class already started.")
+  const roster = to.roster ?? []
+  if (roster.includes(userId)) return fail(409, "You're already in that class.")
+  if (roster.length >= CAPACITY) return fail(409, "That class is full.")
+  const mine = await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", userId), ctx.q.equal("weekStart", to.weekStart)])
+  if (mine.some((r) => r.fromClassId === to.$id && r.status === "accepted" && r.kind === "skip")) {
+    return fail(409, "You said you can't go to this one. Tap it and choose \"I can go after all\".")
+  }
+  const classes = await weekClasses(ctx, to.weekStart)
+  const busy = busyDays(classes, userId)
+  for (const r of mine.filter((x) => x.status === "pending" && x.kind !== "skip")) {
+    const day = r.kind === "propose" ? r.day : classes.find((c) => c.$id === r.toClassId)?.day
+    if (Number.isInteger(day)) busy.push(day)
+  }
+  if (!restDayOk(busy, to.day)) return fail(409, "Leave a rest day between classes.")
+  if (pauseOn((await pausesByAthlete(ctx)).get(userId), classDate(to))) return fail(409, "Your plan is paused that day.")
+  if (pkg.left != null) {
+    const booked = (await ctx.db.list(CLASSES, [ctx.q.contains("roster", userId), ctx.q.gte("weekStart", mondayOfYmd(now.ymd))]))
+      .filter((c) => classMs(c, CLASS_HOURS) > now.ms).length
+    if (booked >= pkg.left) return fail(409, `You have ${pkg.left} session${pkg.left === 1 ? "" : "s"} left and ${pkg.left === 1 ? "it's" : "they're all"} booked.`)
+  }
+  const saved = await setRoster(ctx, to, [...roster, userId])
+  if (!saved) return fail(502, "Could not save.")
+  const caller = await ctx.getUserRow(userId)
+  await pushCoaches(ctx, userId, "Joined a class", `${name(caller)} joined ${classLabel(to)}.`, { type: "class_join", classId: to.$id })
+  return ok({ class: saved })
+}
+
+// ── Coach: put an athlete in a class, or take them out ──────────────────────
+// body: { classId, athleteId, add: boolean }. The coach's call, so only the
+// spots are checked (not the rest day). The athlete is told.
+async function roster(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  const cls = await ctx.db.get(CLASSES, String(body.classId ?? ""))
+  if (!cls) return fail(404, "No such class.")
+  if (classMs(cls) <= now.ms) return fail(409, "That class already started.")
+  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
+  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const list = cls.roster ?? []
+  const add = body.add === true
+  if (add) {
+    if (athlete.active === false) return fail(409, `${name(athlete)} is deactivated.`)
+    if (list.includes(athlete.$id)) return fail(409, `${name(athlete)} is already in that class.`)
+    if (list.length >= CAPACITY) return fail(409, "That class is full.")
+  } else if (!list.includes(athlete.$id)) {
+    return ok({ class: cls })
+  }
+  const saved = await setRoster(ctx, cls, add ? [...list, athlete.$id] : list.filter((u) => u !== athlete.$id))
+  if (!saved) return fail(502, "Could not save.")
+  if (!add) {
+    // Their pending changes from this class no longer make sense.
+    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athlete.$id), ctx.q.equal("weekStart", cls.weekStart)])) {
+      if (r.fromClassId === cls.$id && r.status === "pending") await ctx.db.remove(REQUESTS, r.$id)
+    }
+  }
+  if (cls.weekStart >= mondayOfYmd(now.ymd) && (await weekRow(ctx, cls.weekStart))?.published) {
+    await pushUser(ctx, athlete.$id,
+      add ? "You're in a class" : "Class changed",
+      add ? `Your coach added you to ${classLabel(cls)} (${dayLabel(classDate(cls))}).` : `Your coach took you out of ${classLabel(cls)} (${dayLabel(classDate(cls))}).`,
+      { type: "class_roster", classId: cls.$id })
+  }
+  return ok({ class: saved })
+}
+
 // ── Coach: accept or decline a request ───────────────────────────────────────
 async function answer(ctx, userId, body) {
   const r = await ctx.db.get(REQUESTS, String(body.requestId ?? ""))
@@ -328,7 +403,8 @@ async function publish(ctx, userId, body) {
 // ── Athlete: their usual classes ("day@start"), used for every new week ──────
 async function setDefaults(ctx, userId, body) {
   const slots = (Array.isArray(body.slots) ? body.slots : []).map(parseSlot).filter(Boolean)
-  if (slots.length < 1 || slots.length > 3) return fail(400, "Pick 1 to 3 classes.")
+  // None clears them (the athlete stopped repeating their last one).
+  if (slots.length > 3) return fail(400, "Up to 3 classes a week.")
   const days = []
   for (const s of slots) {
     if (!restDayOk(days, s.day)) return fail(409, "Leave a rest day between classes.")
@@ -503,6 +579,8 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classRequest": return request(ctx, userId, body)
     case "classCancel": return cancel(ctx, userId, body)
     case "classDefaults": return setDefaults(ctx, userId, body)
+    case "classJoin": return coach ? fail(403, "Athletes only.") : join(ctx, userId, body)
+    case "classRoster": return coach ? roster(ctx, userId, body) : fail(403, "Coaches only.")
     case "classAnswer": return coach ? answer(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")

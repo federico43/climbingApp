@@ -357,4 +357,56 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.ok(!pushes.some((p) => p.title === "This week isn't published"))
 }
 
+// ── Join right away, and the coach's roster ─────────────────────────────────
+{
+  const wk = addDays(week, 35)
+  for (const u of [{ $id: "fran", role: "athlete", username: "fran" }, { $id: "gus", role: "athlete", username: "gus" }, { $id: "off", role: "athlete", username: "off", active: false }]) {
+    t("users").set(u.$id, { ...u })
+  }
+  // Not published yet: nobody joins
+  const draft = await ctx.db.create("classes", { weekStart: wk, day: 0, start: 9.5, roster: [] })
+  assert.equal((await call("classJoin", "fran", { classId: draft.$id })).status, 409)
+  ctx.db.remove("classes", draft.$id)
+  assert.equal((await call("classPublish", "coach", { weekStart: wk, classes: [{ day: 0, start: 9.5 }, { day: 1, start: 9.5 }, { day: 3, start: 9.5 }, { day: 5, start: 9.5 }] })).status, 200)
+  const c = (day: number) => [...t("classes").values()].find((x) => x.weekStart === wk && x.day === day)!
+  pushes.length = 0
+  // Coaches don't join; athletes do, and the coach hears about it
+  assert.equal((await call("classJoin", "coach", { classId: c(0).$id })).status, 403)
+  assert.equal((await call("classJoin", "fran", { classId: c(0).$id })).status, 200)
+  assert.ok(c(0).roster.includes("fran"))
+  assert.ok(pushes.some((p) => p.to === "coach" && p.body === "fran joined Mon 9:30."))
+  assert.equal((await call("classJoin", "fran", { classId: c(0).$id })).status, 409) // already in
+  assert.equal((await call("classJoin", "fran", { classId: c(1).$id })).status, 409) // Tue is next to Mon
+  assert.equal((await call("classJoin", "fran", { classId: c(3).$id })).status, 200)
+  // One session left and it's booked
+  await ctx.db.create("packages", { athleteId: "gus", total: 1, startsOn: addDays(mondayOfYmd(new Date().toISOString().slice(0, 10)), 0), useBy: addDays(wk, 30) })
+  { const j = await call("classJoin", "gus", { classId: c(1).$id }); assert.equal(j.status, 200, j.json.error) }
+  const noSession = await call("classJoin", "gus", { classId: c(5).$id })
+  assert.equal(noSession.status, 409)
+  assert.match(noSession.json.error, /1 session left/, noSession.json.error)
+
+  // The coach adds and removes; athletes can't
+  assert.equal((await call("classRoster", "fran", { classId: c(1).$id, athleteId: "gus", add: true })).status, 403)
+  pushes.length = 0
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "fran", add: true })).status, 200) // rest day is the coach's call
+  assert.ok(c(1).roster.includes("fran"))
+  assert.ok(pushes.some((p) => p.to === "fran" && p.title === "You're in a class"))
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "fran", add: true })).status, 409)
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "off", add: true })).status, 409)
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "coach", add: true })).status, 404)
+  // A pending move out of a class goes when the coach takes them out
+  const mv = await ctx.db.create("class_requests", { athleteId: "fran", weekStart: wk, kind: "move", status: "pending", fromClassId: c(1).$id, toClassId: c(3).$id })
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "fran", add: false })).status, 200)
+  assert.ok(!c(1).roster.includes("fran"))
+  assert.ok(!t("class_requests").has(mv.$id))
+  assert.ok(pushes.some((p) => p.to === "fran" && p.title === "Class changed"))
+  // Full
+  c(1).roster = ["x1", "x2", "x3", "x4"]
+  assert.equal((await call("classRoster", "coach", { classId: c(1).$id, athleteId: "gus", add: true })).status, 409)
+  assert.equal((await call("classJoin", "fran", { classId: c(1).$id })).status, 409)
+  // No usual classes is fine (stop repeating the last one)
+  assert.equal((await call("classDefaults", "fran", { slots: [] })).status, 200)
+  assert.deepEqual(t("users").get("fran")!.defaultClasses, [])
+}
+
 console.log("classes: all tests passed")
