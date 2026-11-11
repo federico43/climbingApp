@@ -7,7 +7,10 @@ import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
 import { getSessions, getUsers, setEdgeLiftMax, setHangMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
-import { hangEdgeOf, hangLoadLabel, hangMaxFor, hangWarmupRamp, isMaxHang, MAX_HANGS, needsHangWarmup, parseHangLog, withHangMax, type HangMaxEntry } from "@/utils/maxHangs"
+import {
+  bestHeld, biggerEdge, HANG_TEST_JUMP, hangEdgeOf, hangLoadLabel, hangMaxFor, hangTriesSummary, hangWarmupRamp, isMaxHang, MAX_HANGS,
+  needsHangWarmup, nextHangTry, parseHangLog, SCAPULA_CUE, withHangMax, type HangMaxEntry, type HangTestNext, type HangTry,
+} from "@/utils/maxHangs"
 import { loadCachedHangLog, saveCachedHangLog } from "@/utils/hangMaxCache"
 import { localDateStr } from "@/utils/planRotation"
 import {
@@ -730,24 +733,28 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
         </View>
-        {exercise.type !== "7/3s" && exercise.maxTest ? (
+        {exercise.type !== "7/3s" && exercise.maxTest && isMaxHang(exercise) ? (
+          <HangTestUI
+            key={roundKey}
+            exercise={exercise}
+            userId={User?.$id}
+            hangLog={hangLog}
+            weightUnit={weightUnit}
+            onSaved={(edge, kg) => {
+              const next = withHangMax(hangLog ?? [], { edge, kg, date: localDateStr(new Date()), source: "test" })
+              setHangLog(next)
+              if (User?.$id) saveCachedHangLog(User.$id, next)
+            }}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        ) : exercise.type !== "7/3s" && exercise.maxTest ? (
           <MaxTestUI
             key={roundKey}
             exercise={exercise}
             userId={User?.$id}
-            currentMaxKg={isMaxHang(exercise) ? (hangLog ? hangMaxFor(hangLog, hangEdgeOf(exercise)) : undefined) : edgeMax}
-            hangEdge={isMaxHang(exercise) ? hangEdgeOf(exercise) : undefined}
+            currentMaxKg={edgeMax}
             weightUnit={weightUnit}
-            onSaved={(kg) => {
-              if (isMaxHang(exercise)) {
-                const next = withHangMax(hangLog ?? [], { edge: hangEdgeOf(exercise), kg, date: localDateStr(new Date()), source: "test" })
-                setHangLog(next)
-                if (User?.$id) saveCachedHangLog(User.$id, next)
-              } else {
-                setEdgeMax(kg)
-                if (User?.$id) saveCachedEdgeMax(User.$id, kg)
-              }
-            }}
+            onSaved={(kg) => { setEdgeMax(kg); if (User?.$id) saveCachedEdgeMax(User.$id, kg) }}
             onDone={(log) => handleExerciseDone(log)}
           />
         ) : exercise.type !== "7/3s" && exercise.movementType === "mobility" ? (
@@ -2202,7 +2209,259 @@ function GripCard({ edge, secs }: { edge: string; secs: number }) {
         <Text style={styles.warmupRowSecs}>{secs || MAX_HANGS.holdSecs} s hangs</Text>
       </View>
       <Text style={styles.warmupRowNote}>Weight is added to your bodyweight.</Text>
+      <ScapulaCue />
     </View>
+  )
+}
+
+// Max Hangs: shoulder blades retracted on every hang (coach 2026-11-11).
+function ScapulaCue() {
+  return (
+    <View style={styles.noMaxCard}>
+      <Text style={styles.noMaxTitle}>Shoulder blades back</Text>
+      <Text style={styles.noMaxText}>{SCAPULA_CUE}</Text>
+    </View>
+  )
+}
+
+// The Max Hangs test (homework the coach sends for one edge), try by try:
+// set the load → 10 s hang on the hold timer → held: how hard was it? /
+// let go early: a mistake (same load again) or too hard? → rest → the
+// next load (utils/maxHangs.ts nextHangTry). Ends on the heaviest load held,
+// saved as the edge's max. Can't hang bodyweight on the edge → offers the
+// next bigger one (its max is saved for that edge instead).
+type HangTestStep = "set" | "hang" | "held" | "failed" | "rest" | "summary"
+
+function HangTestUI({ exercise, userId, hangLog, weightUnit, onSaved, onDone }: {
+  exercise: RepExercise | BothSidesExercise
+  userId?: string
+  hangLog: HangMaxEntry[] | undefined
+  weightUnit: WeightUnit
+  onSaved: (edge: string, kg: number) => void
+  onDone: (log: Omit<ExerciseLog, "round">) => void
+}) {
+  const [edge, setEdge] = useState(hangEdgeOf(exercise))
+  const lastMaxKg = hangLog ? hangMaxFor(hangLog, edge) : null
+  // Start a bit under the last max (or at bodyweight) — the test builds up.
+  const startFor = (maxKg: number | null) => maxKg ? Math.max(0, convertWeight(maxKg, "kg", weightUnit) - HANG_TEST_JUMP[weightUnit].easy) : 0
+  const [tries, setTries] = useState<HangTry[]>([])
+  const [weight, setWeight] = useState(() => startFor(lastMaxKg))
+  const [secs, setSecs] = useState(0)
+  const [step, setStep] = useState<HangTestStep>("set")
+  const [result, setResult] = useState<HangTestNext | null>(null)
+  const [saving, setSaving] = useState(false)
+  const hold = MAX_HANGS.holdSecs
+  const best = bestHeld(tries)
+
+  function record(t: HangTry) {
+    const all = [...tries, t]
+    setTries(all)
+    const next = nextHangTry(all, weightUnit, edge)
+    setResult(next)
+    if (next.kind === "try") {
+      setWeight(next.weight)
+      setStep("rest")
+    } else {
+      setStep("summary")
+    }
+  }
+
+  function switchEdge(to: string) {
+    setEdge(to)
+    setTries([])
+    setResult(null)
+    setWeight(startFor(hangLog ? hangMaxFor(hangLog, to) : null))
+    setStep("set")
+  }
+
+  function finish(maxWeight: number | null) {
+    onDone({
+      exerciseIndex: 0, exerciseName: exercise.name, edge, weightUnit,
+      repsCompleted: String(maxWeight != null ? hold : Math.max(0, ...tries.map((t) => t.secs ?? 0))),
+      weight: maxWeight != null ? String(maxWeight) : undefined,
+      notes: `Max test on ${edge}: ${hangTriesSummary(tries, weightUnit)}`,
+    })
+  }
+
+  async function save(maxWeight: number) {
+    if (!userId) return finish(maxWeight)
+    const kg = weightUnit === "kg" ? maxWeight : convertWeight(maxWeight, "lb", "kg")
+    setSaving(true)
+    try {
+      await setHangMax(userId, edge, kg, "test")
+      onSaved(edge, kg)
+      finish(maxWeight)
+    } catch (e: any) {
+      setSaving(false)
+      Alert.alert("Max not saved", `${e?.message ?? "Couldn't reach the server."} Tell your coach: ${hangLoadLabel(maxWeight, weightUnit)} on ${edge}.`, [
+        { text: "Try again", onPress: () => { void save(maxWeight) } },
+        { text: "Continue", style: "cancel", onPress: () => finish(maxWeight) },
+      ])
+    }
+  }
+
+  const header = (
+    <View style={{ marginTop: 16 }}>
+      <ExerciseRow exercise={exercise} name={`${exercise.name} · ${edge} · max test`} load={hangLoadLabel(weight, weightUnit)} />
+    </View>
+  )
+  const triesList = tries.length > 0 && (
+    <View style={styles.inputSection}>
+      <Text style={styles.sectionLabel}>Tries</Text>
+      <View style={{ gap: 6 }}>
+        {tries.map((t, i) => (
+          <View key={i} style={styles.warmupRow}>
+            <Text style={styles.warmupRowNum}>{i + 1}</Text>
+            <Text style={styles.warmupRowWeight}>{hangLoadLabel(t.weight, weightUnit)}</Text>
+            <Text style={styles.warmupRowSecs}>
+              {t.held ? `Held · ${t.effort ? EFFORT_LABEL[t.effort] : ""}` : `${t.secs ?? 0} s · ${t.reason === "mistake" ? "Mistake" : "Too hard"}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+
+  // ── Set the load ──
+  if (step === "set") {
+    return (
+      <ExerciseScreen
+        scrollKey="hang-test-set"
+        footer={<PillButton title={`Hang ${hold} s`} icon="timer-outline" onPress={() => setStep("hang")} />}
+      >
+        {header}
+        <Text style={styles.warmupRowNote}>
+          Warm up by feel first. Each try is a {hold} s hang on the {edge} edge, {formatRest(MAX_HANGS.testRestSecs)} rest between tries. The app picks the next load from how it went.
+        </Text>
+        <ScapulaCue />
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Weight added (0 = bodyweight)</Text>
+          <Stepper value={weight} onChange={setWeight} step={DEFAULT_LOAD_STEP[weightUnit]} suffix={` ${weightUnit}`} />
+          <Text style={styles.warmupRowNote}>
+            {hangLoadLabel(weight, weightUnit)}{lastMaxKg != null ? ` · last max on ${edge}: ${hangLoadLabel(convertWeight(lastMaxKg, "kg", weightUnit), weightUnit)}` : ""}
+          </Text>
+        </View>
+        {triesList}
+        {tries.length > 0 && (
+          <Pressable onPress={() => { setResult(best != null ? { kind: "done", weight: best } : { kind: "bigger_edge", edge: biggerEdge(edge) }); setStep("summary") }} hitSlop={6}>
+            <Text style={styles.linkText}>End the test here</Text>
+          </Pressable>
+        )}
+      </ExerciseScreen>
+    )
+  }
+
+  // ── The hang ──
+  if (step === "hang") {
+    return (
+      <ExerciseScreen
+        scrollKey={`hang-test-${tries.length}`}
+        footer={<PillButton title="Hang first" icon="arrow-forward" onPress={() => {}} disabled />}
+      >
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Try {tries.length + 1} · {hangLoadLabel(weight, weightUnit)}</Text>
+          <TimedAmountControl
+            target={hold}
+            fixed
+            onChange={(s) => { setSecs(s); setStep(s >= hold ? "held" : "failed") }}
+          />
+          <Text style={styles.warmupRowNote}>Tap Stop if you come off early.</Text>
+        </View>
+        <ScapulaCue />
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Held: how hard? ──
+  if (step === "held") {
+    return (
+      <ExerciseScreen scrollKey="hang-test-held" footer={<PillButton title="Pick how it felt" icon="checkmark" onPress={() => {}} disabled />}>
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Held {hold} s · how hard was it?</Text>
+          <View style={styles.chipGrid}>
+            {EFFORTS.map((e) => (
+              <Pressable key={e} style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: true, secs, effort: e })}>
+                <Text style={styles.repChipText}>{EFFORT_LABEL[e]}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.warmupRowNote}>{"Max = nothing left in the tank: that's your max."}</Text>
+        </View>
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Let go early: mistake or too hard? ──
+  if (step === "failed") {
+    return (
+      <ExerciseScreen scrollKey="hang-test-failed" footer={<PillButton title="Pick one" icon="checkmark" onPress={() => {}} disabled />}>
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Came off at {secs} s · what happened?</Text>
+          <View style={styles.chipGrid}>
+            <Pressable style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: false, secs, reason: "mistake" })}>
+              <Text style={styles.repChipText}>A mistake</Text>
+            </Pressable>
+            <Pressable style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: false, secs, reason: "too_hard" })}>
+              <Text style={styles.repChipText}>Too hard</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.warmupRowNote}>A mistake: bad grip, slipped, shoulders let go — you get the same load again.</Text>
+        </View>
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Rest before the next try ──
+  if (step === "rest" && result?.kind === "try") {
+    const why = result.why === "retry" ? "Same load again" : result.why === "down" ? "Lighter" : "Heavier"
+    return (
+      <WarmupRest
+        key={tries.length}
+        secs={MAX_HANGS.testRestSecs}
+        title={`Try ${tries.length + 1} next · ${why}`}
+        upNext={<ExerciseRow exercise={exercise} name={`${exercise.name} · ${edge}`} load={`${hangLoadLabel(result.weight, weightUnit)} · ${hold} s`} />}
+        onDone={() => setStep("set")}
+      />
+    )
+  }
+
+  // ── Summary ──
+  const max = result?.kind === "done" ? result.weight : best
+  const bigger = result?.kind === "bigger_edge" ? result.edge : null
+  return (
+    <ExerciseScreen
+      scrollKey="hang-test-summary"
+      footer={max != null
+        ? <PillButton title={saving ? "Saving…" : `Save max · ${hangLoadLabel(max, weightUnit)}`} icon="checkmark" onPress={() => { void save(max) }} disabled={saving} />
+        : bigger
+          ? <PillButton title={`Try the ${bigger} edge`} icon="arrow-forward" onPress={() => switchEdge(bigger)} />
+          : <PillButton title="Finish without a max" icon="checkmark" onPress={() => finish(null)} />}
+    >
+      {header}
+      {max != null ? (
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Your max on {edge}</Text>
+          <Text style={[styles.timedBig, { color: C.textPrimary }]}>{max > 0 ? <>+{max}<Text style={styles.timedBigUnit}> {weightUnit}</Text></> : "Bodyweight"}</Text>
+          <Text style={styles.warmupRowNote}>The heaviest load you held {hold} s.</Text>
+        </View>
+      ) : (
+        <View style={styles.noMaxCard}>
+          <Text style={styles.noMaxTitle}>No hang on {edge} yet</Text>
+          <Text style={styles.noMaxText}>
+            {bigger ? `Bodyweight was too hard on this edge. Rest ${formatRest(MAX_HANGS.testRestSecs)} and test the ${bigger} edge instead.` : "Tell your coach how it went."}
+          </Text>
+        </View>
+      )}
+      {triesList}
+      {max == null && bigger && (
+        <Pressable onPress={() => finish(null)} hitSlop={6}>
+          <Text style={styles.linkText}>Finish without a max</Text>
+        </Pressable>
+      )}
+    </ExerciseScreen>
   )
 }
 
@@ -2280,13 +2539,10 @@ function WarmedUpNote() {
 // the usual hold timer (fixed to the test's length; "Redo hold" for the
 // next try), then the athlete logs the heaviest weight held and it becomes
 // their max.
-// Max Hangs (hangEdge set): the max is for that edge, added to bodyweight,
-// so bodyweight (0) is a valid max.
-function MaxTestUI({ exercise, userId, currentMaxKg, hangEdge, weightUnit, onSaved, onDone }: {
+function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone }: {
   exercise: RepExercise | BothSidesExercise
   userId?: string
   currentMaxKg: number | null | undefined
-  hangEdge?: string
   weightUnit: WeightUnit
   onSaved: (kg: number) => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
@@ -2294,18 +2550,17 @@ function MaxTestUI({ exercise, userId, currentMaxKg, hangEdge, weightUnit, onSav
   const start = currentMaxKg ? convertWeight(currentMaxKg, "kg", weightUnit) : 0
   const [weight, setWeight] = useState(start)
   const [saving, setSaving] = useState(false)
-  const secs = hangEdge ? MAX_HANGS.holdSecs : EDGE_WARMUP.testHoldSecs
-  const valid = hangEdge ? weight >= 0 : weight > 0
+  const secs = EDGE_WARMUP.testHoldSecs
+  const valid = weight > 0
   function finish() {
-    onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit, ...(hangEdge ? { edge: hangEdge } : {}) })
+    onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit })
   }
   async function save() {
     if (!valid || !userId) return
     const kg = weightUnit === "kg" ? weight : convertWeight(weight, "lb", "kg")
     setSaving(true)
     try {
-      if (hangEdge) await setHangMax(userId, hangEdge, kg, "test")
-      else await setEdgeLiftMax(userId, kg, "test")
+      await setEdgeLiftMax(userId, kg, "test")
       onSaved(kg)
       finish()
     } catch (e: any) {
@@ -2322,18 +2577,16 @@ function MaxTestUI({ exercise, userId, currentMaxKg, hangEdge, weightUnit, onSav
       footer={<PillButton title={saving ? "Saving…" : valid ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !valid} />}
     >
       <View style={{ marginTop: 16 }}>
-        <ExerciseRow exercise={exercise} name={`${exercise.name}${hangEdge ? ` · ${hangEdge}` : ""} · max test`} />
+        <ExerciseRow exercise={exercise} name={`${exercise.name} · max test`} />
       </View>
       <View style={styles.inputSection}>
         <Text style={styles.sectionLabel}>Hold timer</Text>
         <TimedAmountControl target={secs} fixed onChange={() => {}} />
       </View>
       <View style={styles.inputSection}>
-        <Text style={styles.sectionLabel}>{hangEdge ? `Heaviest weight added, held ${secs} s on ${hangEdge}` : `Heaviest weight held ${secs} s`}</Text>
+        <Text style={styles.sectionLabel}>Heaviest weight held {secs} s</Text>
         <Stepper value={weight} onChange={setWeight} step={DEFAULT_LOAD_STEP[weightUnit]} suffix={` ${weightUnit}`} />
-        {hangEdge
-          ? <Text style={styles.warmupRowNote}>{hangLoadLabel(weight, weightUnit)}{currentMaxKg != null ? ` · last max ${hangLoadLabel(start, weightUnit)}` : ""}</Text>
-          : !!currentMaxKg && <Text style={styles.warmupRowNote}>Last max: {start} {weightUnit}</Text>}
+        {!!currentMaxKg && <Text style={styles.warmupRowNote}>Last max: {start} {weightUnit}</Text>}
       </View>
     </ExerciseScreen>
   )
