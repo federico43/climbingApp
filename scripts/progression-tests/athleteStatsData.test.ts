@@ -5,7 +5,7 @@
 import assert from "node:assert/strict"
 import { blockReview } from "@/utils/athleteStats"
 import {
-  blockWeeks, buildAllBlocksStats, buildBlockStats, edgeLiftSeries, parseSessions, projectSessions,
+  blockWeeks, buildAllBlocksStats, buildBlockStats, densitySessions, edgeLiftSeries, parseSessions, projectSessions,
   scPatternStats, warmupSessions,
 } from "@/utils/athleteStatsData"
 
@@ -205,3 +205,32 @@ const yearly = parseSessions([
 assert.deepEqual(scPatternStats(yearly, lib2, "0000-01-01", "2026-12-31")[0].exercises[0].byFocus.none, [{ label: "Jul 1", value: 28 }, { label: "Jul 1", value: 30 }])
 
 console.log("athleteStatsData: all tests passed")
+
+// ─── Density test: score = sum of the difficulty of each boulder logged ───
+{
+  const density = { type: "exploration_session", blockName: "Density test", timeLimit: 20 }
+  const logger = { type: "exploration_session", blockName: "Boulder Logger" }
+  const climb = (date: string, level: string, min: number) =>
+    ({ blockIndex: 0, type: "exploration_session", success: true, level, timestamp: ts(date, 12, min) })
+  const difficulty = { lv1: 1, lv3: 3, lv5: 5 }
+  const parsed = parseSessions([
+    session("2026-10-08", [density], [climb("2026-10-08", "lv1", 1), climb("2026-10-08", "lv3", 3), climb("2026-10-08", "lv3", 5)]),
+    session("2026-10-09", [logger], [climb("2026-10-09", "lv5", 1)]),   // not a Density test
+    session("2026-10-22", [density], [climb("2026-10-22", "lv5", 1), climb("2026-10-22", "lv5", 2), climb("2026-10-22", "gone", 4)]),
+    session("2026-10-23", [density], []),   // started, nothing logged
+  ] as any)
+  assert.deepEqual(densitySessions(parsed, "2026-10-01", "2026-10-31", difficulty), [
+    { label: "Oct 8", score: 7, climbs: 3 },
+    { label: "Oct 22", score: 10, climbs: 3 },   // an unknown level counts 0
+  ])
+  // Levels not loaded yet: nothing shown (rather than zeros)
+  assert.deepEqual(densitySessions(parsed, "2026-10-01", "2026-10-31", undefined), [])
+  const stats = buildBlockStats({ athlete: {}, sessions: [
+    session("2026-10-08", [density], [climb("2026-10-08", "lv3", 1)]),
+    session("2026-10-15", [density], [climb("2026-10-15", "lv5", 1)]),
+  ] as any, library: [], levelDifficulty: difficulty, today: "2026-10-21", plan, planWorkouts: [] })
+  assert.deepEqual(stats.density.map((d) => d.score), [3, 5])
+  const row = blockReview(stats).rows.find((r) => r.id === "density")
+  assert.equal(row?.change.value, "5 pts")
+  assert.equal(row?.change.delta, "▲ 2 pts")
+}
