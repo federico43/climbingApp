@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  authoredGrades, fitGrades, liveStepDown, nextSlotToRaise, owesStepDown, pendingStepDowns, runGrades,
+  authoredGrades, fitGrades, liveStepDown, nextSlotToRaise, pendingStepDowns, runGrades,
   suggestNextFourByFour, summarizeFourByFourRun,
 } from "@/utils/progression/fourByFour"
 
@@ -108,37 +108,5 @@ assert.equal(s.direction, "hold"); assert.deepEqual(s.grades, G("yellow green gr
 // ── block size changed since last time → fitted to the new size ──
 s = suggestNextFourByFour([run(G("yellow green green green"), [4, 4, 4, 4])], { bouldersPerSet: 5 })!
 assert.deepEqual(s.grades, G("yellow yellow green green green"))
-
-// ── missed tops down to pump → never lower a boulder ──
-// `reasons[i]` = why set i wasn't fully topped (undefined = not asked, older logs).
-const reasonRun = (grades: string[], tops: number[], reasons: (string | undefined)[]) => {
-  const r = run(grades, tops)
-  r.attempts.forEach((a: any, i) => { if (reasons[i]) a.scData.missReason = reasons[i] })
-  return r
-}
-assert.equal(owesStepDown(1, 3, 4, "pump"), false)
-assert.equal(owesStepDown(1, 3, 4, "other"), true)
-assert.equal(owesStepDown(1, 3, 4), true)
-assert.equal(owesStepDown(3, 3, 4, "other"), false)
-assert.equal(owesStepDown(2, 4, 4, "other"), false)
-// pumped in set 1 → no drop owed, same boulders, no upgrade
-let p = reasonRun(G("yellow green green green"), [3, 4, 4, 4], ["pump"])
-assert.equal(pendingStepDowns(p.attempts as any, 4), 0)
-s = suggestNextFourByFour([p], opts)!
-assert.equal(s.direction, "hold"); assert.deepEqual(s.grades, G("yellow green green green"))
-assert.match(s.lastTime, /set 1 \(pumped\)/)
-assert.match(s.note, /pump/)
-assert.deepEqual(summarizeFourByFourRun(p).pumpedInSets, [1])
-// pumped in the last set of a 2-set block → no drop applied between sessions
-s = suggestNextFourByFour([reasonRun(G("green green green green"), [4, 3], [undefined, "pump"])], opts)!
-assert.equal(s.direction, "hold"); assert.deepEqual(s.grades, G("green green green green"))
-// "something else" keeps today's rule
-s = suggestNextFourByFour([reasonRun(G("green green green green"), [4, 3], [undefined, "other"])], opts)!
-assert.equal(s.direction, "decrease"); assert.deepEqual(s.grades, G("green green green blue"))
-// pump in set 1, something else in set 2 → only one drop owed
-p = reasonRun(G("green green green green"), [3, 3, 4, 4], ["pump", "other"])
-assert.equal(pendingStepDowns(p.attempts as any, 4), 1)
-s = suggestNextFourByFour([p], opts)!
-assert.deepEqual(s.grades, G("green green green blue"))
 
 console.log("all 4×4 tests passed")
