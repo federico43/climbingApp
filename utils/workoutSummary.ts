@@ -8,6 +8,8 @@ import { type Adaptation, resolveAdaptation } from "@/utils/adaptations"
 import { findLibraryBlock } from "@/utils/planWorkout"
 import {
   MAIN_BLOCK_COPIES,
+  MAIN_COMPANION_BLOCK,
+  mainBlockRun,
   PLAN_FOCUS_LABEL,
   type PlanFocus,
   TEST_BLOCK,
@@ -144,7 +146,8 @@ function mainDetail(b: any, copies: number): string {
     case "project_bouldering":
       return projectDetail(b) + each
     case "sequence":
-      return b.targetAttempts ? `${plural(b.targetAttempts, "attempt")}${each}` : ""
+      return [b.timeLimit ? `${b.timeLimit} min` : "", b.targetAttempts ? plural(b.targetAttempts, "attempt") : ""]
+        .filter(Boolean).join(" · ") + (b.timeLimit || b.targetAttempts ? each : "")
     case "four_by_four":
       return b.sets && b.bouldersPerSet ? `${b.sets} sets of ${b.bouldersPerSet} boulders${each}` : ""
     case "intervals":
@@ -200,9 +203,13 @@ function summarizeGroup(key: PhaseKey, blocks: any[], minutes: number): PhaseSum
     return { ...base, adaptation: "test", title: first.blockName || "Test", detail: first.timeLimit ? `${first.timeLimit} min` : "" }
   }
   const names = [...new Set(blocks.map((b) => b.blockName || "Block"))]
+  const times = (n: string) => {
+    const count = blocks.filter((b) => (b.blockName || "Block") === n).length
+    return count > 1 ? `${n} ×${count}` : n
+  }
   return {
     ...base,
-    title: names.length === 1 ? `${names[0]}${blocks.length > 1 ? ` ×${blocks.length}` : ""}` : names.join(" · "),
+    title: names.map(times).join(" · "),
     detail: names.length === 1 ? mainDetail(first, blocks.length) : plural(blocks.length, "block"),
   }
 }
@@ -309,7 +316,16 @@ export function summarizeSpec(
   // Conditioning plans: S&C only.
   if (!spec.mainBlock) return { phases, minutes: phases.reduce((t, p) => t + p.minutes, 0) }
   const main = fromLibrary(spec.mainBlock)
-  const mainBlocks = Array.from({ length: MAIN_BLOCK_COPIES }, () => ({ ...main, adaptation: spec.mainType }))
+  const run = mainBlockRun(spec.mainBlock)
+  const mainBlocks = Array.from({ length: run.copies }, () => ({
+    ...main, adaptation: spec.mainType, ...(run.timeLimit ? { timeLimit: run.timeLimit } : {}),
+  }))
+  // Power days: Coordination boulders × 2 after Power boulders × 2.
+  const companionRef = MAIN_COMPANION_BLOCK[spec.mainType]
+  if (companionRef) {
+    const companion = fromLibrary(companionRef)
+    for (let i = 0; i < MAIN_BLOCK_COPIES; i++) mainBlocks.push({ ...companion, adaptation: spec.mainType })
+  }
   const mainSecs = mainBlocks.reduce((t, b) => t + estimateBlockSeconds(b, history), 0)
   phases.push(summarizeGroup("main", mainBlocks, toMinutes(mainSecs)))
 

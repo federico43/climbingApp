@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { WALLS, wallLabel } from "@/utils/routeExploration"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,18 +32,25 @@ interface ClimbEntry {
   levelLabel: string
   levelColor: string
   levelDifficulty: number
-  attempts: number
+  attempts: number // the go it went on (3 = "3+"); 0 = not sent
   attemptsLabel: string
+  wall: string
 }
 
 const ATTEMPT_OPTIONS = [
   { label: "Flash", short: "Flash", value: 1 },
   { label: "2nd go", short: "2nd", value: 2 },
   { label: "3+", short: "3+", value: 3 },
+  // Not sent (coach 2026-11-10): logged so the flash colour can be read from
+  // the test (utils/densityFlash.ts); no points, not in boulders_realizados.
+  { label: "Not sent", short: "No", value: 0 },
 ]
 
+const sent = (c: ClimbEntry) => c.attempts > 0
+const climbPoints = (c: ClimbEntry) => (sent(c) ? c.levelDifficulty : 0)
+
 function calcScore(climbs: ClimbEntry[]): number {
-  return climbs.reduce((sum, c) => sum + c.levelDifficulty, 0)
+  return climbs.reduce((sum, c) => sum + climbPoints(c), 0)
 }
 
 function formatTime(seconds: number): string {
@@ -55,7 +63,7 @@ function formatTime(seconds: number): string {
 
 interface Props {
   block: any
-  logAttempt: (attempt: { success: boolean; level?: string; notes?: string }) => void
+  logAttempt: (attempt: { success: boolean; level?: string; notes?: string; wall?: string; tries?: number }) => void
   goToNextBlock: () => void
   goToPreviousBlock?: () => void
 }
@@ -69,6 +77,8 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   const [climbs, setClimbs] = useState<ClimbEntry[]>([])
   const [selectedLevelId, setSelectedLevelId] = useState<string | null>(null)
   const [selectedAttempts, setSelectedAttempts] = useState(1)
+  // The wall (coach 2026-11-10, like Route exploration): kept between climbs.
+  const [wall, setWall] = useState<string | null>(null)
   const [phase, setPhase] = useState<"intro" | "active" | "review">("intro")
   const [saving, setSaving] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState<number | null>(
@@ -124,7 +134,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   }
 
   function addClimb() {
-    if (!selectedLevelId) return
+    if (!selectedLevelId || !wall) return
     const level = levels.find((l) => l.$id === selectedLevelId)
     if (!level) return
     const opt = ATTEMPT_OPTIONS.find((o) => o.value === selectedAttempts)!
@@ -138,6 +148,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
         levelDifficulty: level.difficulty,
         attempts: selectedAttempts,
         attemptsLabel: opt.label,
+        wall,
       },
     ])
   }
@@ -155,13 +166,14 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     // Only commit climbs that weren't already committed in a prior finish
     const newClimbs = currentClimbs.filter((c) => !committedRef.current.has(c.id))
+    const newTops = newClimbs.filter(sent)
     setSaving(true)
     try {
-      if (newClimbs.length > 0) {
+      if (newTops.length > 0) {
         const user = await account.get()
         const now = new Date()
         await Promise.all(
-          newClimbs.map((c) =>
+          newTops.map((c) =>
             logRecord("boulders_realizados", {
               $id: ID.unique(),
               fecha: now,
@@ -176,7 +188,10 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
     finally { setSaving(false) }
 
     for (const c of newClimbs) {
-      logAttempt({ success: true, level: c.levelId, notes: `${c.levelLabel} · ${c.attemptsLabel}` })
+      logAttempt({
+        success: sent(c), level: c.levelId, notes: `${c.levelLabel} · ${c.attemptsLabel}`,
+        wall: c.wall, tries: sent(c) ? c.attempts : 3,
+      })
       committedRef.current.add(c.id)
     }
     setPhase("review")
@@ -201,7 +216,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
   if (phase === "intro") {
     const title = block?.blockName || "Boulder Logger"
-    const defaultDesc = "Log every boulder you top during this session. Your score and progress are tracked automatically.\n\nHave fun!"
+    const defaultDesc = "Log every boulder you try during this session: the wall, its grade and the go it went on (or not sent). Only tops score.\n\nHave fun!"
     const description = block?.description?.trim() || defaultDesc
 
     return (
@@ -231,15 +246,25 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
   if (phase === "review") {
     const score = calcScore(climbs)
-    const byLevel = new Map<string, { label: string; color: string; count: number; points: number }>()
+    const byLevel = new Map<string, { label: string; color: string; count: number; tried: number; flashes: number; points: number }>()
     for (const c of climbs) {
       if (!byLevel.has(c.levelId)) {
-        byLevel.set(c.levelId, { label: c.levelLabel, color: c.levelColor, count: 0, points: 0 })
+        byLevel.set(c.levelId, { label: c.levelLabel, color: c.levelColor, count: 0, tried: 0, flashes: 0, points: 0 })
       }
       const entry = byLevel.get(c.levelId)!
-      entry.count++
-      entry.points += c.levelDifficulty
+      entry.tried++
+      if (sent(c)) entry.count++
+      if (c.attempts === 1) entry.flashes++
+      entry.points += climbPoints(c)
     }
+    // Per wall: tops of the boulders tried (old climbs have no wall).
+    const byWall = WALLS
+      .map((w) => {
+        const here = climbs.filter((c) => c.wall === w.key)
+        return { key: w.key, label: w.label, tried: here.length, tops: here.filter(sent).length, flashes: here.filter((c) => c.attempts === 1).length }
+      })
+      .filter((w) => w.tried > 0)
+    const tops = climbs.filter(sent).length
 
     return (
       <View style={shared_styles.screen}>
@@ -253,7 +278,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
         <View style={styles.scoreCard}>
           <Text style={styles.scoreLabel}>Total score</Text>
           <Text style={styles.scoreValue}>{score % 1 === 0 ? score : score.toFixed(1)}</Text>
-          <Text style={styles.scoreSub}>{climbs.length} climb{climbs.length !== 1 ? "s" : ""}</Text>
+          <Text style={styles.scoreSub}>{tops} top{tops !== 1 ? "s" : ""} of {climbs.length} tried</Text>
         </View>
 
         {byLevel.size > 0 && (
@@ -264,8 +289,20 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
                 <View style={[styles.levelDot, { backgroundColor: item.color }]} />
                 <Text style={styles.breakdownLabel}>{item.label}</Text>
                 <Text style={styles.breakdownCount}>
-                  {item.count}× · <Text style={{ fontWeight: "700" }}>{item.points % 1 === 0 ? item.points : item.points.toFixed(1)} pts</Text>
+                  {item.flashes} flash · {item.count}/{item.tried} · <Text style={{ fontWeight: "700" }}>{item.points % 1 === 0 ? item.points : item.points.toFixed(1)} pts</Text>
                 </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {byWall.length > 0 && (
+          <View style={styles.breakdownCard}>
+            <Text style={styles.breakdownTitle}>By wall</Text>
+            {byWall.map((w) => (
+              <View key={w.key} style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>{w.label}</Text>
+                <Text style={styles.breakdownCount}>{w.flashes} flash · {w.tops}/{w.tried} tops</Text>
               </View>
             ))}
           </View>
@@ -320,6 +357,25 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
         <>
+          {/* Wall selector */}
+          <View style={styles.pickerSection}>
+            <Text style={styles.pickerLabel}>Wall</Text>
+            <View style={styles.chipRow}>
+              {WALLS.map((w) => {
+                const isSelected = wall === w.key
+                return (
+                  <Pressable
+                    key={w.key}
+                    style={[styles.attemptsChip, isSelected && styles.attemptsChipSelected]}
+                    onPress={() => setWall(w.key)}
+                  >
+                    <Text style={[styles.attemptsChipText, isSelected && styles.attemptsChipTextSelected]}>{w.label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </View>
+
           {/* Grade selector */}
           <View style={styles.pickerSection}>
             <Text style={styles.pickerLabel}>Grade</Text>
@@ -352,7 +408,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           {/* Attempts selector */}
           <View style={styles.pickerSection}>
             <Text style={styles.pickerLabel}>Attempts</Text>
-            <View style={styles.chipRow}>
+            <View style={[styles.chipRow, { flexWrap: "wrap" }]}>
               {ATTEMPT_OPTIONS.map((opt) => {
                 const isSelected = selectedAttempts === opt.value
                 return (
@@ -378,16 +434,16 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           >
             {climbs.length === 0 ? (
               <Text style={styles.emptyText}>
-                Select a grade and tap &quot;Log climb&quot; to record your first boulder.
+                {wall ? "Select a grade and tap \"Log climb\" to record your first boulder." : "Pick the wall, then log each boulder you try."}
               </Text>
             ) : (
               [...climbs].reverse().map((c) => (
                 <View key={c.id} style={styles.climbRow}>
                   <View style={[styles.climbLevelBar, { backgroundColor: c.levelColor }]} />
-                  <Text style={styles.climbLevelText}>{c.levelLabel}</Text>
+                  <Text style={styles.climbLevelText}>{c.levelLabel}{c.wall ? ` · ${wallLabel(c.wall)}` : ""}</Text>
                   <Text style={styles.climbAttemptsText}>{c.attemptsLabel}</Text>
                   <Text style={styles.climbScore}>
-                    +{c.levelDifficulty % 1 === 0 ? c.levelDifficulty : c.levelDifficulty.toFixed(1)}
+                    +{climbPoints(c) % 1 === 0 ? climbPoints(c) : climbPoints(c).toFixed(1)}
                   </Text>
                   <Pressable onPress={() => removeClimb(c.id)} hitSlop={10} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>✕</Text>
@@ -400,9 +456,9 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           {/* Footer: log climb (left, green, fills) + finish pill (right) */}
           <View style={styles.footer}>
             <Pressable
-              style={[styles.logBoulderBtn, !selectedLevelId && { opacity: 0.35 }]}
+              style={[styles.logBoulderBtn, (!selectedLevelId || !wall) && { opacity: 0.35 }]}
               onPress={addClimb}
-              disabled={!selectedLevelId}
+              disabled={!selectedLevelId || !wall}
             >
               <Text style={styles.logBoulderBtnText}>+ Log climb</Text>
             </Pressable>

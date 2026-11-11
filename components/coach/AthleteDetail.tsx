@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
+import { PaperThemeOverride } from "@/components/paper"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { AthleteCard, useFlashLevel } from "@/components/coach/AthleteCard"
 import { HomeworkCard } from "@/components/coach/HomeworkCard"
@@ -12,6 +13,7 @@ import { RolePill } from "@/components/coach/RolePill"
 import { StatsCard } from "@/components/coach/StatsCard"
 import { useAthleteStats } from "@/hooks/useAthleteStats"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
+import { CardioCard } from "./CardioCard"
 import { card } from "@/components/coach/styles"
 import {
   AppUser,
@@ -140,7 +142,12 @@ export function AthleteDetail({
       onHomeworkChanged={() => { reloadHomework(); onChanged(); setTemplatesKey((k) => k + 1) }}
     />
   )
-  const timelineCard = plan && <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+  // Coach screens aren't redesigned yet: keep the timeline dark here.
+  const timelineCard = plan && (
+    <PaperThemeOverride mode="dark">
+      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+    </PaperThemeOverride>
+  )
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
     : <RecentActivityCard sessions={sessions} onOpenDay={setOpenDay} />
@@ -148,6 +155,7 @@ export function AthleteDetail({
   const templatesCard = <TemplatesCard key={templatesKey} athlete={athlete} roster={roster} wide={wide} onHomeworkChanged={() => { reloadHomework(); onChanged() }} />
   const statsCard = <StatsCard key={athlete.$id} columns={wide ? 3 : 2} data={stats} />
   const videos = <AthleteVideos athlete={athlete} />
+  const cardioCard = <CardioCard key={`cardio-${athlete.$id}`} athlete={athlete} />
 
   return (
     <View style={{ flex: 1 }}>
@@ -187,6 +195,7 @@ export function AthleteDetail({
             <View style={styles.sideCol}>
               {homeworkCard}
               {activityCard}
+              {cardioCard}
               {athleteCard}
             </View>
           </View>
@@ -198,6 +207,7 @@ export function AthleteDetail({
             {timelineCard}
             {statsCard}
             {activityCard}
+            {cardioCard}
             {athleteCard}
             {templatesCard}
             {videos}

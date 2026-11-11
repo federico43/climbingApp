@@ -9,6 +9,8 @@ import { IntervalsBlock } from "@/components/IntervalsBlock"
 import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { ProjectBoulderingBlock } from "@/components/ProjectBoulderingBlock"
 import { CoachedBlock } from "@/components/CoachedBlock"
+import { SprayBlock } from "@/components/SprayBlock"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
@@ -71,6 +73,26 @@ export function BlockRenderer({
 
   const blockAttempts = attempts.filter((a) => a.blockIndex === currentBlockIndex)
   const onPrevBlock = currentBlockIndex > 0 ? goToPreviousBlock : undefined
+
+  // The spray-wall blocks (Max bouldering, Base 1, Power and Coordination
+  // boulders): choose a sequence, then Top / Fell with rest (components/SprayBlock.tsx).
+  // Never coached — a legacy coached flag on one is ignored.
+  if (isSprayBlock(block)) {
+    return (
+      <SprayBlock
+        key={currentBlockIndex}
+        block={block as any}
+        attempts={blockAttempts}
+        workoutAttempts={attempts}
+        logAttempt={logAttempt}
+        undoLastAttempt={undoLastAttempt}
+        restTimeRemaining={restTimeRemaining}
+        startRestTimer={startRestTimer}
+        goToNextBlock={goToNextBlock}
+        goToPreviousBlock={onPrevBlock}
+      />
+    )
+  }
 
   // Run by the coach in person: title + Done (+ the coach's sequences),
   // whatever the block's type (docs/training-plan-implementation.md §12b).

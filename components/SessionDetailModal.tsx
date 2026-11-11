@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -218,7 +219,9 @@ function ExplorationBlockView({ attempts }: { attempts: any[] }) {
 // A block the coach ran in person (docs/training-plan-implementation.md §12):
 // nothing logged but Done — except sequences, where the athlete saved each
 // sequence the coach set with its sends.
-function CoachedBlockView({ blockType, attempts }: { blockType: string; attempts: any[] }) {
+// Spray blocks (utils/sprayBlocks.ts) show the same list: the sequences the
+// athlete added or chose, with their sends.
+function CoachedBlockView({ blockType, attempts, spray }: { blockType: string; attempts: any[]; spray?: boolean }) {
   const routes = useMemo(() => {
     const order: string[] = []
     const by = new Map<string, { tries: number; sends: number }>()
@@ -240,7 +243,8 @@ function CoachedBlockView({ blockType, attempts }: { blockType: string; attempts
     }
   }, [routes])
 
-  if (blockType !== "sequence" || routes.length === 0) {
+  if (spray && routes.length === 0) return <Text style={styles.blockStats}>No sequences logged</Text>
+  if (!spray && (blockType !== "sequence" || routes.length === 0)) {
     return <Text style={styles.blockStats}>Run by the coach</Text>
   }
   return (
@@ -838,7 +842,8 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                     const blockAttempts = rawAttempts.filter((a) => a.blockIndex === block.blockIndex)
                     const sends = blockAttempts.filter((a) => a.success).length
                     const total = blockAttempts.length
-                    const coached = !!block.block?.coached
+                    const spray = isSprayBlock(block.block)
+                    const coached = !!block.block?.coached && !spray
 
                     return (
                       <View key={block.blockIndex} style={styles.blockCard}>
@@ -856,17 +861,17 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
                             <Text style={styles.blockDuration}>{formatDuration(block.duration)}</Text>
                           )}
                         </View>
-                        {!coached && block.blockType === "sequence" && !!block.block?.routeName && (
+                        {!coached && !spray && block.blockType === "sequence" && !!block.block?.routeName && (
                           <View style={styles.routeRow}>
                             <Ionicons name="footsteps" size={13} color={C.green} />
                             <Text style={styles.routeName} numberOfLines={1}>{block.block.routeName}</Text>
                           </View>
                         )}
-                        {!coached && block.blockType === "sequence" && (
+                        {!coached && !spray && block.blockType === "sequence" && (
                           <SequenceBlockView block={block.block} attempts={blockAttempts} />
                         )}
-                        {coached ? (
-                          <CoachedBlockView blockType={block.blockType} attempts={blockAttempts} />
+                        {coached || spray ? (
+                          <CoachedBlockView blockType={block.blockType} attempts={blockAttempts} spray={spray} />
                         ) : block.blockType === "strength_conditioning" ? (
                           <ScBlockView block={block.block} attempts={blockAttempts} onOpenExercise={onOpenExercise} />
                         ) : block.blockType === "free_session" ? (
