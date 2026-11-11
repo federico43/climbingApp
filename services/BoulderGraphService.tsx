@@ -8,6 +8,7 @@ import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -738,6 +739,13 @@ export async function setHangMax(userId: string, edge: string, kg: number, sourc
     data: { hangMaxLog: JSON.stringify(log) },
   })
   return updated as unknown as AppUser
+}
+
+// The athlete's last pull-up assessment, as JSON (utils/pullupAssessment.ts).
+// Throws when the `pullupTest` column doesn't exist on `users` yet
+// (scripts/class-tables/create-tables.mjs adds it).
+export async function setPullupTest(userId: string, test: SavedPullupTest): Promise<void> {
+  await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { pullupTest: JSON.stringify(test) } })
 }
 
 export async function deleteAthlete(userId: string): Promise<void> {
