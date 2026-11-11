@@ -4,6 +4,7 @@ import {
   CLASS_HOURS, LOW_SESSIONS, WEEK_DAYS, WeekEntry, athleteWeek, formatTime, mondayOf, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { useClassSchedule } from "@/utils/classScheduleStore"
+import { useFixedAnswer } from "@/utils/fixedScheduleAnswer"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
@@ -17,6 +18,7 @@ export function ThisWeekCard() {
   const router = useRouter()
   const { role } = useAuth()
   const st = useClassSchedule()
+  const answer = useFixedAnswer(st.me)
   if (role === "coach") return null
 
   const now = new Date()
@@ -60,7 +62,13 @@ export function ThisWeekCard() {
         </View>
         {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."} Talk to your coach to renew your package.</Text>}
         {!st.pkg && st.status === "ready" && <Text style={s.lowLine}>No package yet. Ask your coach to add one.</Text>}
-        {st.status === "ready" && !st.defaults.length && <Text style={s.lowLine}>Set your weekly schedule: tap to pick your usual classes.</Text>}
+        {st.status === "ready" && !st.defaults.length && answer === null && (
+          <View style={s.setup}>
+            <Ionicons name="calendar" size={18} color="#10251A" />
+            <Text style={s.setupText}>Set your class schedule</Text>
+            <Ionicons name="chevron-forward" size={18} color="#10251A" />
+          </View>
+        )}
         <View style={s.list}>
           {week.map((e) => <Row key={e.cls.id} e={e} today={today} label={dayLabel(e.cls.day)} />)}
         </View>
@@ -104,6 +112,11 @@ const s = StyleSheet.create({
   leftLow: { backgroundColor: "rgba(254,215,102,0.14)" },
   leftN: { fontSize: 30, fontWeight: "800", color: C.green, lineHeight: 32, fontVariant: ["tabular-nums"] },
   leftL: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textAlign: "center", lineHeight: 13 },
+  setup: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: C.green, borderRadius: 12, paddingVertical: 13,
+  },
+  setupText: { fontSize: 15, fontWeight: "800", color: "#10251A" },
   lowLine: { fontSize: 12, fontWeight: "600", color: C.yellow, marginTop: -4 },
   list: { borderTopWidth: 1, borderTopColor: C.border },
   row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
