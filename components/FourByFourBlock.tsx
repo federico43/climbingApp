@@ -1,5 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -17,7 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
 // 4×4 power-endurance protocol: N sets of M boulders, resting between sets.
@@ -59,6 +59,9 @@ export function FourByFourBlock({
   goToNextBlock,
   goToPreviousBlock,
 }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
   const nextLabel = useNextBlockLabel("Continue")
   const sets: number = block.sets ?? 4
   const bouldersPerSet: number = block.bouldersPerSet ?? 4
@@ -163,7 +166,7 @@ export function FourByFourBlock({
   if (phase === "preview") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} />
+        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={styles.content}>
           <BlockNotes text={block.description} />
           {showIntro && <Text style={styles.intro}>{introLine}</Text>}
@@ -280,7 +283,7 @@ export function FourByFourBlock({
         <View style={styles.restCircle}>
           <AnimatedCircularProgress
             size={230} width={10} fill={fill}
-            tintColor={urgent ? C.red : C.green} backgroundColor={C.surface} rotation={0}
+            tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
           >
             {() => <Text style={styles.timerText}>{display}</Text>}
           </AnimatedCircularProgress>
@@ -323,6 +326,8 @@ export function FourByFourBlock({
 // The boulder slots in climbing order — a plain reference list (colour dot,
 // "Boulder n", colour), deliberately not tappable or button-like.
 function BoulderList({ grades }: { grades: string[] }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   return (
     <View style={styles.boulderList}>
       {grades.map((g, i) => {
@@ -341,6 +346,7 @@ function BoulderList({ grades }: { grades: string[] }) {
 
 // Sets done / to go: filled = logged, ringed = this one, faint = to come.
 function SetDots({ done, total }: { done: number; total: number }) {
+  const styles = useSheet(sheet)
   return (
     <View style={styles.setDots}>
       {Array.from({ length: total }).map((_, i) => (
@@ -350,7 +356,7 @@ function SetDots({ done, total }: { done: number; total: number }) {
   )
 }
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   content: { padding: 20, gap: 16, paddingBottom: 8 },
 
   statsCard: {
@@ -439,4 +445,4 @@ const styles = StyleSheet.create({
   reviewDots: { flex: 1, flexDirection: "row", gap: 4, marginHorizontal: 12 },
   reviewDot: { width: 10, height: 10, borderRadius: 5 },
   stepNotice: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
-})
+}))

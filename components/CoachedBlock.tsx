@@ -1,11 +1,11 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from "@/components/auth-context"
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import {
   getSprayRoute, getSprayWalls, saveSprayRoute, type SprayWallRow,
 } from "@/services/BoulderGraphService"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import type { RouteVariations } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useMemo, useRef, useState } from "react"
@@ -32,6 +32,9 @@ interface Props {
 }
 
 export function CoachedBlock({ block, attempts, logAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const shared_styles = useSheet(shared_stylesSheet)
   const nextLabel = useNextBlockLabel("Done")
   const isSequence = block.type === "sequence"
 
@@ -44,7 +47,7 @@ export function CoachedBlock({ block, attempts, logAttempt, goToNextBlock, goToP
 
   return (
     <View style={shared_styles.screen}>
-      <TopBar title={block.blockName || "Block"} onBack={goToPreviousBlock} />
+      <TopBar title={block.blockName || "Block"} onBack={goToPreviousBlock} poster />
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={s.badge}>
           <Ionicons name="person" size={14} color={C.green} />
@@ -69,6 +72,8 @@ function routeTypeFor(blockName: string | undefined, assignedType: string | unde
 }
 
 function CoachSequences({ block, attempts, logAttempt }: Omit<Props, "goToNextBlock" | "goToPreviousBlock">) {
+  const C = useC()
+  const s = useSheet(sheet)
   const { User } = ConsumeAuth()
   // The sequences logged so far, in order, with their sends / attempts.
   const logged = useMemo(() => {
@@ -226,6 +231,7 @@ function CoachSequences({ block, attempts, logAttempt }: Omit<Props, "goToNextBl
 function ResultSheet({ name, defaultTries, onSave, onClose }: {
   name: string; defaultTries: number; onSave: (tries: number, sends: number) => void; onClose: () => void
 }) {
+  const s = useSheet(sheet)
   const [tries, setTries] = useState(Math.max(1, defaultTries))
   const [sends, setSends] = useState(0)
   const setT = (n: number) => { const t = Math.max(1, Math.min(50, n)); setTries(t); setSends((x) => Math.min(x, t)) }
@@ -250,6 +256,7 @@ function ResultSheet({ name, defaultTries, onSave, onClose }: {
 function Stepper({ label, value, onChange, min, max }: {
   label: string; value: number; onChange: (n: number) => void; min: number; max: number
 }) {
+  const s = useSheet(sheet)
   return (
     <View style={s.stepRow}>
       <Text style={s.stepLabel}>{label}</Text>
@@ -264,7 +271,7 @@ function Stepper({ label, value, onChange, min, max }: {
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   content: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingVertical: 24, gap: 16 },
   badge: {
     flexDirection: "row", alignItems: "center", gap: 6,
@@ -273,7 +280,7 @@ const s = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: "800", color: C.green, letterSpacing: 0.5, textTransform: "uppercase" },
   title: { fontSize: 26, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
   doneBtn: { width: "100%", backgroundColor: C.green, borderRadius: 16, paddingVertical: 18, alignItems: "center", marginTop: 8 },
-  doneBtnText: { fontSize: 18, fontWeight: "700", color: C.bg, letterSpacing: 0.3 },
+  doneBtnText: { fontSize: 18, fontWeight: "700", color: C.onAccent, letterSpacing: 0.3 },
 
   seqBox: { width: "100%", gap: 10, marginTop: 8 },
   seqHeading: { fontSize: 13, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
@@ -304,6 +311,6 @@ const s = StyleSheet.create({
   stepBtnText: { fontSize: 22, color: C.textPrimary, fontWeight: "700" },
   stepValue: { fontSize: 20, fontWeight: "800", color: C.textPrimary, minWidth: 32, textAlign: "center", fontVariant: ["tabular-nums"] },
   saveBtn: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
-  saveBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  saveBtnText: { fontSize: 15, fontWeight: "800", color: C.onAccent },
   cancelText: { fontSize: 14, fontWeight: "700", color: C.textSecondary, textAlign: "center", paddingVertical: 4 },
-})
+}))

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import { Audio } from "expo-av"
 import { useEffect, useRef, useState } from "react"
@@ -22,6 +22,8 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
   doublesEverySec?: number | null
   onDone: () => void
 }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const [phase, setPhase] = useState<Phase>("prepare")
   const [round, setRound] = useState(0)
   const [left, setLeft] = useState(PREPARE_SECS)
@@ -127,8 +129,8 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
       />
       {doublesEverySec ? (
         <View style={[s.hint, doubles && s.hintOn]}>
-          <Ionicons name="flash" size={14} color={doubles ? C.bg : C.yellow} />
-          <Text style={[s.hintText, doubles && { color: C.bg }]}>
+          <Ionicons name="flash" size={14} color={doubles ? C.onAccent : C.yellow} />
+          <Text style={[s.hintText, doubles && { color: C.onAccent }]}>
             {doubles ? "Doubles now!" : `Doubles every ${doublesEverySec}s`}
           </Text>
         </View>
@@ -143,7 +145,7 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   wrap: { alignItems: "center", gap: 18, paddingTop: 12, width: "100%" },
   hint: {
     flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8,
@@ -153,4 +155,4 @@ const s = StyleSheet.create({
   hintText: { fontSize: 15, color: C.yellow, fontWeight: "800" },
   skip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.textMuted },
   skipText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
-})
+}))
