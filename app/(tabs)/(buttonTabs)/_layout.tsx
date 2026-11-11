@@ -7,7 +7,8 @@ import { PaperScope } from "@/theme/paper/legacy"
 import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
-import { BottomTabBar } from "@react-navigation/bottom-tabs"
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
+import { PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { Tabs } from "expo-router"
@@ -141,14 +142,27 @@ function TabsWithPlan() {
 
 // ─── Custom tab bar — adds MinimizedWorkoutBar above the default ──────────────
 
-function CustomTabBar({ tabBarProps, hideBar }: { tabBarProps: any; hideBar: boolean }) {
+// Screens already in Paper Mint: the bar follows the phone's light/dark
+// there, and stays dark under the screens that aren't redesigned yet.
+const PAPER_ROUTES = new Set(["plan"])
+
+function CustomTabBar({ tabBarProps, hideBar }: { tabBarProps: BottomTabBarProps; hideBar: boolean }) {
+  const route = tabBarProps.state.routes[tabBarProps.state.index]?.name
+  if (PAPER_ROUTES.has(route)) return <TabBarBody tabBarProps={tabBarProps} hideBar={hideBar} />
+  return (
+    <PaperThemeOverride mode="dark">
+      <TabBarBody tabBarProps={tabBarProps} hideBar={hideBar} />
+    </PaperThemeOverride>
+  )
+}
+
+function TabBarBody({ tabBarProps, hideBar }: { tabBarProps: BottomTabBarProps; hideBar: boolean }) {
   const ctx = useWorkoutContext()
   const insets = useSafeAreaInsets()
+  const t = usePaperTheme()
   const showMiniBar = ctx.workoutActive && ctx.workoutMinimized
-  // The safe-area inset is folded into the tab bar's own height/padding
-  // (see tabBarStyle), so no extra padding is needed here.
   return (
-    <View style={{ backgroundColor: C.bg }}>
+    <View style={{ backgroundColor: t.paper }}>
       {showMiniBar && (
         <MinimizedWorkoutBar
           protocolName={ctx.protocolName}
@@ -167,7 +181,7 @@ function CustomTabBar({ tabBarProps, hideBar }: { tabBarProps: any; hideBar: boo
         // No tabs to show — keep only the safe-area spacing (under the mini bar, if any).
         <View style={{ height: insets.bottom }} />
       ) : (
-        <BottomTabBar {...tabBarProps} />
+        <PaperTabBar {...tabBarProps} />
       )}
     </View>
   )
