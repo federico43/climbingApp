@@ -21,7 +21,7 @@ const light = {
   cardBorder: "rgba(255,255,255,0.75)",
   iconCircle: "#121014",
   tabBar: "rgba(236,231,222,0.94)",
-  grainOpacity: 0.18,
+  grainOpacity: 0.09,
   meltOpacity: 1,
   // Component-level derived colours
   ghostBorder: "rgba(18,16,20,0.35)",
@@ -57,7 +57,7 @@ const dark: PaperTheme = {
   cardBorder: "rgba(255,255,255,0.09)",
   iconCircle: "#1D3527",
   tabBar: "rgba(14,12,18,0.92)",
-  grainOpacity: 0.11,
+  grainOpacity: 0.06,
   meltOpacity: 0.85,
   ghostBorder: "rgba(255,255,255,0.30)",
   inputFill: "rgba(0,0,0,0.35)",
