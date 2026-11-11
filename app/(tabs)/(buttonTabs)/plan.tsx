@@ -1,7 +1,7 @@
 import { ConsumeAuth } from "@/components/auth-context"
 import {
   Body, Card, CardTitle, IconButton, Melt, MintButton, Mono, PaperScreen, PosterHeadline, ProgressBar,
-  SectionHeader, SpecsRow, usePaper, usePaperStyles,
+  RailAnchor, SectionHeader, SpecsRow, usePaper, usePaperStyles,
 } from "@/components/paper"
 import { SettingsButton } from "@/components/SettingsButton"
 import { font, type PaperTheme } from "@/theme/paper/tokens"
@@ -43,6 +43,7 @@ import {
   addDays,
   localDateStr,
   builtMainType,
+  hasBuiltMainBlock,
   canRotate,
   isConditioningOnly,
   MAIN_CYCLE,
@@ -185,6 +186,7 @@ export default function PlanScreen() {
   return (
     <>
       <PaperScreen
+        rail={{ top: 230 }}
         bottomPad={48}
         header={
           <View style={styles.header}>
@@ -264,7 +266,6 @@ function PlanBody({
   const notStarted = today < windowStart
   const over = today > windowEnd
   const conditioning = isConditioningOnly(plan)
-  const focusWord = conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Training"
   const week = Math.min(Math.max(planWeek(windowStart, today, plan.pauses), 1), PLAN_WEEKS)
   const left = planDaysLeft(windowStart, windowEnd, today, plan.pauses)
 
@@ -322,6 +323,16 @@ function PlanBody({
   const [selected, setSelected] = useState<number | null>(null)
   const shown = selected ? slots.find((s) => s.index === selected) ?? null : null
   const { workout: latest, scPart } = pickLatestWorkout(templates, homeWorkoutId)
+  // The headline: the main attribute of the workout on screen ("Today's
+  // focus"); the plan's focus when there's none or it has no climbing block.
+  const showsWorkout = !!latest && !(pause && (pausedNow || pauseSoon))
+  const todayType = showsWorkout && hasBuiltMainBlock(latest!.blocks)
+    ? builtMainType(latest!.planIndex ?? 1, latest!.blocks)
+    : null
+  const focusWord = todayType
+    ? mainTypeLabel(todayType, plan.kind)
+    : conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Training"
+  const focusEyebrow = todayType ? "Today's focus" : conditioning ? "Your plan" : "This week's focus"
   // Homework rides on the athlete's templates (planPart "homework"); its
   // picked days show on the timeline like events.
   const homework = templates.filter((t) => t.planPart === "homework")
@@ -340,10 +351,10 @@ function PlanBody({
       {/* ── Poster: the week's focus, melting into the cards ─────────────── */}
       <View style={{ marginTop: 20 }}>
         <Melt top={40} />
-        <Mono>{conditioning ? "Your plan" : "This week's focus"}</Mono>
+        <Mono>{focusEyebrow}</Mono>
         <PosterHeadline style={{ marginTop: 8 }}>{focusWord}</PosterHeadline>
         <SpecsRow
-          left={[plan.name, `Week *${week}* of ${PLAN_WEEKS}`, `${shortDate(windowStart)} – ${shortDate(windowEnd)}`]}
+          left={[`Week *${week}* of ${PLAN_WEEKS}`, `${shortDate(windowStart)} – ${shortDate(windowEnd)}`]}
           right={specsRight}
         />
         {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
@@ -354,19 +365,25 @@ function PlanBody({
       {/* ── Now: homework (it has a deadline), then the next workout ────── */}
       <View style={{ gap: 12, marginTop: 48 }}>
         {homework.length > 0 && (
-          <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
+          <RailAnchor label="Homework">
+            <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
+          </RailAnchor>
         )}
         {pause && (pausedNow || pauseSoon) ? (
           <PauseCard pause={pause} now={pausedNow} />
         ) : latest && (
-          <LatestWorkoutCard workout={latest} scPart={scPart} />
+          <RailAnchor label="Sequence">
+            <LatestWorkoutCard workout={latest} scPart={scPart} />
+          </RailAnchor>
         )}
         <ThisWeekCard />
         <CardioSection />
       </View>
 
       {/* ── The plan as a whole ───────────────────────────────────────────── */}
-      <SectionHeader>Your training plan</SectionHeader>
+      <RailAnchor label="Training plan">
+        <SectionHeader>Your training plan</SectionHeader>
+      </RailAnchor>
       <View style={{ gap: 12 }}>
         <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
 
