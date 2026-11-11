@@ -4,11 +4,16 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, getUsers, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
 import {
-  Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
+  BAND_HEX, BAND_LADDER, bandRoundChange, comboId, comboLabel, DEFAULT_START_INDEX, isBandAssisted, ladderIndexOf, nextTestStep,
+  parseSavedBands, planBandNext, withSavedBand, type BandCombo, type SavedBands, type TestAttempt,
+} from "@/utils/bands"
+import { loadCachedBands, saveCachedBands } from "@/utils/bandCache"
+import {
+  Direction, Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
 import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
@@ -118,6 +123,8 @@ interface ExerciseLog {
   // its identity (id + exerciseName above) is what gets logged and matched
   // against next time, not the container exercise's.
   levelId?: string
+  // Band-assisted: the band combo used (utils/bands.ts comboId, "" = none).
+  band?: string
   rpe?: string
   effort?: Effort   // what the athlete tapped; rpe is its mapping
   notes?: string
@@ -133,7 +140,7 @@ interface ExerciseLog {
   seriesDone?: number
   // Set when this round ran at an automatic easier load (planRoundDrop) and
   // the athlete kept it: what the load was before the drop.
-  adjustedFrom?: { weight?: string; levelId?: string }
+  adjustedFrom?: { weight?: string; levelId?: string; band?: string }
   // Done as another library exercise the athlete swapped in (its id), and why.
   swappedTo?: string
   swapReason?: SwapReason
@@ -247,6 +254,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // read it, e.g. offline), read on mount — max force Edge Lifts start on
   // it, after a warm-up built from it (utils/edgeWarmup.ts).
   const [edgeMax, setEdgeMax] = useState<number | null | undefined>(undefined)
+  // Band-assisted exercises (utils/bands.ts): the athlete's band per focus
+  // (users.bandCombos, device copy offline), each exercise's planned band
+  // for round 1 (ladder index, -1 = no band yet → guided test), and the
+  // band used in its last round this session.
+  const savedBandsRef = useRef<SavedBands>({})
+  const [bandStarts, setBandStarts] = useState<Record<number, number>>({})
+  const [lastBands, setLastBands] = useState<Record<number, number>>({})
 
   // The setting hints for the exercise as it's being done (a swap's prefill
   // brings its own).
@@ -354,11 +368,14 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
       loadWeightUnit(),
       User?.$id ? readEdgeMax(User.$id) : Promise.resolve(undefined),
+      User?.$id ? readBands(User.$id) : Promise.resolve({} as SavedBands),
     ])
-      .then(([sessions, library, unit, max]) => {
+      .then(([sessions, library, unit, max, savedBands]) => {
         if (cancelled) return
         setWeightUnitState(unit)
         setEdgeMax(max)
+        savedBandsRef.current = savedBands
+        const bandIdx: Record<number, number> = {}
         const resolved: Record<number, ResolvedChain> = {}
         const weights: Record<number, string> = {}
         const levels: Record<number, LevelStep> = {}
@@ -383,6 +400,17 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           if (p.weight != null) weights[idx] = p.weight
           if (p.note) notes[idx] = p.note
           if (p.detail) details[idx] = p.detail
+          // Band-assisted: bands move before the level (planBandNext).
+          if (ex.type !== "7/3s" && ex.focus) {
+            const basis = p.basis
+            const lastWasBand = !!basis && basis.focus === ex.focus && isBandAssisted(basis.exerciseName)
+            const plan = planBandNext(ladderIndexOf(savedBands[ex.focus]), p.direction, lastWasBand)
+            bandIdx[idx] = plan.bandIdx
+            const lastStep = lastWasBand && p.chain ? p.chain.chain.find((l) => l.exerciseId === basis!.summary.exerciseId) : undefined
+            if (plan.keepLevel && lastStep) levels[idx] = lastStep
+            if (plan.note) notes[idx] = plan.note
+            else if (plan.keepLevel && lastStep && lastStep.exerciseId !== p.level?.exerciseId) delete notes[idx]
+          }
           // Edge Lifts with a max: the rounds are at the max, not last
           // time's weight.
           if (max != null && ex.type !== "7/3s" && needsWarmup(ex)) {
@@ -393,6 +421,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         })
 
         setChains(resolved)
+        setBandStarts(bandIdx)
         setLibrary(library)
         setLoadSteps(steps)
         setSettings(sets)
@@ -429,6 +458,17 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     }, 200)
   }
 
+  // The band the athlete used (or found in the test) becomes their band at
+  // this focus: on the device first, then their users row (best effort — a
+  // missing column or no signal keeps the device copy).
+  function saveBand(focus: Focus, idx: number) {
+    if (!User?.$id || savedBandsRef.current[focus] === comboId(BAND_LADDER[idx])) return
+    const next = withSavedBand(savedBandsRef.current, focus, idx)
+    savedBandsRef.current = next
+    saveCachedBands(User.$id, next)
+    setBandCombos(User.$id, next).catch(() => {})
+  }
+
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
     const idx = currentExerciseIndex
     const swap = swaps[idx]
@@ -450,6 +490,11 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     if (chainNow) setLastLevels((prev) => ({ ...prev, [idx]: { exerciseId: log.levelId ?? "", name: log.exerciseName } }))
     const setting = settingFor(idx)
     if (setting) setLastHardest((prev) => ({ ...prev, [idx]: !!log.atHardestSetting }))
+    const bandAt = log.band != null ? ladderIndexOf(log.band) : -1
+    if (bandAt >= 0) {
+      setLastBands((prev) => ({ ...prev, [idx]: bandAt }))
+      if (ex.type !== "7/3s" && ex.focus) saveBand(ex.focus, bandAt)
+    }
 
     // Under the floor → the next round of this exercise starts one step
     // easier (weaker side for both-sides). Only when there is a next round.
@@ -462,6 +507,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // An adjustable setting: the banner says how to make it easier;
         // nothing changes automatically (sc-modifications-plan Q5).
         drop = planRoundDrop(target, round.amount, { kind: "weight", weight: 0, unit: weightUnit }, setting.easier)
+      } else if (bandAt >= 0 && ex.focus && (drop = bandRoundChange(ex.focus, round.amount, bandAt))) {
+        // Band-assisted: more help / less help before any level change.
       } else if (chain) {
         const at = chainIndexOf(chain, log.levelId)
         // Only levels tagged for today's focus ("Used for") — e.g. never a
@@ -485,6 +532,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     })
     if (drop?.weight != null) setLastWeights((prev) => ({ ...prev, [idx]: String(drop!.weight) }))
     if (drop?.level) setLastLevels((prev) => ({ ...prev, [idx]: drop!.level! }))
+    if (drop?.band != null) setLastBands((prev) => ({ ...prev, [idx]: drop!.band! }))
     if (drop?.bannerOnly && !drop.raise && setting) setLastHardest((prev) => ({ ...prev, [idx]: false }))
 
     logAttempt({
@@ -495,6 +543,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // performed, and next time's history lookup needs to find it there.
         exerciseId: log.levelId ?? ex?.exerciseId,
         exerciseName: log.exerciseName,
+        band: log.band,
         // The focus it was programmed for, so next time's prefill only
         // compares against rounds done at the same focus.
         focus: ex.type !== "7/3s" ? ex.focus : undefined,
@@ -736,6 +785,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             onWeightUnitChange={setWeightUnit}
             initialWeight={lastWeights[currentExerciseIndex] ?? ""}
             initialLevel={lastLevels[currentExerciseIndex]}
+            initialBand={lastBands[currentExerciseIndex] ?? bandStarts[currentExerciseIndex] ?? (exercise.focus ? ladderIndexOf(savedBandsRef.current[exercise.focus]) : -1)}
+            suggestedBand={bandStarts[currentExerciseIndex]}
+            onBandFound={(i) => { if (exercise.focus) saveBand(exercise.focus, i) }}
             setting={settingFor(currentExerciseIndex)}
             initialHardest={!!lastHardest[currentExerciseIndex]}
             suggestionNote={currentRound === 0 || justSwapped ? suggestionNotes[currentExerciseIndex] : undefined}
@@ -848,6 +900,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                       <Text style={styles.reviewDetail}>
                         {amountLabel(l.repsCompleted, exUnit)}
                         {l.weight ? ` · ${l.weight}${l.weightUnit ?? "kg"}` : ""}
+                        {l.band != null && ladderIndexOf(l.band) >= 0 ? ` · ${comboLabel(BAND_LADDER[ladderIndexOf(l.band)])}` : ""}
                         {l.rpe ? ` · RPE ${l.rpe}` : ""}
                       </Text>
                     )}
@@ -899,6 +952,135 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 //
 // Shows the whole chain, easiest → hardest, including levels easier than
 // the one the coach prescribed — the athlete can always step down.
+// ─── Band-assisted exercises (utils/bands.ts) ────────────────────────────────
+
+// The bands of a combo as coloured dots ("No band" = an empty ring).
+function BandDots({ combo, size = 12 }: { combo: BandCombo; size?: number }) {
+  if (!combo.length) return <View style={[styles.bandDot, { width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: C.textMuted }]} />
+  return (
+    <View style={styles.bandDots}>
+      {combo.map((c) => (
+        <View key={c} style={[styles.bandDot, { width: size, height: size, borderRadius: size / 2, backgroundColor: BAND_HEX[c] }, c === "black" && styles.bandDotBlack]} />
+      ))}
+    </View>
+  )
+}
+
+// The band to use, one chip per ladder step (most help first), like the
+// level chips. "Suggested" marks last time's plan.
+function BandPicker({ value, suggested, onChange, onRetest }: {
+  value: number; suggested?: number; onChange: (i: number) => void; onRetest?: () => void
+}) {
+  return (
+    <View style={{ width: "100%", gap: 12 }}>
+      <View style={styles.weightLabelRow}>
+        <Text style={styles.sectionLabel}>Band</Text>
+        {!!onRetest && (
+          <Pressable onPress={onRetest} hitSlop={6}>
+            <Text style={styles.linkText}>Test again</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.levelPickerRow}>
+        {BAND_LADDER.map((combo, i) => {
+          const selected = value === i
+          return (
+            <Pressable key={comboId(combo) || "none"} style={[styles.levelChip, selected && styles.levelChipSelected]} onPress={() => onChange(i)}>
+              <View style={styles.bandChipRow}>
+                <BandDots combo={combo} />
+                <Text style={[styles.levelChipText, selected && styles.levelChipTextSelected]} numberOfLines={1}>{comboLabel(combo)}</Text>
+              </View>
+              {suggested === i && (
+                <Text style={[styles.levelChipSuggested, selected && styles.levelChipSuggestedSelected]}>Suggested</Text>
+              )}
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+// The guided test: one set per try, aiming at the focus's rep range. Too
+// many reps → less help, too few → more (nextTestStep), until a set lands
+// in the range; that band is kept for this focus.
+function BandTestUI({ exercise, name, focus, start, onFound, onCancel }: {
+  exercise: RepExercise | BothSidesExercise; name: string; focus: Focus; start: number
+  onFound: (idx: number) => void; onCancel: () => void
+}) {
+  const target = targetFor(focus, undefined, "reps")!
+  const [attempts, setAttempts] = useState<TestAttempt[]>([])
+  const [current, setCurrent] = useState(start)
+  const [reps, setReps] = useState<number | null>(null)
+  const [found, setFound] = useState<number | null>(null)
+  const range = `${target.low}–${target.high}`
+
+  function next() {
+    if (reps == null) return
+    const all = [...attempts, { index: current, reps }]
+    setAttempts(all)
+    setReps(null)
+    const r = nextTestStep(focus, all)
+    if (r.done) setFound(r.index)
+    else setCurrent(r.next)
+  }
+
+  const tries = attempts.length > 0 && (
+    <View style={{ gap: 6 }}>
+      {attempts.map((a, i) => (
+        <View key={i} style={styles.bandChipRow}>
+          <BandDots combo={BAND_LADDER[a.index]} size={10} />
+          <Text style={styles.noMaxText}>{comboLabel(BAND_LADDER[a.index])} · {a.reps} reps</Text>
+        </View>
+      ))}
+    </View>
+  )
+
+  if (found != null) {
+    return (
+      <ExerciseScreen scrollKey="bandFound" footer={<PillButton title="Use this band" icon="checkmark" onPress={() => onFound(found)} />}>
+        <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+        <Text style={styles.sectionLabel}>Your band · {FOCUS_LABEL[focus]}</Text>
+        <View style={styles.bandChipRow}>
+          <BandDots combo={BAND_LADDER[found]} size={18} />
+          <Text style={styles.bandBig}>{comboLabel(BAND_LADDER[found])}</Text>
+        </View>
+        {tries}
+      </ExerciseScreen>
+    )
+  }
+
+  const first = attempts.length === 0
+  return (
+    <ExerciseScreen
+      scrollKey={`bandTest-${attempts.length}`}
+      footer={<PillButton title={reps == null ? "Pick your reps first" : "Next"} icon="arrow-forward" onPress={next} disabled={reps == null} />}
+    >
+      <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+      <Text style={[styles.sectionLabel, { color: C.yellow }]}>Band test · try {attempts.length + 1}</Text>
+      <Text style={styles.noMaxText}>
+        {first ? `Do ${range} reps with the band you think fits. Not sure? Green.` : `Rest 2–3 min, then ${range} reps with:`}
+      </Text>
+      {first
+        ? <BandPicker value={current} onChange={setCurrent} />
+        : (
+          <View style={styles.bandChipRow}>
+            <BandDots combo={BAND_LADDER[current]} size={18} />
+            <Text style={styles.bandBig}>{comboLabel(BAND_LADDER[current])}</Text>
+          </View>
+        )}
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>How many reps?</Text>
+        <AmountInput key={attempts.length} target={target} value={reps} onChange={setReps} />
+      </View>
+      {tries}
+      <Pressable onPress={onCancel} hitSlop={6}>
+        <Text style={styles.linkText}>Cancel test</Text>
+      </Pressable>
+    </ExerciseScreen>
+  )
+}
+
 function LevelPicker({ levelChain, value, suggested, onChange }: {
   levelChain: ResolvedChain; value?: string; suggested?: string; onChange: (v: LevelStep) => void
 }) {
@@ -952,6 +1134,8 @@ interface Prefill {
   detail?: string     // what the note is based on
   hardest?: boolean
   past?: FocusEntry[] // recent sessions, any focus, newest first
+  basis?: FocusEntry  // the session the plan is based on
+  direction?: Direction // its decision, same focus only
 }
 
 // null for exercises that don't progress (mobility, 7/3s).
@@ -963,6 +1147,8 @@ function prefillFor(ex: Exercise, sessions: SessionRow[] | null, library: Librar
   if (next.level) out.level = next.level
   if (next.weight != null) out.weight = String(next.weight)
   if (next.note) out.note = next.note
+  if (next.basis) out.basis = next.basis
+  if (next.decision) out.direction = next.decision.direction
   const basis = basisLine(next, ex.focus, next.level?.name ?? ex.name, unit)
   if (basis) out.detail = basis
   return out
@@ -1474,8 +1660,9 @@ function ExerciseSwapPicker({ visible, reason, original, current, planOption, li
 
 // The pre-drop load to log on a round done at the easier load — only while
 // the athlete is still on it (not undone, not changed by hand).
-function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: LevelStep | undefined): ExerciseLog["adjustedFrom"] {
+function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: LevelStep | undefined, band: number): ExerciseLog["adjustedFrom"] {
   if (!drop?.undo) return undefined
+  if (drop.band != null && band === drop.band && drop.undo.band != null) return { band: comboId(BAND_LADDER[drop.undo.band]) }
   if (drop.weight != null && weight === drop.weight) return { weight: String(drop.undo.weight) }
   if (drop.level && level?.exerciseId === drop.level.exerciseId) return { levelId: drop.undo.level?.exerciseId || undefined }
   return undefined
@@ -1843,7 +2030,7 @@ function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }
 
 type Side = "left" | "right"
 // Edge Lifts with a max, round 1: brief → warmup ⇄ warmupRest (× 4) → timer.
-type Step = "brief" | "warmup" | "warmupRest" | "timer" | "log"
+type Step = "brief" | "bandTest" | "warmup" | "warmupRest" | "timer" | "log"
 
 interface LoggedExerciseUIProps {
   exercise: RepExercise | BothSidesExercise
@@ -1852,6 +2039,12 @@ interface LoggedExerciseUIProps {
   onWeightUnitChange: (u: WeightUnit) => void
   initialWeight?: string
   initialLevel?: LevelStep
+  // Band-assisted (utils/bands.ts): the band to start on (ladder index,
+  // -1 = none yet → the guided test), the one planned from last time, and
+  // where a test result goes.
+  initialBand: number
+  suggestedBand?: number
+  onBandFound: (idx: number) => void
   suggestionNote?: string
   suggestionDetail?: string   // what the note is based on
   roundDrop?: RoundDrop
@@ -1870,7 +2063,7 @@ interface LoggedExerciseUIProps {
 }
 
 function LoggedExerciseUI({
-  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, suggestionNote, suggestionDetail,
+  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, suggestionNote, suggestionDetail,
   roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const sides = exercise.type === "both_sides"
@@ -1887,6 +2080,7 @@ function LoggedExerciseUI({
   // One load for the exercise (both sides included) — it's set before lifting.
   const [weight, setWeight] = useState<number>(startWeight)
   const [level, setLevel] = useState<LevelStep | undefined>(startLevel)
+  const [band, setBand] = useState<number>(initialBand)
   const [effort, setEffort] = useState<Effort | null>(null)
   // Set on the brief, like the load: the app can't measure the setting, so
   // the athlete says when they're on the hardest one.
@@ -1909,6 +2103,7 @@ function LoggedExerciseUI({
   const [dropUndone, setDropUndone] = useState(false)
   const activeDrop = roundDrop && !dropUndone ? roundDrop : undefined
   function undoDrop() {
+    if (roundDrop?.undo?.band != null) setBand(roundDrop.undo.band)
     if (roundDrop?.undo?.weight != null) setWeight(roundDrop.undo.weight)
     if (roundDrop?.undo?.level) setLevel(roundDrop.undo.level)
     setDropUndone(true)
@@ -1917,13 +2112,19 @@ function LoggedExerciseUI({
   // athlete picks something else, showing it would misdescribe what's
   // actually selected, so it disappears (the suggested chip/value stays
   // marked separately so they can still see and return to it).
-  const stillMatchesSuggestion = isLevelMode ? level?.exerciseId === startLevel?.exerciseId : weight === startWeight
+  const stillMatchesSuggestion = (isLevelMode ? level?.exerciseId === startLevel?.exerciseId : weight === startWeight)
+    && band === initialBand
   const activeSuggestionNote = stillMatchesSuggestion ? suggestionNote : undefined
 
   // The displayed/logged identity — once in level mode, this exercise IS
   // whichever level is selected, not the container it was authored under.
   const displayName = isLevelMode && level ? level.name : exercise.name
-  const loadLabel = !isLevelMode && weight > 0 ? `${weight} ${weightUnit}` : undefined
+  // Band-assisted (by the name actually done — a ladder can step on and off
+  // the band level). Needs a focus: the test aims at its rep range.
+  const bandFocus = exercise.focus && isBandAssisted(displayName) ? exercise.focus : undefined
+  const needsBandTest = !!bandFocus && band < 0
+  const loadLabel = bandFocus && band >= 0 ? comboLabel(BAND_LADDER[band])
+    : !isLevelMode && weight > 0 ? `${weight} ${weightUnit}` : undefined
   const logSides: Side[] = sides ? ["left", "right"] : ["left"]
   const complete = logSides.every((s) => amounts[s] != null)
 
@@ -1938,7 +2139,8 @@ function LoggedExerciseUI({
       // "" = an id-less fallback step; log it as no id so name matching works.
       levelId: isLevelMode ? level?.exerciseId || undefined : undefined,
       effort: effort ?? undefined,
-      adjustedFrom: adjustedFromFor(activeDrop, weight, level),
+      ...(bandFocus && band >= 0 ? { band: comboId(BAND_LADDER[band]) } : {}),
+      adjustedFrom: adjustedFromFor(activeDrop, weight, level, band),
       ...(setting ? { atHardestSetting: hardest } : {}),
     }
     onDone(sides
@@ -1964,7 +2166,9 @@ function LoggedExerciseUI({
     return (
       <ExerciseScreen
         scrollKey="brief"
-        footer={hasWarmup && !warmedUp
+        footer={needsBandTest
+          ? <PillButton title="Find your band" icon="arrow-forward" onPress={() => setStep("bandTest")} />
+          : hasWarmup && !warmedUp
           ? <PillButton title="Start warm-up" icon="timer-outline" onPress={() => { setWarmIdx(0); setStep("warmup") }} />
           : <PillButton title={isTimed ? "Start timer" : "Log reps"} icon={isTimed ? "timer-outline" : "arrow-forward"} onPress={() => setStep(firstSetStep)} />}
       >
@@ -1987,9 +2191,34 @@ function LoggedExerciseUI({
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
           prefix={hasWarmup && !warmedUp ? "Then" : undefined}
         />
+        {!!bandFocus && (needsBandTest
+          ? (
+            <>
+              <View style={styles.noMaxCard}>
+                <Text style={styles.noMaxTitle}>No band yet</Text>
+                <Text style={styles.noMaxText}>A short test finds the band for {target ? `${target.low}–${target.high}` : "your"} reps. Already know it? Pick it below.</Text>
+              </View>
+              <BandPicker value={band} onChange={(i) => { setBand(i); onBandFound(i) }} />
+            </>
+          )
+          : <BandPicker value={band} suggested={suggestedBand} onChange={setBand} onRetest={() => setStep("bandTest")} />)}
         {!!setting && <SettingCard setting={setting} hardest={hardest} onChange={setHardest} />}
         {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
       </ExerciseScreen>
+    )
+  }
+
+  // ── Band test ──
+  if (step === "bandTest" && bandFocus) {
+    return (
+      <BandTestUI
+        exercise={exercise}
+        name={displayName}
+        focus={bandFocus}
+        start={band >= 0 ? band : DEFAULT_START_INDEX}
+        onFound={(i) => { setBand(i); onBandFound(i); setStep("brief") }}
+        onCancel={() => setStep("brief")}
+      />
     )
   }
 
@@ -2139,6 +2368,20 @@ async function readEdgeMax(userId: string): Promise<number | null | undefined> {
   const max = currentMax(me as any)
   saveCachedEdgeMax(userId, max)
   return max
+}
+
+// The athlete's band combos from their `users` row, kept on the device too;
+// when the row can't be read, the device's copy. A combo found offline
+// (device copy has a focus the row lacks) isn't lost: the device wins for it.
+async function readBands(userId: string): Promise<SavedBands> {
+  const [me, cached] = await Promise.all([
+    withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null),
+    loadCachedBands(userId),
+  ])
+  if (!me) return cached ?? {}
+  const saved = { ...parseSavedBands((me as any).bandCombos), ...(cached ?? {}) }
+  saveCachedBands(userId, saved)
+  return saved
 }
 
 // The brief's warm-up: one line per hold, weight and seconds only.
@@ -2859,6 +3102,11 @@ const styles = StyleSheet.create({
   levelChipTextSelected: { color: C.bg, fontWeight: "700" },
   levelChipSuggested: { fontSize: 9.5, fontWeight: "700", color: C.green, letterSpacing: 0.4, marginTop: 2, textTransform: "uppercase" },
   levelChipSuggestedSelected: { color: C.bg },
+  bandDots: { flexDirection: "row", gap: 3 },
+  bandDot: {},
+  bandDotBlack: { borderWidth: 1, borderColor: C.textMuted },
+  bandChipRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  bandBig: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
   levelEmptyHint: { fontSize: 12.5, color: C.textMuted, fontStyle: "italic" },
 
   reviewContainer: { padding: 20, gap: 16 },

@@ -6,6 +6,7 @@ import type { Focus, LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
+import type { SavedBands } from "@/utils/bands"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -713,6 +714,13 @@ export async function setEdgeLiftMax(userId: string, kg: number, source: MaxSour
     data: { edgeLiftMax: kg, edgeLiftMaxLog: JSON.stringify(log) },
   })
   return updated as unknown as AppUser
+}
+
+// Band-assisted exercises: the athlete's band combo per focus, as JSON
+// (utils/bands.ts). Throws when the `bandCombos` column doesn't exist on
+// `users` yet (scripts/class-tables/create-tables.mjs adds it).
+export async function setBandCombos(userId: string, saved: SavedBands): Promise<void> {
+  await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { bandCombos: JSON.stringify(saved) } })
 }
 
 export async function deleteAthlete(userId: string): Promise<void> {

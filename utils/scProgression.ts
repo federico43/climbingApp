@@ -232,8 +232,9 @@ export interface RoundDrop {
   // to do instead.
   weight?: number
   level?: LevelStep
+  band?: number      // band-assisted: the ladder step with more help (utils/bands.ts)
   // What it was, for Undo.
-  undo?: { weight?: number; level?: LevelStep }
+  undo?: { weight?: number; level?: LevelStep; band?: number }
   // Nothing to lower (bodyweight with no ladder, or already the easiest
   // level): the athlete picks an easier exercise for the rest of the block.
   pickEasier?: boolean
