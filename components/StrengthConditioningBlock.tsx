@@ -18,7 +18,7 @@ import {
 import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
 import { planFromHistory, type ExerciseSetting } from "@/utils/scPrefill"
-import { chainIds, chainIndexOf, findLibraryRow, usableAt, type ResolvedChain } from "@/utils/levelChain"
+import { chainIds, chainIndexOf, findLibraryRow, isWeightedStep, usableAt, type ResolvedChain } from "@/utils/levelChain"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
 import { planPickFor, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
@@ -1422,8 +1422,9 @@ function EffortChips({ value, onChange }: { value: Effort | null; onChange: (v: 
 // the kg / lb switch only when tapped. Level mode shows the ladder instead.
 function LoadControl({
   weight, setWeight, weightUnit, onWeightUnitChange, weightStep,
-  levelChain, level, setLevel, suggestedLevelId, suggestionNote, suggestionDetail, prefix,
+  levelChain, level, setLevel, weightWithLevel, suggestedLevelId, suggestionNote, suggestionDetail, prefix,
 }: {
+  weightWithLevel?: boolean   // level mode on a weighted step: the ladder and the weight
   weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
   onWeightUnitChange: (u: WeightUnit) => void
   levelChain?: ResolvedChain   // present = level mode
@@ -1442,12 +1443,13 @@ function LoadControl({
           {!!suggestionDetail && <Text style={styles.suggestionBannerDetail}>{suggestionDetail}</Text>}
         </View>
       )}
-      {levelChain ? (
+      {!!levelChain && (
         <LevelPicker
           levelChain={levelChain} value={level?.exerciseId} suggested={suggestedLevelId}
           onChange={(v) => setLevel?.(v)}
         />
-      ) : editing ? (
+      )}
+      {levelChain && !weightWithLevel ? null : editing ? (
         <View style={styles.inputSection}>
           <View style={styles.weightLabelRow}>
             <Text style={styles.sectionLabel}>Weight</Text>
@@ -2112,26 +2114,28 @@ function LoggedExerciseUI({
   // athlete picks something else, showing it would misdescribe what's
   // actually selected, so it disappears (the suggested chip/value stays
   // marked separately so they can still see and return to it).
-  const stillMatchesSuggestion = (isLevelMode ? level?.exerciseId === startLevel?.exerciseId : weight === startWeight)
+  const stillMatchesSuggestion = (isLevelMode ? level?.exerciseId === startLevel?.exerciseId && weight === startWeight : weight === startWeight)
     && band === initialBand
   const activeSuggestionNote = stillMatchesSuggestion ? suggestionNote : undefined
 
   // The displayed/logged identity — once in level mode, this exercise IS
   // whichever level is selected, not the container it was authored under.
   const displayName = isLevelMode && level ? level.name : exercise.name
+  // A weighted ladder step (Weighted pull-ups) carries a weight too.
+  const usesWeight = !isLevelMode || isWeightedStep(displayName)
   // Band-assisted (by the name actually done — a ladder can step on and off
   // the band level). Needs a focus: the test aims at its rep range.
   const bandFocus = exercise.focus && isBandAssisted(displayName) ? exercise.focus : undefined
   const needsBandTest = !!bandFocus && band < 0
   const loadLabel = bandFocus && band >= 0 ? comboLabel(BAND_LADDER[band])
-    : !isLevelMode && weight > 0 ? `${weight} ${weightUnit}` : undefined
+    : usesWeight && weight > 0 ? `${weight} ${weightUnit}` : undefined
   const logSides: Side[] = sides ? ["left", "right"] : ["left"]
   const complete = logSides.every((s) => amounts[s] != null)
 
   function handleSave() {
     if (!complete) return
     const rpe = effort ? String(effortToRpe(effort, exercise.focus)) : undefined
-    const w = !isLevelMode && weight > 0 ? String(weight) : undefined
+    const w = usesWeight && weight > 0 ? String(weight) : undefined
     const base = {
       exerciseIndex: 0,
       exerciseName: displayName,
@@ -2186,6 +2190,7 @@ function LoggedExerciseUI({
         <LoadControl
           weight={weight} setWeight={setWeight} weightUnit={weightUnit} onWeightUnitChange={onWeightUnitChange} weightStep={weightStep}
           levelChain={levelChain} level={level} setLevel={setLevel}
+          weightWithLevel={isLevelMode && usesWeight}
           suggestedLevelId={initialLevel?.exerciseId}
           suggestionNote={activeSuggestionNote}
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
@@ -2347,7 +2352,7 @@ function LoggedExerciseUI({
             : <AmountInput target={target} value={amounts[s]} onChange={setAmount(s)} />}
         </View>
       ))}
-      {!isLevelMode && (
+      {usesWeight && (
         <View style={styles.inputSection}>
           <Text style={styles.sectionLabel}>How did it feel? (optional)</Text>
           <EffortChips value={effort} onChange={setEffort} />
