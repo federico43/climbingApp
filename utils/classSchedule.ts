@@ -8,6 +8,7 @@ export interface GymClass {
   day: number       // 0 = Monday … 6 = Sunday
   start: number     // hours from midnight, half-hour steps (9.5 = 9:30)
   roster: string[]  // usernames signed up, not counting the athlete using the app
+  ids?: string[]    // the same people as user ids (coach screens only)
 }
 
 // A time the coach can't teach. `all` blocks the whole day.
@@ -201,6 +202,12 @@ export const slotKey = (c: { day: number; start: number }) => `${c.day}@${c.star
 export function parseSlot(s: string): { day: number; start: number } | null {
   const [d, h] = s.split("@").map(Number)
   return Number.isInteger(d) && d >= 0 && d <= 6 && Number.isFinite(h) ? { day: d, start: h } : null
+}
+
+// Whether `c` can be one more usual class: up to 3, a rest day between them.
+export function usualFits(defaults: string[], c: { day: number; start: number }): boolean {
+  const days = defaults.map(parseSlot).filter(Boolean).map((x) => x!.day)
+  return defaults.length < 3 && restDayOk(days, c.day)
 }
 
 // Missed sessions that can move to a later week, per package.

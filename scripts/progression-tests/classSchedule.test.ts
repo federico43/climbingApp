@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   GRID_END, type GymClass, athleteView, currentPackage, packageLocked, proposeProblem, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
-  headcount, isBlocked, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
+  headcount, isBlocked, usualFits, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 
 // A week of classes to test against
@@ -131,5 +131,12 @@ assert.equal(packageLocked(null, 0, "2026-10-25"), false)
 assert.equal(packageLocked(pkgs[1], 0, "2026-10-25"), true)
 assert.equal(packageLocked(pkgs[1], 3, "2026-10-25"), false)
 assert.equal(packageLocked(pkgs[0], 3, "2026-10-25"), true)
+
+// Usual classes: up to 3, a rest day between them
+assert.equal(usualFits([], { day: 1, start: 9.5 }), true)
+assert.equal(usualFits(["0@9.5"], { day: 1, start: 9.5 }), false)
+assert.equal(usualFits(["0@9.5"], { day: 0, start: 15 }), false)
+assert.equal(usualFits(["0@9.5", "2@9.5", "4@9.5"], { day: 6, start: 9.5 }), false)
+assert.equal(usualFits(["0@9.5", "3@9.5"], { day: 5, start: 9.5 }), true)
 
 console.log("classSchedule tests passed")

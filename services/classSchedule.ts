@@ -79,6 +79,8 @@ export type RequestBody =
 export const sendRequest = (body: RequestBody) => call("classRequest", body)
 export const cancelRequest = (requestId: string) => call("classCancel", { requestId })
 export const answerRequest = (requestId: string, accept: boolean) => call("classAnswer", { requestId, accept })
+export const joinClass = (classId: string) => call("classJoin", { classId })
+export const setRoster = (classId: string, athleteId: string, add: boolean) => call("classRoster", { classId, athleteId, add })
 export const saveDefaults = (slots: string[]) => call("classDefaults", { slots })
 export const publishWeek = (weekStart: string, classes: { id?: string; day: number; start: number }[], blocks: BlockedTime[]) =>
   call("classPublish", { weekStart, classes, blocks })

@@ -4,7 +4,7 @@ import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedul
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
   CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
-  WEEK_DAYS, weekdayOf, ymd,
+  WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -56,6 +56,7 @@ interface State {
   thisWeek: AthleteWeek            // the Plan card
   shown: AthleteWeek               // the week screen: next week from Saturday once it's published
   shownNext: boolean
+  nextWeek: AthleteWeek | null     // next week once it's published
   defaults: string[]               // usual classes, "day@start"
   pkg: PackageInfo | null
   // Coach: the week being planned (next week, or this week while it's
@@ -63,7 +64,7 @@ interface State {
   planning: "this" | "next"
   thisOpen: boolean                // the coach can plan this week (always, for coaches)
   nextWeekStart: string
-  nextClasses: GymClass[]          // rosters as names
+  nextClasses: GymClass[]          // rosters as names, and as user ids in `ids`
   blocks: BlockedTime[]
   published: boolean               // published and nothing changed since
   packages: ClassPackage[]
@@ -75,7 +76,7 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
-  thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, defaults: [], pkg: null,
+  thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, nextWeek: null, defaults: [], pkg: null,
   planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
 }
 const listeners = new Set<() => void>()
@@ -146,7 +147,11 @@ function draftPatch(): Partial<State> {
   const rosters = new Map((week?.classes ?? []).map((c) => [c.id, c.roster]))
   return {
     nextWeekStart: draft.weekStart,
-    nextClasses: draft.classes.map((c) => ({ ...c, roster: (rosters.get(c.id) ?? []).map((u) => state.names[u] ?? "athlete") })),
+    nextClasses: draft.classes.map((c) => ({
+      ...c,
+      roster: (rosters.get(c.id) ?? []).map((u) => state.names[u] ?? "athlete"),
+      ids: rosters.get(c.id) ?? [],
+    })),
     blocks: draft.blocks,
     published: !!week?.published && !draft.dirty,
   }
@@ -237,6 +242,7 @@ async function load() {
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,
+      nextWeek: nextWeek.published ? weekFor(nextWeek, requests, me, names) : null,
       shownNext, thisOpen,
     })
     set(draftPatch())
@@ -308,6 +314,21 @@ export function cancelExtra(): Promise<boolean> {
 
 export function saveUsualClasses(slots: string[]): Promise<boolean> {
   return run(() => api.saveDefaults(slots))
+}
+
+// Join a class with a free spot, right away. With `every`, it also becomes
+// one of their usual classes (kept for every new week) when that fits.
+export function joinClass(id: string, cls: Slot, every: boolean): Promise<boolean> {
+  return run(async () => {
+    await api.joinClass(id)
+    const key = slotKey(cls)
+    if (every && !state.defaults.includes(key) && usualFits(state.defaults, cls)) await api.saveDefaults([...state.defaults, key])
+  })
+}
+
+// Stop repeating a usual class (this week's class stays as it is).
+export function stopUsual(cls: Slot): Promise<boolean> {
+  return run(() => api.saveDefaults(state.defaults.filter((k) => k !== slotKey(cls))))
 }
 
 // ── Coach ───────────────────────────────────────────────────────────────────
@@ -422,6 +443,11 @@ export async function publishWeek(): Promise<boolean> {
     delete drafts[d.weekStart]
   })
   return saved
+}
+
+// Coach: put an athlete in a saved class, or take them out.
+export function setClassRoster(classId: string, athleteId: string, add: boolean): Promise<boolean> {
+  return run(() => api.setRoster(classId, athleteId, add))
 }
 
 export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string): Promise<boolean> {

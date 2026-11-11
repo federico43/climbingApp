@@ -1,9 +1,9 @@
 import { CLASS_HOURS, GRID_END, GRID_START, formatTime } from "@/utils/classSchedule"
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
-import React, { createContext, useContext, useMemo, useRef, useState } from "react"
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 // RefreshControl from gesture-handler: the react-native one never fires inside its ScrollView.
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native"
 import { Gesture, GestureDetector, RefreshControl, ScrollView } from "react-native-gesture-handler"
 
 // The smallest hour row; rows grow to fill the screen when there's room.
@@ -11,7 +11,20 @@ import { Gesture, GestureDetector, RefreshControl, ScrollView } from "react-nati
 export const HOUR_HEIGHT = 46
 const HANDLE = 14 // height of the resize handles on a block's edges
 const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i)
-const LETTERS = ["M", "T", "W", "T", "F", "S", "S"]
+const LETTERS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+// Tablets and landscape: wider columns get bigger text and the full time.
+export const BIG_SCREEN = 700
+const Big = createContext(false)
+
+// Hours from midnight now, updated every minute (the red "now" line).
+function useNowHours(): number {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(t)
+  }, [])
+  return now.getHours() + now.getMinutes() / 60
+}
 
 // The day column whose block is being dragged, raised so the block shows
 // above the columns to its right.
@@ -44,6 +57,8 @@ export function WeekGrid({
   const [dragDay, setDragDay] = useState<number | null>(null)
   const [hh, setHh] = useState(HOUR_HEIGHT)
   const [refreshing, setRefreshing] = useState(false)
+  const big = useWindowDimensions().width >= BIG_SCREEN
+  const nowH = useNowHours()
   const refresh = onRefresh && (async () => {
     setRefreshing(true)
     try { await onRefresh() } finally { setRefreshing(false) }
@@ -51,15 +66,15 @@ export function WeekGrid({
   return (
     <View style={{ flex: 1 }}>
       <View style={s.heads}>
-        <View style={s.gutter} />
+        <View style={[s.gutter, big && { width: 52 }]} />
         {dates.map((d, i) => {
           const isToday = i === today
           const off = offDays.includes(i)
           return (
             <Pressable key={i} style={s.head} disabled={!onPressDay} onPress={() => onPressDay?.(i)}>
-              <Text style={[s.letter, isToday && { color: C.green }]}>{LETTERS[i]}</Text>
-              <View style={[s.num, isToday && s.numToday]}>
-                <Text style={[s.numText, isToday && s.numTextToday, off && s.numOff]}>{d.getDate()}</Text>
+              <Text style={[s.letter, big && { fontSize: 12 }, isToday && { color: C.green }]}>{big ? LETTERS[i] : LETTERS[i][0]}</Text>
+              <View style={[s.num, big && s.numBig, isToday && s.numToday]}>
+                <Text style={[s.numText, big && { fontSize: 22 }, isToday && s.numTextToday, off && s.numOff]}>{d.getDate()}</Text>
               </View>
             </Pressable>
           )
@@ -73,9 +88,9 @@ export function WeekGrid({
         refreshControl={refresh ? <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={C.green} /> : undefined}
       >
         <View style={[s.body, { height: HOURS.length * hh }]}>
-          <View style={s.gutter}>
+          <View style={[s.gutter, big && { width: 52 }]}>
             {HOURS.slice(1).map((h) => (
-              <Text key={h} style={[s.hour, { top: (h - GRID_START) * hh - 6 }]}>{h}:00</Text>
+              <Text key={h} style={[s.hour, big && { fontSize: 12 }, { top: (h - GRID_START) * hh - 7 }]}>{h}:00</Text>
             ))}
           </View>
           {dates.map((_, day) => (
@@ -90,9 +105,17 @@ export function WeekGrid({
               ))}
               <DragDay.Provider value={setDragDay}>
                 <HourHeight.Provider value={hh}>
-                  <ColumnDay.Provider value={day}>{renderDay(day)}</ColumnDay.Provider>
+                  <Big.Provider value={big}>
+                    <ColumnDay.Provider value={day}>{renderDay(day)}</ColumnDay.Provider>
+                  </Big.Provider>
                 </HourHeight.Provider>
               </DragDay.Provider>
+              {/* Google-Calendar "now" line across today. */}
+              {day === today && nowH > GRID_START && nowH < GRID_END && (
+                <View pointerEvents="none" style={[s.now, { top: (nowH - GRID_START) * hh }]}>
+                  <View style={s.nowDot} />
+                </View>
+              )}
             </Pressable>
           ))}
         </View>
@@ -101,7 +124,29 @@ export function WeekGrid({
   )
 }
 
-type Tone = "mine" | "other" | "full" | "pending" | "skip" | "pick" | "blocked"
+export type Tone = "mine" | "open" | "other" | "full" | "pending" | "skip" | "pick" | "blocked"
+
+// What a block says: a bold first line (the time), then one line per name
+// or note. Old callers pass `text` with "\n" between lines.
+function BlockText({ text, tone, hours }: { text: string; tone: Tone; hours: number }) {
+  const big = useContext(Big)
+  const hh = useContext(HourHeight)
+  const [first, ...rest] = text.split("\n")
+  const size = big ? 13 : 10
+  const lineH = size + 3
+  // As many lines as fit in the block.
+  const room = Math.max(0, Math.floor((hours * hh - 8) / lineH) - 1)
+  return (
+    <>
+      <Text numberOfLines={1} style={[s.blockTitle, { fontSize: size, lineHeight: lineH }, toneText[tone]]}>{first}</Text>
+      {rest.slice(0, room).map((l, i) => (
+        <Text key={i} numberOfLines={1} style={[s.blockText, { fontSize: size - 1, lineHeight: lineH }, toneText[tone], l.startsWith("·") && s.blockNote]}>
+          {l.replace(/^·/, "")}
+        </Text>
+      ))}
+    </>
+  )
+}
 
 // A block on the grid, from `start` for `hours`. With `onDrop` it can be
 // long-pressed and dragged; it reports how many days and hours it moved,
@@ -132,9 +177,9 @@ export function GridBlock({
       disabled={!onPress}
       // Without an action, taps go through to the day column (e.g. to pick a time).
       pointerEvents={onPress ? "auto" : "none"}
-      style={[s.block, tones[tone], { top: (start - GRID_START) * hh + 1, height: hours * hh - 3 }]}
+      style={({ pressed }) => [s.block, tones[tone], { top: (start - GRID_START) * hh + 1, height: hours * hh - 3 }, pressed && { opacity: 0.75 }]}
     >
-      <Text style={[s.blockText, toneText[tone]]}>{text}</Text>
+      <BlockText text={text} tone={tone} hours={hours} />
     </Pressable>
   )
 }
@@ -257,9 +302,11 @@ function DraggableBlock({
             drag && { transform: [{ translateX: drag.days * colWidth.current }, { translateY: drag.hours * hh }] },
           ]}
         >
-          <Text style={[s.blockText, toneText[tone]]}>
-            {drag ? formatTime(start + drag.hours) : resize ? `${formatTime(resize.start)}\n${formatTime(resize.end)}` : text}
-          </Text>
+          <BlockText
+            tone={tone}
+            hours={shownHours}
+            text={drag ? formatTime(start + drag.hours) : resize ? `${formatTime(resize.start)}\n${formatTime(resize.end)}` : text}
+          />
         </View>
       </GestureDetector>
       {/* Siblings on top of the block, not inside it, so a touch on an edge
@@ -280,6 +327,8 @@ function DraggableBlock({
 
 const tones = StyleSheet.create({
   mine: { backgroundColor: C.green },
+  // A class with a free spot the athlete can join: Google-Calendar style bar on the left.
+  open: { backgroundColor: "rgba(111,207,151,0.14)", borderLeftWidth: 3, borderLeftColor: C.green },
   other: { backgroundColor: "#2F3A35" },
   full: { backgroundColor: "#26282A" },
   pending: { backgroundColor: C.yellow },
@@ -289,6 +338,7 @@ const tones = StyleSheet.create({
 })
 const toneText = StyleSheet.create({
   mine: { color: "#10251A" },
+  open: { color: C.textPrimary },
   other: { color: C.textSecondary },
   full: { color: C.textMuted },
   pending: { color: "#3A2E00" },
@@ -301,19 +351,24 @@ const s = StyleSheet.create({
   heads: { flexDirection: "row", paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   gutter: { width: 30 },
   head: { flex: 1, alignItems: "center", gap: 2 },
-  letter: { fontSize: 11, fontWeight: "700", color: C.textSecondary },
-  num: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  letter: { fontSize: 11, fontWeight: "700", color: C.textSecondary, letterSpacing: 0.4 },
+  num: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  numBig: { width: 40, height: 40, borderRadius: 20 },
   numToday: { backgroundColor: C.green },
   numText: { fontSize: 17, fontWeight: "500", color: C.textSecondary, fontVariant: ["tabular-nums"] },
   numTextToday: { color: "#10251A", fontWeight: "800" },
   numOff: { textDecorationLine: "line-through", color: C.textMuted },
   body: { flexDirection: "row", paddingRight: 6 },
-  hour: { position: "absolute", right: 3, fontSize: 9, color: C.textMuted, fontVariant: ["tabular-nums"] },
+  hour: { position: "absolute", right: 4, fontSize: 10, color: C.textSecondary, fontVariant: ["tabular-nums"] },
   col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
-  line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.05)" },
-  block: { position: "absolute", left: 1, right: 1, borderRadius: 5, padding: 3, overflow: "hidden" },
+  line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.07)" },
+  now: { position: "absolute", left: -1, right: 0, height: 2, backgroundColor: C.red, zIndex: 20 },
+  nowDot: { position: "absolute", left: -5, top: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: C.red },
+  block: { position: "absolute", left: 1, right: 2, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 3, overflow: "hidden" },
   handle: { position: "absolute", left: 1, right: 1, height: HANDLE, alignItems: "center", justifyContent: "center" },
   grip: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.textMuted },
   dragging: { opacity: 0.9, borderWidth: 2, borderColor: C.green, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  blockText: { fontSize: 9, fontWeight: "700", lineHeight: 11 },
+  blockTitle: { fontWeight: "800" },
+  blockText: { fontWeight: "600" },
+  blockNote: { opacity: 0.75, fontStyle: "italic" },
 })

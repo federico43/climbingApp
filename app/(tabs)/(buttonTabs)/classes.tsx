@@ -3,12 +3,13 @@ import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
 import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
+import { DetailRow, Legend, OpenSpot, PersonRow, WeekSwitch, longDay, monthTitle } from "@/components/schedule/CalendarBits"
 import {
   BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, setClassRoster, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
@@ -18,7 +19,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PROBLEM: Record<PlanProblem, string> = {
   past: "That time has already gone by",  // or the class has already started
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
@@ -37,6 +37,7 @@ type SheetState =
   | { kind: "request"; key: string }
   | { kind: "packages" }
   | { kind: "package"; athleteId: string }
+  | { kind: "addAthlete"; classId: string }
   | null
 
 // Coach tab: this week as it stands (who's in each class, read only), and
@@ -69,7 +70,6 @@ export default function ClassesScreen() {
   const joining = (c: GymClass) => gridRequests.filter((r) => at(c, r.to))
   const leaving = (c: GymClass) => gridRequests.filter((r) => at(c, r.from))
   const newTimes = gridRequests.filter((r) => !classes.some((c) => at(c, r.to)))
-  const range = `${MONTHS[dates[0].getMonth()]} ${dates[0].getDate()} – ${MONTHS[dates[6].getMonth()]} ${dates[6].getDate()}`
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
 
   const renderDay = (day: number) => {
@@ -112,12 +112,13 @@ export default function ClassesScreen() {
           <GridBlock
             key={c.id}
             start={c.start}
-            tone={joining(c).length || leaving(c).length ? "pick" : "other"}
+            tone={joining(c).length || leaving(c).length ? "pick" : c.roster.length >= CAPACITY ? "full" : "open"}
             text={[
               formatTime(c.start),
-              `${c.roster.length}/${CAPACITY}`,
-              ...joining(c).map((r) => `+${r.who}`),
-              ...leaving(c).map((r) => `−${r.who}`),
+              ...c.roster,
+              ...joining(c).map((r) => `·+${r.who}`),
+              ...leaving(c).map((r) => `·−${r.who}`),
+              ...(c.roster.length < CAPACITY ? [`·${CAPACITY - c.roster.length} free`] : []),
             ].join("\n")}
             onPress={() => setSheet({ kind: "class", id: c.id })}
             onDrop={live ? undefined : (days, hours) => {
@@ -139,6 +140,8 @@ export default function ClassesScreen() {
   const cls = sheet?.kind === "class" ? classes.find((c) => c.id === sheet.id) ?? null : null
   const clsRequests = cls ? [...joining(cls), ...leaving(cls)] : []
   const req = sheet?.kind === "request" ? requests.find((r) => r.key === sheet.key) ?? null : null
+  const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
+  const [athleteQuery, setAthleteQuery] = useState("")
 
   const requestRow = (r: ClassRequest) => (
     <View key={r.key} style={s.req}>
@@ -159,8 +162,9 @@ export default function ClassesScreen() {
     <ScreenGradient>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         <FeatureIntro
-          id="coach-classes"
+          id="coach-classes-v2"
           pages={[
+            { icon: "person-add", title: "Put athletes in classes", text: "Tap a class to see who's in it. Tap Add athlete on a free spot, or the × next to a name to take them out. They get a notification. Athletes can also join a class with a free spot themselves." },
             { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
             { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
             { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
@@ -169,25 +173,18 @@ export default function ClassesScreen() {
         />
         <View style={s.header}>
           <View style={{ flex: 1 }}>
-            <View style={s.tabs}>
-              {(["this", "next"] as const).map((w) => (
-                <Pressable key={w} onPress={() => { setWeek(w); setSheet(null) }} hitSlop={6}>
-                  <Text style={[s.title, week !== w && s.titleOff]}>{w === "this" ? "This week" : "Next week"}</Text>
-                </Pressable>
-              ))}
-            </View>
+            <Text style={s.title}>{monthTitle(dates)}</Text>
             <Text style={s.subtitle}>
-              {range} · {live
-                ? "who's in each class"
-                : week === "this"
-                ? (st.thisWeek.published ? "who's in each class · tap a free time to add one" : "not published yet · plan it now")
-                : `${CLASSES_PER_DAY} classes a day, ${MAX_CLASSES_PER_DAY} on up to ${MAX_BIG_DAYS} days`}
+              {week === "this" && !st.thisWeek.published
+                ? "Not published yet · plan it now"
+                : "Tap a class to add athletes · tap a free time to add a class"}
             </Text>
           </View>
-          <IntroButton id="coach-classes" />
+          <IntroButton id="coach-classes-v2" />
           <SettingsButton />
         </View>
         <View style={s.top}>
+          <WeekSwitch value={week} onChange={(w) => { setWeek(w); setSheet(null) }} />
           <Pressable style={s.pkgRow} onPress={() => setSheet({ kind: "packages" })}>
             <Text style={s.pkgRowText}>Packages</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
@@ -200,6 +197,7 @@ export default function ClassesScreen() {
               <Ionicons name="chevron-forward" size={16} color={C.yellow} />
             </Pressable>
           )}
+          <Legend keys={["open", "full", "request"]} />
         </View>
         <WeekGrid
           dates={dates}
@@ -270,15 +268,55 @@ export default function ClassesScreen() {
         <SheetButton kind="line" label="Unblock" onPress={() => { if (sheet?.kind === "block") unblock(sheet.block); setSheet(null) }} />
       </Sheet>
 
-      <Sheet
-        visible={!!cls}
-        title={cls ? `${dayName(cls.day)} · ${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}` : ""}
-        subtitle={cls ? `${cls.roster.length} of ${CAPACITY} climbers` : ""}
-        onClose={() => setSheet(null)}
-      >
-        {cls && (cls.roster.length
-          ? <Text style={s.names}>{cls.roster.join(", ")}</Text>
-          : <Text style={s.names}>No one yet.</Text>)}
+      <Sheet visible={!!cls} title={cls ? longDay(dates, cls.day) : ""} onClose={() => setSheet(null)}>
+        {cls && (
+          <>
+            <DetailRow icon="time-outline" text={`${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}`} />
+            <DetailRow
+              icon="people-outline"
+              text={`${cls.roster.length} of ${CAPACITY} climbers`}
+              sub={cls.roster.length >= CAPACITY ? "Full" : `${CAPACITY - cls.roster.length} free spot${CAPACITY - cls.roster.length === 1 ? "" : "s"}`}
+            />
+            <View>
+              {cls.roster.map((n, i) => {
+                const id = cls.ids?.[i]
+                const canEdit = !!id && !classStarted(cls)
+                return (
+                  <PersonRow
+                    key={`${n}${i}`}
+                    name={n}
+                    right={canEdit ? (
+                      <Pressable
+                        hitSlop={10}
+                        accessibilityLabel={`Take ${n} out`}
+                        disabled={st.busy}
+                        onPress={() => Alert.alert(`Take ${n} out?`, `${n} gets a notification.`, [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Take out", style: "destructive", onPress: () => { setClassRoster(cls.id, id!, false) } },
+                        ])}
+                      >
+                        <Ionicons name="close-circle" size={22} color={C.textMuted} />
+                      </Pressable>
+                    ) : undefined}
+                  />
+                )
+              })}
+              {Array.from({ length: Math.max(0, CAPACITY - cls.roster.length) }, (_, i) => (
+                <OpenSpot
+                  key={`o${i}`}
+                  label={savedClass(cls) && !classStarted(cls) ? "Add athlete" : "Free spot"}
+                  onPress={savedClass(cls) && !classStarted(cls) ? () => {
+                    setSheet(null)
+                    setAthleteQuery("")
+                    // iOS won't present a sheet while the previous one is still closing.
+                    setTimeout(() => setSheet({ kind: "addAthlete", classId: cls.id }), 400)
+                  } : undefined}
+                />
+              ))}
+            </View>
+            {!savedClass(cls) && <Text style={s.hint}>Publish the week to add athletes to this class.</Text>}
+          </>
+        )}
         {clsRequests.length > 0 && (
           <View>
             <Text style={s.reqTitle}>Requests</Text>
@@ -288,6 +326,56 @@ export default function ClassesScreen() {
         {!live && cls && classStarted(cls) && <Text style={s.hint}>This class has already started.</Text>}
         {!live && cls && !classStarted(cls) && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
         {!live && cls && !classStarted(cls) && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
+      </Sheet>
+
+      <Sheet
+        visible={!!addTo}
+        title={addTo ? `Add to ${longDay(dates, addTo.day)}` : ""}
+        subtitle={addTo ? `${formatTime(addTo.start)} – ${formatTime(addTo.start + CLASS_HOURS)} · ${CAPACITY - addTo.roster.length} free spot${CAPACITY - addTo.roster.length === 1 ? "" : "s"}` : ""}
+        onClose={() => setSheet(null)}
+      >
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={athleteQuery}
+            onChangeText={setAthleteQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {addTo && st.athletes
+          .filter((a) => a.name.toLowerCase().includes(athleteQuery.trim().toLowerCase()))
+          .map((a) => {
+            const inIt = !!addTo.ids?.includes(a.id)
+            const near = !inIt && classes.some((c) => c.id !== addTo.id && c.ids?.includes(a.id) && adjacentOrSame(c.day, addTo.day))
+            return (
+              <Pressable
+                key={a.id}
+                disabled={inIt || st.busy || addTo.roster.length >= CAPACITY}
+                onPress={async () => {
+                  const go = async () => { if (await setClassRoster(addTo.id, a.id, true)) setSheet(null) }
+                  if (!near) return go()
+                  Alert.alert(`${a.name} has a class next to this day`, "Add them anyway?", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Add", onPress: go },
+                  ])
+                }}
+                style={({ pressed }) => [s.athlete, inIt && { opacity: 0.45 }, pressed && { opacity: 0.7 }]}
+              >
+                <PersonRow
+                  name={a.name}
+                  right={inIt
+                    ? <Text style={s.hint}>In this class</Text>
+                    : <Ionicons name="add-circle" size={24} color={C.green} />}
+                />
+              </Pressable>
+            )
+          })}
+        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
       </Sheet>
 
       <Sheet
@@ -402,6 +490,9 @@ export default function ClassesScreen() {
 }
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6]
+// A class saved on the server (a new one in the draft has no roster until published).
+const savedClass = (c: { id: string }) => !c.id.startsWith("new")
+const adjacentOrSame = (a: number, b: number) => a === b || Math.abs(a - b) === 1 || Math.abs(a - b) === 6
 const clampDay = (d: number) => Math.max(0, Math.min(6, d))
 
 const s = StyleSheet.create({
@@ -411,9 +502,7 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, color: C.textPrimary, fontSize: 14.5, height: 40 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },
-  tabs: { flexDirection: "row", alignItems: "baseline", gap: 14 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
-  titleOff: { fontSize: 18, color: C.textMuted },
   subtitle: { fontSize: 13, fontWeight: "500", color: C.textSecondary, marginTop: 2 },
   top: { paddingHorizontal: 16, gap: 8, marginBottom: 10 },
   requests: {
@@ -431,6 +520,7 @@ const s = StyleSheet.create({
   stepper: { flexDirection: "row", alignItems: "center", gap: 12 },
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
   stepValue: { minWidth: 70, textAlign: "center", fontSize: 15, fontWeight: "800", color: C.textPrimary },
+  athlete: { borderTopWidth: 1, borderTopColor: C.border },
   footer: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },
