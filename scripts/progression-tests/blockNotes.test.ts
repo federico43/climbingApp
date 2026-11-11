@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/blockNotes.test.ts
 
 import assert from "node:assert/strict"
-import { CONSTRAINT_WORDS, noteParts, noteSteps } from "@/utils/blockNotes"
+import { CONSTRAINT_WORDS, noteParts, noteSteps, slideAt } from "@/utils/blockNotes"
 
 const keys = (s: string) => noteParts(s).filter((p) => p.key).map((p) => p.text)
 
@@ -43,3 +43,13 @@ assert.deepEqual(cw("Don't match, 3 moves"), ["Don't", "3 moves"])
 assert.deepEqual(keys("Use only one hand"), [])
 
 console.log("blockNotes: ok")
+
+// Slides: page from the scroll offset, clamped.
+
+assert.equal(slideAt(0, 300, 4), 0)
+assert.equal(slideAt(310, 300, 4), 1)
+assert.equal(slideAt(440, 300, 4), 1)
+assert.equal(slideAt(460, 300, 4), 2)
+assert.equal(slideAt(5000, 300, 4), 3)
+assert.equal(slideAt(-40, 300, 4), 0)
+assert.equal(slideAt(300, 0, 4), 0)
