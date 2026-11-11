@@ -19,9 +19,9 @@ function glowStyle(color: string | null, radiusPx: number, opacity: number): Vie
 
 /**
  * Primary CTA (Start workout): 60 high, mint, 2px border, leading ink circle
- * with a mint play triangle, hard 6px offset shadow (dark: mint glow).
+ * with a mint play triangle (icon={null}: none), hard 6px offset shadow (dark: mint glow).
  */
-export function PrimaryCTA({ label, icon = "play", style, disabled, ...rest }: BaseProps & { icon?: IconName }) {
+export function PrimaryCTA({ label, icon = "play", style, disabled, ...rest }: BaseProps & { icon?: IconName | null }) {
   const t = usePaper()
   const dark = t.mode === "dark"
   return (
@@ -45,10 +45,12 @@ export function PrimaryCTA({ label, icon = "play", style, disabled, ...rest }: B
               glowStyle(t.glow, 40, 0.45),
             ]}
           >
-            <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: "#121014", alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name={icon} size={15} color={t.mint} style={icon === "play" ? { marginLeft: 2 } : undefined} />
-            </View>
-            <Text style={{ fontFamily: font.bold, fontSize: 18, color: t.onMint }}>{label}</Text>
+            {icon && (
+              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: "#121014", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={icon} size={15} color={t.mint} style={icon === "play" ? { marginLeft: 2 } : undefined} />
+              </View>
+            )}
+            <Text style={{ fontFamily: font.bold, fontSize: 18, color: t.onMint, flexShrink: 1 }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
           </View>
         </View>
       )}

@@ -1,7 +1,7 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions } from "@/services/BoulderGraphService"
 import { findBlockRuns } from "@/utils/blockHistory"
@@ -48,6 +48,9 @@ function fmt(sec: number): string {
 // question — warm-up: "very pumped in the last two rounds?", power
 // endurance: "felt very easy?".
 export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goToPreviousBlock }: Props) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const shared_styles = useSheet(shared_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const plannedSeries = Math.max(1, block.series ?? 6)
   const plannedWork = Math.max(1, block.workTime ?? 30)
@@ -255,7 +258,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
   if (phase === "ready") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} />
+        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={s.centerScroll}>
           {/* Built from the settings actually being run (incl. a suggested
               work time), then the coach's notes, if any. */}
@@ -390,7 +393,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
   centerScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
   card: {
@@ -424,7 +427,7 @@ const s = StyleSheet.create({
   },
   answerBtnOn: { backgroundColor: C.green, borderColor: C.green },
   answerText: { fontSize: 15, fontWeight: "700", color: C.textSecondary },
-  answerTextOn: { color: C.bg },
+  answerTextOn: { color: C.onAccent },
   suggestionBanner: {
     width: "100%", backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
     borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 6,
@@ -432,4 +435,4 @@ const s = StyleSheet.create({
   suggestionBannerLast: { fontSize: 12.5, color: C.textSecondary, lineHeight: 17 },
   suggestionBannerText: { fontSize: 12.5, fontWeight: "600", color: C.green, lineHeight: 17 },
   suggestionDecline: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary, textDecorationLine: "underline" },
-})
+}))

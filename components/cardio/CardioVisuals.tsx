@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { protocolMinutes, type CardioProtocol } from "@/utils/cardio"
 import { IntervalStats } from "@/components/IntervalVisuals"
 import { Ionicons } from "@expo/vector-icons"
@@ -14,6 +14,8 @@ export type CardioNote = { icon: IconName; text: string; tone?: "info" | "warn" 
 
 /** A card with the session's three numbers, its strip and its total time. */
 export function ProtocolCard({ p, kicker }: { p: CardioProtocol; kicker?: string }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const extra = p.triplesOrHeavy
     ? "Triples or a heavy rope"
     : p.doublesEverySec ? `Doubles or crosses every ${p.doublesEverySec}s` : null
@@ -36,10 +38,12 @@ export function ProtocolCard({ p, kicker }: { p: CardioProtocol; kicker?: string
 }
 
 export function NoteRow({ note }: { note: CardioNote }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const warn = note.tone === "warn"
   return (
     <View style={[s.note, warn && s.noteWarn]}>
-      <View style={[s.noteIcon, warn && { backgroundColor: "rgba(254,215,102,0.14)" }]}>
+      <View style={[s.noteIcon, warn && { backgroundColor: C.tint("rgba(254,215,102,0.14)") }]}>
         <Ionicons name={note.icon} size={18} color={warn ? C.yellow : C.green} />
       </View>
       <Text style={s.noteText}>{note.text}</Text>
@@ -49,6 +53,7 @@ export function NoteRow({ note }: { note: CardioNote }) {
 
 /** Numbered steps, for the starting test. */
 export function StepList({ steps }: { steps: { title: string; text: string }[] }) {
+  const s = useSheet(sheet)
   return (
     <View style={s.card}>
       {steps.map((st, i) => (
@@ -67,7 +72,7 @@ export function StepList({ steps }: { steps: { title: string; text: string }[] }
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   card: { width: "100%", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 18, gap: 16 },
   cardKicker: { fontSize: 12, fontWeight: "800", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
   footRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
@@ -98,4 +103,4 @@ const s = StyleSheet.create({
   stepBody: { flex: 1, gap: 3, paddingBottom: 14 },
   stepTitle: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
   stepText: { fontSize: 14, lineHeight: 20, color: C.textSecondary },
-})
+}))

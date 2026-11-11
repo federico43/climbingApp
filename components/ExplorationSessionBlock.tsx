@@ -1,8 +1,9 @@
+import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { account } from "@/components/AppWrite"
 import { getBoulderLevels, logRecord } from "@/services/BoulderGraphService"
-import { shared_styles, topBar_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { ID } from "appwrite"
 import { useEffect, useRef, useState } from "react"
 import {
@@ -69,6 +70,10 @@ interface Props {
 }
 
 export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goToPreviousBlock }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
+  const topBar_styles = useSheet(topBar_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const timeLimitSeconds = (block?.timeLimit ?? 0) * 60
 
@@ -221,7 +226,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} />
+        <TopBar title={title} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <BlockNotes text={description} title={block?.description?.trim() ? "Coach notes" : "How it works"} />
           {(block?.timeLimit ?? 0) > 0 && (
@@ -231,12 +236,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           )}
         </ScrollView>
         <View style={shared_styles.footer}>
-          <Pressable
-            style={styles.startButton}
-            onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }}
-          >
-            <Text style={styles.startButtonText}>Start</Text>
-          </Pressable>
+          <CustomButton title="Start" onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }} />
         </View>
       </View>
     )
@@ -487,7 +487,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
@@ -532,14 +532,14 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   gradeChip: { borderWidth: 2, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   gradeChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  gradeChipTextSelected: { color: C.bg },
+  gradeChipTextSelected: { color: C.onAccent },
   attemptsChip: {
     borderWidth: 1.5, borderColor: C.border, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 7, backgroundColor: C.surfaceHigh,
   },
   attemptsChipSelected: { borderColor: C.green, backgroundColor: C.green },
   attemptsChipText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  attemptsChipTextSelected: { color: C.bg },
+  attemptsChipTextSelected: { color: C.onAccent },
 
   // Log button
   logButton: {
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, borderRadius: 14,
     paddingVertical: 14, alignItems: "center", justifyContent: "center",
   },
-  logBoulderBtnText: { fontSize: 15, fontWeight: "700", color: C.bg },
+  logBoulderBtnText: { fontSize: 15, fontWeight: "700", color: C.onAccent },
   finishPill: {
     borderRadius: 22, borderWidth: 1, borderColor: C.border,
     paddingHorizontal: 18, paddingVertical: 11,
@@ -589,8 +589,8 @@ const styles = StyleSheet.create({
     backgroundColor: C.green, borderRadius: 14,
     paddingVertical: 15, alignItems: "center",
   },
-  startButtonText: { color: C.bg, fontSize: 16, fontWeight: "700", padding: 10 },
-  primaryButtonText: { color: C.bg, fontSize: 16, fontWeight: "700", padding: 10 },
+  startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
+  primaryButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
 
   // Review
   reviewScroll: { flexGrow: 1, padding: 20, alignItems: "center", gap: 12 },
@@ -623,4 +623,4 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-})
+}))

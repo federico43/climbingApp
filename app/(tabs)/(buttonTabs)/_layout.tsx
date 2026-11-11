@@ -2,10 +2,12 @@ import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
 import { PackageLock } from "@/components/schedule/PackageLock"
 import { WorkOutState } from "@/components/workOutState"
+import { PaperScope } from "@/theme/paper/legacy"
+import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
-import { PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
+import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { Tabs } from "expo-router"
@@ -202,22 +204,34 @@ function WorkoutModalHost() {
         ctx.workoutMinimized && { opacity: 0, transform: [{ translateX: 10000 }] },
       ]}
     >
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.bg }}>
-        <WorkOutState
-          workout={ctx.workout}
-          protocol={ctx.protocol}
-          protocolName={ctx.protocolName}
-          autoStart
-          onWorkoutStart={() => ctx.setWorkoutActive(true)}
-          onWorkoutEnd={ctx.endWorkout}
-          onClose={ctx.closeModal}
-          onMinimize={ctx.minimize}
-          onSetCoached={ctx.setBlockCoached}
-          onSwapMain={ctx.link?.planId ? ctx.swapMainBlock : undefined}
-        />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        {/* Paper Mint for the whole workout flow (theme/paper/legacy.tsx). */}
+        <PaperScope>
+          <PaperBackground>
+            {!ctx.workoutMinimized && <WorkoutStatusBar />}
+            <WorkOutState
+              workout={ctx.workout}
+              protocol={ctx.protocol}
+              protocolName={ctx.protocolName}
+              autoStart
+              onWorkoutStart={() => ctx.setWorkoutActive(true)}
+              onWorkoutEnd={ctx.endWorkout}
+              onClose={ctx.closeModal}
+              onMinimize={ctx.minimize}
+              onSetCoached={ctx.setBlockCoached}
+              onSwapMain={ctx.link?.planId ? ctx.swapMainBlock : undefined}
+            />
+          </PaperBackground>
+        </PaperScope>
       </GestureHandlerRootView>
     </View>
   )
+}
+
+// Status bar text that reads on the workout's paper while it's open.
+function WorkoutStatusBar() {
+  const t = usePaperTheme()
+  return <StatusBar style={t.mode === "dark" ? "light" : "dark"} />
 }
 
 // ─── Mini bar ─────────────────────────────────────────────────────────────────
