@@ -7,8 +7,9 @@ import { asksQuestions, overviewLine, reviewExercise, reviewLog, reviewLogLine, 
 const sets = (...amounts: (number | [number, number])[]) =>
   amounts.map((a) => (Array.isArray(a) ? { amount: a[0], rpe: a[1] } : { amount: a }))
 const entry = (focus: any, summary: any, date = "2026-11-01T10:00:00Z") => ({ focus, date, summary })
-const base = (today: any, past: any[] = [], extra: Partial<ReviewInput> = {}): ReviewInput =>
-  ({ key: "0", name: "KB squat", focus: "hypertrophy", today, past, weightUnit: "kg", ...extra })
+function base(today: any, past: any[] = [], extra: Partial<ReviewInput> = {}): ReviewInput {
+  return { key: "0", name: "KB squat", focus: "hypertrophy", today, past, weightUnit: "kg", ...extra }
+}
 
 // First time at this focus (another focus's session doesn't count) → baseline
 {

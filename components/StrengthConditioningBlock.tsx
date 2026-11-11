@@ -45,6 +45,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { ScReviewSlides } from "@/components/ScReviewSlides"
+import { reviewExercise, reviewLog, type ExerciseReview, type ReviewAnswers } from "@/utils/scReview"
 
 const SC_HERO = require("@/assets/images/SCPicture.jpeg")
 
@@ -780,15 +782,16 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   if (phase === "review") {
     // What next session will start on, per exercise — the same rule the
     // prefill applies, run over today's rounds.
+    // Today's working sets at the load the block ended on.
+    const todaySets = (ex: Exercise, roundLogs: ExerciseLog[]) => setsAtFinalLoad(roundLogs
+      .sort((a, b) => a.round - b.round)
+      .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit)))
     const judge = (ex: Exercise, roundLogs: ExerciseLog[], p: Prefill): string => {
       if (ex.type === "7/3s" || ex.movementType === "mobility") return ""
       // The max decides Edge Lifts' weight (utils/edgeWarmup.ts), not the
       // progression rule.
       if (ex.maxTest || (edgeMax != null && needsWarmup(ex))) return ""
-      const rounds = roundLogs
-        .sort((a, b) => a.round - b.round)
-        .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit))
-      const summary = setsAtFinalLoad(rounds)
+      const summary = todaySets(ex, roundLogs)
       const today: FocusEntry | null = summary ? { focus: ex.focus, date: new Date().toISOString(), prescribed: ex.reps, unit: ex.unit === "seconds" ? "seconds" : "reps", summary } : null
       return today ? planNextForFocus({ ...ex, setting: p.setting }, p.chain, p.loadStep, weightUnit, [today, ...(p.past ?? [])], "today").note : ""
     }
@@ -810,12 +813,35 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       }
       return out
     })
-    return (
-      <View style={shared_styles.screen}>
+    // The slides: each exercise today vs last time at the same focus
+    // (utils/scReview). Mobility and 7/3s don't progress, so they're left out.
+    const review = (key: string, ex: Exercise, roundLogs: ExerciseLog[], p: Prefill) => {
+      if (ex.type === "7/3s" || ex.movementType === "mobility") return null
+      const today = todaySets(ex, roundLogs)
+      if (!today) return null
+      const lastLog = roundLogs.reduce<ExerciseLog | undefined>((a, l) => (!a || l.round > a.round ? l : a), undefined)
+      return reviewExercise({
+        key, name: lastLog?.exerciseName ?? ex.name, focus: ex.focus, today, past: p.past,
+        ladder: p.chain?.chain, amountUnit: (lastLog?.unit ?? ex.unit) === "seconds" ? "seconds" : "reps", weightUnit,
+      })
+    }
+    const reviews = block.exercises.flatMap((ex, idx) => {
+      const swap = swaps[idx]
+      const own = review(`${idx}`, ex, logs.filter((l) => l.exerciseIndex === idx && !l.swappedTo), swap ? originals[idx] ?? {} : prefillAt(idx))
+      const swapped = swap
+        ? review(`${idx}:${swap.row.$id}`, effectiveExercise(idx), logs.filter((l) => l.exerciseIndex === idx && l.swappedTo === swap.row.$id), prefillAt(idx))
+        : null
+      return [own, swapped].filter((r): r is ExerciseReview => !!r)
+    })
+    const finish = (answers: Record<string, ReviewAnswers>) => {
+      for (const r of reviews) logAttempt({ success: true, scReview: reviewLog(r, answers[r.key]) })
+      goToNextBlock()
+    }
+    const details = (
         <ScrollView contentContainerStyle={styles.reviewContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.introHead}>
-            <Text style={styles.exKicker}>Block done</Text>
-            <Text style={styles.introTitle}>Circuit complete</Text>
+            <Text style={styles.exKicker}>{reviews.length ? "Summary" : "Block done"}</Text>
+            <Text style={styles.introTitle}>{reviews.length ? "Your rounds" : "Circuit complete"}</Text>
           </View>
 
           {nextTime.length > 0 && (
@@ -883,9 +909,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             </View>
           ))}
         </ScrollView>
-        <View style={styles.screenFooter}>
-          <PillButton title={nextLabel} icon="arrow-forward" onPress={goToNextBlock} />
-        </View>
+    )
+    return (
+      <View style={shared_styles.screen}>
+        <ScReviewSlides reviews={reviews} details={details} finishLabel={nextLabel} onFinish={finish} />
       </View>
     )
   }

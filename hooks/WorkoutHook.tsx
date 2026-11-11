@@ -1,5 +1,6 @@
 import { useRestNotification } from "@/hooks/useRestNotification"
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { ScReviewLog } from "@/utils/scReview"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,9 @@ export interface Attempt {
   part?: number
   wall?: string
   tries?: number
+  // S&C end-of-block review (utils/scReview.ts): one per exercise — how it
+  // compared to last time and, when it didn't improve, the athlete's answers.
+  scReview?: ScReviewLog
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -269,7 +273,7 @@ export function useWorkout(protocolInput: Block[]) {
   }, [currentBlockIndex])
 
   const logAttempt = useCallback(
-    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation, fallReasons, videoId, reviewClip, reviewPrompted, pbv, part, wall, tries }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
+    ({ success, video, notes, level, scData, highPoint, projectId, rpe, routeId, variation, fallReasons, videoId, reviewClip, reviewPrompted, pbv, part, wall, tries, scReview }: Omit<Attempt, "blockIndex" | "type" | "timestamp">) => {
       if (status !== "running" || !currentBlock) return
 
       const newAttempt: Attempt = {
@@ -292,6 +296,7 @@ export function useWorkout(protocolInput: Block[]) {
         ...(part != null ? { part } : {}),
         ...(wall ? { wall } : {}),
         ...(tries != null ? { tries } : {}),
+        ...(scReview ? { scReview } : {}),
         blockIndex: currentBlockIndex,
         type: currentBlock.type,
         timestamp: Date.now(),
