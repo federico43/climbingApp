@@ -119,3 +119,10 @@ export function noteParts(step: string, words: string[] = []): NotePart[] {
   if (last < step.length) parts.push({ text: step.slice(last), key: false })
   return splitPlain(splitPlain(parts, numbers), wordsIn(words))
 }
+
+// Which slide a horizontal pager is on, from its scroll offset and page width.
+// Clamped to [0, count - 1]; 0 while the width is still unknown.
+export function slideAt(offsetX: number, width: number, count: number): number {
+  if (width <= 0 || count <= 0) return 0
+  return Math.min(count - 1, Math.max(0, Math.round(offsetX / width)))
+}
