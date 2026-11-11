@@ -66,7 +66,7 @@ export function HangMaxSection({ athlete, onHomeworkChanged }: {
       const name = `${HANG_TEST_NAME} · ${edge}`
       const test = {
         type: "strength_conditioning", blockName: name,
-        description: `On the ${edge} edge: warm up by feel, then add weight each try (3 min rest) until you can't hang ${MAX_HANGS.holdSecs} s.`,
+        description: `On the ${edge} edge: warm up by feel, then ${MAX_HANGS.holdSecs} s hangs, shoulder blades retracted. The app picks each next load from how the last one went.`,
         rounds: 1, restBetweenRounds: 0,
         exercises: [{ ...exerciseDraftFromLibrary(row), edge, maxTest: true }],
       }

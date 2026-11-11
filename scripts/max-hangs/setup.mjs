@@ -72,7 +72,7 @@ if (existing) {
     loadMode: "weight",
     loadStep: 0.5,
     focuses: JSON.stringify(["max_force"]),
-    notes: "Hangboard, two hands, on the edge set for the block. Hang 10 s with weight added to your bodyweight (0 = bodyweight). Shoulders engaged, arms slightly bent, no swinging.",
+    notes: "Hangboard, two hands, on the edge set for the block. Hang 10 s with weight added to your bodyweight (0 = bodyweight). Shoulder blades retracted (pulled back and down) the whole hang, arms slightly bent, no swinging.",
   }
   const row = {}
   for (const [k, v] of Object.entries(wanted)) {
