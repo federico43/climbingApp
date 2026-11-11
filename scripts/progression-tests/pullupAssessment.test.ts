@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import { ladderIndexOf } from "@/utils/bands"
 import { testLevelRow } from "@/utils/scPrefill"
-import { bandStartFor, easierThanBands, isPullupLadder, parsePullupTest, planFromTest, retestDue, stepForVariation } from "@/utils/pullupAssessment"
+import { bandStartFor, easierThanBands, isPullupLadder, parsePullupTest, planFromTest, retestDue, stepForVariation, testIsNewer } from "@/utils/pullupAssessment"
 
 const idx = ladderIndexOf
 
@@ -31,10 +31,20 @@ assert.equal(bandStartFor("max_force", { maxReps: 2 }), idx("red"))
 assert.equal(bandStartFor("explosiveness", { maxReps: 0 }), idx("green"))
 assert.equal(bandStartFor("explosiveness", { maxReps: 6 }), idx("red"))
 
-// Retest every 6 weeks
-assert.equal(retestDue(undefined, "2026-11-11"), true)
-assert.equal(retestDue("2026-10-01", "2026-11-11"), false)
-assert.equal(retestDue("2026-09-30", "2026-11-11"), true)
+// Retest every 6 weeks, or sooner once a band focus reached "no band"
+const tested = (date: string, maxReps = 0) => ({ date, maxReps, negatives: 0 })
+assert.equal(retestDue(null, "2026-11-11"), false)
+assert.equal(retestDue(tested("2026-10-01"), "2026-11-11"), false)
+assert.equal(retestDue(tested("2026-09-30"), "2026-11-11"), true)
+assert.equal(retestDue(tested("2026-10-20"), "2026-11-11", { hypertrophy: "" }), true)
+assert.equal(retestDue(tested("2026-11-08"), "2026-11-11", { hypertrophy: "" }), false)   // test too fresh
+assert.equal(retestDue(tested("2026-10-20", 9), "2026-11-11", { hypertrophy: "" }), false)  // hypertrophy wasn't on bands
+assert.equal(retestDue(tested("2026-10-20"), "2026-11-11", { hypertrophy: "red" }), false)
+// The newer of test and history wins
+assert.equal(testIsNewer(tested("2026-11-01"), undefined), true)
+assert.equal(testIsNewer(tested("2026-11-01"), "2026-10-30T10:00:00Z"), true)
+assert.equal(testIsNewer(tested("2026-11-01"), "2026-11-01T10:00:00Z"), false)
+assert.equal(testIsNewer(null, undefined), false)
 
 // Stored JSON
 assert.equal(parsePullupTest(null), null)
@@ -67,7 +77,7 @@ assert.equal(easierThanBands(full.slice(1)), -1)
     row({ $id: "pu", name: "Pull Ups" }),
   ]
   const draft = (r: any) => ({ exerciseId: r.$id, name: r.name, loadMode: r.loadMode, levels: r.levels })
-  const test = { maxReps: 0, negatives: 4 }
+  const test = { maxReps: 0, negatives: 4, date: "2026-10-20" }
   assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [], lib, test)?.$id, "neg")
   assert.equal(testLevelRow(lib[2], draft(lib[2]), "hypertrophy", [], lib, test)?.$id, "band")
   assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [], lib, null), null)
@@ -79,6 +89,8 @@ assert.equal(easierThanBands(full.slice(1)), -1)
   }
   assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [session], lib, test), null)
   assert.equal(testLevelRow(lib[2], draft(lib[2]), "hypertrophy", [session], lib, test)?.$id, "band")
+  // …unless the test is newer (a retest)
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [session], lib, { ...test, date: "2026-11-05" })?.$id, "neg")
 }
 
 console.log("pull-up assessment tests passed")

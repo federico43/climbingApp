@@ -5,7 +5,7 @@ import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } fro
 import { needsWarmup } from "@/utils/edgeWarmup"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 import { startingLevelRow, testLevelRow } from "@/utils/scPrefill"
-import type { PullupTestResult } from "@/utils/pullupAssessment"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 1–4 movement patterns plus
@@ -199,7 +199,7 @@ export function buildScBlocks(
   sessions: SessionRow[],
   // The athlete's pull-up test: pull-up ladders with no history at the
   // focus start on the variation it assigns (testLevelRow).
-  pullupTest?: PullupTestResult | null,
+  pullupTest?: SavedPullupTest | null,
 ): { blocks: ScBlockDraft[]; warnings: string[] } {
   const warnings: string[] = []
   const focus = spec.scFocus

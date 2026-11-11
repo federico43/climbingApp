@@ -78,14 +78,27 @@ export function bandStartFor(focus: Focus, r: PullupTestResult): number {
   return at("red")
 }
 
-// The test is done again when the athlete outgrows what it assigned: a band
-// focus has reached "no band", or negatives top out. Retest suggestion only.
+// The test is done again every RETEST_AFTER_DAYS, or sooner once a focus
+// the test put on bands has reached "no band" (the athlete outgrew it) —
+// not in the first week after a test, so a fresh result isn't asked again.
 export const RETEST_AFTER_DAYS = 42
+const MIN_DAYS_BEFORE_EARLY_RETEST = 7
 
-export function retestDue(testedOn: string | undefined, today: string): boolean {
-  if (!testedOn) return true
-  const days = (Date.parse(today) - Date.parse(testedOn)) / 86_400_000
-  return !Number.isFinite(days) || days >= RETEST_AFTER_DAYS
+const daysBetween = (from: string, to: string) => (Date.parse(to.slice(0, 10)) - Date.parse(from.slice(0, 10))) / 86_400_000
+
+export function retestDue(test: SavedPullupTest | null | undefined, today: string, bands: Partial<Record<Focus, string>> = {}): boolean {
+  if (!test) return false   // never tested: that's the first test, not a retest
+  const days = daysBetween(test.date, today)
+  if (!Number.isFinite(days) || days >= RETEST_AFTER_DAYS) return true
+  if (days < MIN_DAYS_BEFORE_EARLY_RETEST) return false
+  return (Object.keys(FOCUS_REP_RANGE) as Focus[]).some((f) => bands[f] === "" && variationFor(f, test) === "band")
+}
+
+// Whether the test's result should set a pull-up ladder's level at a focus:
+// no history there, or the test is newer than the last session at it.
+export function testIsNewer(test: SavedPullupTest | null | undefined, lastAtFocus: string | undefined): boolean {
+  if (!test) return false
+  return !lastAtFocus || lastAtFocus.slice(0, 10) < test.date
 }
 
 // Stored on users.pullupTest (JSON).
