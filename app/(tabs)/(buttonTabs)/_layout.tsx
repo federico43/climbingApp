@@ -2,13 +2,12 @@ import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
 import { PackageLock } from "@/components/schedule/PackageLock"
 import { WorkOutState } from "@/components/workOutState"
-import { PaperBackground, usePaper } from "@/components/paper"
 import { PaperScope } from "@/theme/paper/legacy"
 import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
-import { PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
+import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { Tabs } from "expo-router"
@@ -231,7 +230,7 @@ function WorkoutModalHost() {
 
 // Status bar text that reads on the workout's paper while it's open.
 function WorkoutStatusBar() {
-  const t = usePaper()
+  const t = usePaperTheme()
   return <StatusBar style={t.mode === "dark" ? "light" : "dark"} />
 }
 
