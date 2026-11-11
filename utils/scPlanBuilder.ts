@@ -4,7 +4,8 @@ import { MOVEMENT_TYPE_LABEL, skipsExplosiveness, type MovementType } from "@/ut
 import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
-import { startingLevelRow } from "@/utils/scPrefill"
+import { startingLevelRow, testLevelRow } from "@/utils/scPrefill"
+import type { PullupTestResult } from "@/utils/pullupAssessment"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 1–4 movement patterns plus
@@ -196,6 +197,9 @@ export function buildScBlocks(
   spec: WorkoutSpec,
   exercises: ExerciseRow[],
   sessions: SessionRow[],
+  // The athlete's pull-up test: pull-up ladders with no history at the
+  // focus start on the variation it assigns (testLevelRow).
+  pullupTest?: PullupTestResult | null,
 ): { blocks: ScBlockDraft[]; warnings: string[] } {
   const warnings: string[] = []
   const focus = spec.scFocus
@@ -206,7 +210,7 @@ export function buildScBlocks(
   const focusOf = (p: ScPattern) => (skipsExplosiveness(p.movementType) ? noPowerFocusFor(spec.index) : focus)
   const draftFor = (row: ExerciseRow, f: Focus): ExerciseDraft => {
     const draftOf = (r: ExerciseRow) => withFocus(exerciseDraftFromLibrary(r), f)
-    return draftOf(startingLevelRow(row, draftOf, sessions, exercises))
+    return draftOf(testLevelRow(row, draftOf(row), f, sessions, exercises, pullupTest) ?? startingLevelRow(row, draftOf, sessions, exercises))
   }
   // Edge Lifts (max force) go first in their block: their warm-up runs
   // before the block's first round (utils/edgeWarmup.ts).
