@@ -343,24 +343,19 @@ const library: any[] = [
 ]
 const types = (w: any) => w.blocks.map((b: any) => b.type)
 
-// workout 1 is a test day: normal warm-up, the benchmark (Density test + Edge lift max test) comes back as homework
+// workout 1 is a test day: normal warm-up, the Density test and the Benchmark (new sequence) come back as homework
 let w = buildPlanWorkout(plan, spec(1), library, exercises, [], null)
 assert.deepEqual(w.warnings, [])
 assert.deepEqual(types(w), [
   "strength_conditioning", "strength_conditioning", "strength_conditioning",
   "constraint_warmup", "constraint_warmup", "constraint_warmup", "project_bouldering", "project_bouldering",
 ])
-assert.deepEqual(w.homework.map((b: any) => b.blockName), ["Density test", "Edge lift max test"])
+assert.deepEqual(w.homework.map((b: any) => b.blockName), ["Density test", "Benchmark"])
 assert.equal((w.homework[0] as any).libraryBlockId, "dt")
-const maxTest = w.homework[1] as any
-assert.equal(maxTest.type, "strength_conditioning")
-assert.equal(maxTest.rounds, 1)
-assert.deepEqual(maxTest.exercises.map((e: any) => [e.exerciseId, e.maxTest]), [["el", true]])
-// no Edge Lifts in the library → Density test only, with a warning
-w = buildPlanWorkout(plan, spec(1), library, exercises.filter((e) => e.name !== "Edge Lifts"), [], null)
-assert.deepEqual(w.homework.map((b: any) => b.blockName), ["Density test"])
-assert.ok(w.warnings.some((x) => x.includes("Edge lift max test")))
-w = buildPlanWorkout(plan, spec(1), library, exercises, [], null)
+const bench = w.homework[1] as any
+assert.equal(bench.type, "sequence")
+assert.equal(bench.routeId, "")
+assert.equal(bench.lockRoute, false)
 assert.equal((w.blocks[6] as any).libraryBlockId, "pb")
 assert.equal((w.blocks[7] as any).libraryBlockId, "pb")                         // main block twice
 
@@ -377,7 +372,21 @@ assert.ok(warm.every((b) => b.level === "orange"))
 // first workout of week 6 (here workout 11, a constraints day): warm-up kept, test as homework
 w = buildPlanWorkout(plan, spec(11, "2026-11-10", [{ planIndex: 10, createdAt: "2026-11-04T10:00:00Z" }]), library, exercises, [], "green")
 assert.deepEqual(types(w).slice(3), ["constraint_warmup", "constraint_warmup", "constraint_warmup", "sequence", "sequence"])
-assert.deepEqual(w.homework.map((b: any) => b.type), ["exploration_session", "strength_conditioning"])
+assert.deepEqual(w.homework.map((b: any) => b.type), ["exploration_session", "sequence"])
+// no Benchmark logged in this plan yet → a new pick, with a warning
+assert.equal((w.homework[1] as any).lockRoute, false)
+assert.ok(w.warnings.some((x) => x.includes("No Benchmark logged")))
+// the first Benchmark logged in the plan → the last-week one repeats it, locked
+const benchSession = (createdAt: string, routeId: string) => ({
+  $id: "", $createdAt: createdAt, userId: "a",
+  protocol: JSON.stringify([{ type: "exploration_session", blockName: "Density test" }, { type: "sequence", blockName: "Benchmark" }]),
+  attempts: JSON.stringify([{ blockIndex: 1, routeId, success: false }, { blockIndex: 1, routeId, success: true }]),
+})
+const withFirst = [benchSession("2026-10-06T15:00:00Z", "r1"), benchSession("2026-09-20T15:00:00Z", "old")] as any
+w = buildPlanWorkout(plan, spec(11, "2026-11-10", [{ planIndex: 10, createdAt: "2026-11-04T10:00:00Z" }]), library, exercises, withFirst, "green")
+assert.equal((w.homework[1] as any).routeId, "r1")                              // not the one from before the plan
+assert.equal((w.homework[1] as any).lockRoute, true)
+assert.ok(!w.warnings.some((x) => x.includes("Benchmark")))
 
 // workout 2: 1 on 1 off as a warm-up (warm-up kind and rounds, no PE tag)
 w = buildPlanWorkout(plan, spec(2), library, exercises, [], "green")

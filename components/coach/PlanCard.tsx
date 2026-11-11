@@ -14,6 +14,7 @@ import {
   type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
+import { benchmarkComparison, benchmarkTryLabel } from "@/utils/benchmark"
 import { buildPlanWorkout, withUpcomingWorkouts, workoutPreview, type PlanWorkout } from "@/utils/planWorkout"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
@@ -128,6 +129,8 @@ export function PlanCard({
   const done = plan ? donePlanWorkouts(plan.$id, planWorkouts, sessions) : new Map<number, string>()
   const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today, plan.pauses) : 0
   const pausedNow = plan ? pauseOn(plan.pauses, today) : null
+  // The plan's Benchmark sequence: first try and, once done, the retry.
+  const benchmark = plan ? benchmarkComparison(sessions, plan.windowStart) : null
   const inWindow = !!plan && today >= plan.windowStart && today <= plan.windowEnd && !pausedNow
 
   // Re-reads sessions, the plan's workouts and both libraries first, so
@@ -284,6 +287,15 @@ export function PlanCard({
             <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
             {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
           </View>
+          {benchmark && (
+            <View style={styles.benchRow}>
+              <Text style={styles.benchLabel}>Benchmark</Text>
+              <Text style={styles.benchText}>
+                {formatPlanDate(benchmark.first.date)}: {benchmarkTryLabel(benchmark.first)}
+                {benchmark.last ? `  →  ${formatPlanDate(benchmark.last.date)}: ${benchmarkTryLabel(benchmark.last)}` : "  ·  retry in the last week"}
+              </Text>
+            </View>
+          )}
           {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
 
           {planEnded ? (
@@ -342,7 +354,7 @@ export function PlanCard({
                   />
                 )}
               </>)}
-              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Benchmark as homework: Density test + Edge lift max test" />}
+              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text={nextSpec.index === 1 || !benchmark ? "+ Tests as homework: Density test + Benchmark (new sequence)" : "+ Tests as homework: Density test + Benchmark (same sequence again)"} />}
               <View style={styles.actions}>
                 <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
                   <Text style={card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
@@ -430,6 +442,9 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: C.surfaceHigh, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   chipText: { fontSize: 11.5, fontWeight: "600", color: C.textSecondary },
   statsRow: { flexDirection: "row", gap: 8 },
+  benchRow: { gap: 2 },
+  benchLabel: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
+  benchText: { fontSize: 13, color: C.textPrimary },
   stat: { flex: 1, backgroundColor: C.surfaceHigh, borderRadius: 12, paddingVertical: 10, alignItems: "center" },
   statNum: { fontSize: 20, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
   statLabel: { fontSize: 11, color: C.textSecondary },

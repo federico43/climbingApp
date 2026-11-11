@@ -42,6 +42,7 @@ interface Props {
     type: string; blockName?: string; description?: string
     timeLimit?: number; targetAttempts?: number; restTime?: number
     routeId?: string // a sequence the coach set on the block (listed first)
+    lockRoute?: boolean // with routeId: straight to it, no choosing (Benchmark retry)
   }
   attempts: Attempt[] // this block's
   workoutAttempts: Attempt[] // the whole workout's (suggestions)
@@ -389,7 +390,9 @@ export function SprayBlock({
           </Text>
         </ScrollView>
         <View style={shared_styles.footer}>
-          <CustomButton title="Choose sequence" onPress={() => setPhase("choose")} />
+          {block.lockRoute && block.routeId
+            ? <CustomButton title="Start" onPress={() => choose(block.routeId!)} />
+            : <CustomButton title="Choose sequence" onPress={() => setPhase("choose")} />}
         </View>
       </View>
     )

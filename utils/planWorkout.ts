@@ -5,7 +5,7 @@ import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
 import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
-import { edgeLiftMaxTestBlock } from "@/utils/benchmark"
+import { benchmarkBlockDraft, benchmarkComparison } from "@/utils/benchmark"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
 //   S&C → warm-up → main block × 2 (the same library block twice; Max
@@ -15,9 +15,10 @@ import { edgeLiftMaxTestBlock } from "@/utils/benchmark"
 //   route exploration → S&C → main block × 2
 // or, on a conditioning plan (no climbing): S&C only.
 // On a test day (first workout, and the first one of the last week) the
-// benchmark comes back separately in `homework` — the athlete does it on a
-// day of their own (coach 2026-10-07): the Density test, then the Edge lift
-// max test (coach 2026-11-11, utils/benchmark.ts).
+// tests come back separately in `homework` — the athlete does them on a day
+// of their own (coach 2026-10-07): the Density test, then the Benchmark
+// sequence (coach 2026-11-11, utils/benchmark.ts) — picked on workout 1,
+// the same one again on the last-week test day.
 // Blocks come back without local ids — the caller adds them
 // (injectLocalIds) before opening the workout builder. Anything that can't
 // be built (a library block or exercise missing) is left out and reported
@@ -153,9 +154,9 @@ export function buildPlanWorkout(
   if (!spec.mainBlock) return { blocks, homework, warnings } // conditioning: S&C only
   if (spec.withTest) {
     libraryBlock(TEST_BLOCK, 1, homework)
-    const maxTest = edgeLiftMaxTestBlock(exercises)
-    if (maxTest) homework.push(maxTest as PlanBlockDraft)
-    else warnings.push(`No "Edge Lifts" exercise in the library — the Edge lift max test was left out of the benchmark.`)
+    const first = spec.index === 1 ? null : benchmarkComparison(sessions, plan.windowStart)
+    if (spec.index !== 1 && !first) warnings.push("No Benchmark logged yet in this plan — the athlete will pick a new sequence, so there's nothing to compare it with.")
+    homework.push(benchmarkBlockDraft(first?.routeId ?? null) as PlanBlockDraft)
   }
   if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
   const run = mainBlockRun(spec.mainBlock)

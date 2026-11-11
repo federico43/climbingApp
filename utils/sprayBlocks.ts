@@ -29,6 +29,9 @@ export const SPRAY_BLOCKS: SprayBlockRef[] = [
   { name: "Base 1", type: "sequence", routeType: "base", mode: "attempts" },
   { name: "Power boulders", type: "free_session", routeType: "power", mode: "time" },
   { name: "Coordination boulders", type: "free_session", routeType: "coordination", mode: "time" },
+  // The plan's Benchmark (utils/benchmark.ts): a sequence at the limit,
+  // tried at the start of the plan and again at its end.
+  { name: "Benchmark", type: "sequence", routeType: "max_bouldering", mode: "attempts" },
 ]
 
 // Defaults when the block doesn't set them.

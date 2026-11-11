@@ -194,6 +194,9 @@ interface SequenceBlock extends BaseBlock {
   // stay empty on the authored block; startingVariation doesn't apply since
   // the coach doesn't know in advance which route's variations it'd refer to.
   athleteChoosesRoute?: boolean
+  // With routeId: the athlete goes straight to that sequence, no choosing
+  // (the plan's Benchmark retry, utils/benchmark.ts).
+  lockRoute?: boolean
 }
 
 interface FreeSessionBlock extends BaseBlock {
