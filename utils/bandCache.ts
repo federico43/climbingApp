@@ -5,6 +5,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { parseSavedBands, type SavedBands } from "@/utils/bands"
+import { parsePullupTest, type SavedPullupTest } from "@/utils/pullupAssessment"
 
 const key = (userId: string) => `sc.bandCombos.${userId}`
 
@@ -21,5 +22,23 @@ export async function loadCachedBands(userId: string): Promise<SavedBands | unde
 export async function saveCachedBands(userId: string, saved: SavedBands): Promise<void> {
   try {
     await AsyncStorage.setItem(key(userId), JSON.stringify(saved))
+  } catch { /* best effort */ }
+}
+
+// The pull-up assessment (utils/pullupAssessment.ts), same idea.
+const testKey = (userId: string) => `sc.pullupTest.${userId}`
+
+export async function loadCachedPullupTest(userId: string): Promise<SavedPullupTest | null | undefined> {
+  try {
+    const raw = await AsyncStorage.getItem(testKey(userId))
+    return raw == null ? undefined : parsePullupTest(raw)
+  } catch {
+    return undefined
+  }
+}
+
+export async function saveCachedPullupTest(userId: string, test: SavedPullupTest): Promise<void> {
+  try {
+    await AsyncStorage.setItem(testKey(userId), JSON.stringify(test))
   } catch { /* best effort */ }
 }

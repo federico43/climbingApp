@@ -4,16 +4,21 @@ import { shared_styles, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, setPullupTest, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
 import {
   BAND_HEX, BAND_LADDER, bandRoundChange, comboId, comboLabel, DEFAULT_START_INDEX, isBandAssisted, ladderIndexOf, nextTestStep,
-  parseSavedBands, planBandNext, withSavedBand, type BandCombo, type SavedBands, type TestAttempt,
+  parseSavedBands, planBandNext, withSavedBand, type BandCombo, type SavedBands, type TestAttempt, type TestDoneReason,
 } from "@/utils/bands"
-import { loadCachedBands, saveCachedBands } from "@/utils/bandCache"
+import { loadCachedBands, loadCachedPullupTest, saveCachedBands, saveCachedPullupTest } from "@/utils/bandCache"
 import {
-  Direction, Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
+  bandStartFor, easierThanBands, isPullupLadder, NEGATIVES_ASKED_UP_TO, planFromTest, stepForVariation, variationFor, VARIATION_LABEL,
+  parsePullupTest, type PullupTestResult, type SavedPullupTest,
+} from "@/utils/pullupAssessment"
+import { localDateStr } from "@/utils/planRotation"
+import {
+  Direction, Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUSES, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
 import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
@@ -260,6 +265,11 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // band used in its last round this session.
   const savedBandsRef = useRef<SavedBands>({})
   const [bandStarts, setBandStarts] = useState<Record<number, number>>({})
+  // Pull-up assessment (utils/pullupAssessment.ts): the athlete's result
+  // (null = never tested), and the pull-up ladders that ask for it in
+  // round 1 — only for athletes with no pull-up data at all.
+  const pullupTestRef = useRef<SavedPullupTest | null>(null)
+  const [needsPullupTest, setNeedsPullupTest] = useState<Record<number, boolean>>({})
   const [lastBands, setLastBands] = useState<Record<number, number>>({})
 
   // The setting hints for the exercise as it's being done (a swap's prefill
@@ -368,14 +378,16 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
       loadWeightUnit(),
       User?.$id ? readEdgeMax(User.$id) : Promise.resolve(undefined),
-      User?.$id ? readBands(User.$id) : Promise.resolve({} as SavedBands),
+      User?.$id ? readPullupProfile(User.$id) : Promise.resolve({ bands: {} as SavedBands, test: null }),
     ])
-      .then(([sessions, library, unit, max, savedBands]) => {
+      .then(([sessions, library, unit, max, { bands: savedBands, test: pullupTest }]) => {
         if (cancelled) return
         setWeightUnitState(unit)
         setEdgeMax(max)
         savedBandsRef.current = savedBands
+        pullupTestRef.current = pullupTest
         const bandIdx: Record<number, number> = {}
+        const needsTest: Record<number, boolean> = {}
         const resolved: Record<number, ResolvedChain> = {}
         const weights: Record<number, string> = {}
         const levels: Record<number, LevelStep> = {}
@@ -411,6 +423,20 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             if (plan.note) notes[idx] = plan.note
             else if (plan.keepLevel && lastStep && lastStep.exerciseId !== p.level?.exerciseId) delete notes[idx]
           }
+          // Pull-up ladder: no pull-up data at all → the assessment in
+          // round 1. With a result and no history at today's focus → the
+          // variation it assigns (history, when there is some, wins).
+          if (ex.type !== "7/3s" && ex.focus && p.chain && isPullupLadder(p.chain.chain)) {
+            if (!p.past?.length && !pullupTest && Object.keys(savedBands).length === 0) needsTest[idx] = true
+            else if (pullupTest && p.basis?.focus !== ex.focus) {
+              const at = stepForVariation(p.chain.chain, variationFor(ex.focus, pullupTest))
+              if (at >= 0) {
+                levels[idx] = p.chain.chain[at]
+                notes[idx] = `From your pull-up test: ${p.chain.chain[at].name}`
+                delete details[idx]
+              }
+            }
+          }
           // Edge Lifts with a max: the rounds are at the max, not last
           // time's weight.
           if (max != null && ex.type !== "7/3s" && needsWarmup(ex)) {
@@ -422,6 +448,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
         setChains(resolved)
         setBandStarts(bandIdx)
+        setNeedsPullupTest(needsTest)
         setLibrary(library)
         setLoadSteps(steps)
         setSettings(sets)
@@ -467,6 +494,17 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     savedBandsRef.current = next
     saveCachedBands(User.$id, next)
     setBandCombos(User.$id, next).catch(() => {})
+  }
+
+  // The assessment's result: kept on the device and on the users row (best
+  // effort), and no other exercise in the block asks for it again.
+  function savePullupTest(r: PullupTestResult) {
+    const saved: SavedPullupTest = { ...r, date: localDateStr(new Date()) }
+    pullupTestRef.current = saved
+    setNeedsPullupTest({})
+    if (!User?.$id) return
+    saveCachedPullupTest(User.$id, saved)
+    setPullupTest(User.$id, saved).catch(() => {})
   }
 
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
@@ -788,6 +826,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             initialBand={lastBands[currentExerciseIndex] ?? bandStarts[currentExerciseIndex] ?? (exercise.focus ? ladderIndexOf(savedBandsRef.current[exercise.focus]) : -1)}
             suggestedBand={bandStarts[currentExerciseIndex]}
             onBandFound={(i) => { if (exercise.focus) saveBand(exercise.focus, i) }}
+            pullupTest={pullupTestRef.current ?? undefined}
+            needsPullupTest={currentRound === 0 && !swapped && !!needsPullupTest[currentExerciseIndex]}
+            onPullupTestDone={savePullupTest}
             setting={settingFor(currentExerciseIndex)}
             initialHardest={!!lastHardest[currentExerciseIndex]}
             suggestionNote={currentRound === 0 || justSwapped ? suggestionNotes[currentExerciseIndex] : undefined}
@@ -1001,18 +1042,74 @@ function BandPicker({ value, suggested, onChange, onRetest }: {
   )
 }
 
+// The pull-up assessment: max strict pull-ups, then (0–2 of them) max slow
+// negatives; the result picks each focus's pull-up (planFromTest).
+function PullupTestUI({ exercise, name, onDone, onCancel }: {
+  exercise: RepExercise | BothSidesExercise; name: string
+  onDone: (r: PullupTestResult) => void; onCancel: () => void
+}) {
+  const [phase, setPhase] = useState<"max" | "negatives" | "result">("max")
+  const [maxReps, setMaxReps] = useState(0)
+  const [negatives, setNegatives] = useState(0)
+  const askNegatives = maxReps <= NEGATIVES_ASKED_UP_TO
+  const result: PullupTestResult = askNegatives ? { maxReps, negatives } : { maxReps }
+  const head = <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+
+  if (phase === "result") {
+    const plan = planFromTest(result)
+    return (
+      <ExerciseScreen scrollKey="pullupResult" footer={<PillButton title="Continue" icon="checkmark" onPress={() => onDone(result)} />}>
+        {head}
+        <Text style={styles.sectionLabel}>Your pull-ups</Text>
+        {FOCUSES.map((f) => (
+          <View key={f} style={styles.bandChipRow}>
+            <View style={[styles.exFocusDot, { backgroundColor: FOCUS_COLOR[f] }]} />
+            <Text style={styles.noMaxText}>
+              <Text style={{ color: FOCUS_COLOR[f] }}>{FOCUS_LABEL[f]}</Text> · {VARIATION_LABEL[plan[f]]}
+            </Text>
+          </View>
+        ))}
+      </ExerciseScreen>
+    )
+  }
+
+  const isMax = phase === "max"
+  return (
+    <ExerciseScreen
+      scrollKey={`pullupTest-${phase}`}
+      footer={<PillButton title="Next" icon="arrow-forward" onPress={() => setPhase(isMax && askNegatives ? "negatives" : "result")} />}
+    >
+      {head}
+      <Text style={[styles.sectionLabel, { color: C.yellow }]}>Pull-up test · {isMax ? "1" : "2"} of {isMax && !askNegatives ? "1" : "2"}</Text>
+      <Text style={styles.noMaxText}>
+        {isMax
+          ? "One set: as many strict pull-ups as you can, no band. Scapulas retracted on every rep. 0 is fine."
+          : "Rest 3 min. One set: as many slow negatives as you can. Start at the top, lower in 5 s, scapulas retracted."}
+      </Text>
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>{isMax ? "Pull-ups" : "Negatives (5 s down)"}</Text>
+        <Stepper value={isMax ? maxReps : negatives} onChange={isMax ? setMaxReps : setNegatives} />
+      </View>
+      <Pressable onPress={onCancel} hitSlop={6}>
+        <Text style={styles.linkText}>Cancel test</Text>
+      </Pressable>
+    </ExerciseScreen>
+  )
+}
+
 // The guided test: one set per try, aiming at the focus's rep range. Too
 // many reps → less help, too few → more (nextTestStep), until a set lands
 // in the range; that band is kept for this focus.
 function BandTestUI({ exercise, name, focus, start, onFound, onCancel }: {
   exercise: RepExercise | BothSidesExercise; name: string; focus: Focus; start: number
-  onFound: (idx: number) => void; onCancel: () => void
+  onFound: (idx: number, reason: TestDoneReason) => void; onCancel: () => void
 }) {
   const target = targetFor(focus, undefined, "reps")!
   const [attempts, setAttempts] = useState<TestAttempt[]>([])
   const [current, setCurrent] = useState(start)
   const [reps, setReps] = useState<number | null>(null)
   const [found, setFound] = useState<number | null>(null)
+  const [reason, setReason] = useState<TestDoneReason>("in_range")
   const range = `${target.low}–${target.high}`
 
   function next() {
@@ -1021,7 +1118,7 @@ function BandTestUI({ exercise, name, focus, start, onFound, onCancel }: {
     setAttempts(all)
     setReps(null)
     const r = nextTestStep(focus, all)
-    if (r.done) setFound(r.index)
+    if (r.done) { setFound(r.index); setReason(r.reason) }
     else setCurrent(r.next)
   }
 
@@ -1038,7 +1135,7 @@ function BandTestUI({ exercise, name, focus, start, onFound, onCancel }: {
 
   if (found != null) {
     return (
-      <ExerciseScreen scrollKey="bandFound" footer={<PillButton title="Use this band" icon="checkmark" onPress={() => onFound(found)} />}>
+      <ExerciseScreen scrollKey="bandFound" footer={<PillButton title="Use this band" icon="checkmark" onPress={() => onFound(found, reason)} />}>
         <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
         <Text style={styles.sectionLabel}>Your band · {FOCUS_LABEL[focus]}</Text>
         <View style={styles.bandChipRow}>
@@ -2032,7 +2129,7 @@ function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }
 
 type Side = "left" | "right"
 // Edge Lifts with a max, round 1: brief → warmup ⇄ warmupRest (× 4) → timer.
-type Step = "brief" | "bandTest" | "warmup" | "warmupRest" | "timer" | "log"
+type Step = "brief" | "pullupTest" | "bandTest" | "warmup" | "warmupRest" | "timer" | "log"
 
 interface LoggedExerciseUIProps {
   exercise: RepExercise | BothSidesExercise
@@ -2047,6 +2144,11 @@ interface LoggedExerciseUIProps {
   initialBand: number
   suggestedBand?: number
   onBandFound: (idx: number) => void
+  // Pull-up assessment: the saved result, whether round 1 asks for it, and
+  // where a new result goes.
+  pullupTest?: PullupTestResult
+  needsPullupTest?: boolean
+  onPullupTestDone: (r: PullupTestResult) => void
   suggestionNote?: string
   suggestionDetail?: string   // what the note is based on
   roundDrop?: RoundDrop
@@ -2065,7 +2167,7 @@ interface LoggedExerciseUIProps {
 }
 
 function LoggedExerciseUI({
-  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, suggestionNote, suggestionDetail,
+  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, pullupTest, needsPullupTest, onPullupTestDone, suggestionNote, suggestionDetail,
   roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const sides = exercise.type === "both_sides"
@@ -2083,6 +2185,11 @@ function LoggedExerciseUI({
   const [weight, setWeight] = useState<number>(startWeight)
   const [level, setLevel] = useState<LevelStep | undefined>(startLevel)
   const [band, setBand] = useState<number>(initialBand)
+  const [testResult, setTestResult] = useState<PullupTestResult | undefined>(pullupTest)
+  // Shown on the brief after the band finder couldn't reach the range even
+  // with the most help (no negatives either).
+  const [fallbackNote, setFallbackNote] = useState<string | null>(null)
+  const askPullupTest = !!needsPullupTest && !testResult
   const [effort, setEffort] = useState<Effort | null>(null)
   // Set on the brief, like the load: the app can't measure the setting, so
   // the athlete says when they're on the hardest one.
@@ -2170,7 +2277,9 @@ function LoggedExerciseUI({
     return (
       <ExerciseScreen
         scrollKey="brief"
-        footer={needsBandTest
+        footer={askPullupTest
+          ? <PillButton title="Start pull-up test" icon="arrow-forward" onPress={() => setStep("pullupTest")} />
+          : needsBandTest
           ? <PillButton title="Find your band" icon="arrow-forward" onPress={() => setStep("bandTest")} />
           : hasWarmup && !warmedUp
           ? <PillButton title="Start warm-up" icon="timer-outline" onPress={() => { setWarmIdx(0); setStep("warmup") }} />
@@ -2196,7 +2305,18 @@ function LoggedExerciseUI({
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
           prefix={hasWarmup && !warmedUp ? "Then" : undefined}
         />
-        {!!bandFocus && (needsBandTest
+        {askPullupTest && (
+          <View style={styles.noMaxCard}>
+            <Text style={styles.noMaxTitle}>First pull-up session</Text>
+            <Text style={styles.noMaxText}>A short test picks the right pull-up for each focus. Scapulas retracted on every rep.</Text>
+          </View>
+        )}
+        {!!fallbackNote && (
+          <View style={styles.noMaxCard}>
+            <Text style={styles.noMaxText}>{fallbackNote}</Text>
+          </View>
+        )}
+        {!askPullupTest && !!bandFocus && (needsBandTest
           ? (
             <>
               <View style={styles.noMaxCard}>
@@ -2213,6 +2333,26 @@ function LoggedExerciseUI({
     )
   }
 
+  // ── Pull-up assessment ──
+  if (step === "pullupTest") {
+    return (
+      <PullupTestUI
+        exercise={exercise}
+        name={displayName}
+        onDone={(r) => {
+          onPullupTestDone(r)
+          setTestResult(r)
+          const focus = exercise.focus
+          const at = levelChain && focus ? stepForVariation(levelChain.chain, variationFor(focus, r)) : -1
+          if (at >= 0) setLevel(levelChain!.chain[at])
+          // Band-assisted today and no band yet → straight to the band finder.
+          setStep(at >= 0 && isBandAssisted(levelChain!.chain[at].name) && band < 0 ? "bandTest" : "brief")
+        }}
+        onCancel={() => setStep("brief")}
+      />
+    )
+  }
+
   // ── Band test ──
   if (step === "bandTest" && bandFocus) {
     return (
@@ -2220,8 +2360,24 @@ function LoggedExerciseUI({
         exercise={exercise}
         name={displayName}
         focus={bandFocus}
-        start={band >= 0 ? band : DEFAULT_START_INDEX}
-        onFound={(i) => { setBand(i); onBandFound(i); setStep("brief") }}
+        start={band >= 0 ? band : testResult ? bandStartFor(bandFocus, testResult) : DEFAULT_START_INDEX}
+        onFound={(i, reason) => {
+          setBand(i)
+          onBandFound(i)
+          // Short of the range even with the most help: the step below the
+          // bands today, if the ladder has one; otherwise the most help and
+          // as many clean reps as they can.
+          if (reason === "max_help" && levelChain) {
+            const easier = easierThanBands(levelChain.chain)
+            if (easier >= 0) {
+              setLevel(levelChain.chain[easier])
+              setFallbackNote(`Not in range yet even with ${comboLabel(BAND_LADDER[i])}: ${levelChain.chain[easier].name} today. Bands again once it gets easy.`)
+            } else {
+              setFallbackNote(`Not in range yet even with ${comboLabel(BAND_LADDER[i])}: use it and do as many clean reps as you can.`)
+            }
+          }
+          setStep("brief")
+        }}
         onCancel={() => setStep("brief")}
       />
     )
@@ -2378,15 +2534,20 @@ async function readEdgeMax(userId: string): Promise<number | null | undefined> {
 // The athlete's band combos from their `users` row, kept on the device too;
 // when the row can't be read, the device's copy. A combo found offline
 // (device copy has a focus the row lacks) isn't lost: the device wins for it.
-async function readBands(userId: string): Promise<SavedBands> {
-  const [me, cached] = await Promise.all([
+// …and the pull-up assessment the same way (the newer one wins).
+async function readPullupProfile(userId: string): Promise<{ bands: SavedBands; test: SavedPullupTest | null }> {
+  const [me, cached, cachedTest] = await Promise.all([
     withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null),
     loadCachedBands(userId),
+    loadCachedPullupTest(userId),
   ])
-  if (!me) return cached ?? {}
-  const saved = { ...parseSavedBands((me as any).bandCombos), ...(cached ?? {}) }
-  saveCachedBands(userId, saved)
-  return saved
+  if (!me) return { bands: cached ?? {}, test: cachedTest ?? null }
+  const bands = { ...parseSavedBands((me as any).bandCombos), ...(cached ?? {}) }
+  saveCachedBands(userId, bands)
+  const rowTest = parsePullupTest((me as any).pullupTest)
+  const test = !rowTest ? cachedTest ?? null : !cachedTest || rowTest.date >= cachedTest.date ? rowTest : cachedTest
+  if (test) saveCachedPullupTest(userId, test)
+  return { bands, test }
 }
 
 // The brief's warm-up: one line per hold, weight and seconds only.
