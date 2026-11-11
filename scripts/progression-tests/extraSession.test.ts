@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   extraSessionBlocks, extraSessionDays, extraSessionOf, extraSessionSpec, gymDaysLabel, nextExtraWindow,
-  pendingExtraSession, preferredDay, trainingDays, weekdaysLabel, type ExtraSessionNote,
+  pendingExtraSession, preferredDay, spreadSlideText, trainingDays, weekdaysLabel, type ExtraSessionNote,
 } from "@/utils/extraSession"
 import type { PlanShape } from "@/utils/planRotation"
 
@@ -99,5 +99,10 @@ assert.equal(first.scFocus, "max_force")
 assert.equal(first.exerciseSlot, 1)
 // No S&C in the plan → nothing to send.
 assert.equal(extraSessionSpec({ ...plan, hasSc: false }, built, "2026-11-11"), null)
+
+// ── The slide ───────────────────────────────────────────────────────────────
+assert.match(spreadSlideText([TUE, THU]), /You train Tue & Thu\..* on Sat or Sun /)
+assert.match(spreadSlideText([]), /^Your body gets stronger/)
+assert.match(spreadSlideText([MON, WED, FRI]), /^Your body gets stronger/)
 
 console.log("extraSession: all tests passed")

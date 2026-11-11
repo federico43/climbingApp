@@ -188,3 +188,14 @@ export function preferredDay(note: ExtraSessionNote | null, open: string[]): str
   if (!note) return undefined
   return open.find((d) => d >= note.from && d <= note.to)
 }
+
+// The "Spread it over the week" slide of the conditioning basics
+// (components/ConditioningBasics.tsx), in the athlete's own days when known.
+export function spreadSlideText(gymDays: Weekday[]): string {
+  const extra = extraSessionDays(gymDays)
+  const after = "Your coach can send it as homework."
+  if (gymDays.length > 0 && extra.length > 0) {
+    return `You train ${gymDaysLabel(gymDays)}. Your body gets stronger in the days between, so a short session on your own on ${weekdaysLabel(extra)} gets you there faster. ${after}`
+  }
+  return `Your body gets stronger in the days between workouts. Leave a rest day around each one, and a short session on your own in the longest gap gets you there faster. ${after}`
+}

@@ -14,10 +14,15 @@ const KEY = (id: string) => `feature-intro-seen:${id}`
 // Pop-ups asked to show again (the "i" button), by id.
 const replay = new Set<(id: string) => void>()
 
+// Opens a FeatureIntro's pages again (for a custom link instead of the "i").
+export function replayIntro(id: string) {
+  replay.forEach((l) => l(id))
+}
+
 // Small "i" button that opens the screen's pop-ups again.
 export function IntroButton({ id }: { id: string }) {
   return (
-    <Pressable hitSlop={10} onPress={() => replay.forEach((l) => l(id))} accessibilityLabel="How this screen works">
+    <Pressable hitSlop={10} onPress={() => replayIntro(id)} accessibilityLabel="How this screen works">
       <Ionicons name="information-circle-outline" size={24} color={C.textSecondary} />
     </Pressable>
   )
@@ -27,12 +32,20 @@ export function IntroButton({ id }: { id: string }) {
 // (like the ones Spotify shows): picture on top, title, short text, one button.
 // Several pages step through with "Next". Once closed it never shows again on
 // this device, unless its IntroButton is tapped.
-export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) {
+// `auto` false holds the first showing back (another pop-up has the screen);
+// the IntroButton / replayIntro still open it.
+export function FeatureIntro({ id, pages, auto = true }: { id: string; pages: IntroPage[]; auto?: boolean }) {
   const [show, setShow] = useState(false)
   const [i, setI] = useState(0)
 
   useEffect(() => {
-    AsyncStorage.getItem(KEY(id)).then((v) => setShow(v !== "1")).catch(() => {})
+    if (!auto) return
+    let cancelled = false
+    AsyncStorage.getItem(KEY(id)).then((v) => { if (!cancelled && v !== "1") setShow(true) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [id, auto])
+
+  useEffect(() => {
     const l = (which: string) => {
       if (which !== id) return
       setI(0)
