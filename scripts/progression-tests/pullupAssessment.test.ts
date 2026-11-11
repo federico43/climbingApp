@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import { ladderIndexOf } from "@/utils/bands"
-import { bandStartFor, parsePullupTest, planFromTest, retestDue } from "@/utils/pullupAssessment"
+import { bandStartFor, easierThanBands, isPullupLadder, parsePullupTest, planFromTest, retestDue, stepForVariation } from "@/utils/pullupAssessment"
 
 const idx = ladderIndexOf
 
@@ -40,5 +40,21 @@ assert.equal(parsePullupTest(null), null)
 assert.equal(parsePullupTest("{}"), null)
 assert.deepEqual(parsePullupTest('{"date":"2026-11-11","maxReps":3,"negatives":4}'), { date: "2026-11-11", maxReps: 3, negatives: 4 })
 assert.deepEqual(parsePullupTest('{"date":"2026-11-11","maxReps":7}'), { date: "2026-11-11", maxReps: 7 })
+
+// ── on the ladder ──
+const full = ["Chin-up isometric", "Band Assisted Pull-Ups", "Negative pull-ups", "Pull Ups", "Weighted pull-ups"].map((name, i) => ({ exerciseId: `l${i}`, name }))
+assert.ok(isPullupLadder(full))
+assert.ok(!isPullupLadder([{ exerciseId: "a", name: "Push-ups" }, { exerciseId: "b", name: "Elevated push-ups" }]))
+assert.equal(stepForVariation(full, "band"), 1)
+assert.equal(stepForVariation(full, "negative"), 2)
+assert.equal(stepForVariation(full, "bodyweight"), 3)
+assert.equal(stepForVariation(full, "weighted"), 4)
+// Missing steps fall back: no weighted → pull-ups, no negatives → band
+const short = full.filter((l) => !/weighted|negative/i.test(l.name))
+assert.equal(short[stepForVariation(short, "weighted")].name, "Pull Ups")
+assert.equal(short[stepForVariation(short, "negative")].name, "Band Assisted Pull-Ups")
+// Nothing helps enough: the step below the bands, if any
+assert.equal(full[easierThanBands(full)].name, "Chin-up isometric")
+assert.equal(easierThanBands(full.slice(1)), -1)
 
 console.log("pull-up assessment tests passed")

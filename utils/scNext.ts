@@ -3,7 +3,7 @@
 // time" card, the coach's exercise history and the coach's editor flag all
 // ask. Pure; rules in docs/sc-progression-plan.md §3.
 import type { ResolvedChain } from "@/utils/levelChain"
-import { chainIndexOf, usableAt } from "@/utils/levelChain"
+import { chainIndexOf, isWeightedStep, usableAt } from "@/utils/levelChain"
 import type { ScSetsSummary } from "@/utils/scHistory"
 import {
   decideNext, DEFAULT_LOAD_STEP, describeLevel, FOCUS_LABEL, describeWeight, lowerFirst, nextWeight, reasonText, stepLevel, targetFor,
@@ -111,6 +111,16 @@ export function planNext(
     const from = chain.chain[fromIdx]
     const usable = usableAt(chain, ex.focus)
     if (settingHint) return stayHere({ level: from })
+    // A weighted step (Weighted pull-ups): the weight moves first; only
+    // a miss with nothing left to take off steps down a level.
+    if (isWeightedStep(from.name)) {
+      const w = last.weight ?? 0
+      if (!judged) return { level: from, weight: w > 0 ? w : undefined, note: "", flags }
+      const next = nextWeight(w, judged.direction, loadStep, unit)
+      if (judged.direction !== "decrease" || (w > 0 && next > 0)) {
+        return { level: from, weight: w > 0 ? next : undefined, note: w > 0 ? describeWeight(judged, w, next, unit, when) : "", decision: judged, flags }
+      }
+    }
     if (!judged) return { level: from, note: "", flags, ...(setting ? { atHardest: !!last.atHardest } : {}) }
     const move = stepLevel(chain.chain, fromIdx, judged.direction, usable)!
     // A new level starts back on an easier setting.

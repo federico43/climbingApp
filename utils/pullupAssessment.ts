@@ -12,8 +12,9 @@
 //      (nextTestStep in utils/bands.ts), starting from a band estimated
 //      from step 1 instead of always green.
 
-import { BAND_LADDER, comboId, DEFAULT_START_INDEX } from "@/utils/bands"
-import { FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
+import { BAND_LADDER, comboId, DEFAULT_START_INDEX, isBandAssisted } from "@/utils/bands"
+import { isWeightedStep } from "@/utils/levelChain"
+import { FOCUS_REP_RANGE, type Focus, type LevelStep } from "@/utils/scProgression"
 
 export type PullVariation = "band" | "negative" | "bodyweight" | "weighted"
 
@@ -101,4 +102,35 @@ export function parsePullupTest(raw: string | null | undefined): SavedPullupTest
   } catch {
     return null
   }
+}
+
+// ─── On the pull-up ladder ───────────────────────────────────────────────────
+
+const isNegative = (n: string) => /negative/i.test(n)
+const isFullPullup = (n: string) => /pull[- ]?ups?\b/i.test(n) && !/band|assist|negative|weighted|isometric|explosive/i.test(n)
+
+// A ladder the assessment applies to: it has a band-assisted or a full
+// pull-up step.
+export function isPullupLadder(chain: LevelStep[]): boolean {
+  return chain.some((l) => isBandAssisted(l.name) || isFullPullup(l.name))
+}
+
+// The ladder step for a variation (index, -1 = none). A missing step falls
+// back to the closest one that exists: weighted → pull-ups, negatives →
+// band.
+export function stepForVariation(chain: LevelStep[], v: PullVariation): number {
+  const find = (test: (n: string) => boolean) => chain.findIndex((l) => test(l.name))
+  if (v === "weighted") { const i = find(isWeightedStep); return i >= 0 ? i : stepForVariation(chain, "bodyweight") }
+  if (v === "bodyweight") return find(isFullPullup)
+  if (v === "negative") { const i = find(isNegative); return i >= 0 ? i : stepForVariation(chain, "band") }
+  return find(isBandAssisted)
+}
+
+// No negatives, and short of the range even with the most help the bands
+// give: the step below the band-assisted one on the ladder (e.g. a chin-up
+// isometric), or -1 when there is none — then the athlete stays on the most
+// help and does what they can.
+export function easierThanBands(chain: LevelStep[]): number {
+  const band = chain.findIndex((l) => isBandAssisted(l.name))
+  return band > 0 ? band - 1 : -1
 }
