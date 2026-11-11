@@ -2526,6 +2526,7 @@ function GripCard({ edge, secs }: { edge: string; secs: number }) {
 
 // Max Hangs: shoulder blades retracted on every hang (coach 2026-11-11).
 function ScapulaCue() {
+  const styles = useSheet(sheet)
   return (
     <View style={styles.noMaxCard}>
       <Text style={styles.noMaxTitle}>Shoulder blades back</Text>
@@ -2550,6 +2551,8 @@ function HangTestUI({ exercise, userId, hangLog, weightUnit, onSaved, onDone }: 
   onSaved: (edge: string, kg: number) => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [edge, setEdge] = useState(hangEdgeOf(exercise))
   const lastMaxKg = hangLog ? hangMaxFor(hangLog, edge) : null
   // Start a bit under the last max (or at bodyweight) — the test builds up.
