@@ -2,6 +2,7 @@ import { C } from "@/utils/theme"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { card } from "@/components/coach/styles"
 import { EdgeLiftMaxSection } from "@/components/coach/EdgeLiftMaxSection"
+import { HangMaxSection } from "@/components/coach/HangMaxSection"
 import { AppUser, CheckinRow, getCheckinForToday, getSessionsByUserId, getUsers, setFlashLevel } from "@/services/BoulderGraphService"
 import { colourLabel } from "@/utils/boulderColours"
 import { DENSITY_FLASHES_FOR_COLOUR, densityFlashColour, densitySummary, latestDensityTest, type DensityClimb } from "@/utils/densityFlash"
@@ -9,7 +10,8 @@ import { useEffect, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
 
 // Today's readiness check-in, the athlete's flash level (constraint
-// warmups pick their colour range relative to it) and Edge Lifts max.
+// warmups pick their colour range relative to it), Edge Lifts max and Max
+// Hangs maxes (one per edge).
 export function AthleteCard({ athlete, flashLevel, onPickFlashLevel, onHomeworkChanged }: {
   athlete: AppUser
   flashLevel: string | null
@@ -56,6 +58,7 @@ export function AthleteCard({ athlete, flashLevel, onPickFlashLevel, onHomeworkC
         <DensityFlashSuggestion athleteId={athlete.$id} flashLevel={flashLevel} onApply={onPickFlashLevel} />
       </View>
       <EdgeLiftMaxSection athlete={athlete} onHomeworkChanged={onHomeworkChanged} />
+      <HangMaxSection athlete={athlete} onHomeworkChanged={onHomeworkChanged} />
     </View>
   )
 }
