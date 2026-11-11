@@ -309,6 +309,14 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
     assert.ok(thu3.roster.includes("cami"))
     assert.equal(t("class_weeks").get(thisWeek)!.published, true)
     assert.ok(pushes.some((p) => p.to === "cami" && p.title === "This week's classes are up"))
+    // Published, the coach can still add a time; a class already started stays put
+    const tue3 = await ctx.db.create("classes", { weekStart: thisWeek, day: 1, start: 9.5, roster: ["bea"] })
+    const keep = [...t("classes").values()].filter((c) => c.weekStart === thisWeek && c.day >= 2).map((c) => ({ id: c.$id, day: c.day, start: c.start }))
+    assert.equal((await call("classPublish", "coach", { weekStart: thisWeek, classes: [...keep, { day: 4, start: 9.5 }] })).status, 200)
+    assert.equal([...t("classes").values()].filter((c) => c.weekStart === thisWeek).length, 4)
+    assert.deepEqual(t("classes").get(tue3.$id)!.roster, ["bea"])
+    const move = await call("classPublish", "coach", { weekStart: thisWeek, classes: [{ id: tue3.$id, day: 4, start: 15 }] })
+    assert.equal(move.status, 409)
     // A week already over can't be published
     assert.equal((await call("classPublish", "coach", { weekStart: addDays(thisWeek, -7), classes: [] })).status, 409)
   } finally {
