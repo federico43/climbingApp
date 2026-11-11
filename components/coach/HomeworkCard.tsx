@@ -3,6 +3,7 @@ import { HomeworkCoachSheet } from "@/components/HomeworkCoachSheet"
 import { card } from "@/components/coach/styles"
 import { ProtocolRow, SessionRow } from "@/services/BoulderGraphService"
 import { HOMEWORK_STATE_LABEL, dueByOf, homeworkStatus, leftByAthlete, shortDay, type HomeworkState } from "@/utils/homework"
+import { extraSessionOf, weekdaysLabel } from "@/utils/extraSession"
 import { addDays, localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { useState } from "react"
@@ -19,6 +20,13 @@ function LeftByAthlete({ hw }: { hw: ProtocolRow }) {
       {left.roundsDone ? ` · ${left.roundsDone} round${left.roundsDone !== 1 ? "s" : ""} done that day` : ""}
     </Text>
   )
+}
+
+// "Extra session on their own · Sat or Sun" (utils/extraSession.ts).
+function ExtraSessionLine({ hw }: { hw: ProtocolRow }) {
+  const extra = extraSessionOf(hw)
+  if (!extra) return null
+  return <Text style={styles.left}>Extra session on their own · {weekdaysLabel(extra.days)}</Text>
 }
 
 const STATE_COLOR: Record<HomeworkState, string> = {
@@ -69,6 +77,7 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
               {hw.planIndex ? ` · workout ${hw.planIndex}` : ""}
             </Text>
             <LeftByAthlete hw={hw} />
+            <ExtraSessionLine hw={hw} />
             {status.state === "cant_attend" && !!hw.homeworkNote && (
               <Text style={styles.note}>“{hw.homeworkNote}”</Text>
             )}

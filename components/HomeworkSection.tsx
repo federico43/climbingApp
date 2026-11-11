@@ -12,6 +12,7 @@ import {
 import {
   atLocal, daysToPick, dueByOf, homeworkStatus, leftByAthlete, shortDay, timeLabel, type HomeworkStatus,
 } from "@/utils/homework"
+import { extraSessionOf, preferredDay, weekdaysLabel } from "@/utils/extraSession"
 import { addDays, localDateStr } from "@/utils/planRotation"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Ionicons } from "@expo/vector-icons"
@@ -165,8 +166,13 @@ function statusLine(hw: ProtocolRow, status: HomeworkStatus, today: string): { t
         : { text: "Your coach knows you can't make it", color: C.textSecondary }
     case "overdue":
       return { text: `Overdue since ${shortDay(due)}`, color: C.red }
-    default:
-      return { text: `Pick a day before ${shortDay(due)}`, color: C.textSecondary }
+    default: {
+      // Extra session (utils/extraSession.ts): the days between gym workouts.
+      const extra = extraSessionOf(hw)
+      return extra
+        ? { text: `On your own, best on ${weekdaysLabel(extra.days)} — before ${shortDay(due)}`, color: C.textSecondary }
+        : { text: `Pick a day before ${shortDay(due)}`, color: C.textSecondary }
+    }
   }
 }
 
@@ -214,7 +220,9 @@ function PromptModal({ hw, onClose, onPick }: { hw: ProtocolRow | null; onClose:
               <Text style={{ fontWeight: "800", color: C.textPrimary }}>{hw.name}</Text>
               {leftByAthlete(hw)
                 ? ` is waiting — you left it for later. Pick a day to finish it before ${shortDay(dueByOf(hw))} and we'll remind you.`
-                : ` from your coach. Pick a day to do it before ${shortDay(dueByOf(hw))} and we'll remind you.`}
+                : extraSessionOf(hw)
+                  ? ` from your coach: a short session on your own between gym days, best on ${weekdaysLabel(extraSessionOf(hw)!.days)}. Training a third time in the week gets results faster. Pick a day and we'll remind you.`
+                  : ` from your coach. Pick a day to do it before ${shortDay(dueByOf(hw))} and we'll remind you.`}
             </Text>
           )}
           <Pressable style={s.primary} onPress={onPick}>
@@ -233,7 +241,8 @@ function ScheduleModal({ hw, today, onClose, onSaved }: {
   const days = daysToPick(today, dueByOf(hw))
   const prev = hw.scheduledFor ? new Date(hw.scheduledFor) : null
   const prevDay = prev ? localDateStr(prev) : null
-  const [day, setDay] = useState(prevDay && days.includes(prevDay) ? prevDay : days[0])
+  // An extra session starts on its first suggested day.
+  const [day, setDay] = useState(prevDay && days.includes(prevDay) ? prevDay : preferredDay(extraSessionOf(hw), days) ?? days[0])
   const [minutes, setMinutes] = useState(prev ? prev.getHours() * 60 + prev.getMinutes() : DEFAULT_HOUR * 60)
   const [saving, setSaving] = useState(false)
   const step = (by: number) => setMinutes((m) => (m + by + 24 * 60) % (24 * 60))
