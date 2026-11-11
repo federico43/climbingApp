@@ -14,13 +14,13 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import {
-  routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
+  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
@@ -53,6 +53,19 @@ interface Props {
   startRestTimer: (duration: number) => void
   goToNextBlock: () => void
   goToPreviousBlock?: () => void
+}
+
+// "Added today" / "Added yesterday" / "Added 3 days ago" / "Added 12 Nov".
+function addedLabel(iso: string | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((day(new Date()) - day(d)) / 86400000)
+  if (days <= 0) return "Added today"
+  if (days === 1) return "Added yesterday"
+  if (days < 7) return `Added ${days} days ago`
+  return `Added ${d.getDate()} ${d.toLocaleString("en", { month: "short" })}`
 }
 
 function clock(secs: number): string {
@@ -100,20 +113,28 @@ export function SprayBlock({
   const [walls, setWalls] = useState<SprayWallRow[] | null>(null)
   // The athlete's flash colour → the level to suggest sequences at.
   const [flash, setFlash] = useState<string | null>(null)
+  // Every sequence on the wall, whoever built it: the wall is shared, so one
+  // a teammate adds in their spray block shows up here too (coach
+  // 2026-11-11 — it used to hide sequences other athletes had built).
+  // Fetched again each time the selector opens, and on Reload / pull down.
+  const [reloadKey, setReloadKey] = useState(0)
+  const [reloading, setReloading] = useState(false)
+  const reload = () => { setReloading(true); setReloadKey((k) => k + 1) }
   useEffect(() => {
     let cancelled = false
     if (athleteId) getUsers(athleteId).then((u: any) => { if (!cancelled) setFlash(u?.flashLevel ?? null) }).catch(() => {})
     Promise.all([getSessions(), getSprayRoutes()])
       .then(([sessions, rows]) => {
         if (cancelled) return
-        const visible = rows.filter((r) => !r.athleteId || r.athleteId === athleteId)
-        setRoutes(new Map(visible.map((r) => [r.$id, r])))
+        setRoutes(new Map(rows.map((r) => [r.$id, r])))
         setSessions(sessions)
       })
-      .catch((e) => { console.error(e); if (!cancelled) setRoutes(new Map()) })
-    getSprayWalls().then((w) => { if (!cancelled) setWalls(w) }).catch(() => { if (!cancelled) setWalls([]) })
+      // A failed reload keeps what's on screen.
+      .catch((e) => { console.error(e); if (!cancelled) setRoutes((m) => m ?? new Map()) })
+      .finally(() => { if (!cancelled) setReloading(false) })
+    getSprayWalls().then((w) => { if (!cancelled) setWalls(w) }).catch(() => { if (!cancelled) setWalls((w) => w ?? []) })
     return () => { cancelled = true }
-  }, [athleteId])
+  }, [athleteId, reloadKey])
 
   // Tick the block clock (time blocks).
   useEffect(() => {
@@ -161,6 +182,16 @@ export function SprayBlock({
     const info = new Map([...routes.values()].map((r) => [r.$id, { id: r.$id, type: r.type ?? undefined, level: r.level ?? null }]))
     return suggestSprayRoutes(records, info, routeType, routeId ? [routeId] : [], SPRAY_SUGGESTION_COUNT, targetLevel, block.routeId || null)
   }, [routes, records, routeType, routeId, targetLevel, block.routeId])
+  // Not climbed yet, newest first — a teammate's new sequence lands here.
+  const fresh = useMemo(() => {
+    if (!routes || !routeType) return []
+    return newSprayRoutes(routes.values(), records, routeType, [...suggestions.map((r) => r.routeId), ...(routeId ? [routeId] : [])])
+  }, [routes, records, routeType, suggestions, routeId])
+
+  function openChooser() {
+    reload()
+    setPhase("choose")
+  }
 
   const route = routeId ? routes?.get(routeId) ?? null : null
   const wallFor = (r: SprayRouteRow | null | undefined) => (r?.wallId ? walls?.find((w) => w.$id === r.wallId) ?? null : null)
@@ -425,7 +456,7 @@ export function SprayBlock({
         <View style={shared_styles.footer}>
           {block.lockRoute && block.routeId
             ? <CustomButton title="Start" onPress={() => choose(block.routeId!)} />
-            : <CustomButton title="Choose sequence" onPress={() => setPhase("choose")} />}
+            : <CustomButton title="Choose sequence" onPress={openChooser} />}
         </View>
       </View>
     )
@@ -437,13 +468,22 @@ export function SprayBlock({
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={() => setPhase(routeId ? "work" : "intro")} />
-        <ScrollView contentContainerStyle={s.chooseContent}>
+        <ScrollView
+          contentContainerStyle={s.chooseContent}
+          refreshControl={<RefreshControl refreshing={reloading} onRefresh={reload} tintColor={C.green} colors={[C.green]} />}
+        >
           <Pressable style={[s.addBtn, !walls && { opacity: 0.5 }]} onPress={add} disabled={!walls}>
             {walls ? <Text style={s.addBtnText}>+ Add a new sequence</Text> : <ActivityIndicator color={C.green} />}
           </Pressable>
-          <Text style={s.sectionLabel}>Suggested{targetLevel != null ? ` · around level ${targetLevel}` : ""}</Text>
+          <View style={s.sectionHead}>
+            <Text style={[s.sectionLabel, { flex: 1 }]}>Suggested{targetLevel != null ? ` · around level ${targetLevel}` : ""}</Text>
+            <Pressable onPress={reload} disabled={reloading} hitSlop={10} style={s.reloadBtn} accessibilityLabel="Reload sequences">
+              {reloading ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={16} color={C.green} />}
+              <Text style={s.reloadText}>Reload</Text>
+            </Pressable>
+          </View>
           {!routes && <ActivityIndicator color={C.green} />}
-          {routes && suggestions.length === 0 && (
+          {routes && suggestions.length === 0 && fresh.length === 0 && (
             <Text style={s.empty}>
               {targetLevel != null
                 ? `No ${(ROUTE_TYPE_LABEL[routeType] ?? "").toLowerCase()} sequences on the wall yet.`
@@ -476,6 +516,22 @@ export function SprayBlock({
               </Pressable>
             )
           })}
+          {fresh.length > 0 && <Text style={[s.sectionLabel, { marginTop: 8 }]}>New on the wall</Text>}
+          {fresh.map((id) => {
+            const row = routes?.get(id)
+            const mine = !!row?.athleteId && row.athleteId === athleteId
+            const meta = [row?.level != null && `Level ${row.level}`, addedLabel(row?.$createdAt), mine && "by you"].filter(Boolean).join(" · ")
+            return (
+              <Pressable key={id} style={s.row} onPress={() => setPreview(id)}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.rowName} numberOfLines={1}>{row?.name ?? "Sequence"}</Text>
+                  {!!meta && <Text style={s.meta}>{meta}</Text>}
+                </View>
+                <Text style={s.rowRecord}>New</Text>
+                <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+              </Pressable>
+            )
+          })}
         </ScrollView>
         {modals}
       </View>
@@ -487,7 +543,7 @@ export function SprayBlock({
   if (phase === "work") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={loggedTries === 0 ? () => setPhase("choose") : undefined} />
+        <TopBar title={title} onBack={loggedTries === 0 ? openChooser : undefined} />
         <View style={s.workHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.routeName} numberOfLines={1}>{route?.name ?? "Sequence"}</Text>
@@ -522,7 +578,7 @@ export function SprayBlock({
           </Pressable>
         </View>
         <View style={s.footerRow}>
-          <Pressable onPress={() => setPhase("choose")} hitSlop={8} style={s.linkRow}>
+          <Pressable onPress={openChooser} hitSlop={8} style={s.linkRow}>
             <Ionicons name="swap-horizontal" size={16} color={C.textSecondary} />
             <Text style={s.link}>Change sequence</Text>
           </Pressable>
@@ -737,6 +793,9 @@ const sheet = paperSheet((C) => StyleSheet.create({
     borderWidth: 1, borderColor: C.green, borderStyle: "dashed", marginBottom: 10,
   },
   addBtnText: { fontSize: 16, fontWeight: "800", color: C.green },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  reloadBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4, paddingHorizontal: 8 },
+  reloadText: { fontSize: 13, fontWeight: "700", color: C.green },
   sectionLabel: { fontSize: 12, fontWeight: "800", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.8 },
   empty: { fontSize: 14, color: C.textMuted, lineHeight: 20 },
   row: {
