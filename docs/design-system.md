@@ -200,3 +200,16 @@ export const theme = {
 - No flat grey dark-mode cards without blur; no pure `#000` background.
 - Don't limit the grain to the background; it covers everything.
 - No red/orange in gradients; the palette is mint, blue and violet.
+
+---
+
+## 11. Rolling out to the old screens (`theme/paper/legacy.tsx`)
+
+The old screens are written against the dark palette `C` (utils/theme.ts) and static `StyleSheet`s. To move an area to Paper Mint without rewriting every style:
+
+- Swap `import { C } from "@/utils/theme"` for `useC()`, and `const styles = StyleSheet.create({…})` for `const sheet = paperSheet((C, P) => StyleSheet.create({…}))` + `const styles = useSheet(sheet)` in each component.
+- Wrap the area in `<PaperScope>`. Inside it the old keys map to Paper tokens for the current light/dark mode (bg → paper, textPrimary → ink, green → mint…), green fills become mint, full-width green buttons become outlined pills, and system text becomes Archivo (big numbers condensed black, small uppercase labels JetBrains Mono). Outside the scope the same components keep the old look, so shared pieces don't change on screens that weren't redesigned.
+- `P` (the Paper theme, null outside the scope) is for Paper-only tweaks: `...(P && { borderRadius: 26 })`. `CustomButton` becomes the Primary CTA, and `TopBar` the nav bar (`poster` = the block's name as the poster headline).
+- Text/icons on a filled colour use `C.onAccent` (never `C.bg`); homework uses `C.homework`.
+
+First area done this way: the athlete workout flow (workout overlay, every block, rest timers, the summary, the jump rope cardio session).
