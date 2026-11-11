@@ -23,6 +23,7 @@ import {
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { reviewLogLine, type ScReviewLog } from "@/utils/scReview"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -300,6 +301,7 @@ function ScBlockView({ block, attempts, onOpenExercise }: { block: any; attempts
     byRound[r].push(a.scData)
   }
   const loggedRounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
+  const reviews: ScReviewLog[] = attempts.filter((a) => a?.scReview).map((a) => a.scReview)
 
   // Distinct container→level jumps logged anywhere in this block, so the
   // coach can spot "progression happened this training" without reading
@@ -407,6 +409,19 @@ function ScBlockView({ block, attempts, onOpenExercise }: { block: any; attempts
         </View>
       ) : (
         <Text style={styles.blockStats}>No exercises logged</Text>
+      )}
+
+      {/* The athlete's end-of-block review (utils/scReview.ts) */}
+      {reviews.length > 0 && (
+        <View style={styles.scRound}>
+          <Text style={styles.scRoundLabel}>Athlete review</Text>
+          {reviews.map((r, i) => (
+            <View key={i} style={styles.scLogRow}>
+              <Text style={styles.scLogName}>{r.exerciseName}</Text>
+              <Text style={styles.scLogDetail}>{reviewLogLine(r)}</Text>
+            </View>
+          ))}
+        </View>
       )}
     </View>
   )
