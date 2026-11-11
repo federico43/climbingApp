@@ -151,7 +151,7 @@ export function PlanCard({
   // Opens the generated workout in the builder, to review and adjust
   // before saving.
   function openInBuilder(next: GeneratedWorkout) {
-    // The Density test rides along pre-marked as homework (split off on save).
+    // The benchmark rides along pre-marked as homework (split off on save).
     const withIds = injectLocalIds([...next.homework, ...next.blocks])
     setDraftWorkout({
       name: next.name,
@@ -205,7 +205,7 @@ export function PlanCard({
     }
   }
 
-  // Same rows the builder's Save makes: the Density test first as homework
+  // Same rows the builder's Save makes: the benchmark first as homework
   // (undone if the workout can't be saved), then the workout, then the
   // athlete hears about the homework.
   async function create(next: GeneratedWorkout) {
@@ -342,7 +342,7 @@ export function PlanCard({
                   />
                 )}
               </>)}
-              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Density test as homework" />}
+              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Benchmark as homework: Density test + Edge lift max test" />}
               <View style={styles.actions}>
                 <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
                   <Text style={card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
