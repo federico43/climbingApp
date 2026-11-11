@@ -4,7 +4,7 @@
 // heaviest weight ADDED to bodyweight held for 10 s on that edge (0 =
 // bodyweight). Max force rounds hang the max for 10 s, after a short
 // warm-up ramp on the same edge. Pure — no fetching or UI.
-import { DEFAULT_LOAD_STEP, convertWeight, type Focus, type WeightUnit } from "@/utils/scProgression"
+import { DEFAULT_LOAD_STEP, convertWeight, type Effort, type Focus, type WeightUnit } from "@/utils/scProgression"
 import type { MaxSource, WarmupSet } from "@/utils/edgeWarmup"
 
 // The library exercise this applies to, by exact name.
@@ -16,6 +16,8 @@ export const DEFAULT_HANG_EDGE = "20mm"
 
 export const MAX_HANGS = {
   holdSecs: 10,        // the test and every main hang
+  testRestSecs: 180,   // between test tries
+  testMaxTries: 8,     // the test ends by itself after this many
   // Warm-up on the same edge: kg under the max (never below bodyweight),
   // each shorter than the last.
   warmup: [
@@ -24,6 +26,9 @@ export const MAX_HANGS = {
     { underKg: 5, secs: 5 },
   ],
 } as const
+
+// Coach 2026-11-11: every hang, shoulder blades pulled back and down.
+export const SCAPULA_CUE = "Keep your shoulder blades retracted (pulled back and down) the whole hang."
 
 // "Max Hang" / "max hangs" too — a block typed by hand may say it that way.
 export function isMaxHang(ex: { name?: string }): boolean {
@@ -114,4 +119,82 @@ export function hangWarmupRamp(maxKg: number | null | undefined, unit: WeightUni
 // "Bodyweight" / "+12.5 kg".
 export function hangLoadLabel(weight: number, unit: WeightUnit): string {
   return weight > 0 ? `+${weight} ${unit}` : "Bodyweight"
+}
+
+// The next bigger edge (easier grip), or null when already on the biggest.
+export function biggerEdge(edge: string): string | null {
+  const key = normalizeEdge(edge)
+  const mm = parseFloat(key)
+  const bigger = HANG_EDGES.filter((e) => parseFloat(e) > mm)
+  return bigger.length ? bigger[bigger.length - 1] : null
+}
+
+// ─── The max test, try by try (coach 2026-11-11) ─────────────────────────────
+// Each try is a 10 s hang at a load (added weight, in the athlete's unit).
+// Held → how hard was it; let go early → was it a mistake (bad grip,
+// slipped: same load again) or too hard. The max is the heaviest load held.
+
+export type HangFailReason = "mistake" | "too_hard"
+
+export interface HangTry {
+  weight: number          // added, athlete's unit; 0 = bodyweight
+  held: boolean           // the full 10 s
+  secs?: number           // how long it lasted
+  effort?: Effort         // held: easy / solid / max
+  reason?: HangFailReason // not held
+}
+
+export type HangTestNext =
+  | { kind: "try"; weight: number; why: "start" | "up" | "retry" | "down" }
+  | { kind: "done"; weight: number }       // max found
+  | { kind: "bigger_edge"; edge: string | null }  // can't hang bodyweight here
+
+// How much to add after a held try, in the athlete's unit.
+export const HANG_TEST_JUMP: Record<WeightUnit, Record<"easy" | "solid", number>> = {
+  kg: { easy: 5, solid: 2 },
+  lb: { easy: 10, solid: 4 },
+}
+
+// The heaviest load held so far, or null.
+export function bestHeld(tries: HangTry[]): number | null {
+  const held = tries.filter((t) => t.held).map((t) => t.weight)
+  return held.length ? Math.max(...held) : null
+}
+
+// What the test does after these tries. `start` is the first try's load.
+export function nextHangTry(tries: HangTry[], unit: WeightUnit, edge: string, start = 0): HangTestNext {
+  const last = tries[tries.length - 1]
+  const best = bestHeld(tries)
+  const round = (w: number) => Math.round(Math.max(0, w) * 100) / 100
+  if (!last) return { kind: "try", weight: round(start), why: "start" }
+  if (tries.length >= MAX_HANGS.testMaxTries) {
+    return best != null ? { kind: "done", weight: best } : { kind: "bigger_edge", edge: biggerEdge(edge) }
+  }
+  if (last.held) {
+    if (last.effort === "max") return { kind: "done", weight: best! }
+    // Never go back to a load already failed as too hard: aim between.
+    const jump = HANG_TEST_JUMP[unit][last.effort === "easy" ? "easy" : "solid"]
+    const ceiling = Math.min(...tries.filter((t) => !t.held && t.reason === "too_hard" && t.weight > last.weight).map((t) => t.weight), Infinity)
+    const next = round(Math.min(last.weight + jump, ceiling - DEFAULT_LOAD_STEP[unit]))
+    return next > last.weight ? { kind: "try", weight: next, why: "up" } : { kind: "done", weight: best! }
+  }
+  // Let go early.
+  if (last.reason === "mistake") {
+    // Two mistakes in a row at the same load count as too hard.
+    const prev = tries[tries.length - 2]
+    const repeated = prev && !prev.held && prev.reason === "mistake" && prev.weight === last.weight
+    if (!repeated) return { kind: "try", weight: last.weight, why: "retry" }
+  }
+  if (best != null) return { kind: "done", weight: best }
+  if (last.weight <= 0) return { kind: "bigger_edge", edge: biggerEdge(edge) }
+  return { kind: "try", weight: round(last.weight - HANG_TEST_JUMP[unit].easy), why: "down" }
+}
+
+// One line per try for the session log, e.g. "+10 kg held (solid) · +15 kg 6 s (too hard)".
+export function hangTriesSummary(tries: HangTry[], unit: WeightUnit): string {
+  return tries.map((t) => {
+    const load = hangLoadLabel(t.weight, unit)
+    if (t.held) return `${load} held${t.effort ? ` (${t.effort})` : ""}`
+    return `${load} ${t.secs ?? 0} s (${t.reason === "mistake" ? "mistake" : "too hard"})`
+  }).join(" · ")
 }

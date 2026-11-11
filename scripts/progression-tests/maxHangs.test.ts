@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   DEFAULT_HANG_EDGE, HANG_LOG_LIMIT, hangEdgeOf, hangLoadLabel, hangMaxes, hangMaxFor, hangWarmupRamp,
-  isMaxHang, needsHangWarmup, normalizeEdge, parseHangLog, withHangMax, type HangMaxEntry,
+  biggerEdge, bestHeld, hangTriesSummary, isMaxHang, needsHangWarmup, nextHangTry, type HangTry, normalizeEdge, parseHangLog, withHangMax, type HangMaxEntry,
 } from "@/utils/maxHangs"
 import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
 
@@ -70,5 +70,37 @@ assert.equal(exerciseDraftFromLibrary(row).edge, "15mm")
 assert.equal(exerciseDraftFromLibrary(row).reps, "10")
 assert.equal(exerciseDraftFromLibrary({ ...row, defaultEdge: undefined, defaultReps: undefined }).edge, DEFAULT_HANG_EDGE)
 assert.equal(exerciseDraftFromLibrary({ ...row, defaultReps: undefined }).reps, "10")
+
+// Bigger edge
+assert.equal(biggerEdge("15mm"), "20mm")
+assert.equal(biggerEdge("6mm"), "8mm")
+assert.equal(biggerEdge("30mm"), null)
+
+// The test, try by try
+const held = (weight: number, effort: HangTry["effort"]): HangTry => ({ weight, held: true, secs: 10, effort })
+const fail = (weight: number, reason: HangTry["reason"], secs = 5): HangTry => ({ weight, held: false, secs, reason })
+assert.deepEqual(nextHangTry([], "kg", "20mm", 7.5), { kind: "try", weight: 7.5, why: "start" })
+assert.deepEqual(nextHangTry([held(0, "easy")], "kg", "20mm"), { kind: "try", weight: 5, why: "up" })
+assert.deepEqual(nextHangTry([held(5, "solid")], "kg", "20mm"), { kind: "try", weight: 7, why: "up" })
+assert.deepEqual(nextHangTry([held(5, "solid"), held(7, "max")], "kg", "20mm"), { kind: "done", weight: 7 })
+assert.deepEqual(nextHangTry([held(5, "easy")], "lb", "20mm"), { kind: "try", weight: 15, why: "up" })
+// a mistake → same load again; a second mistake there counts as too hard
+assert.deepEqual(nextHangTry([held(5, "easy"), fail(10, "mistake")], "kg", "20mm"), { kind: "try", weight: 10, why: "retry" })
+assert.deepEqual(nextHangTry([held(5, "easy"), fail(10, "mistake"), fail(10, "mistake")], "kg", "20mm"), { kind: "done", weight: 5 })
+// too hard after a held try → the held one is the max
+assert.deepEqual(nextHangTry([held(5, "easy"), fail(10, "too_hard")], "kg", "20mm"), { kind: "done", weight: 5 })
+// too hard on the first try → lower; at bodyweight → a bigger edge
+assert.deepEqual(nextHangTry([fail(10, "too_hard")], "kg", "20mm"), { kind: "try", weight: 5, why: "down" })
+assert.deepEqual(nextHangTry([fail(3, "too_hard")], "kg", "20mm"), { kind: "try", weight: 0, why: "down" })
+assert.deepEqual(nextHangTry([fail(0, "too_hard")], "kg", "10mm"), { kind: "bigger_edge", edge: "12mm" })
+assert.deepEqual(nextHangTry([fail(0, "too_hard")], "kg", "30mm"), { kind: "bigger_edge", edge: null })
+// going up never reaches a load already failed as too hard
+assert.deepEqual(nextHangTry([fail(10, "too_hard"), held(5, "easy")], "kg", "20mm"), { kind: "try", weight: 9.5, why: "up" })
+assert.deepEqual(nextHangTry([fail(10, "too_hard"), held(9.5, "solid")], "kg", "20mm"), { kind: "done", weight: 9.5 })
+// the test ends after 8 tries
+assert.equal(nextHangTry(Array.from({ length: 8 }, () => fail(0, "mistake")), "kg", "20mm").kind, "bigger_edge")
+assert.equal(bestHeld([held(5, "easy"), fail(10, "too_hard"), held(7, "max")]), 7)
+assert.equal(bestHeld([fail(0, "too_hard")]), null)
+assert.equal(hangTriesSummary([held(0, "easy"), fail(5, "too_hard", 6)], "kg"), "Bodyweight held (easy) · +5 kg 6 s (too hard)")
 
 console.log("all maxHangs tests passed")
