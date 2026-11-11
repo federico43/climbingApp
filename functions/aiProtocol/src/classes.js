@@ -237,19 +237,23 @@ async function publish(ctx, userId, body) {
   const weekStart = String(body.weekStart ?? "")
   if (!DAY_RE.test(weekStart) || mondayOfYmd(weekStart) !== weekStart) return fail(400, "Bad week.")
   const now = gymNow(new Date(), ctx.tz)
-  // This week can still be published mid-week (the coach missed Sunday), but
-  // not once it's over, and no new class (or move) into a time already gone.
+  // This week can still be published or changed mid-week (the coach missed
+  // Sunday, or adds a time), but not once it's over: no new class (or move)
+  // into a time already gone, and classes already started stay as they are.
   if (classMs({ weekStart, day: 6, start: 24 }) <= now.ms) return fail(409, "That week is over.")
-  const wanted = Array.isArray(body.classes) ? body.classes : []
+  let wanted = Array.isArray(body.classes) ? body.classes : []
   const blocks = (Array.isArray(body.blocks) ? body.blocks : [])
     .filter((b) => Number.isInteger(b?.day) && typeof b.start === "number" && typeof b.end === "number")
     .map((b) => ({ day: b.day, start: b.start, end: b.end, ...(b.all ? { all: true } : {}) }))
   // Check the whole week before writing anything.
   const existing = await weekClasses(ctx, weekStart)
+  const begun = existing.filter((e) => classMs(e) <= now.ms)
+  wanted = [...wanted, ...begun.filter((e) => !wanted.some((c) => c?.id === e.$id)).map((e) => ({ id: e.$id, day: e.day, start: e.start }))]
   const placed = []
   for (const c of wanted) {
     const old = existing.find((e) => e.$id === c?.id)
     const same = old && old.day === Number(c.day) && old.start === Number(c.start)
+    if (old && !same && classMs(old) <= now.ms) return fail(409, `${classLabel(old)} has already started.`)
     if (!same && classMs({ weekStart, day: Number(c?.day), start: Number(c?.start) }) <= now.ms) {
       return fail(409, `${classLabel({ day: c.day, start: c.start })}: that time has already gone by.`)
     }
