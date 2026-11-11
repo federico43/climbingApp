@@ -64,7 +64,7 @@ The look: a poster on paper, inspired by grainy, gradient-heavy illustration. Hu
 
 ## 4. Texture & gradient
 
-- **Grain:** greyscale fractal-noise tile (~220px). Light: multiply @ 32%. Dark: overlay @ 20%. On top of everything, never intercepts touches.
+- **Grain:** greyscale fractal-noise tile (~220px). Light: multiply @ 18%. Dark: overlay @ 11%. On top of everything, never intercepts touches.
 - **Melt:** two tall rounded pills (≈120×300, radius 60) in mint and blue, rotated ±8–12°, starting just under the headline, flowing into a wide pool (mint left, blue right, violet bottom). Blur 26–30px. Dark mode: opacity .85 so it glows.
 - Lower content sits on plain paper; don't repeat the melt further down.
 
@@ -167,13 +167,13 @@ export const theme = {
     paper: '#ECE7DE', ink: '#121014', mint: '#8AD6A2', mintDeep: '#2F9E63', mintText: '#2A7A4E',
     onMint: '#121014', pink: '#C93D72', blockBlue: '#4B6BFF', textMuted: '#3D3644', label: '#4A3F55',
     hairline: 'rgba(18,16,20,0.12)', card: 'rgba(247,244,238,0.84)', cardBorder: 'rgba(255,255,255,0.75)',
-    iconCircle: '#121014', tabBar: 'rgba(236,231,222,0.94)', grainOpacity: 0.32,
+    iconCircle: '#121014', tabBar: 'rgba(236,231,222,0.94)', grainOpacity: 0.18,
   },
   dark: {
     paper: '#0E0C12', ink: '#F1ECE4', mint: '#8AD6A2', mintDeep: '#8AD6A2', mintText: '#8AD6A2',
     onMint: '#121014', pink: '#FF7AA8', blockBlue: '#4B6BFF', textMuted: '#CFC7DA', label: '#B9B0C6',
     hairline: 'rgba(255,255,255,0.10)', card: 'rgba(20,17,26,0.72)', cardBorder: 'rgba(255,255,255,0.09)',
-    iconCircle: '#1D3527', tabBar: 'rgba(14,12,18,0.92)', grainOpacity: 0.20,
+    iconCircle: '#1D3527', tabBar: 'rgba(14,12,18,0.92)', grainOpacity: 0.11,
   },
   melt: { mint: '#5FD08A', blue: '#2B3CFF', violet: '#7A2BD8' },
   radius: { card: 26, cta: 30, button: 21, input: 16, addBar: 22 },
