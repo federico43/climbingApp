@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
@@ -197,6 +198,40 @@ async function prunePushLog(log) {
   return old.length
 }
 
+// The cron's "already sent" marks (scripts/cron-marks/create-table.mjs): one
+// row per reminder that went out, its id a hash of the reminder's key, so a
+// second run asking for the same key gets a 409 from Appwrite. Kept a couple
+// of weeks — every key's window is at most a day.
+const CRON_MARKS_TABLE = process.env.CRON_MARKS_TABLE || "cron_marks"
+const CRON_MARKS_KEEP_DAYS = 14
+
+// True when this run is the first to ask for `key`. If the table is missing
+// or Appwrite errors, it says yes: a reminder twice beats none.
+async function claimCronKey(key, log) {
+  const apiKey = process.env.APPWRITE_API_KEY
+  if (!apiKey) return true
+  const rowId = createHash("sha256").update(key).digest("hex").slice(0, 32)
+  const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey, "Content-Type": "application/json" }
+  try {
+    const r = await fetch(`${ENDPOINT}/tablesdb/${DATABASE_ID}/tables/${CRON_MARKS_TABLE}/rows`, {
+      method: "POST", headers, body: JSON.stringify({ rowId, data: { key: key.slice(0, 200) } }),
+    })
+    if (r.ok) return true
+    if (r.status === 409) return false
+    log?.(`Cron mark ${key} → ${r.status} ${await r.text().catch(() => "")}`)
+  } catch (e) {
+    log?.(`Cron mark ${key} failed: ${e?.message ?? e}`)
+  }
+  return true
+}
+
+async function pruneCronMarks(log) {
+  const cutoff = new Date(Date.now() - CRON_MARKS_KEEP_DAYS * 86400000).toISOString()
+  const old = await listRows(CRON_MARKS_TABLE, [{ method: "lessThan", attribute: "$createdAt", values: [cutoff] }], log)
+  for (const r of old) await deleteRow(CRON_MARKS_TABLE, r.$id, log)
+  return old.length
+}
+
 // Async executions (nobody waits on the response) look up delivery receipts
 // after this long, to catch tokens Apple/Google reject.
 const RECEIPT_WAIT_MS = 5000
@@ -299,8 +334,17 @@ function classContext(log, error, source) {
     listCoachRows: () => listCoachRows(log),
     listUsers: () => listRows(USERS_TABLE, [], log),
     push: (users, build) => pushToUsers(users, build, log, error, { source }),
+    claim: (key) => claimCronKey(key, log),
     log, error, tz: GYM_TZ,
   }
+}
+
+async function classCronRun(log, error, via) {
+  const report = await runClassCron(classContext(log, error, "classCron"))
+  report.pushLogPruned = await prunePushLog(log)
+  report.cronMarksPruned = await pruneCronMarks(log)
+  log(`Class cron (${via}): ${JSON.stringify(report)}`)
+  return { ok: true, ...report }
 }
 
 export default async ({ req, res, log, error }) => {
@@ -312,11 +356,11 @@ export default async ({ req, res, log, error }) => {
     return res.json({ error: "Invalid JSON body." }, 400)
   }
   // ── The hourly schedule: class reminders and expired requests ───────────────
+  // Appwrite's own schedule (Settings › Executions › Schedule, a 60-minute
+  // interval on the free plan). The GitHub Action below stays as a backup;
+  // the cron marks keep the two from sending anything twice.
   if (req.headers["x-appwrite-trigger"] === "schedule") {
-    const report = await runClassCron(classContext(log, error, "classCron"))
-    report.pushLogPruned = await prunePushLog(log)
-    log(`Class cron: ${JSON.stringify(report)}`)
-    return res.json({ ok: true, ...report }, 200)
+    return res.json(await classCronRun(log, error, "schedule"), 200)
   }
 
   // ── Auth: must be signed in ─────────────────────────────────────────────────
@@ -325,10 +369,7 @@ export default async ({ req, res, log, error }) => {
   // server key (Appwrite's free plan has no schedules). Execute access is
   // "users", so a call with no user behind it came with an API key.
   if (!userId && body.action === "classCron") {
-    const report = await runClassCron(classContext(log, error, "classCron"))
-    report.pushLogPruned = await prunePushLog(log)
-    log(`Class cron (GitHub): ${JSON.stringify(report)}`)
-    return res.json({ ok: true, ...report }, 200)
+    return res.json(await classCronRun(log, error, "GitHub"), 200)
   }
   if (!userId) {
     return res.json({ error: "Not authenticated." }, 401)
@@ -480,6 +521,51 @@ export default async ({ req, res, log, error }) => {
       data: { type: "homework_update", athleteId: userId, homeworkId: hw.$id },
     }), log, error, { source: body.action })
     return res.json({ ok: true, row: updated }, 200)
+  }
+
+  // ── Action: athlete left a block as homework ─────────────────────────────────
+  // body: { id, name, blocks: [...], dueBy: "YYYY-MM-DD", planId?, planIndex? }
+  // Mid-workout "Leave as homework" (utils/homework.ts leftHomework): the row
+  // is written here with the server key under the caller's id, then the
+  // coach(es) get a push. `id` makes a retry from the phone's queue safe.
+  if (body.action === "homeworkLeft") {
+    const id = typeof body.id === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,35}$/.test(body.id) ? body.id : null
+    const blocks = Array.isArray(body.blocks) ? body.blocks : null
+    if (!id || !blocks || blocks.length === 0 || blocks.length > 10 || !DAY_RE.test(body.dueBy ?? "")) {
+      return res.json({ error: "Bad homework." }, 400)
+    }
+    if (!blocks.every((b) => b && typeof b === "object" && b.leftAsHomework)) {
+      return res.json({ error: "Bad homework." }, 400)
+    }
+    const existing = await getProtocolRow(id, log)
+    if (existing) {
+      if (existing.athleteId !== userId || existing.planPart !== "homework") return res.json({ error: "Taken." }, 409)
+      return res.json({ ok: true, row: existing, existed: true }, 200)
+    }
+    const data = {
+      name: clip(body.name, 120) || "Homework",
+      blocks: JSON.stringify(blocks),
+      athleteId: userId,
+      planPart: "homework",
+      dueBy: body.dueBy,
+    }
+    if (typeof body.planId === "string" && body.planId && Number.isInteger(body.planIndex)) {
+      data.planId = body.planId
+      data.planIndex = body.planIndex
+    }
+    const row = await createRow(PROTOCOLS_TABLE, data, id, log)
+    if (!row) return res.json({ error: "Could not save. (Does the function's API key have write access?)" }, 502)
+
+    const caller = await getUserRow(userId, log)
+    const name = caller?.username || "Your athlete"
+    const coaches = (await listCoachRows(log)).filter((c) => c.$id !== userId)
+    await pushToUsers(coaches, () => ({
+      sound: "default",
+      title: "Homework left for later",
+      body: `${name} didn't finish ${data.name} and left it as homework.`,
+      data: { type: "homework_update", athleteId: userId, homeworkId: row.$id },
+    }), log, error, { source: body.action })
+    return res.json({ ok: true, row }, 200)
   }
 
   // ── Action: athlete replaces an S&C exercise for the rest of their plan ─────

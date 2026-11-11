@@ -3,7 +3,7 @@ import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
 import type { Focus, LevelStep } from "@/utils/scProgression"
-import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type ScPattern } from "@/utils/planRotation"
+import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 import type { SavedBands } from "@/utils/bands"
@@ -149,6 +149,8 @@ export interface AppUser {
   // The workout the coach picked for the athlete's Home (a protocol id).
   // Unset → the newest coach workout. See pickLatestWorkout.
   homeWorkoutId?: string | null
+  // false → the coach deactivated the account; unset = active.
+  active?: boolean | null
   [key: string]: any
 }
 
@@ -217,6 +219,22 @@ export async function logRecord(table_id: string, data: any, rowID?: string) {
   try {
     return await tablesDB.createRow({ databaseId: DATABASE_ID, tableId: table_id, rowId: rowID, data })
   } catch (error) { console.log(error); throw error }
+}
+
+// The signed-in user's `users` row, created (as an athlete) when it's
+// missing — sign-up writes it before there's a session and never retried, so
+// an account could end up without one and not show on the coach dashboard.
+// Other errors (offline…) throw; nothing is created then.
+export async function ensureOwnUserRow(userId: string, fallbackName: string): Promise<AppUser> {
+  try {
+    return await tablesDB.getRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId }) as unknown as AppUser
+  } catch (e: any) {
+    if (e?.code !== 404) throw e
+  }
+  return await tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId,
+    data: { username: fallbackName, role: "athlete" },
+  }) as unknown as AppUser
 }
 
 export async function useDeleteRow(table_id: string, rowID?: string) {
@@ -410,6 +428,14 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // strength plans save even before the column exists. pauses (string, JSON
 // PlanPause[], optional) are the weeks the coach paused the plan; written
 // only by the climbingApp function (classPause), which also moves windowEnd.
+// kind (string, PlanKind, optional): "conditioning" for a plan with no
+// climbing (S&C only; focus is null) — missing/null = climbing; only written
+// on conditioning plans (or ones that were), like startType. Column made by
+// scripts/conditioning-plan/create-column.mjs.
+// mobilityIds (string, JSON string[], optional) are the mobility exercises
+// the coach chose for the athlete — empty = the app picks from the whole
+// library; only written once a plan has some, so plans save before the
+// column exists (scripts/plan-mobility/create-column.mjs).
 
 export interface TrainingPlanRow {
   $id: string
@@ -419,10 +445,12 @@ export interface TrainingPlanRow {
   windowStart: string
   windowEnd: string
   status: "active" | "archived"
-  focus: PlanFocus | null   // null on plans made before v2
+  kind: PlanKind             // "climbing" unless the row says "conditioning"
+  focus: PlanFocus | null   // null on plans made before v2, and on conditioning plans
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  mobilityIds: string[]       // coach-chosen mobility exercises; empty = app picks
   startType: MainType | null  // null = strength (the default cycle)
   pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
@@ -441,10 +469,12 @@ function parseJsonArray(raw: unknown): any[] {
 function toTrainingPlan(row: any): TrainingPlanRow {
   return {
     ...row,
+    kind: row.kind === "conditioning" ? "conditioning" : "climbing",
     focus: row.focus ?? null,
     hasSc: !!row.hasSc,
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
+    mobilityIds: parseJsonArray(row.mobilityIds).filter((id): id is string => typeof id === "string"),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
     pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
@@ -482,10 +512,12 @@ export interface TrainingPlanInput {
   name: string
   windowStart: string
   windowEnd: string
-  focus: PlanFocus
+  kind?: PlanKind
+  focus: PlanFocus | null // null only with kind "conditioning"
   hasSc: boolean
   hasMobility: boolean
   scPatterns: ScPattern[]
+  mobilityIds?: string[]
   startType?: MainType | null
 }
 
@@ -500,6 +532,17 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (start || previous?.startType) data.startType = start
     else delete data.startType
   }
+  // Same for kind: climbing plans don't need the column.
+  if ("kind" in input) {
+    const conditioning = input.kind === "conditioning"
+    if (conditioning || previous?.kind === "conditioning") data.kind = conditioning ? "conditioning" : null
+    else delete data.kind
+  }
+  if ("mobilityIds" in input) {
+    const ids = input.mobilityIds ?? []
+    if (ids.length > 0 || previous?.mobilityIds.length) data.mobilityIds = JSON.stringify(ids)
+    else delete data.mobilityIds
+  }
   return data
 }
 
@@ -508,6 +551,15 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
 function planWriteError(e: unknown): unknown {
   if (/Unknown attribute:?\s*"?startType/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "startType" to the training_plans table in Appwrite to start a plan with something other than strength.')
+  }
+  if (/Unknown attribute:?\s*"?kind/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans needs the "kind" column for conditioning-only plans.')
+  }
+  if (/focus/i.test(String((e as any)?.message ?? "")) && /required/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans.focus must be optional for conditioning-only plans.')
+  }
+  if (/Unknown attribute:?\s*"?mobilityIds/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Add the optional string column "mobilityIds" to the training_plans table in Appwrite (scripts/plan-mobility/create-column.mjs) to choose the mobility exercises.')
   }
   return e
 }
@@ -622,6 +674,13 @@ export async function updateSession(id: string, data: { attempts?: string; proto
 
 export async function setUserRole(userId: string, role: UserRole) {
   return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { role } })
+}
+
+// The coach turns an account off/on (utils/coachRoster isAccountActive).
+// Throws when the `active` column doesn't exist on `users` yet
+// (scripts/user-active/create-column.mjs adds it).
+export async function setUserActive(userId: string, active: boolean) {
+  return tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { active } })
 }
 
 // Throws when the `flashLevel` column doesn't exist on `users` yet (it's
@@ -753,6 +812,7 @@ export async function createProtocol(
     name: string; blocks: any[]; athleteId?: string; source?: "coach" | "library"
     planId?: string; planIndex?: number; planPart?: "sc" | "homework"; dueBy?: string
   },
+  rowId?: string,
 ): Promise<ProtocolRow> {
   const data: Record<string, any> = { name: input.name, blocks: JSON.stringify(input.blocks) }
   if (input.athleteId) data.athleteId = input.athleteId
@@ -764,7 +824,7 @@ export async function createProtocol(
   if (input.planPart) data.planPart = input.planPart
   if (input.dueBy) data.dueBy = input.dueBy
   const response = await tablesDB.createRow({
-    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: ID.unique(), data,
+    databaseId: DATABASE_ID, tableId: PROTOCOLS_TABLE, rowId: rowId ?? ID.unique(), data,
   })
   return response as unknown as ProtocolRow
 }

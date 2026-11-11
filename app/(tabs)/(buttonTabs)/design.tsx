@@ -87,6 +87,7 @@ export default function DesignScreen() {
     homework: filterRoster(roster.summaries, "", "homework", inactiveDays).length,
     no_plan: filterRoster(roster.summaries, "", "no_plan", inactiveDays).length,
     inactive: filterRoster(roster.summaries, "", "inactive", inactiveDays).length,
+    deactivated: filterRoster(roster.summaries, "", "deactivated", inactiveDays).length,
   }), [roster.summaries, inactiveDays])
   const list = useMemo(
     () => filterRoster(roster.summaries, query, filter, inactiveDays),

@@ -1,8 +1,8 @@
 import { C } from "@/utils/theme"
 import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType, isJointPattern } from "@/utils/movementTypes"
 import {
-  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN,
-  localDateStr, mainTypeFor, planEndFor, type MainType, type PlanFocus, type ScPattern,
+  DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN, scPatternMax,
+  localDateStr, mainTypeFor, mainTypeLabel, planEndFor, type MainType, type PlanFocus, type PlanKind, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
 import { FOCUS_LABEL } from "@/utils/scProgression"
@@ -19,7 +19,8 @@ import { useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 
 // Coach-side training plan form (docs/training-plan.md §9): 6-week window,
-// one focus, and optional S&C — mobility yes/no, 1–4 movement patterns
+// "Conditioning only" for athletes who can't climb (S&C only, no climbing
+// focus — docs/conditioning-plan.md), one focus, and optional S&C — mobility yes/no, 1–4 movement patterns
 // (none for mobility only), and 1–2 library exercises per pattern (with one,
 // both weekly workouts use it; with a single pattern, both go in every
 // workout, done by sets). Fingers has no picks: it always uses fixed exercises per S&C
@@ -51,15 +52,20 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [name, setName] = useState("")
   const [windowStart, setWindowStart] = useState(localDateStr(new Date()))
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [kind, setKind] = useState<PlanKind>("climbing")
   const [focus, setFocus] = useState<PlanFocus | null>(null)
   // Main type of workout 1; strength unless the coach picks another.
   const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
   const [hasSc, setHasSc] = useState(false)
   const [hasMobility, setHasMobility] = useState(false)
+  // Mobility exercises the coach chose; none = the app picks.
+  const [mobilityIds, setMobilityIds] = useState<string[]>([])
   // In pick order — mp1…mp4.
   const [patterns, setPatterns] = useState<ScPattern[]>([])
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [saving, setSaving] = useState(false)
+  // 4 on climbing plans, 6 on conditioning ones.
+  const maxPatterns = scPatternMax(kind)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -68,18 +74,23 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     if (mode === "edit" && current) {
       setName(current.name ?? "")
       setWindowStart(current.windowStart)
+      setKind(current.kind)
       setFocus(current.focus)
       setStartType(current.startType ?? DEFAULT_START_TYPE)
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
+      setMobilityIds(current.mobilityIds)
       setPatterns(current.scPatterns)
     } else {
       setName("")
       setWindowStart(localDateStr(new Date()))
+      setKind("climbing")
       setFocus(null)
       setStartType(DEFAULT_START_TYPE)
       setHasSc(false)
       setHasMobility(false)
+      // A new plan starts from the athlete's current mobility picks.
+      setMobilityIds(current?.mobilityIds ?? [])
       setPatterns([])
     }
     setPickerOpen(false)
@@ -97,16 +108,21 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     for (const list of out.values()) list.sort((a, b) => a.name.localeCompare(b.name))
     return out
   }, [exercises])
+  const mobilityLibrary = exercisesByPattern.get("mobility") ?? []
 
   function togglePattern(m: MovementType) {
     setPatterns((prev) => {
       if (prev.some((p) => p.movementType === m)) return prev.filter((p) => p.movementType !== m)
-      if (prev.length >= SC_PATTERN_MAX) return prev
+      if (prev.length >= maxPatterns) return prev
       // Only one exercise in the library for this pattern → it's the pick.
       const available = exercisesByPattern.get(m) ?? []
       const exerciseIds = !FIXED_PATTERNS.has(m) && available.length === 1 ? [available[0].$id] : []
       return [...prev, { movementType: m, exerciseIds }]
     })
+  }
+
+  function toggleMobility(id: string) {
+    setMobilityIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   function toggleExercise(m: MovementType, id: string) {
@@ -122,7 +138,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
     const sel = patterns.some((p) => p.movementType === m)
     const count = (exercisesByPattern.get(m) ?? []).length
     const empty = count === 0 && !FIXED_PATTERNS.has(m)
-    const full = !sel && patterns.length >= SC_PATTERN_MAX
+    const full = !sel && patterns.length >= maxPatterns
     return (
       <Pressable
         key={m}
@@ -138,10 +154,15 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   }
 
   // What's still missing, in order — the first one is shown under the button.
+  const conditioning = kind === "conditioning"
+  // A conditioning plan is all S&C.
+  const withSc = conditioning || hasSc
   const problems: string[] = []
-  if (!focus) problems.push("Pick a focus")
-  if (hasSc) {
+  if (!conditioning && !focus) problems.push("Pick a focus")
+  if (withSc) {
     if (patterns.length < SC_PATTERN_MIN && !hasMobility) problems.push("Pick at least 1 movement pattern, or turn on mobility")
+    // Turning Conditioning only off with 5–6 picked.
+    if (patterns.length > maxPatterns) problems.push(`Climbing plans take up to ${SC_PATTERN_MAX} movement patterns`)
     for (const p of patterns) {
       if (FIXED_PATTERNS.has(p.movementType)) continue
       if (p.exerciseIds.length === 0) problems.push(`Pick at least 1 ${MOVEMENT_TYPE_LABEL[p.movementType]} exercise`)
@@ -150,19 +171,22 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const canSubmit = problems.length === 0
 
   async function handleSubmit() {
-    if (!canSubmit || saving || !focus) return
+    if (!canSubmit || saving) return
     setSaving(true)
     try {
       const input = {
         name: name.trim() || `${formatDate(windowStart)} – ${formatDate(windowEnd)}`,
         windowStart,
         windowEnd,
-        focus,
+        kind,
+        focus: conditioning ? null : focus,
         // Picked once, when the plan starts — editing never changes it.
         ...(mode === "new" ? { startType } : {}),
-        hasSc,
-        hasMobility: hasSc && hasMobility,
-        scPatterns: hasSc ? patterns : [],
+        hasSc: withSc,
+        hasMobility: withSc && hasMobility,
+        // Only ids still in the library; kept when mobility is off, for next time.
+        mobilityIds: mobilityLibrary.length === 0 ? mobilityIds : mobilityIds.filter((id) => mobilityLibrary.some((e) => e.$id === id)),
+        scPatterns: withSc ? patterns : [],
       }
       const plan = mode === "edit" && current
         ? await updateTrainingPlan(current, input)
@@ -245,33 +269,28 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
               />
             )}
 
-            <Text style={s.label}>Focus</Text>
-            <Text style={s.sub2}>Decides the plan&apos;s constraint warm-ups</Text>
-            <View style={s.chipWrap}>
-              {PLAN_FOCUSES.map((f) => {
-                const sel = focus === f
-                return (
-                  <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => setFocus(f)}>
-                    <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[f]}</Text>
-                  </Pressable>
-                )
-              })}
+            <View style={s.switchRow}>
+              <Text style={s.switchLabel}>Conditioning only</Text>
+              <Switch
+                value={conditioning}
+                onValueChange={(on) => setKind(on ? "conditioning" : "climbing")}
+                trackColor={{ true: C.green }}
+              />
             </View>
+            <Text style={[s.sub2, { marginTop: 4 }]}>
+              {conditioning ? "No climbing: every workout is strength & conditioning" : "For athletes who can't climb"}
+            </Text>
 
-            {/* Only when starting a plan: changing it later would reshuffle
-                the rotation under workouts already built. */}
-            {mode === "new" && (
+            {!conditioning && (
               <>
-                <Text style={s.label}>First workout</Text>
-                <Text style={s.sub2}>
-                  {MAIN_CYCLE.map((_, i) => PLAN_FOCUS_LABEL[mainTypeFor(i + 1, startType)]).join(" → ")} → …
-                </Text>
+                <Text style={s.label}>Focus</Text>
+                <Text style={s.sub2}>Decides the plan&apos;s constraint warm-ups</Text>
                 <View style={s.chipWrap}>
-                  {MAIN_CYCLE.map((t) => {
-                    const sel = startType === t
+                  {PLAN_FOCUSES.map((f) => {
+                    const sel = focus === f
                     return (
-                      <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
-                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[t]}</Text>
+                      <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => setFocus(f)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{PLAN_FOCUS_LABEL[f]}</Text>
                       </Pressable>
                     )
                   })}
@@ -279,21 +298,62 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
               </>
             )}
 
-            <View style={s.switchRow}>
-              <Text style={s.switchLabel}>Strength & conditioning</Text>
-              <Switch value={hasSc} onValueChange={setHasSc} trackColor={{ true: C.green }} />
-            </View>
+            {/* Only when starting a plan: changing it later would reshuffle
+                the rotation under workouts already built. */}
+            {mode === "new" && (
+              <>
+                <Text style={s.label}>First workout</Text>
+                <Text style={s.sub2}>
+                  {MAIN_CYCLE.map((_, i) => mainTypeLabel(mainTypeFor(i + 1, startType), kind)).join(" → ")} → …
+                </Text>
+                <View style={s.chipWrap}>
+                  {MAIN_CYCLE.map((t) => {
+                    const sel = startType === t
+                    return (
+                      <Pressable key={t} style={[s.chip, sel && s.chipSelected]} onPress={() => setStartType(t)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{mainTypeLabel(t, kind)}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </>
+            )}
 
-            {hasSc && (
+            {!conditioning && (
+              <View style={s.switchRow}>
+                <Text style={s.switchLabel}>Strength & conditioning</Text>
+                <Switch value={hasSc} onValueChange={setHasSc} trackColor={{ true: C.green }} />
+              </View>
+            )}
+
+            {withSc && (
               <>
                 <View style={s.switchRow}>
                   <Text style={s.switchLabel}>With mobility</Text>
                   <Switch value={hasMobility} onValueChange={setHasMobility} trackColor={{ true: C.green }} />
                 </View>
+                {hasMobility && (
+                  <View style={s.patternBox}>
+                    <Text style={s.patternTitle}>
+                      Mobility exercises · {mobilityIds.length === 0 ? "app picks" : `${mobilityIds.length} picked`}
+                    </Text>
+                    <Text style={s.sub2}>Only the picked ones are used. None picked: the app picks.</Text>
+                    <View style={s.chipWrap}>
+                      {mobilityLibrary.map((e) => {
+                        const sel = mobilityIds.includes(e.$id)
+                        return (
+                          <Pressable key={e.$id} style={[s.chip, sel && s.chipSelected]} onPress={() => toggleMobility(e.$id)}>
+                            <Text style={[s.chipText, sel && s.chipTextSelected]}>{e.name}</Text>
+                          </Pressable>
+                        )
+                      })}
+                    </View>
+                  </View>
+                )}
 
-                <Text style={s.label}>Movement patterns · {patterns.length}/{SC_PATTERN_MAX}</Text>
+                <Text style={s.label}>Movement patterns · {patterns.length}/{maxPatterns}</Text>
                 <Text style={s.sub2}>
-                  1 to {SC_PATTERN_MAX}{hasMobility ? ", or none for mobility only" : ""}. Squat and hinge are kept in separate blocks
+                  1 to {maxPatterns}{hasMobility ? ", or none for mobility only" : ""}. Squat and hinge are kept in separate blocks
                 </Text>
                 <View style={s.chipWrap}>{PICKABLE_PATTERNS.map(patternChip)}</View>
                 <Text style={s.sub2}>Joints · max force ↔ hypertrophy, no explosiveness</Text>

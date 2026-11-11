@@ -1,5 +1,6 @@
 import { account } from "@/components/AppWrite"
 import { saveSession } from "@/services/BoulderGraphService"
+import { makeLeftHomework } from "@/services/homework"
 import { sendWorkoutCompletedNotification } from "@/services/notifications"
 import { isNetworkError } from "@/utils/network"
 import { flushPendingSessions, type PendingSession } from "@/utils/sessionQueue"
@@ -53,7 +54,7 @@ async function save(next: PendingSession[]): Promise<void> {
 // the caller can safely drop its own copy (the in-progress snapshot) after.
 export async function enqueueSession(
   data: Record<string, any>,
-  opts: { userId?: string | null; notifyProtocolName?: string } = {},
+  opts: { userId?: string | null; notifyProtocolName?: string; homework?: PendingSession["homework"] | null } = {},
 ): Promise<void> {
   const q = await load()
   const entry: PendingSession = {
@@ -61,6 +62,7 @@ export async function enqueueSession(
     userId: opts.userId ?? null,
     data,
     ...(opts.notifyProtocolName !== undefined ? { notify: { protocolName: opts.notifyProtocolName } } : {}),
+    ...(opts.homework ? { homework: opts.homework } : {}),
     createdAt: Date.now(),
     tries: 0,
   }
@@ -100,6 +102,7 @@ async function run(): Promise<void> {
     currentUserId,
     save: (entry) => saveSession(entry.data, entry.userId ?? currentUserId, entry.id),
     notify: (entry) => sendWorkoutCompletedNotification(entry.notify?.protocolName ?? ""),
+    homework: (entry) => makeLeftHomework({ id: entry.id, ...entry.homework! }),
     update: async (entry) => save((await load()).map((e) => (e.id === entry.id ? entry : e))),
     remove: async (id) => save((await load()).filter((e) => e.id !== id)),
   })

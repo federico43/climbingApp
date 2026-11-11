@@ -2,11 +2,24 @@ import { C } from "@/utils/theme"
 import { HomeworkCoachSheet } from "@/components/HomeworkCoachSheet"
 import { card } from "@/components/coach/styles"
 import { ProtocolRow, SessionRow } from "@/services/BoulderGraphService"
-import { HOMEWORK_STATE_LABEL, dueByOf, homeworkStatus, shortDay, type HomeworkState } from "@/utils/homework"
+import { HOMEWORK_STATE_LABEL, dueByOf, homeworkStatus, leftByAthlete, shortDay, type HomeworkState } from "@/utils/homework"
 import { addDays, localDateStr } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
+
+// "Left by athlete on Wed 5 Nov · 1 of 3 rounds done" — homework the
+// athlete left mid-workout themselves (utils/homework.ts leftByAthlete).
+function LeftByAthlete({ hw }: { hw: ProtocolRow }) {
+  const left = leftByAthlete(hw)
+  if (!left) return null
+  return (
+    <Text style={styles.left}>
+      Left by athlete on {shortDay(left.on)}
+      {left.roundsDone ? ` · ${left.roundsDone} round${left.roundsDone !== 1 ? "s" : ""} done that day` : ""}
+    </Text>
+  )
+}
 
 const STATE_COLOR: Record<HomeworkState, string> = {
   not_scheduled: C.textMuted,
@@ -55,6 +68,7 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
               Due {shortDay(dueByOf(hw))}
               {hw.planIndex ? ` · workout ${hw.planIndex}` : ""}
             </Text>
+            <LeftByAthlete hw={hw} />
             {status.state === "cant_attend" && !!hw.homeworkNote && (
               <Text style={styles.note}>“{hw.homeworkNote}”</Text>
             )}
@@ -91,6 +105,7 @@ const styles = StyleSheet.create({
   countText: { fontSize: 11, fontWeight: "800", color: C.bg },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
   name: { fontSize: 14, fontWeight: "600", color: C.textPrimary },
+  left: { fontSize: 12, color: C.textSecondary, marginTop: 2, fontStyle: "italic" },
   due: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   note: { fontSize: 12, color: C.textSecondary, fontStyle: "italic", marginTop: 4 },
   state: { fontSize: 12, fontWeight: "700" },

@@ -2,7 +2,8 @@ import { createContext, PropsWithChildren, useContext, useEffect, useState } fro
 import {account} from '@/components/AppWrite'
 import { authErrorKind, CREDENTIALS_MESSAGE, OFFLINE_MESSAGE, type AuthErrorKind } from '@/utils/network'
 import { ID, Models } from 'appwrite'
-import { logRecord, getUsers} from '@/services/BoulderGraphService'
+import { logRecord, ensureOwnUserRow, type AppUser } from '@/services/BoulderGraphService'
+import { isAccountActive } from '@/utils/coachRoster'
 import { clearPushToken, registerForPushNotificationsAsync, savePushToken } from '@/services/notifications'
 import { useRouter } from 'expo-router'
 //how do you use use context 
@@ -22,6 +23,8 @@ type auth_information = {
     userName: string | null
     role: "coach" | "athlete" | null
     assignedProtocolId: string | null
+    // false → the coach deactivated this account (components/InactiveAccount)
+    active: boolean
 }
 
 //create the context constructor 
@@ -46,6 +49,7 @@ export default function Auth_context({children}:PropsWithChildren) {
     const router = useRouter()
     const [role, setRole] = useState<"coach" | "athlete" | null>(null)
     const [assignedProtocolId, setAssignedProtocolId] = useState<string | null>(null)
+    const [active, setActive] = useState(true)
     useEffect(() => {
         getUser();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- load the session once on mount
@@ -59,16 +63,28 @@ export default function Auth_context({children}:PropsWithChildren) {
         })
     }
 
+    const applyRow = (userInfo: AppUser) => {
+        setusername(userInfo.username)
+        setRole(userInfo.role ?? null)
+        setAssignedProtocolId(userInfo.assignedProtocolId ?? null)
+        setActive(isAccountActive(userInfo))
+    }
+
+    // The user's row (role, active…); a missing one is created. A failure
+    // (offline…) keeps what we had rather than locking anyone out.
+    const loadProfile = async (session: Models.User<Models.Preferences>) => {
+        try {
+            applyRow(await ensureOwnUserRow(session.$id, session.name || session.email.split('@')[0] || 'athlete'))
+        } catch (error) {
+            console.log(error)
+        }
+    }
+
     const getUser = async () => {
     try {
         const session = await account.get()
         setUser(session)
-        const userInfo = await getUsers(session.$id)
-        if (userInfo) {
-        setusername(userInfo.username)
-        setRole(userInfo.role ?? null)
-        setAssignedProtocolId(userInfo.assignedProtocolId ?? null)
-        }
+        await loadProfile(session)
         registerPushToken(session.$id)
     } catch (error) {
         console.log(error)
@@ -78,7 +94,6 @@ export default function Auth_context({children}:PropsWithChildren) {
     }
     }
     
-
     const  signUpFunction = async (email: string, password: string, username:string ) => {
     setError(null)
     const userId =  ID.unique()
@@ -105,6 +120,7 @@ export default function Auth_context({children}:PropsWithChildren) {
         try{
             await account.createEmailPasswordSession({email: email,password: password})
             const session = await account.get()
+            await loadProfile(session)
             setUser(session)
             setError(null)
             registerPushToken(session.$id)
@@ -131,7 +147,8 @@ export default function Auth_context({children}:PropsWithChildren) {
             // Before the session goes away — it's what allows the write.
             if (user) await clearPushToken(user.$id)
             await account.deleteSession("current")
-            setUser(null)  
+            setUser(null)
+            setActive(true)
             router.replace("/auth")
         } catch (error) {
             console.log(error)
@@ -140,7 +157,7 @@ export default function Auth_context({children}:PropsWithChildren) {
  
   return (
     <Context_constructor.Provider value={{ signOut, signUp: signUpFunction, signIn: signInFunction, sendRecovery, error, errorKind, refreshUser: getUser, User: user, isLoadingUser, userName, role,
-  assignedProtocolId }} >
+  assignedProtocolId, active }} >
         {children}
     </Context_constructor.Provider>
   )

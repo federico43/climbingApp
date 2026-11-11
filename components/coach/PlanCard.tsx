@@ -9,9 +9,9 @@ import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
 import { pauseOn } from "@/utils/planPauses"
 import {
-  alternateMainBlock, localDateStr, MAIN_BLOCK_COPIES, nextPlanIndex, planIsOver, planWeek, workoutSpec,
+  alternateMainBlock, canRotate, isConditioningOnly, localDateStr, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, mainTypeLabel, nextPlanIndex, planIsOver, planWeek, workoutSpec,
   PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
-  type BuiltPlanWorkout, type MainType, type PlanShape, type WorkoutSpec,
+  type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
 import { buildPlanWorkout, withUpcomingWorkouts, workoutPreview, type PlanWorkout } from "@/utils/planWorkout"
@@ -35,9 +35,6 @@ import { notifyHomeworkAssigned } from "@/services/homework"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
-const MAIN_TYPE_LABEL: Record<MainType, string> = {
-  strength: "Strength", power_endurance: "Power endurance", power: "Power",
-}
 // What the coach can ⇄ Swap on the next workout, and which workout it's for.
 type GeneratedWorkout = PlanWorkout & { name: string; slot: { planId: string; planIndex: number } }
 
@@ -107,14 +104,15 @@ export function PlanCard({
   const nextIndex = nextPlanIndex(builtWorkouts)
   const planEnded = !!plan && planIsOver(plan, builtWorkouts, today)
   // Plans made before v2 have no focus and can't be rotated.
-  const planShape: PlanShape | null = plan?.focus ? { ...plan, focus: plan.focus } : null
+  const planShape: PlanShape | null = plan && canRotate(plan) ? plan : null
+  const conditioning = !!plan && isConditioningOnly(plan)
   const rotationSpec: WorkoutSpec | null = planShape && !planEnded
     ? workoutSpec(planShape, nextIndex, builtWorkouts, today)
     : null
   const nextSpec: WorkoutSpec | null = rotationSpec && swaps.index === rotationSpec.index
     ? { ...rotationSpec, ...swaps, index: rotationSpec.index }
     : rotationSpec
-  const swapTo = nextSpec ? alternateMainBlock(nextSpec.mainType, nextSpec.mainBlock) : null
+  const swapTo = nextSpec?.mainBlock ? alternateMainBlock(nextSpec.mainType, nextSpec.mainBlock) : null
   // The exercises the next workout would get, from what this page has
   // loaded — the same generation Edit details / Create run on fresh data.
   const preview = planShape && nextSpec && libraries
@@ -143,7 +141,8 @@ export function PlanCard({
     onSessions(fresh)
     onPlanWorkouts(built)
     return {
-      name: `Workout ${nextSpec.index} · ${MAIN_TYPE_LABEL[nextSpec.mainType]}`,
+      // Conditioning plans: named after the day's S&C focus (swaps included).
+      name: `Workout ${nextSpec.index} · ${conditioning && nextSpec.scFocus ? FOCUS_LABEL[nextSpec.scFocus] : mainTypeLabel(nextSpec.mainType)}`,
       slot: { planId: plan.$id, planIndex: nextSpec.index },
       ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel),
     }
@@ -260,8 +259,10 @@ export function PlanCard({
             <Text style={styles.planName}>{plan.name}</Text>
             <Text style={styles.planWindow}>
               {formatPlanDate(plan.windowStart)} – {formatPlanDate(plan.windowEnd)}
-              {plan.focus ? " · " : ""}
-              {plan.focus && <Text style={{ color: ADAPTATION_COLOR[plan.focus] }}>{PLAN_FOCUS_LABEL[plan.focus]} focus</Text>}
+              {plan.focus || conditioning ? " · " : ""}
+              {conditioning
+                ? <Text style={{ color: ADAPTATION_COLOR.conditioning }}>Conditioning only</Text>
+                : plan.focus && <Text style={{ color: ADAPTATION_COLOR[plan.focus] }}>{PLAN_FOCUS_LABEL[plan.focus]} focus</Text>}
             </Text>
           </View>
           {plan.hasSc && (
@@ -273,7 +274,7 @@ export function PlanCard({
               ))}
               {plan.hasMobility && (
                 <View style={styles.chip}>
-                  <Text style={styles.chipText}>+ mobility</Text>
+                  <Text style={styles.chipText}>+ mobility{plan.mobilityIds.length > 0 ? ` · ${plan.mobilityIds.length} picked` : ""}</Text>
                 </View>
               )}
             </View>
@@ -292,7 +293,7 @@ export function PlanCard({
                 <Text style={card.primaryBtnText}>Start a new plan</Text>
               </Pressable>
             </View>
-          ) : !plan.focus ? (
+          ) : !planShape ? (
             // Plans made before v2 have no focus — the rotation needs one.
             <View style={styles.box}>
               <Text style={styles.boxText}>This plan was made before the new plan structure. Edit it to set a focus.</Text>
@@ -318,25 +319,29 @@ export function PlanCard({
                   />
                 ))}
               {nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
-              <PickRow
-                color={C.textMuted}
-                text={nextSpec.warmup === "constraints"
-                  ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
-                  : nextSpec.warmup === "exploration"
-                    ? "First · Route exploration (new routes)"
-                    : "Warm-up · 1 on 1 off"}
-                onSwap={() => swap({
-                  warmup: nextSpec.warmup !== "one_on_one_off"
-                    ? "one_on_one_off"
-                    : plan.focus === "fear_management" ? "exploration" : "constraints",
-                })}
-              />
-              {nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
-              <PickRow
-                color={ADAPTATION_COLOR[nextSpec.mainType]}
-                text={`${MAIN_TYPE_LABEL[nextSpec.mainType]} · ${nextSpec.mainBlock.name} × ${MAIN_BLOCK_COPIES}`}
-                onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
-              />
+              {!conditioning && plan.focus && (<>
+                <PickRow
+                  color={C.textMuted}
+                  text={nextSpec.warmup === "constraints"
+                    ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
+                    : nextSpec.warmup === "exploration"
+                      ? "First · Route exploration (new routes)"
+                      : "Warm-up · 1 on 1 off"}
+                  onSwap={() => swap({
+                    warmup: nextSpec.warmup !== "one_on_one_off"
+                      ? "one_on_one_off"
+                      : plan.focus === "fear_management" ? "exploration" : "constraints",
+                  })}
+                />
+                {nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
+                {nextSpec.mainBlock && (
+                  <PickRow
+                    color={ADAPTATION_COLOR[nextSpec.mainType]}
+                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} × ${mainBlockRun(nextSpec.mainBlock).copies}${mainBlockRun(nextSpec.mainBlock).timeLimit ? ` (${mainBlockRun(nextSpec.mainBlock).timeLimit} min)` : ""}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
+                    onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
+                  />
+                )}
+              </>)}
               {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Density test as homework" />}
               <View style={styles.actions}>
                 <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>

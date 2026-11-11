@@ -8,7 +8,7 @@ import {
   dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
@@ -20,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PROBLEM: Record<PlanProblem, string> = {
-  past: "That time has already gone by",
+  past: "That time has already gone by",  // or the class has already started
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
   bigDays: `Only ${MAX_BIG_DAYS} days a week can have ${MAX_CLASSES_PER_DAY} classes`,
   overlap: "Overlaps another class",
@@ -50,7 +50,7 @@ export default function ClassesScreen() {
   // Next week from Saturday, when the coach is reminded to plan it.
   const [week, setWeek] = useState<"this" | "next">(() => (weekdayOf(new Date()) >= 5 ? "next" : "this"))
   useEffect(() => { planWeek(week) }, [week])
-  // This week is read only once it's published.
+  // Coaches can always plan both weeks (classes already started stay put).
   const live = week === "this" && !st.thisOpen
   const weekStart = live ? st.thisWeek.weekStart : st.nextWeekStart
   const classes = live ? st.thisWeek.classes : st.nextClasses
@@ -179,8 +179,8 @@ export default function ClassesScreen() {
             <Text style={s.subtitle}>
               {range} · {live
                 ? "who's in each class"
-                : week === "this" && !st.published
-                ? "not published yet · plan it now"
+                : week === "this"
+                ? (st.thisWeek.published ? "who's in each class · tap a free time to add one" : "not published yet · plan it now")
                 : `${CLASSES_PER_DAY} classes a day, ${MAX_CLASSES_PER_DAY} on up to ${MAX_BIG_DAYS} days`}
             </Text>
           </View>
@@ -217,7 +217,7 @@ export default function ClassesScreen() {
         {!live && (
           <View style={s.footer}>
             <SheetButton
-              label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : week === "this" ? "Publish this week" : "Publish week"}
+              label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : week === "this" ? (st.thisWeek.published ? "Publish changes" : "Publish this week") : "Publish week"}
               disabled={st.published || st.busy || st.status !== "ready"}
               onPress={publishWeek}
             />
@@ -285,8 +285,9 @@ export default function ClassesScreen() {
             {clsRequests.map(requestRow)}
           </View>
         )}
-        {!live && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
-        {!live && cls && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
+        {!live && cls && classStarted(cls) && <Text style={s.hint}>This class has already started.</Text>}
+        {!live && cls && !classStarted(cls) && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
+        {!live && cls && !classStarted(cls) && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
       </Sheet>
 
       <Sheet

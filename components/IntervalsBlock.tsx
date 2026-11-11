@@ -12,7 +12,8 @@ import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
+import { IntervalStats, PauseButton, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
+import { Ionicons } from "@expo/vector-icons"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
 interface Props {
@@ -263,9 +264,12 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
           )}
           <BlockNotes text={block.description} />
           {!suggestionReady ? <ActivityIndicator color={C.green} /> : (
-            <View style={s.configBox}>
-              <Text style={s.configMain}>{series} × {fmt(workTime)}</Text>
-              <Text style={s.configSub}>work · {fmt(restTime)} rest</Text>
+            <View style={s.card}>
+              <IntervalStats series={series} workSec={workTime} restSec={restTime} seriesLabel="rounds" />
+              <View style={s.footRow}>
+                <Ionicons name="time-outline" size={14} color={C.textSecondary} />
+                <Text style={s.foot}>About {Math.ceil((series * workTime + (series - 1) * restTime) / 60)} min</Text>
+              </View>
             </View>
           )}
           {/* Progression suggestion — stays until the athlete overrides it. */}
@@ -301,9 +305,11 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
       <View style={shared_styles.screen}>
         <TopBar title={blockTitle} />
         <View style={s.center}>
+          <View style={s.doneRing}><Ionicons name="checkmark" size={44} color={C.green} /></View>
           <Text style={shared_styles.title}>Intervals complete</Text>
-          <Text style={s.doneNum}>{series}</Text>
-          <Text style={s.doneLabel}>rounds · {fmt(workTime)} work / {fmt(restTime)} rest</Text>
+          <View style={s.card}>
+            <IntervalStats series={series} workSec={workTime} restSec={restTime} seriesLabel="rounds" />
+          </View>
           {falls.length > 0 && <Text style={s.fellNote}>Fell in round{falls.length > 1 ? "s" : ""} {falls.join(", ")}</Text>}
           {attemptsDone === 0 && !falls.includes(series) && (kind === "warmup" || falls.length === 0) && (
             <Pressable onPress={() => recordFall(series)} hitSlop={8}>
@@ -336,28 +342,26 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
 
   // ── Prepare / Work / Rest (live timer) ──
   const dur = phase === "prepare" ? PREPARE_SECS : phase === "work" ? roundWork : restTime
-  const fill = dur > 0 ? ((timeRemaining ?? 0) / dur) * 100 : 0
-  const label = phase === "prepare" ? "GET READY" : phase === "work" ? "WORK" : "REST"
-  const tint = phase === "work" ? C.green : phase === "rest" ? C.textMuted : C.yellow
+  const left = timeRemaining ?? 0
+  const fill = dur > 0 ? ((dur - left) / dur) * 100 : 0
+  const label = paused ? "Paused" : phase === "prepare" ? "Get ready" : phase === "work" ? "Work" : "Rest"
+  const tint = paused ? C.textPrimary : phase === "work" ? C.green : phase === "rest" ? C.yellow : C.textSecondary
+  // Rounds finished: during rest the one just worked counts.
+  const doneRounds = phase === "rest" ? round + 1 : phase === "work" ? round : 0
+  const nextText = phase === "prepare"
+    ? `Then: work ${fmt(workRef.current)}`
+    : phase === "work"
+      ? (round + 1 >= series ? (series > 1 ? "Last one!" : null) : restTime > 0 ? `Then: rest ${fmt(restTime)}` : null)
+      : `Then: round ${round + 2} of ${series}`
 
   return (
     <View style={shared_styles.screen}>
       <TopBar title={blockTitle} />
       <View style={s.center}>
-        {phase !== "prepare" && (
-          <Text style={s.counter}>Round {Math.min(round + 1, series)} of {series}</Text>
+        {series > 1 && (
+          <SeriesBar total={series} done={doneRounds} current={phase === "work" ? round : null} now={round + 1} word="Round" />
         )}
-        <AnimatedCircularProgress
-          size={240} width={12} fill={fill}
-          tintColor={tint} backgroundColor={C.surface} rotation={0}
-        >
-          {() => (
-            <>
-              <Text style={s.phaseLabel}>{label}</Text>
-              <Text style={s.timer}>{fmt(timeRemaining ?? 0)}</Text>
-            </>
-          )}
-        </AnimatedCircularProgress>
+        <TimerRing fill={fill} color={tint} title={label} seconds={left} next={nextText} glow={phase === "work" && !paused} />
         {/* A fall during work ends the round and starts the rest at once.
             During rest the button still records the round just finished
             (a fall right at the end of a round). */}
@@ -380,11 +384,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
             </>
           )
         })()}
-        <View style={s.timerControls}>
-          <Pressable style={s.controlBtn} onPress={paused ? resumeTimer : pauseTimer} hitSlop={6}>
-            <Text style={s.controlBtnText}>{paused ? "Resume" : "Pause"}</Text>
-          </Pressable>
-        </View>
+        <PauseButton paused={paused} onPress={paused ? resumeTimer : pauseTimer} />
       </View>
     </View>
   )
@@ -393,26 +393,22 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
 const s = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
   centerScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
-  configBox: { alignItems: "center", gap: 4, marginVertical: 12 },
-  configMain: { fontSize: 40, fontWeight: "800", color: C.textPrimary },
-  configSub: { fontSize: 14, color: C.textSecondary },
-  counter: { fontSize: 15, color: C.textSecondary, fontWeight: "600" },
-  phaseLabel: { fontSize: 13, fontWeight: "800", letterSpacing: 1.5, color: C.textSecondary },
-  timer: { fontSize: 56, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
-  doneNum: { fontSize: 64, fontWeight: "800", color: C.green },
-  doneLabel: { fontSize: 14, color: C.textSecondary },
+  card: {
+    width: "100%", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
+    padding: 18, gap: 16, marginVertical: 8,
+  },
+  footRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  foot: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
+  doneRing: {
+    width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(111,207,151,0.12)",
+    borderWidth: 1, borderColor: "rgba(111,207,151,0.35)", alignItems: "center", justifyContent: "center",
+  },
   fellBtn: {
     paddingHorizontal: 28, paddingVertical: 12, borderRadius: 22,
     borderWidth: 1, borderColor: C.red, marginTop: 8,
   },
   fellBtnText: { fontSize: 15, fontWeight: "700", color: C.red },
   fellNote: { fontSize: 14, fontWeight: "600", color: C.red },
-  timerControls: { flexDirection: "row", gap: 12, marginTop: 4 },
-  controlBtn: {
-    minWidth: 96, alignItems: "center", paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20,
-    borderWidth: 1, borderColor: C.border, backgroundColor: C.surface,
-  },
-  controlBtnText: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   fallNotice: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   lateFallLink: { fontSize: 13, fontWeight: "600", color: C.textSecondary, textDecorationLine: "underline" },
   timeChip: {

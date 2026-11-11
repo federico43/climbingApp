@@ -4,8 +4,8 @@
 
 import assert from "node:assert/strict"
 import {
-  explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
-  nextExplorationColour, summarizeExploration,
+  EXPLORATION_DEFAULT_DESCRIPTION, explorationDescription, explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
+  nextExplorationColour, summarizeExploration, routePoints, explorationPoints, formatPoints, lastExploration,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
 import { buildPlanWorkout } from "@/utils/planWorkout"
@@ -32,13 +32,20 @@ const sum = summarizeExploration([
   { success: true, part: 2, fallReasons: ["beta"], notes: "hips in" },
 ])
 assert.equal(sum.goes, 7)
-assert.deepEqual(sum.byColour, [{ colour: "blue", sent: 2, tried: 2 }, { colour: "green", sent: 0, tried: 1 }])
+assert.deepEqual(sum.byColour, [{ colour: "blue", sent: 2, tried: 2, points: 1.8 }, { colour: "green", sent: 0, tried: 1, points: 0 }])
+assert.equal(sum.points, 1.8)
 assert.equal(sum.topSent, "blue")
 assert.equal(sum.answered, true)
 assert.deepEqual(sum.reasons, ["beta"])
 assert.equal(summarizeExploration([{ success: false, level: "blue", part: 1 }]).answered, false)
 
-assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "Green"), "at *Green*. Every Green?")
+assert.equal(explorationNotes("at *{colour}*. Every {colour}?", "green"), "at *Green*. Every Green?")
+assert.equal(explorationNotes("at {colour}", "black"), "at Black")
+// old saved default → current default; coach's own notes stay
+const oldDefault = "Warm up first with *4 orange routes* before you start.\nPart 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.\n*3 goes max* per route. Sent or not, move on to the next one.\nSent every {colour}? Go up one colour and try every route of that colour until time runs out.\nTried every {colour} and there's still time left? Go on to part 2."
+assert.equal(explorationDescription(oldDefault), EXPLORATION_DEFAULT_DESCRIPTION)
+assert.equal(explorationDescription(""), EXPLORATION_DEFAULT_DESCRIPTION)
+assert.equal(explorationDescription(" Coach text "), "Coach text")
 
 // ── dates ──
 assert.equal(isMonday("2026-11-02"), true)
@@ -101,3 +108,46 @@ assert.equal(phases[0].title, "Route exploration")
 assert.equal(phases[0].minutes, 50)
 
 console.log("routeExploration tests passed")
+
+// ── points: the Density test's per colour, less a tenth per extra go ──
+assert.equal(routePoints({ colour: "blue", tries: 1, sent: true }), 1)
+assert.equal(routePoints({ colour: "blue", tries: 2, sent: true }), 0.9)
+assert.equal(routePoints({ colour: "green", tries: 3, sent: true }), 1.6)
+assert.equal(routePoints({ colour: "black", tries: 1, sent: true }), 5)
+assert.equal(routePoints({ colour: "yellow", tries: 3, sent: false }), 0)
+assert.equal(routePoints({ colour: "orange", tries: 1, sent: true }), 0)
+assert.equal(explorationPoints([r("blue", true), r("blue", true, 2), r("green", true, 3), r("green", false)]), 3.5)
+assert.equal(formatPoints(3.5), "3.5")
+assert.equal(formatPoints(7), "7")
+
+// ── per wall, in the walls' order ──
+{
+  const s = summarizeExploration([
+    { success: true, level: "green", wall: "slab", tries: 2, part: 1 },
+    { success: true, level: "blue", wall: "placa1", tries: 1, part: 1 },
+    { success: false, level: "green", wall: "placa1", tries: 3, part: 1 },
+  ])
+  assert.equal(s.points, 2.8)
+  assert.deepEqual(s.byWall, [
+    { wall: "placa1", sent: 1, tried: 2, points: 1 },
+    { wall: "slab", sent: 1, tried: 1, points: 1.8 },
+  ])
+}
+
+// ── last time: newest session with exploration routes, not this workout ──
+{
+  const at = (ts: number, level = "blue") => ({ type: "route_exploration", success: true, level, wall: "slab", tries: 1, part: 1, timestamp: ts })
+  const sessions = [
+    { $createdAt: "2026-11-05T20:00:00Z", attempts: JSON.stringify([at(500)]) },
+    { $createdAt: "2026-11-04T20:00:00Z", attempts: JSON.stringify([{ type: "free_session", success: true, timestamp: 400 }]) },
+    { $createdAt: "2026-11-03T20:00:00Z", attempts: "not json" },
+    { $createdAt: "2026-10-29T20:00:00Z", attempts: JSON.stringify([at(100, "green"), at(101)]) },
+  ]
+  assert.equal(lastExploration(sessions)?.date, "2026-11-05T20:00:00Z")
+  const prev = lastExploration(sessions, [500])
+  assert.equal(prev?.date, "2026-10-29T20:00:00Z")
+  assert.equal(prev?.summary.points, 3)
+  assert.equal(lastExploration([]), null)
+}
+
+console.log("routeExploration points ok")

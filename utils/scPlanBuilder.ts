@@ -8,7 +8,7 @@ import { startingLevelRow } from "@/utils/scPrefill"
 
 // The S&C part of a training-plan workout (docs/training-plan.md §9.5). Not
 // a library template: generated from the plan's 1–4 movement patterns plus
-// app-picked mobility, with every exercise programmed for the day's S&C focus
+// mobility (the coach's chosen exercises, or app-picked), with every exercise programmed for the day's S&C focus
 // (core and joints: their own max force ↔ hypertrophy cycle).
 //   · 2–4 patterns: one of each pattern's two exercises per workout, done as
 //     circuits of two (patterns 1+2, 3+4; a 3rd pattern alone).
@@ -72,16 +72,17 @@ function withFocus(ex: ExerciseDraft, focus: Focus): ExerciseDraft {
 }
 
 // Squat and hinge can't share a block: blocks take patterns in pairs
-// (1+2, 3+4), so if both land in one pair, swap one with the other pair.
-// With only 2 patterns there's no other pair — patternGroups splits them.
+// (1+2, 3+4, 5+6), so if both land in one pair, swap the hinge with the
+// first pattern of another pair. With only 2 patterns there's no other
+// pair — patternGroups splits them.
 export function orderPatterns(patterns: ScPattern[]): ScPattern[] {
   const out = [...patterns]
-  const pairOf = (i: number) => (i < 2 ? 0 : 1)
+  const pairOf = (i: number) => Math.floor(i / 2)
   const squat = out.findIndex((p) => p.movementType === "squat")
   const hinge = out.findIndex((p) => p.movementType === "hinge")
   if (squat < 0 || hinge < 0 || pairOf(squat) !== pairOf(hinge)) return out
-  const target = pairOf(hinge) === 0 ? 2 : 0
-  if (target >= out.length) return out
+  const target = out.findIndex((_, i) => i % 2 === 0 && pairOf(i) !== pairOf(hinge))
+  if (target < 0) return out
   ;[out[hinge], out[target]] = [out[target], out[hinge]]
   return out
 }
@@ -253,8 +254,14 @@ export function buildScBlocks(
   // 4 mobility slots: two held (passive), two by reps (active). The held ones
   // are the rest of the first two S&C blocks; the rest go in a Mobility block
   // at the end. Least recently used first, no repeats within the workout.
-  // Short of a kind → any other mobility exercise, in its own way.
-  const pool = mobilityByRecency(exercises, sessions)
+  // Short of a kind → any other mobility exercise, in its own way. When the
+  // coach chose the athlete's mobility exercises, only those are used — fewer
+  // than 4 means fewer mobility slots, never one the coach didn't pick (if
+  // none of them is in the library any more, the app picks again).
+  const chosen = new Set(plan.mobilityIds ?? [])
+  const chosenRows = exercises.filter((e) => chosen.has(e.$id))
+  const coachPicked = chosenRows.length > 0
+  const pool = mobilityByRecency(coachPicked ? chosenRows : exercises, sessions)
   const used = new Set<string>()
   const take = (way: "hold" | "reps"): ExerciseDraft | null => {
     const fits = way === "hold" ? canHold : canDoReps
@@ -266,7 +273,7 @@ export function buildScBlocks(
   const holds = [take("hold"), take("hold")]
   const reps = [take("reps"), take("reps")]
   const found = [...holds, ...reps].filter(Boolean).length
-  if (found < 4) warnings.push(`Only ${found} mobility exercise(s) in the library — the workout needs 4.`)
+  if (found < 4 && !coachPicked) warnings.push(`Only ${found} mobility exercise(s) in the library — the workout needs 4.`)
   const some = (xs: (ExerciseDraft | null)[]) => xs.filter((x): x is ExerciseDraft => !!x)
 
   const blocks = mainGroups.map((g, i) => {

@@ -3,13 +3,16 @@ import type { BlockRow, ExerciseRow, SessionRow } from "@/services/BoulderGraphS
 import { suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage, type WarmupPick } from "@/utils/progression/constraintWarmup"
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
-import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
+import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
-//   S&C → warm-up → main block × 2 (the same library block twice)
+//   S&C → warm-up → main block × 2 (the same library block twice; Max
+//   bouldering × 3 of 15 min, see mainBlockRun)
+//   (Power days: + Coordination boulders × 2 after it)
 // or, on a Fear management route exploration day:
 //   route exploration → S&C → main block × 2
+// or, on a conditioning plan (no climbing): S&C only.
 // On a test day (first workout, and the first one of the last week) the
 // Density test comes back separately in `homework` — the athlete does it on
 // a day of their own (coach 2026-10-07).
@@ -78,7 +81,8 @@ function warmupDrafts(plan: PlanShape, spec: WorkoutSpec, library: BlockRow[], s
     const { adaptation: _adaptation, ...base } = cloneLibraryBlock(row) as any
     return [{ ...base, kind: "warmup", series: INTERVALS_RULES.warmupSeries }]
   }
-  const pillar = warmupPillarFor(plan.focus)
+  if (spec.warmup === "none") return []
+  const pillar = plan.focus ? warmupPillarFor(plan.focus) : null
   const candidates = warmupCandidates(library)
   const picks = pillar ? suggestWarmup(candidates, pillar, warmupUsage(sessions, candidates), flash) : null
   if (!picks) {
@@ -131,19 +135,26 @@ export function buildPlanWorkout(
   blocks.push(...sc.blocks)
   warnings.push(...sc.warnings)
 
-  const libraryBlock = (ref: LibraryBlockRef, copies = 1, into = blocks) => {
+  const libraryBlock = (ref: LibraryBlockRef, copies = 1, into = blocks, timeLimit?: number) => {
     const row = findLibraryBlock(ref, library)
     if (!row) {
       warnings.push(`No "${ref.name}" (${ref.type}) block in the library — left out.`)
       return
     }
-    for (let i = 0; i < copies; i++) into.push(cloneLibraryBlock(row))
+    for (let i = 0; i < copies; i++) {
+      const b = cloneLibraryBlock(row)
+      into.push(timeLimit ? { ...b, timeLimit } as PlanBlockDraft : b)
+    }
   }
 
   const homework: PlanBlockDraft[] = []
+  if (!spec.mainBlock) return { blocks, homework, warnings } // conditioning: S&C only
   if (spec.withTest) libraryBlock(TEST_BLOCK, 1, homework)
   if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
-  libraryBlock(spec.mainBlock, MAIN_BLOCK_COPIES)
+  const run = mainBlockRun(spec.mainBlock)
+  libraryBlock(spec.mainBlock, run.copies, blocks, run.timeLimit)
+  const companion = MAIN_COMPANION_BLOCK[spec.mainType]
+  if (companion) libraryBlock(companion, MAIN_BLOCK_COPIES)
 
   return { blocks, homework, warnings }
 }

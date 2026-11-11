@@ -11,7 +11,7 @@ import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planE
 // between an athlete's classes, nothing over the coach's blocked times,
 // nothing for an athlete whose package is used up or expired. `ctx` carries the
 // Appwrite helpers from main.js: { db, q, getUserRow, listCoachRows,
-// listUsers, push, log, error, tz }.
+// listUsers, push, claim, log, error, tz }.
 
 const CLASSES = "classes"
 const WEEKS = "class_weeks"
@@ -237,19 +237,23 @@ async function publish(ctx, userId, body) {
   const weekStart = String(body.weekStart ?? "")
   if (!DAY_RE.test(weekStart) || mondayOfYmd(weekStart) !== weekStart) return fail(400, "Bad week.")
   const now = gymNow(new Date(), ctx.tz)
-  // This week can still be published mid-week (the coach missed Sunday), but
-  // not once it's over, and no new class (or move) into a time already gone.
+  // This week can still be published or changed mid-week (the coach missed
+  // Sunday, or adds a time), but not once it's over: no new class (or move)
+  // into a time already gone, and classes already started stay as they are.
   if (classMs({ weekStart, day: 6, start: 24 }) <= now.ms) return fail(409, "That week is over.")
-  const wanted = Array.isArray(body.classes) ? body.classes : []
+  let wanted = Array.isArray(body.classes) ? body.classes : []
   const blocks = (Array.isArray(body.blocks) ? body.blocks : [])
     .filter((b) => Number.isInteger(b?.day) && typeof b.start === "number" && typeof b.end === "number")
     .map((b) => ({ day: b.day, start: b.start, end: b.end, ...(b.all ? { all: true } : {}) }))
   // Check the whole week before writing anything.
   const existing = await weekClasses(ctx, weekStart)
+  const begun = existing.filter((e) => classMs(e) <= now.ms)
+  wanted = [...wanted, ...begun.filter((e) => !wanted.some((c) => c?.id === e.$id)).map((e) => ({ id: e.$id, day: e.day, start: e.start }))]
   const placed = []
   for (const c of wanted) {
     const old = existing.find((e) => e.$id === c?.id)
     const same = old && old.day === Number(c.day) && old.start === Number(c.start)
+    if (old && !same && classMs(old) <= now.ms) return fail(409, `${classLabel(old)} has already started.`)
     if (!same && classMs({ weekStart, day: Number(c?.day), start: Number(c?.start) }) <= now.ms) {
       return fail(409, `${classLabel({ day: c.day, start: c.start })}: that time has already gone by.`)
     }
@@ -515,6 +519,19 @@ export async function handleClassAction(action, userId, body, ctx) {
 // their plan restarts; after a class, athletes with 2 or 0
 // sessions left (and the coach) hear about it; athletes whose package is
 // used up or expired leave the classes still ahead.
+// The hourly run. Nothing guarantees it lands on the hour (GitHub's schedule
+// skipped 4–8 h at a time; Appwrite intervals don't start at :00), and two
+// runs can overlap. So each reminder has a window it can still go out in,
+// not a single hour, and `ctx.claim(key)` makes sure it goes out once:
+// it's true only for the first run that asks for that key.
+//   expired requests       any time after the class starts
+//   "class tomorrow"       20:00–23:59 the night before
+//   plan restarts tomorrow 20:00–23:59 the night the pause ends
+//   plan next week         Saturday from 10:00
+//   this week unpublished  Monday from 8:00
+//   package low / used up  up to 24 h after the class ends
+export const LATE_PACKAGE_HOURS = 24
+
 export async function runClassCron(ctx, date = new Date()) {
   const now = gymNow(date, ctx.tz)
   const thisWeek = mondayOfYmd(now.ymd)
@@ -522,6 +539,7 @@ export async function runClassCron(ctx, date = new Date()) {
   const classes = [...(await weekClasses(ctx, thisWeek)), ...(await weekClasses(ctx, nextWeek))]
   const byId = new Map(classes.map((c) => [c.$id, c]))
   const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0 }
+  const claim = (key) => ctx.claim(key)
 
   const pending = [
     ...(await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", thisWeek), ctx.q.equal("status", "pending")])),
@@ -532,16 +550,18 @@ export async function runClassCron(ctx, date = new Date()) {
     const to = byId.get(r.toClassId) ?? (r.kind === "propose" ? { weekStart: r.weekStart, day: r.day, start: r.start } : null)
     const starts = [from, to].filter(Boolean).map((c) => classMs(c))
     if (!starts.length || Math.min(...starts) > now.ms) continue
+    if (!(await claim(`expired:${r.$id}`))) continue
     await ctx.db.update(REQUESTS, r.$id, { status: "expired" })
     report.expired++
     await pushUser(ctx, r.athleteId, "No answer from your coach",
       from ? `${classLabel(from)} stays as it was.` : "Your extra class wasn't confirmed.", { type: "class_answer", requestId: r.$id })
   }
 
-  // 20:00 the night before.
-  if (Math.floor(now.hour) === 20) {
+  // From 20:00 the night before (until midnight).
+  if (now.hour >= 20) {
     const tomorrow = addDays(now.ymd, 1)
     for (const c of classes.filter((x) => addDays(x.weekStart, x.day) === tomorrow)) {
+      if (!(await claim(`tomorrow:${c.$id}`))) continue
       const users = (await Promise.all((c.roster ?? []).map((id) => ctx.getUserRow(id)))).filter(Boolean)
       report.tomorrow += await ctx.push(users, () => ({
         sound: "default",
@@ -552,29 +572,34 @@ export async function runClassCron(ctx, date = new Date()) {
     }
     for (const [athleteId, pauses] of await pausesByAthlete(ctx)) {
       if (!pauses.some((p) => p.end === now.ymd)) continue
+      if (!(await claim(`resumed:${athleteId}:${now.ymd}`))) continue
       report.resumed++
       await pushUser(ctx, athleteId, "Your plan restarts tomorrow", "Welcome back! Your next workout is waiting in Plan.", { type: "plan_pause" })
     }
   }
 
-  // Saturday 10:00, next week still unpublished.
-  if (now.weekday === 5 && Math.floor(now.hour) === 10 && !(await weekRow(ctx, nextWeek))?.published) {
+  // Saturday from 10:00, next week still unpublished.
+  if (now.weekday === 5 && now.hour >= 10 && !(await weekRow(ctx, nextWeek))?.published && (await claim(`planNext:${nextWeek}`))) {
     await pushCoaches(ctx, null, "Plan next week", "Publish next week's classes so athletes can check theirs.", { type: "class_plan" })
     report.reminded = true
   }
-  // Monday 8:00, this week still unpublished: it can still be published.
-  if (now.weekday === 0 && Math.floor(now.hour) === 8 && !(await weekRow(ctx, thisWeek))?.published) {
+  // Monday from 8:00, this week still unpublished: it can still be published.
+  if (now.weekday === 0 && now.hour >= 8 && !(await weekRow(ctx, thisWeek))?.published && (await claim(`unpublished:${thisWeek}`))) {
     await pushCoaches(ctx, null, "This week isn't published", "Your athletes can't see their classes yet. You can still publish this week.", { type: "class_plan" })
     report.reminded = true
   }
 
-  // Classes that ended in the last hour.
-  for (const c of classes) {
+  // Classes that ended since the last run (up to a day late; on Monday that
+  // includes last week's). Sessions left are counted as of the class's end,
+  // so a late run says what an on-time one would have.
+  const ended = [...(now.weekday === 0 ? await weekClasses(ctx, addDays(thisWeek, -7)) : []), ...classes]
+  for (const c of ended) {
     const end = classMs(c, CLASS_HOURS)
-    if (end > now.ms || end <= now.ms - 3600000) continue
+    if (end > now.ms || end <= now.ms - LATE_PACKAGE_HOURS * 3600000) continue
     for (const a of c.roster ?? []) {
-      const { left } = await athletePackage(ctx, a, now)
+      const { left } = await athletePackage(ctx, a, { ymd: classDate(c), ms: end })
       if (left !== LOW_SESSIONS && left !== 0) continue
+      if (!(await claim(`package:${c.$id}:${a}`))) continue
       report.low++
       const u = await ctx.getUserRow(a)
       await pushUser(ctx, a, left ? `${left} sessions left` : "No sessions left",

@@ -1,5 +1,6 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import type { Attempt } from "@/hooks/WorkoutHook"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // Reads "what did this athlete do last time on this block" out of their
 // session history. The block-level counterpart to scHistory.ts (which works
@@ -69,6 +70,12 @@ export function findBlockRuns(sessions: SessionRow[], ref: BlockRef): BlockRun[]
       if (!blockMatches(protocol[i], ref)) continue
       const own = attempts.filter((a) => a?.blockIndex === i)
       if (own.length === 0) continue
+      // Spray blocks (utils/sprayBlocks.ts) log the same way: one run per
+      // sequence added or chosen, the Done marker left out.
+      if (isSprayBlock(protocol[i])) {
+        runs.push(...coachedSequenceRuns(s, protocol[i], own))
+        continue
+      }
       if (protocol[i]?.coached) {
         if (protocol[i].type === "sequence") runs.push(...coachedSequenceRuns(s, protocol[i], own))
         continue

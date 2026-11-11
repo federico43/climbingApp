@@ -3,7 +3,7 @@ import { ScalePressable } from "@/components/ScalePressable"
 import { Block, BLOCK_ICONS, BLOCK_LABELS } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { ProtocolRow, sessionLinkFor } from "@/services/BoulderGraphService"
-import { PLAN_FOCUS_LABEL, PLAN_WORKOUTS, builtMainType } from "@/utils/planRotation"
+import { PLAN_FOCUS_LABEL, PLAN_WORKOUTS, builtMainType, hasBuiltMainBlock } from "@/utils/planRotation"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
@@ -33,6 +33,8 @@ function blockTitle(b: Block): string {
 // "Workout 5 of 12 · Power endurance" for a workout built from a plan.
 function planTag(p: ProtocolRow): string | null {
   if (!p.planId || !p.planIndex) return null
+  // No climbing block (a conditioning plan's): the name already says it.
+  if (!hasBuiltMainBlock(p.blocks)) return `Workout ${p.planIndex} of ${PLAN_WORKOUTS}`
   // From its main block: plans don't all start with strength.
   const mainType = builtMainType(p.planIndex, p.blocks)
   return `Workout ${p.planIndex} of ${PLAN_WORKOUTS} · ${PLAN_FOCUS_LABEL[mainType]}`

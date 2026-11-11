@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict"
 import {
-  filterRoster, lastSessionLabel, normalizeName, planStatusLabel, rosterKpis, summarizeRoster, weekStartOf,
+  filterRoster, isAccountActive, lastSessionLabel, normalizeName, planStatusLabel, rosterKpis, summarizeRoster, weekStartOf,
   type RosterHomework, type RosterPlan, type RosterSession,
 } from "@/utils/coachRoster"
 
@@ -92,5 +92,22 @@ assert.deepEqual(filterRoster(roster, "", "homework", 7).map((a) => a.id), ["ana
 assert.deepEqual(filterRoster(roster, "", "no_plan", 7).map((a) => a.id), ["bruno", "carla"])
 assert.deepEqual(filterRoster(roster, "", "inactive", 14).map((a) => a.id), ["bruno", "dani"])
 assert.deepEqual(filterRoster(roster, "c", "no_plan", 7).map((a) => a.id), ["carla"])
+assert.deepEqual(filterRoster(roster, "", "deactivated", 7).map((a) => a.id), [])
+
+// Deactivated accounts (users.active = false) leave the list, the other
+// chips and the KPIs; only the Deactivated chip shows them. Unset = active.
+assert.equal(isAccountActive({}), true)
+assert.equal(isAccountActive({ active: null }), true)
+assert.equal(isAccountActive({ active: false }), false)
+{
+  const withOff = summarizeRoster([...athletes, { $id: "eva", username: "Eva", active: false }], homework, plans, sessions, TODAY)
+  assert.equal(withOff.find((a) => a.id === "eva")?.active, false)
+  assert.equal(withOff.find((a) => a.id === "ana")?.active, true)
+  assert.deepEqual(filterRoster(withOff, "", null, 7).map((a) => a.id).includes("eva"), false)
+  assert.deepEqual(filterRoster(withOff, "", "inactive", 7).map((a) => a.id).includes("eva"), false)
+  assert.deepEqual(filterRoster(withOff, "", "deactivated", 7).map((a) => a.id), ["eva"])
+  assert.deepEqual(filterRoster(withOff, "ev", "deactivated", 7).map((a) => a.id), ["eva"])
+  assert.deepEqual(rosterKpis(withOff, sessions, TODAY, 7), rosterKpis(roster, sessions, TODAY, 7))
+}
 
 console.log("coachRoster: all good")

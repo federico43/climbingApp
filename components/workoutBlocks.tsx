@@ -74,6 +74,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import ReAnimated, { LinearTransition, runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
+import { isSprayBlock, SPRAY_DEFAULT_REST_S } from "@/utils/sprayBlocks"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -198,6 +199,9 @@ interface SequenceBlock extends BaseBlock {
 interface FreeSessionBlock extends BaseBlock {
   type: "free_session"
   description: string
+  // Spray blocks only (Power / Coordination boulders, utils/sprayBlocks.ts):
+  // rest between attempts, seconds.
+  restTime?: number
   // Prompt shown to the athlete above the notes field once the session ends,
   // e.g. "What did you try?" — lets a coach reuse this block as a simple,
   // no-project version of Project bouldering (time + one guided note).
@@ -1542,6 +1546,13 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
         <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />
         <Rest label="Rest" value={block.restTime} onChange={(n) => update({ restTime: n })} />
       </>); break
+    case "free_session":
+      // Power / Coordination boulders run by time (the Time limit) with a
+      // rest between attempts (utils/sprayBlocks.ts).
+      if (!isSprayBlock(block)) { if (!compact) return null; break }
+      fields = (
+        <Rest label="Rest" value={block.restTime ?? SPRAY_DEFAULT_REST_S} onChange={(n) => update({ restTime: n })} />
+      ); break
     case "constraint_warmup":
       fields = (
         <Field label="Attempts" value={block.targetAttempts} onChange={(n) => update({ targetAttempts: n })} min={1} />

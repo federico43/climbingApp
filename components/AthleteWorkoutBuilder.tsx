@@ -37,6 +37,7 @@ import {
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
+import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // Narrow screens: share of the window the S&C exercise library takes as a
 // bottom sheet, leaving the workout visible above it.
@@ -118,7 +119,7 @@ export function AthleteWorkoutBuilder({
   const [homeworkOpen, setHomeworkOpen] = useState(false)
   // Blocks the coach will run in person (§12a) — the flag lives on the block.
   const [coachedOpen, setCoachedOpen] = useState(false)
-  const coachedBlocks = blocks.filter((b) => b.coached)
+  const coachedBlocks = blocks.filter((b) => b.coached && !isSprayBlock(b))
   function toggleCoached(id: string) {
     setBlocks((p) => p.map((b) => (b.id === id ? { ...b, coached: b.coached ? undefined : true } : b)))
   }
@@ -621,7 +622,8 @@ export function AthleteWorkoutBuilder({
               {"Blocks you'll run in person. "}{athleteName ?? "The athlete"}{" just sees the title and Done — on sequence blocks they save the sequences you set, with their sends. They can also switch a block during the workout."}
             </Text>
             <View style={s.copyPills}>
-              {blocks.filter((b) => !homeworkIds.has(b.id)).map((b) => {
+              {/* Spray blocks are never coached (utils/sprayBlocks.ts). */}
+              {blocks.filter((b) => !homeworkIds.has(b.id) && !isSprayBlock(b)).map((b) => {
                 const sel = !!b.coached
                 return (
                   <Pressable key={b.id} style={[s.copyPill, sel && s.copyPillSel]} onPress={() => toggleCoached(b.id)}>

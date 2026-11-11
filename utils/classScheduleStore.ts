@@ -13,8 +13,9 @@ import { Alert } from "react-native"
 // from Appwrite and shared so they stay in step. Changes go through the
 // server (services/classSchedule.ts) and the state is reloaded after each
 // one. The coach's plan for a week is a draft on the phone until they
-// publish it: next week, and this week too while it isn't published (a coach
-// who missed Sunday can still publish it mid-week).
+// publish it: next week, and this week too, published or not (a coach who
+// missed Sunday can still publish it, and can add times mid-week). Classes
+// already started stay as they are.
 
 // A time on the week grid.
 export interface Slot { day: number; start: number }
@@ -60,7 +61,7 @@ interface State {
   // Coach: the week being planned (next week, or this week while it's
   // unpublished; see planWeek) as drafted on the phone
   planning: "this" | "next"
-  thisOpen: boolean                // this week isn't published, so the coach can still plan it
+  thisOpen: boolean                // the coach can plan this week (always, for coaches)
   nextWeekStart: string
   nextClasses: GymClass[]          // rosters as names
   blocks: BlockedTime[]
@@ -99,8 +100,7 @@ interface Draft {
   dirty: boolean
   removed: Set<string>
 }
-// One draft per week (this week's only while it's unpublished), so switching
-// tabs keeps the edits.
+// One draft per week, so switching tabs keeps the edits.
 let drafts: Record<string, Draft> = {}
 let nextId = 1
 let server: { this: ClassWeek | null; next: ClassWeek | null } = { this: null, next: null }
@@ -160,7 +160,7 @@ function editDraft(fn: (d: Draft) => void) {
   set(draftPatch())
 }
 
-// Which week the coach's planner edits: this week only while it's unpublished.
+// Which week the coach's planner edits.
 export function planWeek(which: "this" | "next") {
   set({ planning: which })
   set(draftPatch())
@@ -222,18 +222,18 @@ async function load() {
       coach ? api.loadPackages() : Promise.resolve([]),
     ])
     server = { this: thisWeek, next: nextWeek }
-    const thisOpen = coach && !thisWeek.published
+    const thisOpen = coach
     if (coach) {
       for (const k of Object.keys(drafts)) if (k !== thisStart && k !== nextStart) delete drafts[k]
-      if (thisOpen) syncDraft(thisWeek, lastWeek)
-      else delete drafts[thisStart]
+      syncDraft(thisWeek, lastWeek)
       syncDraft(nextWeek, thisWeek.classes.length ? thisWeek : lastWeek)
     }
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
       status: "ready", error: null, me, names, requests, pkg, packages,
-      athletes: users.filter((u) => u.role !== "coach"),
+      // Deactivated accounts can't be added to classes.
+      athletes: users.filter((u) => u.role !== "coach" && u.active !== false),
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,
@@ -340,7 +340,7 @@ export function answerRequest(req: ClassRequest, accept: boolean): Promise<boole
 // (this week) it has already gone by.
 export type PlanProblem = AddClassProblem | "past"
 export function planProblem(classes: GymClass[], day: number, start: number): PlanProblem | null {
-  if (state.planning === "this" && state.thisOpen && started(state.nextWeekStart, { day, start })) return "past"
+  if (classStarted({ day, start })) return "past"
   return addClassProblem(classes, state.blocks, day, start)
 }
 
@@ -351,6 +351,8 @@ export function addNextClass(day: number, start: number) {
 // Drag a class or a blocked time to another day or time. Returns why it
 // can't go there, or null once it's moved.
 export function moveNextClass(id: string, day: number, start: number): PlanProblem | null {
+  const c = state.nextClasses.find((x) => x.id === id)
+  if (c && classStarted(c)) return "past"
   const others = state.nextClasses.filter((c) => c.id !== id)
   const problem = planProblem(others, day, start)
   if (problem) return problem
@@ -377,7 +379,13 @@ export function resizeBlock(block: BlockedTime, start: number, end: number): "cl
   return null
 }
 
+// A class in the planned week that has already started (this week): it can't
+// be moved or removed any more.
+export const classStarted = (c: Slot) => state.planning === "this" && state.thisOpen && started(state.nextWeekStart, c)
+
 export function removeNextClass(id: string) {
+  const c = state.nextClasses.find((x) => x.id === id)
+  if (c && classStarted(c)) return
   editDraft((d) => {
     d.classes = d.classes.filter((c) => c.id !== id)
     d.removed.add(id)
