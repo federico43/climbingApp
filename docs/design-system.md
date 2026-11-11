@@ -118,6 +118,14 @@ The look: a poster on paper, inspired by grainy, gradient-heavy illustration. Hu
 
 **Tab bar:** 88 tall, frosted, hairline top. Tabs: Home, Plan, Classes, Design. Active tab has an ink label and its icon sits on a mint rounded square (icon `#121014` in both modes).
 
+**Scroll rail (scroll hint on long screens):** fixed to the right edge, inside the 16px gutter, from just below the headline to just above the tab bar.
+- Parts, top to bottom: the vertical mono label "SCROLL" (9px, tracked .32em), a 1.5px track (ink @28%, dark white @25%), and a small down chevron.
+- Hint state (before the user's first scroll): a mint "drip" thumb (6×24, radius 3, 1.5px ink border; in dark a mint border + glow) falls down the track and fades, looping every 2.4s. The chevron bobs in time with it.
+- After the first scroll: the label and chevron fade out, the drip stops, and the thumb becomes a live position indicator. Never show the hint again once the user has scrolled (store a flag).
+- Section ticks: 8px ink marks on the track at each main section (Homework, Sequence, Training plan). Tapping one scrolls smoothly there; each needs an accessibility label ("Jump to homework").
+- Reduced motion: no drip or bob, just a static thumb.
+- Only on screens taller than the viewport, one rail per screen.
+
 **Nav bar (editor screens):** "Cancel" text button · centred title with a mono status line in mintDeep (e.g. "CREATING · UNSAVED") · "Save" small mint button. 1.5px ink rule beneath (dark white @18%).
 
 ---

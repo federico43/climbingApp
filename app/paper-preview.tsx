@@ -1,7 +1,7 @@
 import {
   AddBar, Body, Card, CardTitle, CollapsibleBlockCard, DayCircle, GhostButton, HeadlineInput, IconButton,
   ListRow, Melt, MintButton, Mono, NavBar, PaperScreen, PaperSwitch, PosterHeadline, PrimaryCTA,
-  ProgressBar, SectionHeader, SelectValue, SettingsRow, SpecsRow, Stepper, TextField, TimelineLegend,
+  ProgressBar, RailAnchor, SectionHeader, SelectValue, SettingsRow, SpecsRow, Stepper, TextField, TimelineLegend,
   usePaper, usePaperPreference, WeekPill,
 } from "@/components/paper"
 import type { DayState } from "@/components/paper"
@@ -26,6 +26,7 @@ export default function PaperPreview() {
 
   return (
     <PaperScreen
+      rail={{ top: 230 }}
       header={
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8 }}>
           <Body weight={800} size={22}>Hi, Federico</Body>
@@ -77,7 +78,7 @@ export default function PaperPreview() {
         <PrimaryCTA label="Start workout" onPress={() => {}} />
       </View>
 
-      <SectionHeader>Your training plan</SectionHeader>
+      <RailAnchor label="Training plan"><SectionHeader>Your training plan</SectionHeader></RailAnchor>
       <Card>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <WeekPill>Week 3 of 6</WeekPill>
@@ -114,7 +115,7 @@ export default function PaperPreview() {
         </View>
       </Card>
 
-      <SectionHeader>Blocks · 3</SectionHeader>
+      <RailAnchor label="Blocks"><SectionHeader>Blocks · 3</SectionHeader></RailAnchor>
       <View style={{ gap: 12 }}>
         {[
           { cat: "Warm-up", title: "Progressive ramp", dot: t.blockBlue },
