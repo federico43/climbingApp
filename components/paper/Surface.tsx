@@ -2,20 +2,32 @@ import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { space } from "@/theme/paper/tokens"
 import { useFocusEffect } from "@react-navigation/native"
 import { setStatusBarStyle } from "expo-status-bar"
-import React, { useCallback } from "react"
-import { Image, ScrollView, ScrollViewProps, StyleProp, StyleSheet, View, ViewStyle } from "react-native"
+import React, { useCallback, useMemo } from "react"
+import { Image, ScrollView, ScrollViewProps, StyleProp, StyleSheet, useWindowDimensions, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { RailProvider, ScrollRail, useScrollRail } from "./ScrollRail"
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg"
 
 const GRAIN = require("@/assets/images/paper/grain.png")
 const MELT = require("@/assets/images/paper/melt.png")
 
 /** Film grain over everything (cards included). Never takes touches. */
+const TILE = 220
+
 export function Grain() {
   const t = usePaper()
+  const { width, height } = useWindowDimensions()
+  const tiles = useMemo(() => {
+    const out: [number, number][] = []
+    for (let y = 0; y < height + 100; y += TILE) for (let x = 0; x < width; x += TILE) out.push([x, y])
+    return out
+  }, [width, height])
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: t.grainOpacity }]}>
-      <Image source={GRAIN} resizeMode="repeat" style={StyleSheet.absoluteFill} />
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: t.grainOpacity, overflow: "hidden" }]}>
+      {/* Tiled by hand: resizeMode="repeat" drew a single tile on iOS. */}
+      {tiles.map(([x, y]) => (
+        <Image key={`${x}-${y}`} source={GRAIN} style={{ position: "absolute", left: x, top: y, width: TILE, height: TILE }} />
+      ))}
     </View>
   )
 }
@@ -67,23 +79,52 @@ type ScreenProps = {
   bottomPad?: number
   /** false = no ScrollView (the screen manages its own list). */
   scroll?: boolean
+  /** Scroll rail on the right edge; top = where it starts, just below the headline. */
+  rail?: { top?: number }
 }
 
 /** A full Paper Mint screen: paper, safe area, scrolling content, grain on top. */
-export function PaperScreen({ children, header, footer, scrollProps, bottomPad = space.bottomPad, scroll = true }: ScreenProps) {
+export function PaperScreen({ children, header, footer, scrollProps, bottomPad = space.bottomPad, scroll = true, rail }: ScreenProps) {
   usePaperStatusBar()
+  const r = useScrollRail()
   return (
     <PaperBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         {header}
         {scroll ? (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            {...scrollProps}
-            contentContainerStyle={[{ paddingHorizontal: space.gutter, paddingBottom: bottomPad }, scrollProps?.contentContainerStyle]}
-          >
-            {children}
-          </ScrollView>
+          <View style={{ flex: 1 }} onLayout={(e) => r.setViewportH(e.nativeEvent.layout.height)}>
+            <RailProvider value={r.ctx}>
+              <ScrollView
+                ref={r.scrollRef}
+                showsVerticalScrollIndicator={!rail}
+                scrollEventThrottle={16}
+                {...scrollProps}
+                onScroll={(e) => {
+                  r.onScroll(e.nativeEvent.contentOffset.y)
+                  scrollProps?.onScroll?.(e)
+                }}
+                onContentSizeChange={(w, h) => {
+                  r.setContentH(h)
+                  scrollProps?.onContentSizeChange?.(w, h)
+                }}
+                contentContainerStyle={[{ paddingHorizontal: space.gutter, paddingBottom: bottomPad }, scrollProps?.contentContainerStyle]}
+              >
+                <View ref={r.contentRef} collapsable={false}>{children}</View>
+              </ScrollView>
+            </RailProvider>
+            {rail && (
+              <ScrollRail
+                scrollY={r.scrollY}
+                contentH={r.contentH}
+                viewportH={r.viewportH}
+                anchors={r.anchors}
+                seen={r.seen}
+                top={rail.top ?? 220}
+                bottom={footer ? 96 : 16}
+                onJump={(y) => r.scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true })}
+              />
+            )}
+          </View>
         ) : (
           <View style={{ flex: 1 }}>{children}</View>
         )}
