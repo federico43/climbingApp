@@ -53,3 +53,42 @@ export function restNotificationPlan(
     fireAt: endsAt,
   }
 }
+
+/**
+ * The same, for a block's time limit (`label` is the block's name, or a part
+ * of it such as "Flash part"). Null under the same conditions.
+ */
+export function blockTimerNotificationPlan(
+  endsAt: number | null,
+  now: number,
+  label: string,
+  clock: (ms: number) => string = formatClockTime,
+): RestNotificationPlan | null {
+  if (endsAt == null) return null
+  const left = (endsAt - now) / 1000
+  if (left < MIN_REST_NOTIFICATION_SECS) return null
+  const name = label.trim() || "Block"
+  return {
+    countdown: {
+      title: `${name} · ends at ${clock(endsAt)}`,
+      body: `${formatRestLeft(left)} left. We'll let you know when time's up.`,
+    },
+    done: {
+      title: `Time's up · ${name}`,
+      body: "Open the app to keep going.",
+    },
+    fireAt: endsAt,
+  }
+}
+
+// A timer whose end we only notice this late was ticking while the app slept;
+// its notification already rang, so coming back shouldn't beep again.
+const LATE_MS = 2500
+
+/**
+ * Whether a timer ending at `endsAt` should beep now: the app is in front and
+ * the end is happening (not long past).
+ */
+export function shouldPlayTimerEnd(endsAt: number, now: number, appActive: boolean): boolean {
+  return appActive && now >= endsAt - 1000 && now - endsAt < LATE_MS
+}

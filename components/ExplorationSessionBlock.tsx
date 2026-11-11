@@ -16,6 +16,7 @@ import {
 } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { WALLS, wallLabel } from "@/utils/routeExploration"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,9 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   )
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerEndRef = useRef<number | null>(null)
+  // When the running time limit ends (null when none) — beeps / notifies.
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  useBlockTimerAlert(endsAt, block?.blockName || "Exploration session")
   const climbsRef   = useRef<ClimbEntry[]>([])
 
   // keep ref in sync so the timer callback can access latest climbs
@@ -114,11 +118,13 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
   function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    setEndsAt(null)
   }
 
   function startTimer() {
     if (!timeLimitSeconds) return
     timerEndRef.current = Date.now() + timeLimitSeconds * 1000
+    setEndsAt(timerEndRef.current)
     setTimeRemaining(timeLimitSeconds)
     timerRef.current = setInterval(() => {
       const remaining = Math.ceil((timerEndRef.current! - Date.now()) / 1000)
@@ -163,7 +169,7 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   const committedRef = useRef<Set<string>>(new Set())
 
   async function finishSession(currentClimbs: ClimbEntry[]) {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    stopTimer()
     // Only commit climbs that weren't already committed in a prior finish
     const newClimbs = currentClimbs.filter((c) => !committedRef.current.has(c.id))
     const newTops = newClimbs.filter(sent)

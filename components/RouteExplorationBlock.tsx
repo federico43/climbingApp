@@ -13,6 +13,7 @@ import {
 } from "@/utils/routeExploration"
 import { C } from "@/utils/theme"
 import * as Haptics from "expo-haptics"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
@@ -55,21 +56,25 @@ function formatTime(seconds: number): string {
   return `${m}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-// Countdown from `minutes` while `running`; calls onEnd once at zero.
-function useCountdown(minutes: number, running: boolean, onEnd: () => void) {
+// Countdown from `minutes` while `running`; calls onEnd once at zero. Beeps at
+// zero, and notifies (as `label`) when it runs out with the app in the background.
+function useCountdown(minutes: number, running: boolean, label: string, onEnd: () => void) {
   const [left, setLeft] = useState(minutes * 60)
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  useBlockTimerAlert(running ? endsAt : null, label)
   const onEndRef = useRef(onEnd)
   onEndRef.current = onEnd
   useEffect(() => {
     if (!running) return
     const end = Date.now() + minutes * 60 * 1000
+    setEndsAt(end)
     setLeft(minutes * 60)
     const id = setInterval(() => {
       const s = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setLeft(s)
       if (s === 0) { clearInterval(id); onEndRef.current() }
     }, 250)
-    return () => clearInterval(id)
+    return () => { clearInterval(id); setEndsAt(null) }
   }, [running, minutes])
   return left
 }
@@ -123,11 +128,11 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const flashLeft = useCountdown(flashMin, phase === "flash", () => {
+  const flashLeft = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("review")
   })
-  const projectLeft = useCountdown(projectMin, phase === "project", () => {
+  const projectLeft = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("question")
   })
