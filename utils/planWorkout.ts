@@ -6,6 +6,7 @@ import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStart
 import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 import { benchmarkBlockDraft, benchmarkComparison } from "@/utils/benchmark"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
 //   S&C → warm-up → main block × 2 (the same library block twice; Max
@@ -128,13 +129,14 @@ export function buildPlanWorkout(
   exercises: ExerciseRow[],
   sessions: SessionRow[],
   flash: string | null | undefined,
+  pullupTest?: SavedPullupTest | null,
 ): PlanWorkout {
   const warnings: string[] = []
   const blocks: PlanBlockDraft[] = []
   // Exploration goes before everything, S&C included (coach 2026-11-05).
   if (spec.warmup === "exploration") blocks.push(explorationDraft(library, flash))
 
-  const sc = buildScBlocks(plan, spec, exercises, sessions)
+  const sc = buildScBlocks(plan, spec, exercises, sessions, pullupTest)
   blocks.push(...sc.blocks)
   warnings.push(...sc.warnings)
 

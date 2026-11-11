@@ -16,6 +16,7 @@ import {
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
 import { benchmarkComparison, benchmarkTryLabel } from "@/utils/benchmark"
+import { parsePullupTest } from "@/utils/pullupAssessment"
 import { buildPlanWorkout, withUpcomingWorkouts, workoutPreview, type PlanWorkout } from "@/utils/planWorkout"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
@@ -25,6 +26,7 @@ import {
   createProtocol,
   deleteProtocol,
   getSessionsByUserId,
+  getUsers,
   listBlocks,
   listExercises,
   listPlanWorkouts,
@@ -122,7 +124,7 @@ export function PlanCard({
   // loaded — the same generation Edit details / Create run on fresh data.
   const preview = planShape && nextSpec && libraries
     ? workoutPreview(buildPlanWorkout(
-      planShape, nextSpec, libraries.blocks, libraries.exercises, withUpcomingWorkouts(sessions, planWorkouts), flashLevel,
+      planShape, nextSpec, libraries.blocks, libraries.exercises, withUpcomingWorkouts(sessions, planWorkouts), flashLevel, parsePullupTest((athlete as any).pullupTest),
     ).blocks)
     : null
   function swap(change: Omit<SpecSwaps, "index">) {
@@ -142,8 +144,10 @@ export function PlanCard({
   // exercise re-tagged with a different movement pattern).
   async function generateNext() {
     if (!plan || !planShape || !nextSpec) return null
-    const [fresh, built, exerciseRows, blockRows] = await Promise.all([
+    const [fresh, built, exerciseRows, blockRows, me] = await Promise.all([
       getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
+      // A pull-up test done since this page opened counts too.
+      getUsers(athlete.$id).catch(() => null),
     ])
     onSessions(fresh)
     onPlanWorkouts(built)
@@ -151,7 +155,7 @@ export function PlanCard({
       // Conditioning plans: named after the day's S&C focus (swaps included).
       name: `Workout ${nextSpec.index} · ${conditioning && nextSpec.scFocus ? FOCUS_LABEL[nextSpec.scFocus] : mainTypeLabel(nextSpec.mainType)}`,
       slot: { planId: plan.$id, planIndex: nextSpec.index },
-      ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel),
+      ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel, parsePullupTest(((me ?? athlete) as any).pullupTest)),
     }
   }
 

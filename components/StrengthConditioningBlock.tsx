@@ -19,7 +19,7 @@ import {
 } from "@/utils/bands"
 import { loadCachedBands, loadCachedPullupTest, saveCachedBands, saveCachedPullupTest } from "@/utils/bandCache"
 import {
-  bandStartFor, easierThanBands, isPullupLadder, NEGATIVES_ASKED_UP_TO, planFromTest, stepForVariation, variationFor, VARIATION_LABEL,
+  bandStartFor, easierThanBands, isPullupLadder, NEGATIVES_ASKED_UP_TO, planFromTest, retestDue, testIsNewer, stepForVariation, variationFor, VARIATION_LABEL,
   parsePullupTest, type PullupTestResult, type SavedPullupTest,
 } from "@/utils/pullupAssessment"
 import {
@@ -451,8 +451,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           // round 1. With a result and no history at today's focus → the
           // variation it assigns (history, when there is some, wins).
           if (ex.type !== "7/3s" && ex.focus && p.chain && isPullupLadder(p.chain.chain)) {
+            const today = localDateStr(new Date())
             if (!p.past?.length && !pullupTest && Object.keys(savedBands).length === 0) needsTest[idx] = true
-            else if (pullupTest && p.basis?.focus !== ex.focus) {
+            else if (retestDue(pullupTest, today, savedBands)) needsTest[idx] = true
+            if (pullupTest && testIsNewer(pullupTest, p.basis?.focus === ex.focus ? p.basis.date : undefined)) {
               const at = stepForVariation(p.chain.chain, variationFor(ex.focus, pullupTest))
               if (at >= 0) {
                 levels[idx] = p.chain.chain[at]
@@ -872,6 +874,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             suggestedBand={bandStarts[currentExerciseIndex]}
             onBandFound={(i) => { if (exercise.focus) saveBand(exercise.focus, i) }}
             pullupTest={pullupTestRef.current ?? undefined}
+            pullupRetest={!!pullupTestRef.current}
             needsPullupTest={currentRound === 0 && !swapped && !!needsPullupTest[currentExerciseIndex]}
             onPullupTestDone={savePullupTest}
             setting={settingFor(currentExerciseIndex)}
@@ -2258,6 +2261,7 @@ interface LoggedExerciseUIProps {
   // where a new result goes.
   pullupTest?: PullupTestResult
   needsPullupTest?: boolean
+  pullupRetest?: boolean     // the athlete has a result: this is the 6-week retest (skippable)
   onPullupTestDone: (r: PullupTestResult) => void
   suggestionNote?: string
   suggestionDetail?: string   // what the note is based on
@@ -2278,7 +2282,7 @@ interface LoggedExerciseUIProps {
 }
 
 function LoggedExerciseUI({
-  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, pullupTest, needsPullupTest, onPullupTestDone, suggestionNote, suggestionDetail,
+  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, pullupTest, needsPullupTest, pullupRetest, onPullupTestDone, suggestionNote, suggestionDetail,
   roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, grip, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
   const C = useC()
@@ -2298,11 +2302,14 @@ function LoggedExerciseUI({
   const [weight, setWeight] = useState<number>(startWeight)
   const [level, setLevel] = useState<LevelStep | undefined>(startLevel)
   const [band, setBand] = useState<number>(initialBand)
-  const [testResult, setTestResult] = useState<PullupTestResult | undefined>(pullupTest)
+  // Fresh result from this brief (a retest's starts empty: the old one is
+  // what's being redone).
+  const [testResult, setTestResult] = useState<PullupTestResult | undefined>(pullupRetest ? undefined : pullupTest)
+  const [retestSkipped, setRetestSkipped] = useState(false)
   // Shown on the brief after the band finder couldn't reach the range even
   // with the most help (no negatives either).
   const [fallbackNote, setFallbackNote] = useState<string | null>(null)
-  const askPullupTest = !!needsPullupTest && !testResult
+  const askPullupTest = !!needsPullupTest && !testResult && !retestSkipped
   const [effort, setEffort] = useState<Effort | null>(null)
   // Set on the brief, like the load: the app can't measure the setting, so
   // the athlete says when they're on the hardest one.
@@ -2422,8 +2429,15 @@ function LoggedExerciseUI({
         />
         {askPullupTest && (
           <View style={styles.noMaxCard}>
-            <Text style={styles.noMaxTitle}>First pull-up session</Text>
-            <Text style={styles.noMaxText}>A short test picks the right pull-up for each focus. Scapulas retracted on every rep.</Text>
+            <Text style={styles.noMaxTitle}>{pullupRetest ? "Pull-up retest" : "First pull-up session"}</Text>
+            <Text style={styles.noMaxText}>
+              {pullupRetest ? "Time to check your pull-ups again: the test updates your pull-up for each focus." : "A short test picks the right pull-up for each focus."} Scapulas retracted on every rep.
+            </Text>
+            {pullupRetest && (
+              <Pressable onPress={() => setRetestSkipped(true)} hitSlop={6}>
+                <Text style={styles.linkText}>Not today</Text>
+              </Pressable>
+            )}
           </View>
         )}
         {!!fallbackNote && (
