@@ -6,6 +6,7 @@ import {
   DEFAULT_HANG_EDGE, HANG_LOG_LIMIT, hangEdgeOf, hangLoadLabel, hangMaxes, hangMaxFor, hangWarmupRamp,
   isMaxHang, needsHangWarmup, normalizeEdge, parseHangLog, withHangMax, type HangMaxEntry,
 } from "@/utils/maxHangs"
+import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
 
 // Which exercise
 assert.equal(isMaxHang({ name: "Max Hangs" }), true)
@@ -62,5 +63,12 @@ assert.deepEqual(hangWarmupRamp(NaN, "kg"), [])
 
 assert.equal(hangLoadLabel(0, "kg"), "Bodyweight")
 assert.equal(hangLoadLabel(7.5, "kg"), "+7.5 kg")
+
+// From the library: a 10 s hang on the library's grip (or 20mm)
+const row = { $id: "mh", $createdAt: "", name: "Max Hangs", type: "reps", unit: "seconds", defaultReps: "10", defaultEdge: "15 mm" } as any
+assert.equal(exerciseDraftFromLibrary(row).edge, "15mm")
+assert.equal(exerciseDraftFromLibrary(row).reps, "10")
+assert.equal(exerciseDraftFromLibrary({ ...row, defaultEdge: undefined, defaultReps: undefined }).edge, DEFAULT_HANG_EDGE)
+assert.equal(exerciseDraftFromLibrary({ ...row, defaultReps: undefined }).reps, "10")
 
 console.log("all maxHangs tests passed")

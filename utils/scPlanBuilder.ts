@@ -3,6 +3,7 @@ import type { ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { MOVEMENT_TYPE_LABEL, skipsExplosiveness, type MovementType } from "@/utils/movementTypes"
 import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
+import { DEFAULT_HANG_EDGE, isMaxHang, normalizeEdge } from "@/utils/maxHangs"
 import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
 import { startingLevelRow } from "@/utils/scPrefill"
 
@@ -53,6 +54,9 @@ export function exerciseDraftFromLibrary(ex: ExerciseRow): ExerciseDraft {
   // range to fall back on, so it still uses the library's own default.
   // Mobility has no focus, so its target is always the library default.
   if (ex.type === "7/3s") return { ...base, edge: ex.defaultEdge ?? "20mm", series: ex.defaultSeries ?? 6 }
+  // Max Hangs: the grip (edge size) is picked per block, starting on the
+  // library's default (utils/maxHangs.ts).
+  if (isMaxHang(ex)) return { ...base, reps: ex.defaultReps ?? "10", edge: normalizeEdge(ex.defaultEdge) || DEFAULT_HANG_EDGE }
   if (ex.unit === "seconds") return { ...base, reps: ex.defaultReps ?? "20-30" }
   return { ...base, reps: ex.movementType === "mobility" ? (ex.defaultReps ?? "") : "" }
 }
