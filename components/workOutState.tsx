@@ -273,7 +273,11 @@ export function WorkOutState({
         </View>
 
         <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
-          <Melt top={4} height={380} />
+          {/* Melt kept short and soft, behind the headline only, so the
+              mint "Back to home" button sits on plain paper and stands out. */}
+          <View pointerEvents="none" style={styles.summaryMelt}>
+            <Melt top={0} height={190} />
+          </View>
           <Mono>Workout complete</Mono>
           <PosterHeadline style={{ marginTop: 6 }}>Done</PosterHeadline>
           <SpecsRow left={[`*${protocolName}*`]} right={[`${doneCount} of ${totalBlocks} blocks`]} />
@@ -290,8 +294,8 @@ export function WorkOutState({
             </View>
           </Card>
 
-          <SectionHeader>Blocks</SectionHeader>
-          <Card padded={false}>
+          {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
+          {completedBlocks.length > 0 && <Card padded={false}>
             {completedBlocks.map(({ block, originalIndex }, i) => {
               const dur = blockDurations[originalIndex] ?? 0
               const dm = Math.floor(dur / 60)
@@ -333,7 +337,7 @@ export function WorkOutState({
                 </View>
               )
             })}
-          </Card>
+          </Card>}
 
           {homeworkBlocks.size > 0 && (
             <Body muted size={13} style={styles.summaryHomeworkNote}>
@@ -535,6 +539,7 @@ const makeStyles = (t: PaperTheme) => StyleSheet.create({
   },
 
   // Summary screen
+  summaryMelt: { position: "absolute", left: 0, right: 0, top: 10, height: 190, opacity: 0.55 },
   summaryScroll: { flexGrow: 1, paddingHorizontal: space.gutter, paddingTop: 20, paddingBottom: 40 },
   summaryStats: { flexDirection: "row", marginTop: 40, paddingVertical: 20 },
   summaryStat: { flex: 1, alignItems: "center", gap: 6 },
