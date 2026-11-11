@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { PaperScope, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { formatTime12, validDays, WEEKDAY_SHORT, type Weekday } from "@/utils/cardio"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
@@ -29,7 +29,16 @@ const INFO: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string 
   },
 ]
 
-export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, initialTime, onClose, onCommit }: {
+// Part of the athlete workout flow: Paper Mint (theme/paper/legacy.tsx).
+export function CardioIntro(props: React.ComponentProps<typeof CardioIntroSheet>) {
+  return (
+    <PaperScope>
+      <CardioIntroSheet {...props} />
+    </PaperScope>
+  )
+}
+
+function CardioIntroSheet({ visible, daysOnly, hasTest = true, initialDays, initialTime, onClose, onCommit }: {
   visible: boolean
   daysOnly?: boolean
   /** The first session is the starting test (the coach didn't set a step). */
@@ -39,6 +48,7 @@ export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, in
   onClose: () => void
   onCommit: (days: Weekday[], time: string) => Promise<void> | void
 }) {
+  const s = useSheet(sheet)
   const daysPage = INFO.length
   const [i, setI] = useState(0)
   const [days, setDays] = useState<Weekday[]>([])
@@ -151,6 +161,8 @@ export function CardioIntro({ visible, daysOnly, hasTest = true, initialDays, in
 }
 
 function Art({ icon, onClose }: { icon: keyof typeof Ionicons.glyphMap; onClose: () => void }) {
+  const C = useC()
+  const s = useSheet(sheet)
   return (
     <View style={s.art}>
       <View style={s.ring}><Ionicons name={icon} size={56} color={C.green} /></View>
@@ -161,7 +173,7 @@ function Art({ icon, onClose }: { icon: keyof typeof Ionicons.glyphMap; onClose:
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)" },
   scrollIn: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 28 },
   card: { width: "100%", maxWidth: 380, backgroundColor: C.surface, borderRadius: 20, overflow: "hidden" },
@@ -191,4 +203,4 @@ const s = StyleSheet.create({
   btn: { backgroundColor: C.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 40 },
   btnText: { fontSize: 15, fontWeight: "800", color: "#10251A", letterSpacing: 0.3 },
   back: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-})
+}))

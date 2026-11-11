@@ -1,5 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
@@ -12,7 +12,7 @@ import {
   reviewPromptHistory, shouldPromptReviewClip, summarizeProjectAttempts,
 } from "@/utils/progression/projectBouldering"
 import { saveVideoLocally } from "@/utils/saveVideo"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { Ionicons } from "@expo/vector-icons"
 import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
@@ -54,6 +54,9 @@ export function ProjectBoulderingBlock({
   block, logAttempt, updateLastAttempt, undoLastAttempt, restTimeRemaining, startRestTimer,
   attempts, allAttempts, goToNextBlock, goToPreviousBlock,
 }: Props) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const shared_styles = useSheet(shared_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const settings = normalizeProjectBlock(block)
   const blockTitle: string = block.blockName || "Project bouldering"
@@ -197,8 +200,8 @@ export function ProjectBoulderingBlock({
 
   const timeChip = startedAt != null && (
     <View style={[s.timeChip, secondsLeft <= 60 && s.timeChipUrgent]}>
-      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.bg : C.green} />
-      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.bg }]}>
+      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.onAccent : C.green} />
+      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.onAccent }]}>
         {secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
       </Text>
     </View>
@@ -242,7 +245,7 @@ export function ProjectBoulderingBlock({
   if (phase === "intro") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} />
+        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <View style={s.introPills}>
             {settings.grade ? <GradePill grade={settings.grade} /> : (
@@ -321,7 +324,7 @@ export function ProjectBoulderingBlock({
             onPress={() => (recordNext ? film(true) : record())}
             style={({ pressed }) => [s.bigButton, recordNext && s.bigButtonRecord, pressed && { transform: [{ scale: 0.96 }] }]}
           >
-            {recordNext && <Ionicons name="videocam" size={40} color={C.bg} />}
+            {recordNext && <Ionicons name="videocam" size={40} color={C.onAccent} />}
             <Text style={s.bigButtonText}>{recordNext ? "Record\nattempt" : "Attempt"}</Text>
           </Pressable>
 
@@ -370,7 +373,7 @@ export function ProjectBoulderingBlock({
           </View>
           <AnimatedCircularProgress
             size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surface}
+            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
           >
             {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
           </AnimatedCircularProgress>
@@ -378,7 +381,7 @@ export function ProjectBoulderingBlock({
 
         <ScrollView contentContainerStyle={s.restContent}>
           <Pressable onPress={toggleSent} style={[s.sentToggle, sent && s.sentToggleOn]}>
-            <Text style={[s.sentText, sent && { color: C.bg }]}>{sent ? "Sent! 🎉" : "Sent it?"}</Text>
+            <Text style={[s.sentText, sent && { color: C.onAccent }]}>{sent ? "Sent! 🎉" : "Sent it?"}</Text>
           </Pressable>
 
           {!sent && (
@@ -458,6 +461,8 @@ export function ProjectBoulderingBlock({
 // ─── Shared pieces (also used by the workout summary and history) ──────────────
 
 export function GradePill({ grade, small }: { grade: string; small?: boolean }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const opt = BoulderLevelOptions.find((o) => o.value === grade)
   return (
     <View style={[s.gradePill, small && s.gradePillSmall, { backgroundColor: opt?.color ?? C.surfaceHigh }]}>
@@ -469,6 +474,8 @@ export function GradePill({ grade, small }: { grade: string; small?: boolean }) 
 // Grade · attempts · sent, then the fall-reason counts. `compact` = one line
 // of stats and small chips (workout summary rows, coach dashboard).
 export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] | any[]; compact?: boolean }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const sum = summarizeProjectAttempts(attempts)
   if (compact) {
     return (
@@ -529,7 +536,7 @@ export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] 
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
   introPills: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -571,7 +578,7 @@ const s = StyleSheet.create({
     shadowColor: C.green, shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 0 }, elevation: 8,
   },
   bigButtonRecord: { backgroundColor: C.yellow, shadowColor: C.yellow },
-  bigButtonText: { fontSize: 30, fontWeight: "900", color: C.bg, textAlign: "center" },
+  bigButtonText: { fontSize: 30, fontWeight: "900", color: C.onAccent, textAlign: "center" },
   filmLink: { flexDirection: "row", alignItems: "center", gap: 6 },
   linkMuted: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
   footer: { alignItems: "center", paddingBottom: 36, paddingTop: 8 },
@@ -615,12 +622,12 @@ const s = StyleSheet.create({
     alignSelf: "stretch", alignItems: "center", backgroundColor: C.yellow,
     borderRadius: 28, paddingVertical: 18, marginTop: 8,
   },
-  promptYesText: { fontSize: 18, fontWeight: "900", color: C.bg },
+  promptYesText: { fontSize: 18, fontWeight: "900", color: C.onAccent },
   recordBanner: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 16, borderRadius: 16,
     backgroundColor: C.yellow,
   },
-  recordBannerText: { flex: 1, fontSize: 16, fontWeight: "800", color: C.bg },
+  recordBannerText: { flex: 1, fontSize: 16, fontWeight: "800", color: C.onAccent },
   footerRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 24, paddingTop: 12, paddingBottom: 36,
@@ -642,4 +649,4 @@ const s = StyleSheet.create({
   compactText: { fontSize: 13, color: C.textSecondary },
   reasonTag: { backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   reasonTagText: { fontSize: 12, color: C.textSecondary, fontWeight: "600" },
-})
+}))

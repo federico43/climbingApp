@@ -1,4 +1,9 @@
-import { C } from "@/utils/theme"
+import {
+  Body, Card, CardTitle, GhostButton, hexAlpha, IconButton, Melt, Mono, PosterHeadline, PrimaryCTA,
+  ProgressBar, SectionHeader, SpecsRow, usePaper, usePaperStyles,
+} from "@/components/paper"
+import { useC } from "@/theme/paper/legacy"
+import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { useSessionSyncState } from "@/services/sessionSyncQueue"
@@ -16,10 +21,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 import { router } from "expo-router"
-import CustomButton from "./customButton"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
-import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
@@ -71,6 +74,9 @@ export function WorkOutState({
   // utils/mainSwap.ts). Omitted → no switch.
   onSwapMain?: (index: number) => Promise<void>
 }) {
+  const C = useC()
+  const t = usePaper()
+  const styles = usePaperStyles(makeStyles)
   const {
     currentBlock,
     attemptsDone,
@@ -184,27 +190,62 @@ export function WorkOutState({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- auto-start is decided once, on mount
   }, [])
 
+  const blockMenuNode = (
+    <Modal visible={blockMenu} transparent animationType="fade" onRequestClose={() => setBlockMenu(false)}>
+      <Pressable style={styles.menuBackdrop} onPress={() => setBlockMenu(false)}>
+        <Pressable style={[styles.menuSheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
+          <Mono style={styles.menuTitle}>{currentBlock?.blockName || "This block"}</Mono>
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+            onPress={() => { setBlockMenu(false); leaveAsHomework() }}
+          >
+            <View style={[styles.menuIcon, { borderColor: hexAlpha(t.pink, 0.45) }]}>
+              <Ionicons name="school-outline" size={18} color={t.pink} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Body weight={800} size={16}>Leave as homework</Body>
+              <Body muted size={13} style={{ marginTop: 2 }}>Finish it another day</Body>
+            </View>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+            onPress={() => { setBlockMenu(false); skipBlock() }}
+          >
+            <View style={[styles.menuIcon, { borderColor: t.ghostBorder }]}>
+              <Ionicons name="play-skip-forward" size={18} color={C.red} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Body weight={800} size={16} style={{ color: C.red }}>Skip block</Body>
+              <Body muted size={13} style={{ marginTop: 2 }}>{"It won't be saved"}</Body>
+            </View>
+          </Pressable>
+          <GhostButton label="Cancel" onPress={() => setBlockMenu(false)} style={{ marginTop: 6 }} />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+
   if (status === "idle") {
     return (
       <SafeAreaView style={[styles.container, styles.centeredScreen, { paddingTop: insets.top }]} edges={["bottom"]}>
         {onClose && (
-          <Pressable
+          <IconButton
+            icon="close"
+            label="Close"
+            size={36}
             onPress={() => { onWorkoutEnd(); resetWorkout() }}
-            style={styles.closeButton}
-          >
-            <Text style={styles.closeButtonText}>✕</Text>
-          </Pressable>
+            style={{ alignSelf: "flex-end" }}
+          />
         )}
-        <Text style={styles.title}>Training protocols</Text>
+        <Mono style={{ alignSelf: "flex-start", marginTop: 16 }}>Training protocol</Mono>
         {currentBlock ? (
-          <Pressable style={styles.card} onPress={handleStartWorkout}>
-            <Text style={styles.cardTitle}>{protocolName}</Text>
-            <Text style={styles.cardSubtitle}>
-              {totalBlocks} block{totalBlocks !== 1 ? "s" : ""} · Tap to start
-            </Text>
-          </Pressable>
+          <Card style={{ width: "100%", marginTop: 12, gap: 6 }}>
+            <CardTitle size={30}>{protocolName}</CardTitle>
+            <Mono>{totalBlocks} block{totalBlocks !== 1 ? "s" : ""}</Mono>
+            <PrimaryCTA label="Start workout" onPress={handleStartWorkout} style={{ marginTop: 14 }} />
+          </Card>
         ) : (
-          <Text style={styles.emptyState}>No protocol available.</Text>
+          <Body muted style={{ marginTop: 40 }}>No protocol available.</Body>
         )}
       </SafeAreaView>
     )
@@ -226,34 +267,31 @@ export function WorkOutState({
 
     return (
       <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={["bottom"]}>
-        {/* Top bar with exit button */}
-        <View style={styles.progressBar}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressText}>Summary</Text>
-            <Pressable hitSlop={8} onPress={() => closeSummaryRef.current()}>
-              <Text style={styles.exitButton}>✕</Text>
-            </Pressable>
-          </View>
+        <View style={styles.topRow}>
+          <Mono color={t.mintText}>Summary · saved</Mono>
+          <IconButton icon="close" label="Close summary" size={36} onPress={() => closeSummaryRef.current()} />
         </View>
 
         <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
-          <Text style={styles.summaryCheck}>✓</Text>
-          <Text style={styles.summaryTitle}>Workout complete</Text>
-          <Text style={styles.summaryProto}>{protocolName}</Text>
+          <Melt top={4} height={380} />
+          <Mono>Workout complete</Mono>
+          <PosterHeadline style={{ marginTop: 6 }}>Done</PosterHeadline>
+          <SpecsRow left={[`*${protocolName}*`]} right={[`${doneCount} of ${totalBlocks} blocks`]} />
 
-          <View style={styles.summaryStats}>
+          <Card style={styles.summaryStats}>
             <View style={styles.summaryStat}>
               <Text style={styles.summaryStatNum}>{timeStr}</Text>
-              <Text style={styles.summaryStatLabel}>total time</Text>
+              <Mono>Total time</Mono>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryStat}>
               <Text style={styles.summaryStatNum}>{doneCount}</Text>
-              <Text style={styles.summaryStatLabel}>block{doneCount !== 1 ? "s" : ""}{"\n"}completed</Text>
+              <Mono>Block{doneCount !== 1 ? "s" : ""} done</Mono>
             </View>
-          </View>
+          </Card>
 
-          <View style={styles.summaryBlockList}>
+          <SectionHeader>Blocks</SectionHeader>
+          <Card padded={false}>
             {completedBlocks.map(({ block, originalIndex }, i) => {
               const dur = blockDurations[originalIndex] ?? 0
               const dm = Math.floor(dur / 60)
@@ -265,19 +303,25 @@ export function WorkOutState({
               const projectAttempts = block.type === "project_bouldering" && !block.coached
                 ? attempts.filter((a) => a.blockIndex === originalIndex)
                 : null
+              const homework = homeworkBlocks.has(originalIndex)
               return (
-                <View key={originalIndex}>
+                <View key={originalIndex} style={i > 0 && styles.summaryRowDivider}>
                   <View style={styles.summaryBlockRow}>
-                    <Text style={styles.summaryBlockIndex}>{i + 1}</Text>
-                    <Text style={styles.summaryBlockName} numberOfLines={1}>
+                    <Mono style={styles.summaryBlockIndex}>{String(i + 1).padStart(2, "0")}</Mono>
+                    <Body weight={700} size={16} style={{ flex: 1 }} numberOfLines={1}>
                       {block.blockName || "Block"}
-                    </Text>
-                    {homeworkBlocks.has(originalIndex) ? (
-                      <Text style={styles.summaryBlockHomework}>Homework</Text>
+                    </Body>
+                    {homework ? (
+                      <View style={styles.summaryHomework}>
+                        <Ionicons name="school" size={12} color={t.pink} />
+                        <Mono color={t.pink}>Homework</Mono>
+                      </View>
                     ) : (
                       <>
-                        <Text style={styles.summaryBlockDuration}>{durStr}</Text>
-                        <Text style={styles.summaryBlockCheck}>✓</Text>
+                        <Mono color={t.ink}>{durStr}</Mono>
+                        <View style={styles.summaryCheck}>
+                          <Ionicons name="checkmark" size={14} color={t.onMint} />
+                        </View>
                       </>
                     )}
                   </View>
@@ -289,52 +333,52 @@ export function WorkOutState({
                 </View>
               )
             })}
-          </View>
+          </Card>
 
           {homeworkBlocks.size > 0 && (
-            <Text style={styles.summaryHomeworkNote}>
+            <Body muted size={13} style={styles.summaryHomeworkNote}>
               {"What's left is on your Plan page as homework — pick a day to finish it in the next 5 days."}
-            </Text>
+            </Body>
           )}
 
-          <CustomButton
-            title="Back to home"
+          <PrimaryCTA
+            label="Back to home"
+            icon="home"
+            style={{ marginTop: 24 }}
             onPress={() => {
               closeSummaryRef.current()
               router.navigate("/")
             }}
           />
-          <Text style={styles.summaryAutoClose}>
+          <Mono style={styles.summaryAutoClose}>
             {sync.pending > 0 && sync.offline
               ? "No connection — saved on this phone, it uploads once you're back online"
               : "Workout saved"} · closing in {autoCloseIn}s
-          </Text>
+          </Mono>
         </ScrollView>
       </SafeAreaView>
     )
   }
 
+  const coached = !!currentBlock?.coached
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <View style={[styles.progressBar, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.progressBar, { paddingTop: insets.top + 8 }]}>
         <View style={styles.progressHeader}>
-          <Text style={styles.progressText}>
-            Block {currentBlockIndex + 1} of {totalBlocks}
-          </Text>
+          <Mono color={t.ink}>
+            Block {String(currentBlockIndex + 1).padStart(2, "0")}
+            <Text style={{ color: t.label }}> / {String(totalBlocks).padStart(2, "0")}</Text>
+          </Mono>
           <View style={styles.progressActions}>
             {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && !isSprayBlock(currentBlock) && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} label={currentBlock.blockName || "Block"} />
             )}
-            <Pressable onPress={() => setBlockMenu(true)} style={styles.skipBtn} hitSlop={10}>
-              <Ionicons name="ellipsis-horizontal" size={16} color={C.textSecondary} />
-            </Pressable>
-            {onMinimize && (
-              <Pressable onPress={onMinimize} style={styles.minimizeBtn} hitSlop={10}>
-                <Ionicons name="chevron-down" size={18} color={C.textSecondary} />
-              </Pressable>
-            )}
-            <Pressable
-              hitSlop={8}
+            <IconButton icon="ellipsis-horizontal" label="Block options" size={34} onPress={() => setBlockMenu(true)} />
+            {onMinimize && <IconButton icon="chevron-down" label="Minimize workout" size={34} onPress={onMinimize} />}
+            <IconButton
+              icon="close"
+              label="Exit workout"
+              size={34}
               onPress={() => {
                 Alert.alert(
                   "Exit workout",
@@ -352,41 +396,30 @@ export function WorkOutState({
                   ]
                 )
               }}
-            >
-              <Text style={styles.exitButton}>✕</Text>
-            </Pressable>
+            />
           </View>
         </View>
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${((currentBlockIndex + 1) / totalBlocks) * 100}%` },
-            ]}
-          />
-        </View>
+        <ProgressBar progress={(currentBlockIndex + 1) / Math.max(1, totalBlocks)} />
       </View>
       {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
       <View style={styles.blockSwitches}>
         {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && (
           <Pressable
-            style={[styles.coachSwitch, currentBlock.coached && styles.coachSwitchOn]}
-            onPress={() => onSetCoached(currentBlockIndex, !currentBlock.coached)}
+            style={[styles.coachSwitch, coached && styles.coachSwitchOn]}
+            onPress={() => onSetCoached(currentBlockIndex, !coached)}
             hitSlop={6}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: coached }}
           >
-            <Ionicons
-              name={currentBlock.coached ? "person" : "person-outline"}
-              size={13}
-              color={currentBlock.coached ? C.bg : C.textSecondary}
-            />
-            <Text style={[styles.coachSwitchText, currentBlock.coached && { color: C.bg }]}>
-              {currentBlock.coached ? "Coach is here · switch to on my own" : "Coach is here?"}
+            <Ionicons name={coached ? "person" : "person-outline"} size={13} color={coached ? t.onMint : t.ink} />
+            <Text style={[styles.coachSwitchText, coached && { color: t.onMint }]}>
+              {coached ? "Coach is here · switch to on my own" : "Coach is here?"}
             </Text>
           </Pressable>
         )}
         {mainSwap && (
           <Pressable style={styles.coachSwitch} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
-            <Ionicons name="swap-horizontal" size={13} color={C.textSecondary} />
+            <Ionicons name="swap-horizontal" size={13} color={t.ink} />
             <Text style={styles.coachSwitchText}>
               {swapping ? "Switching…" : `Switch to ${mainSwap.to.name}`}
             </Text>
@@ -415,36 +448,7 @@ export function WorkOutState({
           </LastBlockContext.Provider>
         </BlockTimerContext.Provider>
       </BlockEntry>
-      <Modal visible={blockMenu} transparent animationType="fade" onRequestClose={() => setBlockMenu(false)}>
-        <Pressable style={styles.menuBackdrop} onPress={() => setBlockMenu(false)}>
-          <Pressable style={[styles.menuSheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
-            <Text style={styles.menuTitle}>{currentBlock?.blockName || "This block"}</Text>
-            <Pressable
-              style={styles.menuItem}
-              onPress={() => { setBlockMenu(false); leaveAsHomework() }}
-            >
-              <Ionicons name="school-outline" size={22} color={ADAPTATION_COLOR.test} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.menuItemText}>Leave as homework</Text>
-                <Text style={styles.menuItemSub}>Finish it another day</Text>
-              </View>
-            </Pressable>
-            <Pressable
-              style={styles.menuItem}
-              onPress={() => { setBlockMenu(false); skipBlock() }}
-            >
-              <Ionicons name="play-skip-forward" size={22} color={C.red} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuItemText, { color: C.red }]}>Skip block</Text>
-                <Text style={styles.menuItemSub}>{"It won't be saved"}</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.menuCancel} onPress={() => setBlockMenu(false)}>
-              <Text style={styles.menuCancelText}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {blockMenuNode}
     </SafeAreaView>
   )
 }
@@ -461,6 +465,9 @@ const SELF_TIMED_BLOCKS = new Set(["exploration_session", "route_exploration", "
 // auto-advances, so the athlete decides when to move on. Beeps at zero, and
 // notifies when it runs out with the app in the background.
 function BlockCountdown({ minutes, label }: { minutes: number; label: string }) {
+  const C = useC()
+  const t = usePaper()
+  const styles = usePaperStyles(makeStyles)
   const total = Math.max(0, Math.round(minutes * 60))
   const [remaining, setRemaining] = useState(total)
   const [end] = useState(() => Date.now() + total * 1000)
@@ -477,270 +484,75 @@ function BlockCountdown({ minutes, label }: { minutes: number; label: string }) 
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
   return (
-    <View style={[styles.countdownChip, over && styles.countdownChipOver]}>
-      <Ionicons name="time-outline" size={13} color={over ? C.bg : C.green} />
-      <Text style={[styles.countdownText, over && styles.countdownTextOver]}>
+    <View style={[styles.countdownChip, over && { backgroundColor: C.red, borderColor: C.red }]}>
+      <Ionicons name="time-outline" size={13} color={over ? t.onMint : t.mintText} />
+      <Mono color={over ? t.onMint : t.mintText} size={11}>
         {over ? "Time's up" : `${m}:${String(s).padStart(2, "0")}`}
-      </Text>
+      </Mono>
     </View>
   )
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.bg,
+const makeStyles = (t: PaperTheme) => StyleSheet.create({
+  container: { flex: 1 },
+  centeredScreen: { alignItems: "center", padding: space.gutter },
+  pressed: { opacity: 0.7 },
+  topRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: space.gutter, paddingTop: 8, paddingBottom: 4,
   },
-  centeredScreen: {
-    alignItems: "center",
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: C.textPrimary,
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: C.textSecondary,
-    marginBottom: 24,
-  },
-  emptyState: {
-    fontSize: 16,
-    color: C.textMuted,
-    marginTop: 40,
-  },
-  closeButton: {
-    alignSelf: "flex-end",
-    padding: 8,
-    marginBottom: 4,
-  },
-  closeButtonText: {
-    fontSize: 18,
-    color: C.textMuted,
-  },
-  card: {
-    width: "100%",
-    padding: 20,
-    borderRadius: 16,
-    backgroundColor: C.green,
-    marginTop: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: C.bg,
-    marginBottom: 6,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: "rgba(36,35,37,0.55)",
-  },
-  progressBar: {
-    width: "100%",
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  progressText: {
-    fontSize: 13,
-    color: C.textSecondary,
-    textAlign: "center",
-  },
-  progressTrack: {
-    width: "100%",
-    height: 4,
-    backgroundColor: C.border,
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: 4,
-    backgroundColor: C.green,
-    borderRadius: 2,
-  },
-  progressHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
+  progressBar: { width: "100%", paddingHorizontal: space.gutter, marginBottom: 10, gap: 10 },
+  progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  progressActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   countdownChip: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: C.surfaceHigh, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5,
-    borderWidth: 1, borderColor: C.green,
+    flexDirection: "row", alignItems: "center", gap: 5, height: 34,
+    borderRadius: 17, paddingHorizontal: 11, borderWidth: 1.5, borderColor: t.mintDeep,
   },
-  countdownChipOver: { backgroundColor: C.red, borderColor: C.red },
-  countdownText: { fontSize: 13, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
-  countdownTextOver: { color: C.bg },
-  progressActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  blockSwitches: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: 20 },
+  blockSwitches: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: space.gutter },
   coachSwitch: {
     flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
-    marginTop: 8, marginBottom: 2,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
-    borderWidth: 1, borderColor: C.border,
+    marginTop: 4, marginBottom: 2, height: 32,
+    paddingHorizontal: 12, borderRadius: 16,
+    borderWidth: 1.5, borderColor: t.ghostBorder,
   },
-  coachSwitchOn: { backgroundColor: C.green, borderColor: C.green },
-  coachSwitchText: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
-  skipBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: C.surfaceHigh,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    height: 28,
-  },
+  coachSwitchOn: { backgroundColor: t.mint, borderColor: t.mode === "dark" ? t.mint : t.ink },
+  coachSwitchText: { fontFamily: font.bold, fontSize: 12.5, color: t.ink },
   menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
   menuSheet: {
-    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingTop: 20, paddingHorizontal: 16, gap: 8,
+    backgroundColor: t.paper, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card,
+    borderWidth: 1, borderColor: t.cardBorder,
+    paddingTop: 20, paddingHorizontal: space.gutter, gap: 8,
   },
-  menuTitle: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textAlign: "center", marginBottom: 4 },
+  menuTitle: { textAlign: "center", marginBottom: 6 },
   menuItem: {
     flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: C.surfaceHigh, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: t.card, borderWidth: 1, borderColor: t.cardBorder,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12,
   },
-  menuItemText: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
-  menuItemSub: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
-  menuCancel: { alignItems: "center", paddingVertical: 14 },
-  menuCancelText: { fontSize: 16, fontWeight: "600", color: C.textSecondary },
-  minimizeBtn: {
-    backgroundColor: C.surfaceHigh,
-    borderRadius: 14, width: 28, height: 28,
+  menuIcon: {
+    width: 36, height: 36, borderRadius: 18, borderWidth: 1.5,
     alignItems: "center", justifyContent: "center",
-  },
-  minimizeBtnText: {
-    fontSize: 20, fontWeight: "700",
-    color: C.textSecondary, lineHeight: 22, marginTop: -2,
-  },
-  exitButton: {
-    fontSize: 16,
-    color: C.textMuted,
-    padding: 4,
   },
 
   // Summary screen
-  summaryScroll: {
-    flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
-    gap: 16,
-  },
-  summaryCheck: {
-    fontSize: 64,
-    color: C.green,
-    lineHeight: 72,
-  },
-  summaryTitle: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: C.textPrimary,
-    textAlign: "center",
-  },
-  summaryProto: {
-    fontSize: 15,
-    color: C.textSecondary,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  summaryStats: {
-    flexDirection: "row",
-    backgroundColor: C.surface,
-    borderRadius: 18,
-    paddingVertical: 20,
-    width: "100%",
-    marginBottom: 8,
-  },
-  summaryStat: {
-    flex: 1,
-    alignItems: "center",
-    gap: 6,
-  },
-  summaryDivider: {
-    width: 1,
-    backgroundColor: C.border,
-    marginVertical: 4,
-  },
-  summaryStatNum: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: C.green,
-    fontVariant: ["tabular-nums"],
-  },
-  summaryStatLabel: {
-    fontSize: 12,
-    color: C.textSecondary,
-    textAlign: "center",
-    lineHeight: 16,
-  },
-  summaryBlockList: {
-    width: "100%",
-    backgroundColor: C.surface,
-    borderRadius: 18,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  summaryProject: { paddingLeft: 40, paddingRight: 8, paddingBottom: 10 },
+  summaryScroll: { flexGrow: 1, paddingHorizontal: space.gutter, paddingTop: 20, paddingBottom: 40 },
+  summaryStats: { flexDirection: "row", marginTop: 40, paddingVertical: 20 },
+  summaryStat: { flex: 1, alignItems: "center", gap: 6 },
+  summaryDivider: { width: 1, backgroundColor: t.hairline, marginVertical: 4 },
+  summaryStatNum: { fontFamily: font.title, fontSize: 40, color: t.ink, letterSpacing: -0.4, fontVariant: ["tabular-nums"] },
+  summaryRowDivider: { borderTopWidth: 1, borderTopColor: t.hairline },
   summaryBlockRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.border,
-    gap: 12,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: space.cardPad, paddingVertical: 14, gap: 12,
   },
-  summaryBlockIndex: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: C.textMuted,
-    width: 18,
-    textAlign: "center",
+  summaryBlockIndex: { width: 20 },
+  summaryCheck: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: t.mint,
+    borderWidth: 1.5, borderColor: t.mode === "dark" ? t.mint : t.ink,
+    alignItems: "center", justifyContent: "center",
   },
-  summaryBlockName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "500",
-    color: C.textPrimary,
-  },
-  summaryBlockDuration: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: C.textSecondary,
-    fontVariant: ["tabular-nums"],
-    marginRight: 10,
-  },
-  summaryBlockCheck: {
-    fontSize: 14,
-    color: C.green,
-  },
-  summaryBlockHomework: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: ADAPTATION_COLOR.test,
-  },
-  summaryHomeworkNote: {
-    fontSize: 13,
-    color: C.textSecondary,
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  summaryAutoClose: {
-    fontSize: 13,
-    color: C.textMuted,
-    textAlign: "center",
-    fontVariant: ["tabular-nums"],
-  },
+  summaryHomework: { flexDirection: "row", alignItems: "center", gap: 5 },
+  summaryProject: { paddingLeft: 50, paddingRight: 12, paddingBottom: 12 },
+  summaryHomeworkNote: { textAlign: "center", marginTop: 14 },
+  summaryAutoClose: { textAlign: "center", marginTop: 4, lineHeight: 16 },
 })

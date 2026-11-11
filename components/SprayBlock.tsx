@@ -8,7 +8,7 @@ import type { Attempt } from "@/hooks/WorkoutHook"
 import {
   getSessions, getSprayRoutes, getSprayWalls, getUsers, saveSprayRoute, type SessionRow, type SprayRouteRow, type SprayWallRow,
 } from "@/services/BoulderGraphService"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
@@ -16,7 +16,7 @@ import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations
 import {
   routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
@@ -69,6 +69,9 @@ function ModalRoot({ children }: { children: React.ReactNode }) {
 export function SprayBlock({
   block, attempts, workoutAttempts, logAttempt, undoLastAttempt, restTimeRemaining, startRestTimer, goToNextBlock, goToPreviousBlock,
 }: Props) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const shared_styles = useSheet(shared_stylesSheet)
   const { User } = ConsumeAuth()
   const athleteId = User?.$id
   const nextLabel = useNextBlockLabel("Continue")
@@ -252,8 +255,8 @@ export function SprayBlock({
 
   const timeChip = timed && startedAt != null && (
     <View style={[s.chip, secondsLeft <= 60 && s.chipUrgent]}>
-      <Ionicons name="time-outline" size={16} color={secondsLeft <= 60 ? C.bg : C.green} />
-      <Text style={[s.chipText, secondsLeft <= 60 && { color: C.bg }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
+      <Ionicons name="time-outline" size={16} color={secondsLeft <= 60 ? C.onAccent : C.green} />
+      <Text style={[s.chipText, secondsLeft <= 60 && { color: C.onAccent }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
     </View>
   )
   // Attempts blocks: one segment per attempt, green = top, red = fell.
@@ -394,7 +397,7 @@ export function SprayBlock({
   if (phase === "intro") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} />
+        <TopBar title={title} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <StatsCard
             kicker={`${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`}
@@ -553,7 +556,7 @@ export function SprayBlock({
           </View>
           <AnimatedCircularProgress
             size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surface}
+            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
           >
             {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
           </AnimatedCircularProgress>
@@ -563,7 +566,7 @@ export function SprayBlock({
           <Text style={s.restOptionsLabel}>Rest</Text>
           {SPRAY_REST_OPTIONS_S.map((secs) => (
             <Pressable key={secs} style={[s.restChip, restLength === secs && s.restChipOn]} onPress={() => setRest(secs)}>
-              <Text style={[s.restChipText, restLength === secs && { color: C.bg }]}>{secs / 60} min</Text>
+              <Text style={[s.restChipText, restLength === secs && { color: C.onAccent }]}>{secs / 60} min</Text>
             </Pressable>
           ))}
         </View>
@@ -659,6 +662,7 @@ function restLabel(secs: number): string {
 
 /** Big numbers side by side in a card (same look as the cardio screens). */
 function StatsCard({ items, kicker }: { items: { value: string; label: string; color: string }[]; kicker?: string }) {
+  const s = useSheet(sheet)
   return (
     <View style={s.card}>
       {kicker ? <Text style={s.cardKicker}>{kicker}</Text> : null}
@@ -680,6 +684,8 @@ function StatsCard({ items, kicker }: { items: { value: string; label: string; c
 /** One segment per attempt of the target: green = top, red = fell, grey =
  *  still to go. Attempts past the target ("One more attempt") add segments. */
 function AttemptBar({ results, target, label }: { results: boolean[]; target: number; label?: string }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const total = Math.max(target, results.length)
   return (
     <View style={s.barBox}>
@@ -696,7 +702,7 @@ function AttemptBar({ results, target, label }: { results: boolean[]; target: nu
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
   card: { width: "100%", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 18, gap: 14 },
@@ -752,7 +758,7 @@ const s = StyleSheet.create({
   topBtn: { backgroundColor: C.green },
   fellBtn: { backgroundColor: "rgba(219,80,74,0.10)", borderWidth: 2, borderColor: "rgba(219,80,74,0.45)" },
   pressed: { transform: [{ scale: 0.97 }] },
-  topText: { fontSize: 26, fontWeight: "900", color: C.bg },
+  topText: { fontSize: 26, fontWeight: "900", color: C.onAccent },
   fellText: { fontSize: 26, fontWeight: "900", color: C.textPrimary },
   footerRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -778,7 +784,7 @@ const s = StyleSheet.create({
   previewTop: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   previewActions: { flexDirection: "row", gap: 12, padding: 16 },
   previewBtn: { flex: 1, backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
-  previewBtnText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  previewBtnText: { fontSize: 15, fontWeight: "800", color: C.onAccent },
   previewBtnGhost: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border },
   previewBtnGhostText: { fontSize: 15, fontWeight: "800", color: C.textPrimary },
-})
+}))

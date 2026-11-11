@@ -5,7 +5,8 @@ import {
 } from "@/utils/classSchedule"
 import { useClassSchedule } from "@/utils/classScheduleStore"
 import { useFixedAnswer } from "@/utils/fixedScheduleAnswer"
-import { C } from "@/utils/theme"
+import { CardTitle, Mono, usePaper, usePaperStyles } from "@/components/paper"
+import { font, radius, type PaperTheme } from "@/theme/paper/tokens"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { Pressable, StyleSheet, Text, View } from "react-native"
@@ -19,6 +20,8 @@ export function ThisWeekCard() {
   const { role } = useAuth()
   const st = useClassSchedule()
   const answer = useFixedAnswer(st.me)
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   if (role === "coach") return null
 
   const now = new Date()
@@ -47,8 +50,8 @@ export function ThisWeekCard() {
       >
         <View style={s.top}>
           <View style={{ flex: 1 }}>
-            <Text style={s.kicker}>Today · {WEEK_DAYS[today]} {now.getDate()} {MONTHS[now.getMonth()]}</Text>
-            <Text style={s.big}>{todays ? `Class at ${formatTime(todays.cls.start)}` : "Rest day"}</Text>
+            <Mono style={{ marginBottom: 6 }}>Today · {WEEK_DAYS[today]} {now.getDate()} {MONTHS[now.getMonth()]}</Mono>
+            <CardTitle size={30}>{todays ? `Class at ${formatTime(todays.cls.start)}` : "Rest day"}</CardTitle>
             <Text style={s.sub}>
               {todays
                 ? `Until ${formatTime(todays.cls.start + CLASS_HOURS)}`
@@ -56,8 +59,8 @@ export function ThisWeekCard() {
             </Text>
           </View>
           <View style={[s.left, low && s.leftLow]}>
-            <Text style={[s.leftN, low && { color: C.yellow }]}>{st.pkg ? left : "–"}</Text>
-            <Text style={s.leftL}>sessions{"\n"}left</Text>
+            <Text style={[s.leftN, low && { color: t.ink }]}>{st.pkg ? left : "–"}</Text>
+            <Text style={[s.leftL, low && { color: t.label }]}>sessions{"\n"}left</Text>
           </View>
         </View>
         {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."} Talk to your coach to renew your package.</Text>}
@@ -76,7 +79,7 @@ export function ThisWeekCard() {
           <Text style={s.footText}>{st.pkg ? `Use them by ${st.pkg.useBy}` : ""}</Text>
           <View style={s.see}>
             <Text style={s.seeText}>See the week</Text>
-            <Ionicons name="chevron-forward" size={14} color={C.green} />
+            <Ionicons name="chevron-forward" size={14} color={t.mintText} />
           </View>
         </View>
       </Pressable>
@@ -85,46 +88,46 @@ export function ThisWeekCard() {
 }
 
 function Row({ e, today, label }: { e: WeekEntry; today: number; label: string }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   const [word, color] =
-    e.state === "skip" ? ["Not going", C.textMuted]
-    : e.state === "pending" ? ["Waiting for coach", C.yellow]
-    : e.cls.day < today ? ["Done", C.textMuted]
-    : e.cls.day === today ? ["Today", C.green]
-    : e.extra ? ["Extra", C.textSecondary]
-    : ["", C.textSecondary]
+    e.state === "skip" ? ["Not going", t.label]
+    : e.state === "pending" ? ["Waiting for coach", t.ink]
+    : e.cls.day < today ? ["Done", t.label]
+    : e.cls.day === today ? ["Today", t.mintText]
+    : e.extra ? ["Extra", t.textMuted]
+    : ["", t.textMuted]
   const faded = e.state === "skip" || e.cls.day < today
   return (
     <View style={[s.row, faded && { opacity: 0.45 }]}>
-      <Text style={[s.rowDay, e.cls.day === today && { color: C.green }]}>{label}</Text>
+      <Text style={[s.rowDay, e.cls.day === today && { color: t.mintText }]}>{label}</Text>
       <Text style={[s.rowTime, e.state === "skip" && { textDecorationLine: "line-through" }]}>{formatTime(e.cls.start)}</Text>
       <Text style={[s.rowState, { color }]}>{word}</Text>
     </View>
   )
 }
 
-const s = StyleSheet.create({
-  card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, gap: 14 },
+const makeStyles = (t: PaperTheme) => StyleSheet.create({
+  card: { backgroundColor: t.card, borderWidth: 1, borderColor: t.cardBorder, borderRadius: radius.card, padding: 18, gap: 14 },
   top: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 },
-  big: { fontSize: 22, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
-  sub: { fontSize: 13, fontWeight: "600", color: C.textSecondary, marginTop: 2 },
-  left: { alignItems: "center", backgroundColor: "rgba(111,207,151,0.12)", borderRadius: 14, paddingVertical: 8, paddingHorizontal: 12 },
-  leftLow: { backgroundColor: "rgba(254,215,102,0.14)" },
-  leftN: { fontSize: 30, fontWeight: "800", color: C.green, lineHeight: 32, fontVariant: ["tabular-nums"] },
-  leftL: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textAlign: "center", lineHeight: 13 },
+  sub: { fontFamily: font.body, fontSize: 13, color: t.textMuted, marginTop: 4 },
+  left: { alignItems: "center", backgroundColor: t.iconCircle, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12 },
+  leftLow: { backgroundColor: "transparent", borderWidth: 2, borderColor: t.ink },
+  leftN: { fontFamily: font.title, fontSize: 32, color: t.mint, lineHeight: 34 },
+  leftL: { fontFamily: font.mono, fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: t.mode === "dark" ? t.label : "#B9B0C6", textAlign: "center", lineHeight: 12 },
+  lowLine: { fontFamily: font.bold, fontSize: 12, color: t.ink, marginTop: -4 },
+  list: { borderTopWidth: 1, borderTopColor: t.hairline },
+  row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: t.hairline },
+  rowDay: { width: 70, fontFamily: font.mono, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: t.label },
+  rowTime: { flex: 1, fontFamily: font.bodyBold, fontSize: 15, color: t.ink },
+  rowState: { fontFamily: font.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase" },
   setup: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: C.green, borderRadius: 12, paddingVertical: 13,
+    backgroundColor: t.mint, borderRadius: radius.card, paddingVertical: 13,
   },
-  setupText: { fontSize: 15, fontWeight: "800", color: "#10251A" },
-  lowLine: { fontSize: 12, fontWeight: "600", color: C.yellow, marginTop: -4 },
-  list: { borderTopWidth: 1, borderTopColor: C.border },
-  row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  rowDay: { width: 70, fontSize: 15, fontWeight: "600", color: C.textSecondary, fontVariant: ["tabular-nums"] },
-  rowTime: { flex: 1, fontSize: 15, fontWeight: "700", color: C.textPrimary, fontVariant: ["tabular-nums"] },
-  rowState: { fontSize: 13, fontWeight: "600" },
+  setupText: { fontFamily: font.bold, fontSize: 15, color: t.onMint },
   foot: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  footText: { fontSize: 13, color: C.textSecondary },
+  footText: { fontFamily: font.body, fontSize: 13, color: t.textMuted },
   see: { flexDirection: "row", alignItems: "center", gap: 2 },
-  seeText: { fontSize: 13, fontWeight: "700", color: C.green },
+  seeText: { fontFamily: font.bold, fontSize: 13, color: t.mintText },
 })
