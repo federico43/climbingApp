@@ -186,3 +186,28 @@ export function suggestSprayRoutes(
   }
   return [...first, ...rest].slice(0, limit)
 }
+
+// ─── Sequences on the shared wall (coach 2026-11-11) ─────────────────────────
+
+// The spray wall is the gym's: a sequence one athlete adds in a spray block
+// is for everyone doing that kind of block, not only for them. (A sequence's
+// athleteId still says who built it — My sequences, edit / delete.)
+
+// Sequences of `routeType` the athlete hasn't climbed yet, newest first, so
+// one a teammate just added is on the choose screen right away — whatever
+// its level, and even without a flash colour (the suggestions then only
+// list ones already climbed). `exclude`: already listed or picked.
+export function newSprayRoutes(
+  routes: Iterable<{ $id: string; $createdAt?: string; type?: string | null }>,
+  records: Map<string, RouteRecord>,
+  routeType: RouteType,
+  exclude: Iterable<string> = [],
+  limit = 10,
+): string[] {
+  const skip = new Set(exclude)
+  return [...routes]
+    .filter((r) => r.type === routeType && !skip.has(r.$id) && !records.has(r.$id))
+    .sort((a, b) => (b.$createdAt ?? "").localeCompare(a.$createdAt ?? "") || a.$id.localeCompare(b.$id))
+    .slice(0, limit)
+    .map((r) => r.$id)
+}
