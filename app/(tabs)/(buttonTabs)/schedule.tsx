@@ -1,7 +1,8 @@
 import { useAuth } from "@/components/auth-context"
 
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro, IntroButton, useIntroSeen } from "@/components/schedule/FeatureIntro"
+import { IntroButton, useIntroSeen } from "@/components/schedule/FeatureIntro"
+import { SpotlightTour, TourSpot } from "@/components/schedule/SpotlightTour"
 import { UsualSetup } from "@/components/schedule/UsualSetup"
 import { GridBlock, HOUR_HEIGHT, Tone, WeekGrid } from "@/components/schedule/WeekGrid"
 import {
@@ -60,7 +61,7 @@ export default function ScheduleScreen() {
   const setup = editing || (st.status === "ready" && !st.defaults.length && answer === null)
   // Still finding out whether to show it: hold the intro pop-up back meanwhile.
   const deciding = !st.defaults.length && (st.status !== "ready" || answer === undefined)
-  const introSeen = useIntroSeen("class-week-v3")
+  const introSeen = useIntroSeen("class-week-tour")
   const [sheet, setSheet] = useState<{ kind: "class"; id: string } | { kind: "book" } | null>(null)
   // Move mode: the class picked to move to, confirmed with the bottom button.
   const [moveTo, setMoveTo] = useState<string | null>(null)
@@ -244,26 +245,34 @@ export default function ScheduleScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-        {!setup && !deciding && <FeatureIntro
-          id="class-week-v3"
-          pages={[
-            { icon: "add-circle", title: "Tap a class to join", text: "Classes with a green bar on the left have a free spot. Tap one, choose just this week or every week, and you're in." },
-            { icon: "calendar", title: "Can't go? Tap your class", text: "Your classes are solid green. Tap one and choose I can't go: move to another class, propose a time, or skip this week." },
+        <SpotlightTour
+          id="class-week-tour"
+          ready={!setup && !deciding && st.status === "ready"}
+          steps={[
+            { target: "a-header", title: "Your week", text: "It works like a calendar. Use ‹ › to switch between this week and next, and Today to come back." },
+            { target: "a-grid", title: "Tap Open to join", text: "Solid mint classes are yours. A class that says Open has a free spot: tap it, choose just this week or every week, and you're in." },
+            { target: "a-grid", title: "Can't go? Tap your class", text: `Move it to an open class, propose another time, or cancel it. Changes are free until ${CHANGE_DEADLINE_H} h before the class; after that your coach decides.` },
+            { target: "a-top", title: "Your fixed times", text: "The classes you go to every week. Change them here whenever your schedule changes." },
+            { target: "a-fab", title: "Book in one tap", text: "The + lists every open class that fits around yours." },
+            { target: "a-legend", title: "What the colours mean", text: "Mint is yours, dashed means waiting for your coach, hatched means full or blocked." },
+            { target: "a-info", title: "See this again", text: "Tap here any time to replay this tour." },
           ]}
-        />}
+        />
+        <TourSpot name="a-header">
         <CalendarHeader
           title={monthName(dates)}
           onBack={() => router.back()}
           week={nextWeek ? "next" : "this"}
           canNext={!!st.nextWeek}
           onWeek={(w) => { setPick(w); exitMode() }}
-          right={setup ? undefined : <IntroButton id="class-week-v3" />}
+          right={setup ? undefined : <TourSpot name="a-info"><IntroButton id="class-week-tour" /></TourSpot>}
           summary={[
             `${booked} booked`,
             ...(pendingN ? [`${pendingN} pending`] : []),
             st.pkg ? `${st.pkg.left} sessions left` : "No package",
           ].join(" · ")}
         />
+        </TourSpot>
         {setup ? (
           <UsualSetup
             initial={st.defaults}
@@ -275,7 +284,7 @@ export default function ScheduleScreen() {
             onCancel={() => setEditing(false)}
           />
         ) : (<>
-        <View style={s.top}>
+        <TourSpot name="a-top" style={s.top}>
           {st.status !== "ready" ? (
             st.status === "error"
               ? <Pressable onPress={() => refreshClassSchedule()}><Text style={s.note}>Couldn&apos;t load the classes. Tap to try again.</Text></Pressable>
@@ -317,7 +326,8 @@ export default function ScheduleScreen() {
               </Pressable>
             </View>
           )}
-        </View>
+        </TourSpot>
+        <TourSpot name="a-grid" style={{ flex: 1 }}>
         <WeekGrid
           dates={dates}
           today={nextWeek ? -1 : today}
@@ -327,6 +337,7 @@ export default function ScheduleScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        </TourSpot>
         {movingFrom ? (
           <View style={s.moveBar}>
             <View style={s.fromTo}>
@@ -347,16 +358,18 @@ export default function ScheduleScreen() {
             />
           </View>
         ) : (
-          <Legend keys={["mine", "open", "full", "pending", "blocked"]} />
+          <TourSpot name="a-legend"><Legend keys={["mine", "open", "full", "pending", "blocked"]} /></TourSpot>
         )}
         </>)}
       </SafeAreaView>
 
       {/* Book an open class (Google Calendar's "+"). */}
       {!setup && !mode && wk.published && st.status === "ready" && (
-        <Pressable style={s.fab} onPress={() => setSheet({ kind: "book" })} accessibilityLabel="Book an open class">
-          <Ionicons name="add" size={30} color={C.onMint} />
-        </Pressable>
+        <TourSpot name="a-fab" style={s.fab}>
+          <Pressable style={s.fabIn} onPress={() => setSheet({ kind: "book" })} accessibilityLabel="Book an open class">
+            <Ionicons name="add" size={30} color={C.onMint} />
+          </Pressable>
+        </TourSpot>
       )}
       <Sheet visible={sheet?.kind === "book"} title="Book an open class" subtitle="Classes with a free spot that leave a rest day around yours." onClose={() => setSheet(null)}>
         {openToBook.length ? openToBook.map((c) => (
@@ -617,6 +630,7 @@ const s = StyleSheet.create({
     position: "absolute", right: 18, bottom: 84, width: 58, height: 58, borderRadius: 18, backgroundColor: C.green,
     alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
   },
+  fabIn: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
   moveBar: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   fromTo: { flexDirection: "row", alignItems: "center", gap: 8 },
   ft: { flex: 1, borderRadius: 12, borderWidth: 1.5, borderStyle: "dashed", paddingHorizontal: 10, paddingVertical: 6 },

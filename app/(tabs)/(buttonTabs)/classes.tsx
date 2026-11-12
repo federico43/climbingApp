@@ -1,11 +1,12 @@
 
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
+import { IntroButton } from "@/components/schedule/FeatureIntro"
+import { SpotlightTour, TourSpot } from "@/components/schedule/SpotlightTour"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
 import { CalendarHeader, DetailRow, Legend, OpenSpot, PersonRow, longDay, monthName } from "@/components/schedule/CalendarBits"
 import {
-  BlockedTime, CAPACITY, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  BlockedTime, CAPACITY, CHANGE_DEADLINE_H, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
@@ -178,22 +179,26 @@ export default function ClassesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <FeatureIntro
-          id="coach-classes-v2"
-          pages={[
-            { icon: "person-add", title: "Put athletes in classes", text: "Tap a class to see who's in it. Tap Add athlete on a free spot, or the × next to a name to take them out. They get a notification. Athletes can also join a class with a free spot themselves." },
-            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
-            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
-            { icon: "chatbubbles", title: "Answer requests", text: "Classes with requests get a mint req tag: +name on the class they want, −name on the one they leave, and a dashed block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
-            { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
+        <SpotlightTour
+          id="coach-classes-tour"
+          ready={st.status === "ready"}
+          steps={[
+            { target: "c-left", title: "Sessions left", text: "Who's running out, fewest first. The number next to each name on the calendar is that athlete's sessions left." },
+            { target: "c-grid", title: "Put athletes in classes", text: "Tap a class to see who's in it, Add athlete on a free spot, or × to take someone out. Athletes can also join a free spot themselves." },
+            { target: "c-grid", title: "Plan the week", text: `Tap a free time to add a class or block it. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days.` },
+            { target: "c-grid", title: "Repeats every week", text: "In a class, turn on Repeats every week (↻). New weeks start with those classes; you still check each week before publishing." },
+            { target: "c-requests", title: "Answer requests", text: `Moves, proposed times and late cancels (less than ${CHANGE_DEADLINE_H} h before) wait here. Unanswered ones are declined at class time.` },
+            { target: "c-publish", title: "Publish", text: "Athletes see nothing until you publish. They get a notification when you do." },
+            { target: "c-info", title: "See this again", text: "Tap here any time to replay this tour." },
           ]}
         />
+        <TourSpot name="c-header">
         <CalendarHeader
           title={monthName(dates)}
           week={week}
           canNext
           onWeek={(w) => { setWeek(w); setSheet(null) }}
-          right={<><IntroButton id="coach-classes-v2" /><SettingsButton /></>}
+          right={<><TourSpot name="c-info"><IntroButton id="coach-classes-tour" /></TourSpot><SettingsButton /></>}
           summary={[
             `${classes.length} classes`,
             `${classes.reduce((n, c) => n + c.roster.length, 0)}/${classes.length * CAPACITY} spots`,
@@ -201,22 +206,28 @@ export default function ClassesScreen() {
             `${gridRequests.length} requests`,
           ].join(" · ")}
         />
+        </TourSpot>
         <View style={s.top}>
+          <TourSpot name="c-left">
           <Pressable style={s.pkgRow} onPress={() => { setPkgQuery(""); setSheet({ kind: "packages" }) }}>
             <Ionicons name="ticket-outline" size={18} color={C.textSecondary} />
             <Text style={[s.pkgRowText, { flex: 1 }]}>Sessions left</Text>
             {lowCount > 0 && <Text style={s.lowBadge}>{lowCount} running low</Text>}
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
+          </TourSpot>
           {requests.length > 0 && (
+            <TourSpot name="c-requests">
             <Pressable style={s.requests} onPress={() => setSheet({ kind: "requests" })}>
               <Text style={s.requestsText}>
                 {requests.length} request{requests.length > 1 ? "s" : ""} waiting
               </Text>
               <Ionicons name="chevron-forward" size={16} color={C.yellow} />
             </Pressable>
+            </TourSpot>
           )}
         </View>
+        <TourSpot name="c-grid" style={{ flex: 1 }}>
         <WeekGrid
           dates={dates}
           today={week === "this" ? weekdayOf(new Date()) : -1}
@@ -230,9 +241,10 @@ export default function ClassesScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        </TourSpot>
         <Legend keys={["open", "full", "request", "blocked"]} />
         {!live && (
-          <View style={s.footer}>
+          <TourSpot name="c-publish" style={s.footer}>
             {/* Draft until published: athletes see nothing of it. */}
             <View style={[s.draftTag, st.published && s.draftTagOn]}>
               <Text style={[s.draftText, st.published && { color: C.green }]}>
@@ -244,7 +256,7 @@ export default function ClassesScreen() {
               disabled={st.published || st.busy || st.status !== "ready"}
               onPress={publishWeek}
             />
-          </View>
+          </TourSpot>
         )}
       </SafeAreaView>
 
