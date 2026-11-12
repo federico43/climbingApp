@@ -52,6 +52,7 @@ import {
   PLAN_WEEKS,
   planWeek,
   mainTypeFor,
+  effectiveFocus,
   mainTypeLabel,
   MainType,
   PlanKind,
@@ -61,7 +62,7 @@ import {
   WORKOUTS_PER_WEEK,
   workoutSpec,
 } from "@/utils/planRotation"
-import { FOCUS_LABEL } from "@/utils/scProgression"
+import { FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 import {
   buildDurationHistory,
   formatMinutes,
@@ -314,7 +315,7 @@ function PlanBody({
       mainType: spec?.mainType ?? (workout ? builtMainType(n, workout.blocks) : mainTypeFor(n, plan.startType)),
       mainBlock: spec?.mainBlock?.name ?? mainPhase?.title ?? "",
       week: Math.ceil(n / WORKOUTS_PER_WEEK),
-      kicker: spec ? mainTypeLabel(spec.mainType, plan.kind) : `Workout ${n}`,
+      kicker: spec ? mainTypeLabel(spec.mainType, plan.kind, plan.scFocuses) : `Workout ${n}`,
       kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : "transparent",
       title: workout?.name ?? mainPhase?.title ?? `Workout ${n}`,
       when: doneOn
@@ -338,7 +339,7 @@ function PlanBody({
     ? builtMainType(latest!.planIndex ?? 1, latest!.blocks)
     : null
   const focusWord = todayType
-    ? mainTypeLabel(todayType, plan.kind)
+    ? mainTypeLabel(todayType, plan.kind, plan.scFocuses)
     : conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Training"
   const focusEyebrow = todayType ? "Today's focus" : conditioning ? "Your plan" : "This week's focus"
   // Homework rides on the athlete's templates (planPart "homework"); its
@@ -495,6 +496,7 @@ function WorkoutsCard({ slots, doneCount, thisWeek, plan, selected, onSelect }: 
       <TypeColumns
         slots={slots}
         hasSc={plan.hasSc}
+        scFocuses={plan.scFocuses}
         kind={plan.kind}
         startType={plan.startType}
         selected={selected}
@@ -510,6 +512,7 @@ function WorkoutsCard({ slots, doneCount, thisWeek, plan, selected, onSelect }: 
 function TypeColumns({
   slots,
   hasSc,
+  scFocuses,
   kind,
   startType,
   selected,
@@ -517,6 +520,7 @@ function TypeColumns({
 }: {
   slots: Slot[]
   hasSc: boolean
+  scFocuses: Focus[]
   kind: PlanKind
   startType: MainType | null
   selected: number | null
@@ -535,11 +539,11 @@ function TypeColumns({
             <View style={{ flexDirection: "row", gap: 6, minHeight: 28 }}>
               <View style={[s.catDot, { backgroundColor: ADAPTATION_COLOR[type] }]} />
               <Mono color={t.ink} size={9.5} style={{ flex: 1, lineHeight: 13 }} numberOfLines={2}>
-                {mainTypeLabel(type, kind)}
+                {mainTypeLabel(type, kind, scFocuses)}
               </Mono>
             </View>
             {/* Conditioning plans: the title already is the S&C focus. */}
-            {hasSc && kind !== "conditioning" && <Mono size={9} numberOfLines={1}>{FOCUS_LABEL[SC_FOCUS_FOR[type]]}</Mono>}
+            {hasSc && kind !== "conditioning" && <Mono size={9} numberOfLines={1}>{FOCUS_LABEL[effectiveFocus(SC_FOCUS_FOR[type], scFocuses)]}</Mono>}
             <View style={s.dots}>
               {mine.map((x) => {
                 const isDone = x.status === "done"

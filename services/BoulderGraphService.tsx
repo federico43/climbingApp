@@ -2,7 +2,7 @@ import { account, tablesDB, storage, functions } from "@/components/AppWrite"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
-import type { Focus, LevelStep } from "@/utils/scProgression"
+import { FOCUSES, type Focus, type LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
@@ -442,6 +442,9 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // the coach chose for the athlete — empty = the app picks from the whole
 // library; only written once a plan has some, so plans save before the
 // column exists (scripts/plan-mobility/create-column.mjs).
+// scFocuses (string, JSON Focus[], optional): the S&C focuses the coach left
+// on (coach 2026-11-12); empty = all three. Only written when some are off
+// (or were), like mobilityIds (scripts/sc-focuses/create-column.mjs).
 
 export interface TrainingPlanRow {
   $id: string
@@ -457,6 +460,7 @@ export interface TrainingPlanRow {
   hasMobility: boolean
   scPatterns: ScPattern[]
   mobilityIds: string[]       // coach-chosen mobility exercises; empty = app picks
+  scFocuses: Focus[]          // S&C focuses on; empty = all three
   startType: MainType | null  // null = strength (the default cycle)
   pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
@@ -481,6 +485,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
     mobilityIds: parseJsonArray(row.mobilityIds).filter((id): id is string => typeof id === "string"),
+    scFocuses: parseJsonArray(row.scFocuses).filter((f): f is Focus => (FOCUSES as string[]).includes(f)),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
     pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
@@ -524,6 +529,7 @@ export interface TrainingPlanInput {
   hasMobility: boolean
   scPatterns: ScPattern[]
   mobilityIds?: string[]
+  scFocuses?: Focus[]
   startType?: MainType | null
 }
 
@@ -549,6 +555,14 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (ids.length > 0 || previous?.mobilityIds.length) data.mobilityIds = JSON.stringify(ids)
     else delete data.mobilityIds
   }
+  if ("scFocuses" in input) {
+    // All three on = the default: stored as nothing, so the column is only
+    // needed once the coach turns one off.
+    const on = FOCUSES.filter((f) => (input.scFocuses ?? []).includes(f))
+    const all = on.length === 0 || on.length === FOCUSES.length
+    if (!all || previous?.scFocuses.length) data.scFocuses = JSON.stringify(all ? [] : on)
+    else delete data.scFocuses
+  }
   return data
 }
 
@@ -563,6 +577,9 @@ function planWriteError(e: unknown): unknown {
   }
   if (/focus/i.test(String((e as any)?.message ?? "")) && /required/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans.focus must be optional for conditioning-only plans.')
+  }
+  if (/Unknown attribute:?\s*"?scFocuses/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/sc-focuses/create-column.mjs --apply: training_plans needs the "scFocuses" column to turn S&C focuses off.')
   }
   if (/Unknown attribute:?\s*"?mobilityIds/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "mobilityIds" to the training_plans table in Appwrite (scripts/plan-mobility/create-column.mjs) to choose the mobility exercises.')
