@@ -13,8 +13,9 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
+import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import {
-  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
+  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
@@ -388,7 +389,7 @@ export function SprayBlock({
                 </Pressable>
                 <View style={{ flex: 1 }}>
                   <Text style={s.routeName} numberOfLines={1}>{previewRow.name}</Text>
-                  {previewRow.level != null && <Text style={s.meta}>Level {previewRow.level}</Text>}
+                  <LevelColour level={previewRow.level} />
                 </View>
               </View>
               <View style={{ flex: 1 }}>
@@ -465,7 +466,7 @@ export function SprayBlock({
             {walls ? <Text style={s.addBtnText}>+ Add a new sequence</Text> : <ActivityIndicator color={C.green} />}
           </Pressable>
           <View style={s.sectionHead}>
-            <Text style={[s.sectionLabel, { flex: 1 }]}>Suggested{targetLevel != null ? ` · around level ${targetLevel}` : ""}</Text>
+            <Text style={[s.sectionLabel, { flex: 1 }]}>Suggested{targetLevel != null && sequenceLevelColour(targetLevel) ? ` · around ${colourLabel(sequenceLevelColour(targetLevel)).toLowerCase()}` : ""}</Text>
             <Pressable onPress={reload} disabled={reloading} hitSlop={10} style={s.reloadBtn} accessibilityLabel="Reload sequences">
               {reloading ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={16} color={C.green} />}
               <Text style={s.reloadText}>Reload</Text>
@@ -493,7 +494,7 @@ export function SprayBlock({
                         <Text style={s.coachTagText}>Set by your coach</Text>
                       </View>
                     )}
-                    {row?.level != null && <Text style={s.meta}>Level {row.level}</Text>}
+                    <LevelColour level={row?.level} />
                   </View>
                 </View>
                 {r.tries === 0 ? <Text style={s.rowRecord}>Not tried yet</Text> : (
@@ -509,12 +510,15 @@ export function SprayBlock({
           {fresh.map((id) => {
             const row = routes?.get(id)
             const mine = !!row?.athleteId && row.athleteId === athleteId
-            const meta = [row?.level != null && `Level ${row.level}`, addedLabel(row?.$createdAt), mine && "by you"].filter(Boolean).join(" · ")
+            const meta = [addedLabel(row?.$createdAt), mine && "by you"].filter(Boolean).join(" · ")
             return (
               <Pressable key={id} style={s.row} onPress={() => setPreview(id)}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.rowName} numberOfLines={1}>{row?.name ?? "Sequence"}</Text>
-                  {!!meta && <Text style={s.meta}>{meta}</Text>}
+                  <View style={s.rowMeta}>
+                    <LevelColour level={row?.level} />
+                    {!!meta && <Text style={s.meta}>{meta}</Text>}
+                  </View>
                 </View>
                 <Text style={s.rowRecord}>New</Text>
                 <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
@@ -750,6 +754,21 @@ function AttemptBar({ results, target, label }: { results: boolean[]; target: nu
   )
 }
 
+// A sequence's level as the gym's colour (dot + name), not the 1–8 number
+// (coach 2026-11-12). Nothing for a sequence with no level.
+function LevelColour({ level }: { level: number | null | undefined }) {
+  const s = useSheet(sheet)
+  const colour = sequenceLevelColour(level)
+  const opt = BoulderLevelOptions.find((o) => o.value === colour)
+  if (!opt) return null
+  return (
+    <View style={s.levelPill}>
+      <View style={[s.levelDot, { backgroundColor: opt.color }]} />
+      <Text style={s.meta}>{opt.label}</Text>
+    </View>
+  )
+}
+
 const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
@@ -784,6 +803,8 @@ const sheet = paperSheet((C) => StyleSheet.create({
   addBtnText: { fontSize: 16, fontWeight: "800", color: C.green },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   reloadBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4, paddingHorizontal: 8 },
+  levelPill: { flexDirection: "row", alignItems: "center", gap: 5 },
+  levelDot: { width: 10, height: 10, borderRadius: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(0,0,0,0.25)" },
   reloadText: { fontSize: 13, fontWeight: "700", color: C.green },
   sectionLabel: { fontSize: 12, fontWeight: "800", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.8 },
   empty: { fontSize: 14, color: C.textMuted, lineHeight: 20 },

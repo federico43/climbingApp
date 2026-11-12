@@ -9,6 +9,7 @@ import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
+import { unknownColumn } from "@/utils/appwriteErrors"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -1348,33 +1349,39 @@ export async function getMySprayRoutes(athleteId: string): Promise<SprayRouteRow
 
 export async function saveSprayRoute(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras): Promise<SprayRouteRow> {
   const data = buildRouteData(name, holds, wallId, extras)
-  try {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data,
-    })
-    return response as unknown as SprayRouteRow
-  } catch (e) {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data: coreRouteData(data),
-    })
-    return response as unknown as SprayRouteRow
-  }
+  return writeRoute((d) => tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data: d,
+  }), data)
 }
 
 export async function updateSprayRoute(id: string, name: string, holds: any[], extras?: SprayRouteExtras): Promise<SprayRouteRow> {
   const data = buildRouteData(name, holds, undefined, extras)
-  try {
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data,
-    })
-    return response as unknown as SprayRouteRow
-  } catch (e) {
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data: coreRouteData(data),
-    })
-    return response as unknown as SprayRouteRow
-  }
+  return writeRoute((d) => tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data: d,
+  }), data)
 }
+
+// The route table may be missing an optional column (athleteId, variations…).
+// Drop only the column Appwrite names as unknown and retry, so the tag and the
+// level still save (dropping everything but name/holds left new sequences with
+// no tag, which the builder then showed as "Base"). Last resort: core fields.
+async function writeRoute(write: (data: any) => Promise<unknown>, data: any): Promise<SprayRouteRow> {
+  let current = { ...data }
+  for (let i = 0; i < 5; i++) {
+    try {
+      return (await write(current)) as SprayRouteRow
+    } catch (e: any) {
+      const key = unknownColumn(e?.message)
+      if (!key || !(key in current) || key === "name" || key === "holds") break
+      console.warn(`spray_routes: column "${key}" missing, saving without it`)
+      const { [key]: _drop, ...rest } = current
+      current = rest
+    }
+  }
+  console.warn("spray_routes: saving with core fields only (type and level lost)")
+  return (await write(coreRouteData(current))) as SprayRouteRow
+}
+
 
 export async function deleteSprayRoute(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id })
