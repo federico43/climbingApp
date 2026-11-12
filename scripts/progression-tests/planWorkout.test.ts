@@ -6,7 +6,7 @@
 import assert from "node:assert/strict"
 import {
   alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, scPatternMax, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
-  mainBlockRun,
+  mainBlockRun, effectiveFocus, noPowerFocusFor,
 } from "@/utils/planRotation"
 import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
@@ -499,5 +499,28 @@ for (const sessions of [[], onArcher, [pushSession("s1", "2026-10-01T10:00:00Z",
   const suggested = planFromHistory(prescribed, sessions as any, ladderLib, "kg").next?.level?.exerciseId
   assert.ok(!suggested || suggested === prescribed.exerciseId, `workout suggests ${suggested}, plan says ${prescribed.exerciseId}`)
 }
+
+// ── S&C focus toggles (coach 2026-11-12, option A) ──
+assert.equal(effectiveFocus("hypertrophy", null), "hypertrophy")
+assert.equal(effectiveFocus("hypertrophy", []), "hypertrophy")
+assert.equal(effectiveFocus("hypertrophy", ["max_force", "explosiveness"]), "max_force")
+assert.equal(effectiveFocus("hypertrophy", ["explosiveness"]), "explosiveness")
+assert.equal(effectiveFocus("max_force", ["hypertrophy", "explosiveness"]), "hypertrophy")
+assert.equal(effectiveFocus("max_force", ["explosiveness"]), "explosiveness")
+assert.equal(effectiveFocus("explosiveness", ["max_force", "hypertrophy"]), "max_force")
+assert.equal(effectiveFocus("explosiveness", ["hypertrophy"]), "hypertrophy")
+// workoutSpec uses it; old plans (no scFocuses) unchanged
+const noPower = { ...plan, scFocuses: ["max_force", "hypertrophy"] } as PlanShape
+const focusTypes = [1, 2, 3].map((i) => workoutSpec(plan, i, [], start).scFocus)
+assert.ok(focusTypes.includes("explosiveness"))
+assert.ok(![1, 2, 3].map((i) => workoutSpec(noPower, i, [], start).scFocus).includes("explosiveness"))
+const onlyHyp = { ...plan, scFocuses: ["hypertrophy"] } as PlanShape
+assert.deepEqual([1, 2, 3].map((i) => workoutSpec(onlyHyp, i, [], start).scFocus), ["hypertrophy", "hypertrophy", "hypertrophy"])
+// core / balance / joints: cycle only between the ones on; only explosiveness on → max force
+assert.deepEqual([1, 3, 5, 7].map((i) => noPowerFocusFor(i)), ["max_force", "hypertrophy", "max_force", "hypertrophy"])
+assert.deepEqual([1, 3, 5].map((i) => noPowerFocusFor(i, ["hypertrophy", "explosiveness"])), ["hypertrophy", "hypertrophy", "hypertrophy"])
+assert.deepEqual([1, 3].map((i) => noPowerFocusFor(i, ["explosiveness"])), ["max_force", "max_force"])
+// conditioning plan label follows the effective focus
+assert.equal(mainTypeLabel("power", "conditioning", ["max_force", "hypertrophy"]), "Max force")
 
 console.log("all plan-workout tests passed")

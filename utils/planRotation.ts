@@ -71,6 +71,9 @@ export interface PlanShape {
   // Mobility exercises the coach chose; missing / empty = the app picks from
   // the whole library.
   mobilityIds?: string[]
+  // S&C focuses the coach left on (coach 2026-11-12); missing / empty = all
+  // three. A workout whose focus is off uses the next one on (effectiveFocus).
+  scFocuses?: Focus[] | null
   scPatterns: ScPattern[]
   // Main type of workout 1; the cycle carries on from it. Missing / null =
   // strength, so plans made before it existed keep their rotation.
@@ -162,8 +165,8 @@ export const SC_FOCUS_FOR: Record<MainType, Focus> = {
 // How a workout's type reads to people: the climbing type, or on a
 // conditioning plan the S&C focus it sets (Max force / Hypertrophy /
 // Explosiveness).
-export function mainTypeLabel(mainType: MainType, kind?: PlanKind | null): string {
-  return kind === "conditioning" ? FOCUS_LABEL[SC_FOCUS_FOR[mainType]] : PLAN_FOCUS_LABEL[mainType]
+export function mainTypeLabel(mainType: MainType, kind?: PlanKind | null, scFocuses?: Focus[] | null): string {
+  return kind === "conditioning" ? FOCUS_LABEL[effectiveFocus(SC_FOCUS_FOR[mainType], scFocuses)] : PLAN_FOCUS_LABEL[mainType]
 }
 
 // Core and the joint patterns never train explosiveness (coach 2026-10-21,
@@ -173,8 +176,28 @@ export function mainTypeLabel(mainType: MainType, kind?: PlanKind | null): strin
 // hypertrophy → max force … on its own.
 export const NO_POWER_FOCUS_CYCLE: Focus[] = ["max_force", "hypertrophy"]
 
-export function noPowerFocusFor(index: number): Focus {
-  return NO_POWER_FOCUS_CYCLE[Math.floor((index - 1) / WORKOUTS_PER_WEEK) % NO_POWER_FOCUS_CYCLE.length]
+// `enabled`: the plan's S&C focuses on (scFocuses); the cycle keeps only
+// those. If neither max force nor hypertrophy is on (only explosiveness),
+// these patterns stay on max force — they never train explosiveness.
+export function noPowerFocusFor(index: number, enabled?: Focus[] | null): Focus {
+  const on = enabled && enabled.length ? NO_POWER_FOCUS_CYCLE.filter((f) => enabled.includes(f)) : NO_POWER_FOCUS_CYCLE
+  const cycle = on.length ? on : ["max_force" as Focus]
+  return cycle[Math.floor((index - 1) / WORKOUTS_PER_WEEK) % cycle.length]
+}
+
+// When the coach turns a focus off, its workouts use the next one that's on
+// (coach 2026-11-12, option A): Hypertrophy → Max force → Explosiveness,
+// Max force → Hypertrophy → Explosiveness, Explosiveness → Max force →
+// Hypertrophy. Missing / empty `enabled` = all on.
+const FOCUS_FALLBACK: Record<Focus, Focus[]> = {
+  hypertrophy: ["max_force", "explosiveness"],
+  max_force: ["hypertrophy", "explosiveness"],
+  explosiveness: ["max_force", "hypertrophy"],
+}
+
+export function effectiveFocus(planned: Focus, enabled?: Focus[] | null): Focus {
+  if (!enabled || enabled.length === 0 || enabled.includes(planned)) return planned
+  return FOCUS_FALLBACK[planned].find((f) => enabled.includes(f)) ?? planned
 }
 
 // Core's name for the same cycle.
@@ -339,7 +362,7 @@ export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWork
       mainType,
       mainBlock: null,
       warmup: "none",
-      scFocus: SC_FOCUS_FOR[mainType],
+      scFocus: effectiveFocus(SC_FOCUS_FOR[mainType], plan.scFocuses),
       exerciseSlot: ((index - 1) % WORKOUTS_PER_WEEK) as 0 | 1,
       withTest: false,
     }
@@ -357,7 +380,7 @@ export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWork
     mainType,
     mainBlock: mainBlockFor(index, built, plan.startType),
     warmup: warmupFor(plan, index, built, today),
-    scFocus: plan.hasSc ? SC_FOCUS_FOR[mainType] : null,
+    scFocus: plan.hasSc ? effectiveFocus(SC_FOCUS_FOR[mainType], plan.scFocuses) : null,
     exerciseSlot: ((index - 1) % WORKOUTS_PER_WEEK) as 0 | 1,
     withTest,
   }
