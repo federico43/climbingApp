@@ -3,6 +3,7 @@ import { markIntroSeen, onIntroReplay } from "@/components/schedule/FeatureIntro
 import { usePopupTurn } from "@/utils/popupTurn"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useCallback, useEffect, useRef, useState } from "react"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Modal, Pressable, StyleProp, StyleSheet, Text, useWindowDimensions, View, ViewStyle } from "react-native"
 
 // First-run guided tour (Claude Design spec §4.6): everything dims except
@@ -48,6 +49,10 @@ export function SpotlightTour({ id, steps, ready = true }: { id: string; steps: 
   const [i, setI] = useState(0)
   const [box, setBox] = useState<Box | null>(null)
   const { width: W, height: H } = useWindowDimensions()
+  // Nothing in the tour may sit under the iOS status bar / notch or home bar.
+  const insets = useSafeAreaInsets()
+  const minY = insets.top + 4
+  const maxY = H - insets.bottom - 4
 
   useEffect(() => {
     AsyncStorage.getItem(KEY(id)).then((v) => { if (v !== "1") setWant(true) }).catch(() => {})
@@ -79,15 +84,16 @@ export function SpotlightTour({ id, steps, ready = true }: { id: string; steps: 
   const last = !steps.slice(i + 1).length
 
   // The hole, a little larger than the part it shows.
-  const hole = box && { x: Math.max(0, box.x - PAD), y: Math.max(0, box.y - PAD), w: Math.min(W, box.w + PAD * 2), h: box.h + PAD * 2 }
+  const holeY = box ? Math.max(minY, box.y - PAD) : 0
+  const hole = box && { x: Math.max(0, box.x - PAD), y: holeY, w: Math.min(W, box.w + PAD * 2), h: Math.min(maxY, box.y + box.h + PAD) - holeY }
   const cardW = Math.min(380, W - 32)
-  const below = hole ? H - (hole.y + hole.h) : 0
-  const above = hole ? hole.y : 0
+  const below = hole ? maxY - (hole.y + hole.h) : 0
+  const above = hole ? hole.y - minY : 0
   // Next to the hole where there's room, else over its lower part.
-  const cardPos: ViewStyle = !hole ? { top: H / 3 }
+  const cardPos: ViewStyle = !hole ? { top: Math.max(minY, H / 3) }
     : below >= 210 ? { top: hole.y + hole.h + 12 }
     : above >= 210 ? { bottom: H - hole.y + 12 }
-    : { bottom: 32 }
+    : { bottom: insets.bottom + 32 }
   const cardLeft = hole ? Math.max(16, Math.min(W - cardW - 16, hole.x + hole.w / 2 - cardW / 2)) : (W - cardW) / 2
 
   return (
