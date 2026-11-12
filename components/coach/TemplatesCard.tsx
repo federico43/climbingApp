@@ -14,7 +14,7 @@ import {
 } from "@/services/BoulderGraphService"
 import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
 import { Ionicons } from "@expo/vector-icons"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
 // Number of blocks in a protocol's serialized blocks JSON.
@@ -39,6 +39,9 @@ function blockPreviews(p: ProtocolRow): { name: string; timeLimit?: number }[] {
     }))
   } catch { return [] }
 }
+
+// How many templates the card lists before "Show all".
+const TEMPLATES_SHOWN = 6
 
 // The athlete's coach-assigned templates: Test / Edit / ⋮ (show on Home,
 // copy, delete) and + Add. The one the athlete sees on Home is tagged. Block chips only when there's room (`wide`).
@@ -146,6 +149,15 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
 
   const others = roster.filter((a) => a.$id !== athlete.$id)
 
+  // Newest first, only the latest few unless the coach opens the rest
+  // (coach 2026-11-12).
+  const [showAll, setShowAll] = useState(false)
+  const newestFirst = useMemo(
+    () => [...templates].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)),
+    [templates],
+  )
+  const shown = showAll ? newestFirst : newestFirst.slice(0, TEMPLATES_SHOWN)
+
   return (
     <View style={card.card}>
       <View style={card.headerRow}>
@@ -160,7 +172,7 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
         <ActivityIndicator color={C.green} />
       ) : templates.length === 0 ? (
         <Text style={card.empty}>No templates yet — add one to get started.</Text>
-      ) : templates.map((p) => (
+      ) : shown.map((p) => (
         <View key={p.$id} style={styles.row}>
           <View style={styles.rowTop}>
             <View style={{ flex: 1 }}>
@@ -198,6 +210,11 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
           )}
         </View>
       ))}
+      {!loading && templates.length > TEMPLATES_SHOWN && (
+        <Pressable onPress={() => setShowAll((v) => !v)} hitSlop={6} style={styles.showAll}>
+          <Text style={styles.showAllText}>{showAll ? "Show fewer" : `Show all ${templates.length}`}</Text>
+        </Pressable>
+      )}
 
       <Modal visible={building} transparent animationType="fade" onRequestClose={() => setBuilding(false)}>
         <AthleteWorkoutBuilder
@@ -252,6 +269,8 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
 }
 
 const styles = StyleSheet.create({
+  showAll: { alignSelf: "center", paddingVertical: 8 },
+  showAllText: { fontSize: 13, fontWeight: "700", color: C.green },
   row: { gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
   rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { fontSize: 14.5, fontWeight: "700", color: C.textPrimary },
