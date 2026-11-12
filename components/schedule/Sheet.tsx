@@ -1,7 +1,7 @@
-import { K as C, KF } from "@/components/schedule/calTheme"
+import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
 import React from "react"
 import { Ionicons } from "@expo/vector-icons"
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 // Bottom sheet for the class screens. Hidden when `visible` is false.
@@ -23,11 +23,15 @@ export function Sheet({
   children?: React.ReactNode
 }) {
   const insets = useSafeAreaInsets()
+  // Big screens: a panel on the right, so the calendar stays in view.
+  const wide = useWindowDimensions().width >= WIDE
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={s.scrim} onPress={onClose} />
-      <View style={[s.sheet, { paddingBottom: 20 + insets.bottom }]}>
-        <View style={s.grab} />
+    <Modal visible={visible} animationType={wide ? "fade" : "slide"} transparent onRequestClose={onClose}>
+      <Pressable style={[s.scrim, wide && s.scrimWide]} onPress={onClose} />
+      <View style={wide
+        ? [s.sheet, s.side, { paddingTop: 20 + insets.top, paddingBottom: 20 + insets.bottom }]
+        : [s.sheet, { paddingBottom: 20 + insets.bottom }]}>
+        {!wide && <View style={s.grab} />}
         {eyebrow ? <Text style={s.eyebrow}>{eyebrow.toUpperCase()}</Text> : null}
         {poster ? <Text style={s.poster}>{poster}</Text> : null}
         <View style={s.head}>
@@ -106,6 +110,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 10, gap: 12, maxHeight: "85%",
   },
   head: { flexDirection: "row", alignItems: "center", gap: 12 },
+  scrimWide: { backgroundColor: "rgba(0,0,0,0.3)" },
+  side: {
+    position: "absolute", right: 0, top: 0, bottom: 0, width: 420, maxHeight: "100%",
+    borderTopRightRadius: 0, borderBottomLeftRadius: 28, borderLeftWidth: 1, borderLeftColor: C.border,
+  },
   grab: { width: 40, height: 4, borderRadius: 2, backgroundColor: C.surfaceHigh, alignSelf: "center", marginBottom: 4 },
   title: { fontFamily: KF.title, fontSize: 22, color: C.textPrimary, letterSpacing: -0.2 },
   titleSmall: { fontFamily: KF.bodyBold, fontSize: 15, color: C.textSecondary },

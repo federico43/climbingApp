@@ -13,11 +13,11 @@ import {
   addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
-import { K as C, KF } from "@/components/schedule/calTheme"
+import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native"
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const PROBLEM: Record<PlanProblem, string> = {
@@ -152,6 +152,7 @@ export default function ClassesScreen() {
     if (p.locked) return p.left <= 0 ? "No sessions left" : `Expired ${p.useBy}`
     return `${p.left} of ${p.total} left · use by ${p.useBy}`
   }
+  const wide = useWindowDimensions().width >= WIDE
   const leftLow = (id?: string) => { const p = leftOf(id); return !!p && (p.locked || p.left <= LOW_SESSIONS) }
   const lowCount = st.athletes.filter((a) => leftLow(a.id)).length
   // Recurring series (pre-fill): is this time in it, and its other days ("Wed").
@@ -160,6 +161,60 @@ export default function ClassesScreen() {
     st.series.filter((x) => x.start === c.start && x.day !== c.day).sort((a, b) => a.day - b.day).map((x) => WEEK_DAYS[x.day]).join(" & ")
   const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
   const [athleteQuery, setAthleteQuery] = useState("")
+
+  const openPackage = (athleteId: string) => {
+    if (!sheet) return setSheet({ kind: "package", athleteId })
+    setSheet(null)
+    // iOS won't present a sheet while the previous one is still closing.
+    setTimeout(() => setSheet({ kind: "package", athleteId }), 400)
+  }
+  // Searchable list of every athlete's sessions left (sheet, or side panel).
+  const packagesList = (
+      <>
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={pkgQuery}
+            onChangeText={setPkgQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {st.athletes
+          .filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase()))
+          // Fewest sessions left first; athletes with no package last.
+          .sort((x, y) => (leftOf(x.id)?.left ?? 999) - (leftOf(y.id)?.left ?? 999) || x.name.localeCompare(y.name))
+          .map((a) => {
+          const p = leftOf(a.id)
+          const low = leftLow(a.id)
+          return (
+            <View key={a.id} style={s.req}>
+              <View style={[s.leftBox, low && s.leftBoxLow]}>
+                <Text style={[s.leftN, low && { color: C.red }]}>{p ? p.left : "–"}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>{a.name}</Text>
+                <Text style={[s.reqText, low && { color: C.red }]}>{leftText(a.id)}</Text>
+              </View>
+              <Pressable
+                style={[s.reqBtn, s.reqNo]}
+                onPress={() => openPackage(a.id)}
+              >
+                <Text style={s.reqNoText}>Add package</Text>
+              </Pressable>
+            </View>
+          )
+        })}
+        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
+        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
+          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
+        )}
+      </>
+  )
 
   const requestRow = (r: ClassRequest) => (
     <View key={r.key} style={s.req}>
@@ -207,7 +262,7 @@ export default function ClassesScreen() {
           ].join(" · ")}
         />
         </TourSpot>
-        <View style={s.top}>
+        {!wide && <View style={s.top}>
           <TourSpot name="c-left">
           <Pressable style={s.pkgRow} onPress={() => { setPkgQuery(""); setSheet({ kind: "packages" }) }}>
             <Ionicons name="ticket-outline" size={18} color={C.textSecondary} />
@@ -226,7 +281,9 @@ export default function ClassesScreen() {
             </Pressable>
             </TourSpot>
           )}
-        </View>
+        </View>}
+        <View style={{ flex: 1, flexDirection: "row" }}>
+        <View style={{ flex: 1 }}>
         <TourSpot name="c-grid" style={{ flex: 1 }}>
         <WeekGrid
           dates={dates}
@@ -258,6 +315,23 @@ export default function ClassesScreen() {
             />
           </TourSpot>
         )}
+        </View>
+        {wide && (
+          // Big screen: requests and sessions left stay open beside the week.
+          <ScrollView style={s.side} contentContainerStyle={{ gap: 12, padding: 16 }} keyboardShouldPersistTaps="handled">
+            {requests.length > 0 && (
+              <TourSpot name="c-requests" style={{ gap: 10 }}>
+                <Text style={s.sideTitle}>REQUESTS · {requests.length}</Text>
+                {requests.map(requestRow)}
+              </TourSpot>
+            )}
+            <TourSpot name="c-left" style={{ gap: 10 }}>
+              <Text style={s.sideTitle}>SESSIONS LEFT{lowCount > 0 ? ` · ${lowCount} LOW` : ""}</Text>
+            </TourSpot>
+            {packagesList}
+          </ScrollView>
+        )}
+        </View>
       </SafeAreaView>
 
       <Sheet
@@ -465,52 +539,7 @@ export default function ClassesScreen() {
         subtitle="Fewest first. Add a package to renew."
         onClose={() => setSheet(null)}
       >
-        <View style={s.search}>
-          <Ionicons name="search" size={16} color={C.textMuted} />
-          <TextInput
-            value={pkgQuery}
-            onChangeText={setPkgQuery}
-            placeholder="Search athletes"
-            placeholderTextColor={C.textMuted}
-            style={s.searchInput}
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
-        </View>
-        {st.athletes
-          .filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase()))
-          // Fewest sessions left first; athletes with no package last.
-          .sort((x, y) => (leftOf(x.id)?.left ?? 999) - (leftOf(y.id)?.left ?? 999) || x.name.localeCompare(y.name))
-          .map((a) => {
-          const p = leftOf(a.id)
-          const low = leftLow(a.id)
-          return (
-            <View key={a.id} style={s.req}>
-              <View style={[s.leftBox, low && s.leftBoxLow]}>
-                <Text style={[s.leftN, low && { color: C.red }]}>{p ? p.left : "–"}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.reqWho}>{a.name}</Text>
-                <Text style={[s.reqText, low && { color: C.red }]}>{leftText(a.id)}</Text>
-              </View>
-              <Pressable
-                style={[s.reqBtn, s.reqNo]}
-                onPress={() => {
-                  setSheet(null)
-                  // iOS won't present a sheet while the previous one is still closing.
-                  setTimeout(() => setSheet({ kind: "package", athleteId: a.id }), 400)
-                }}
-              >
-                <Text style={s.reqNoText}>Add package</Text>
-              </Pressable>
-            </View>
-          )
-        })}
-        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
-        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
-          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
-        )}
+        {packagesList}
       </Sheet>
 
       <Sheet
@@ -599,6 +628,8 @@ const s = StyleSheet.create({
   draftTag: { alignSelf: "center", borderWidth: 1, borderStyle: "dashed", borderColor: C.textMuted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
   draftTagOn: { borderStyle: "solid", borderColor: C.green },
   draftText: { fontFamily: KF.mono, fontSize: 10, color: C.label },
+  side: { width: 360, flexGrow: 0, borderLeftWidth: 1, borderLeftColor: C.border },
+  sideTitle: { fontFamily: KF.mono, fontSize: 11, color: C.label, letterSpacing: 0.8 },
   footer: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },

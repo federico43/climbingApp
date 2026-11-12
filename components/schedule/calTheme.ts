@@ -26,3 +26,7 @@ export const K = {
 } as const
 
 export const KF = font
+
+// iPad landscape and the web build: calendar plus a side panel, and sheets
+// open as a panel on the right instead of from the bottom.
+export const WIDE = 1000

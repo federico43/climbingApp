@@ -16,11 +16,11 @@ import {
 import { cancelExtra, changeClass, joinClass, refreshClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
 import { setFixedAnswer, useFixedAnswer } from "@/utils/fixedScheduleAnswer"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { K as C, KF } from "@/components/schedule/calTheme"
+import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 // Why a proposed time doesn't work: the whole 2h 30m class has to fit.
@@ -241,6 +241,9 @@ export default function ScheduleScreen() {
   const pendingN = week.filter((e) => e.state === "pending").length
   const usualText = st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(" · ")
   const openCount = openToBook.length
+  const wide = useWindowDimensions().width >= WIDE
+  const mineList = week.filter((e) => e.state === "on" || e.state === "pending").sort((a, b) => a.cls.day - b.cls.day || a.cls.start - b.cls.start)
+  const when = (c: { day: number; start: number }) => `${longDay(dates, c.day)} · ${formatTime(c.start)} – ${formatTime(c.start + CLASS_HOURS)}`
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -327,6 +330,8 @@ export default function ScheduleScreen() {
             </View>
           )}
         </TourSpot>
+        <View style={{ flex: 1, flexDirection: "row" }}>
+        <View style={{ flex: 1 }}>
         <TourSpot name="a-grid" style={{ flex: 1 }}>
         <WeekGrid
           dates={dates}
@@ -360,11 +365,36 @@ export default function ScheduleScreen() {
         ) : (
           <TourSpot name="a-legend"><Legend keys={["mine", "open", "full", "pending", "blocked"]} /></TourSpot>
         )}
+        </View>
+        {wide && wk.published && st.status === "ready" && !mode && (
+          // Big screen: your classes and the open ones stay beside the week.
+          <ScrollView style={s.side} contentContainerStyle={{ gap: 10, padding: 16 }}>
+            <Text style={s.sideTitle}>YOUR CLASSES · {mineList.length}</Text>
+            {mineList.length ? mineList.map((e) => (
+              <SheetOption
+                key={e.cls.id}
+                title={when(e.cls)}
+                detail={e.state === "pending" ? "Pending · your coach confirms" : `${headcount(e.cls, week)} of ${CAPACITY} spots taken`}
+                onPress={() => setSheet({ kind: "class", id: e.cls.id })}
+              />
+            )) : <Text style={s.lead}>Nothing booked yet.</Text>}
+            <Text style={[s.sideTitle, { marginTop: 8 }]}>OPEN TO BOOK · {openToBook.length}</Text>
+            {openToBook.length ? openToBook.map((c) => (
+              <SheetOption
+                key={c.id}
+                title={when(c)}
+                detail={`${CAPACITY - headcount(c, week)} of ${CAPACITY} spots left`}
+                onPress={() => setSheet({ kind: "class", id: c.id })}
+              />
+            )) : <Text style={s.lead}>No open class fits this week. Ask your coach.</Text>}
+          </ScrollView>
+        )}
+        </View>
         </>)}
       </SafeAreaView>
 
       {/* Book an open class (Google Calendar's "+"). */}
-      {!setup && !mode && wk.published && st.status === "ready" && (
+      {!setup && !mode && !wide && wk.published && st.status === "ready" && (
         <TourSpot name="a-fab" style={s.fab}>
           <Pressable style={s.fabIn} onPress={() => setSheet({ kind: "book" })} accessibilityLabel="Book an open class">
             <Ionicons name="add" size={30} color={C.onMint} />
@@ -630,6 +660,8 @@ const s = StyleSheet.create({
     position: "absolute", right: 18, bottom: 84, width: 58, height: 58, borderRadius: 18, backgroundColor: C.green,
     alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
   },
+  side: { width: 360, flexGrow: 0, borderLeftWidth: 1, borderLeftColor: C.border },
+  sideTitle: { fontFamily: KF.mono, fontSize: 11, color: C.label, letterSpacing: 0.8 },
   fabIn: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
   moveBar: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   fromTo: { flexDirection: "row", alignItems: "center", gap: 8 },
