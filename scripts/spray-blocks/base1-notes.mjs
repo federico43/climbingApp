@@ -3,8 +3,8 @@
 // data.description ("Base 1", type sequence), one step per line.
 //
 // Dry run (default): prints the current notes, numbered as the app shows them.
-// --apply: writes NEW_NOTES below (filled in once Claude has seen the current
-// ones). Workouts already created keep their old copy.
+// --apply: writes NEW_NOTES below (old note 1 dropped, the rest shortened;
+// the variations note is gone, spray blocks have none). Workouts already created keep their old copy.
 //
 // Usage:
 //   node --env-file=.env.local scripts/spray-blocks/base1-notes.mjs [--apply]
@@ -18,7 +18,13 @@ const APPWRITE_DATABASE_ID = env.APPWRITE_DATABASE_ID
 const APPLY = process.argv.includes("--apply")
 
 // The new notes, one step per line. Empty = nothing to write yet.
-const NEW_NOTES = [].join("\n")
+const NEW_NOTES = [
+  "Goal: repeat moderately hard moves with little rest.",
+  "It should feel hard but doable. Falling on the first attempt means it's too hard.",
+  "Memorize the sequence before your first attempt, so you never stop to think.",
+  "If you fall, get back on fast and finish the moves. The volume counts, not the send.",
+  "Same effort on every attempt.",
+].join("\n")
 
 for (const [name, value] of Object.entries({
   APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID,
