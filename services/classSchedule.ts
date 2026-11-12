@@ -88,6 +88,12 @@ export type RequestBody =
 export const sendRequest = (body: RequestBody) => call("classRequest", body)
 export const cancelRequest = (requestId: string) => call("classCancel", { requestId })
 export const answerRequest = (requestId: string, accept: boolean) => call("classAnswer", { requestId, accept })
+// The coach's recurring classes (class_weeks row "series", see classes.js).
+export async function loadSeries(): Promise<{ day: number; start: number }[]> {
+  const w = await loadWeek("series")
+  return (w.blocks as unknown as { day: number; start: number }[]).filter((x) => Number.isInteger(x?.day) && typeof x?.start === "number")
+}
+export const saveSeries = (series: { day: number; start: number }[]) => call("classSeries", { series })
 export const joinClass = (classId: string) => call("classJoin", { classId })
 export const setRoster = (classId: string, athleteId: string, add: boolean) => call("classRoster", { classId, athleteId, add })
 export const saveDefaults = (slots: string[]) => call("classDefaults", { slots })

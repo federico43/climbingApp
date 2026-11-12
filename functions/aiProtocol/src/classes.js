@@ -255,6 +255,32 @@ async function roster(ctx, userId, body) {
   return ok({ class: saved })
 }
 
+// ── Coach: recurring classes (series) ───────────────────────────────────────
+// The times that repeat every week (e.g. Mon & Wed 7:00). They pre-fill each
+// new week's plan on the coach's phone, who removes what doesn't work that
+// week before publishing. Kept in class_weeks under the row id "series"
+// (`blocks` holds the JSON list), so no new table is needed.
+// body: { series: [{ day, start }] } — the whole list.
+export const SERIES_ROW = "series"
+async function setSeries(ctx, userId, body) {
+  const list = Array.isArray(body.series) ? body.series : null
+  if (!list || list.length > 21) return fail(400, "Bad series.")
+  const clean = []
+  for (const x of list) {
+    const day = Number(x?.day)
+    const start = Number(x?.start)
+    if (!Number.isInteger(day) || day < 0 || day > 6 || !Number.isFinite(start) || start * 2 !== Math.round(start * 2)) return fail(400, "Bad series.")
+    if (start < 6 || start + CLASS_HOURS > 20) return fail(400, "Bad series.")
+    if (!clean.some((c) => c.day === day && c.start === start)) clean.push({ day, start })
+  }
+  const data = { published: false, blocks: JSON.stringify(clean) }
+  const saved = (await weekRow(ctx, SERIES_ROW))
+    ? await ctx.db.update(WEEKS, SERIES_ROW, data)
+    : await ctx.db.create(WEEKS, data, SERIES_ROW)
+  if (!saved) return fail(502, "Could not save.")
+  return ok({ series: clean })
+}
+
 // ── Coach: accept or decline a request ───────────────────────────────────────
 async function answer(ctx, userId, body) {
   const r = await ctx.db.get(REQUESTS, String(body.requestId ?? ""))
@@ -594,6 +620,7 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classDefaults": return setDefaults(ctx, userId, body)
     case "classJoin": return coach ? fail(403, "Athletes only.") : join(ctx, userId, body)
     case "classRoster": return coach ? roster(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classSeries": return coach ? setSeries(ctx, userId, body) : fail(403, "Coaches only.")
     case "classAnswer": return coach ? answer(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")

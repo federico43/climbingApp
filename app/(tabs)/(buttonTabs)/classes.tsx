@@ -9,14 +9,14 @@ import {
   dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, setClassRoster, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { K as C, KF } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 const PROBLEM: Record<PlanProblem, string> = {
@@ -117,7 +117,7 @@ export default function ClassesScreen() {
             tag={joining(c).length + leaving(c).length ? `${joining(c).length + leaving(c).length} req` : undefined}
             label={`${dayName(c.day)}, ${formatTime(c.start)} to ${formatTime(c.start + CLASS_HOURS)}, ${c.roster.length} of ${CAPACITY} booked${joining(c).length + leaving(c).length ? `, ${joining(c).length + leaving(c).length} requests` : ""}`}
             text={[
-              formatTime(c.start),
+              inSeries(c) ? `${formatTime(c.start)} ↻` : formatTime(c.start),
               // Sessions left next to each name: the coach's at-a-glance check.
               ...c.roster.map((n, i) => (c.ids?.[i] && st.left[c.ids[i]] ? `${n} ${st.left[c.ids[i]].left}` : n)),
               ...joining(c).map((r) => `·+${r.who}`),
@@ -153,6 +153,10 @@ export default function ClassesScreen() {
   }
   const leftLow = (id?: string) => { const p = leftOf(id); return !!p && (p.locked || p.left <= LOW_SESSIONS) }
   const lowCount = st.athletes.filter((a) => leftLow(a.id)).length
+  // Recurring series (pre-fill): is this time in it, and its other days ("Wed").
+  const inSeries = (c: { day: number; start: number }) => st.series.some((x) => x.day === c.day && x.start === c.start)
+  const seriesPartners = (c: { day: number; start: number }) =>
+    st.series.filter((x) => x.start === c.start && x.day !== c.day).sort((a, b) => a.day - b.day).map((x) => WEEK_DAYS[x.day]).join(" & ")
   const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
   const [athleteQuery, setAthleteQuery] = useState("")
 
@@ -293,6 +297,25 @@ export default function ClassesScreen() {
         {cls && (
           <>
             <DetailRow icon="time-outline" text={`${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}`} />
+            {/* Recurring series: this time pre-fills every new week. */}
+            <View style={s.seriesRow}>
+              <Ionicons name="repeat" size={20} color={inSeries(cls) ? C.green : C.textSecondary} style={{ width: 24 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>Repeats every week</Text>
+                <Text style={s.reqText}>
+                  {inSeries(cls)
+                    ? `Fills in every new week${seriesPartners(cls) ? ` · with ${seriesPartners(cls)}` : ""}. Remove it from a week if you can't.`
+                    : "Turn on to fill this class in every new week"}
+                </Text>
+              </View>
+              <Switch
+                value={inSeries(cls)}
+                disabled={st.busy}
+                onValueChange={(on) => { setSeriesSlot(cls, on) }}
+                trackColor={{ true: C.greenDeep, false: C.surfaceHigh }}
+                thumbColor={C.textPrimary}
+              />
+            </View>
             <DetailRow
               icon="people-outline"
               text={`${cls.roster.length} of ${CAPACITY} climbers`}
@@ -560,6 +583,7 @@ const s = StyleSheet.create({
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
   stepValue: { minWidth: 70, textAlign: "center", fontSize: 15, fontWeight: "800", color: C.textPrimary },
   athlete: { borderTopWidth: 1, borderTopColor: C.border },
+  seriesRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   draftTag: { alignSelf: "center", borderWidth: 1, borderStyle: "dashed", borderColor: C.textMuted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
   draftTagOn: { borderStyle: "solid", borderColor: C.green },
   draftText: { fontFamily: KF.mono, fontSize: 10, color: C.label },

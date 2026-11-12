@@ -68,6 +68,7 @@ interface State {
   blocks: BlockedTime[]
   published: boolean               // published and nothing changed since
   packages: ClassPackage[]
+  series: Slot[]                     // coach: classes that repeat every week (pre-fill)
   left: Record<string, PackageInfo>  // coach: sessions left per athlete with a package
 }
 
@@ -78,7 +79,7 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
   thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, nextWeek: null, defaults: [], pkg: null,
-  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], left: {},
+  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], left: {}, series: [],
 }
 const listeners = new Set<() => void>()
 
@@ -110,15 +111,17 @@ let server: { this: ClassWeek | null; next: ClassWeek | null } = { this: null, n
 // A class (or new time) this week that has already started.
 const started = (weekStart: string, c: Slot, now = new Date()) => classDate(weekStart, c).getTime() <= now.getTime()
 
-// Start a week's draft from the week as saved, or from the seed week's times
-// (no rosters) when it's still empty, leaving out times already gone. A
+// Start a week's draft from the week as saved, or, when it's still empty,
+// from the coach's recurring series (or else the seed week's times, no
+// rosters), leaving out times already gone. A
 // changed draft keeps the coach's edits and picks up classes the server added
 // (an accepted new time).
 function syncDraft(week: ClassWeek, seed: ClassWeek | null) {
   const draft = drafts[week.weekStart]
   if (!draft || !draft.dirty) {
     const fresh = week.classes.length || week.published
-    const seeded = (seed?.classes ?? []).filter((c) => !started(week.weekStart, c))
+    const from: Slot[] = state.series.length ? state.series : seed?.classes ?? []
+    const seeded = from.filter((c) => !started(week.weekStart, c))
     drafts[week.weekStart] = {
       weekStart: week.weekStart,
       classes: fresh
@@ -233,7 +236,12 @@ async function load() {
       coach ? api.loadWeek(ymd(last)) : Promise.resolve(null),
       api.loadUsers(),
       api.loadRequests([thisStart, nextStart], coach ? undefined : me),
-    ])
+      // The coach's recurring classes: they pre-fill each new week.
+      coach ? api.loadSeries() : Promise.resolve([] as Slot[]),
+    ]).then(([a, b, c, d, e, series]) => {
+      state.series = series
+      return [a, b, c, d, e] as const
+    })
     const names = Object.fromEntries(users.map((u) => [u.id, u.name]))
     const meRow = users.find((u) => u.id === me)
     const [pkg, packages] = await Promise.all([
@@ -459,6 +467,16 @@ export async function publishWeek(): Promise<boolean> {
     delete drafts[d.weekStart]
   })
   return saved
+}
+
+// Coach: make a time repeat every week (pre-fills new weeks), or stop it.
+export function setSeriesSlot(slot: Slot, on: boolean): Promise<boolean> {
+  const rest = state.series.filter((x) => !(x.day === slot.day && x.start === slot.start))
+  const next = on ? [...rest, { day: slot.day, start: slot.start }] : rest
+  return run(async () => {
+    await api.saveSeries(next)
+    set({ series: next })
+  })
 }
 
 // Coach: put an athlete in a saved class, or take them out.

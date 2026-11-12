@@ -409,4 +409,15 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.deepEqual(t("users").get("fran")!.defaultClasses, [])
 }
 
+// ── Recurring series (pre-fill for new weeks) ────────────────────────────────
+{
+  assert.equal((await call("classSeries", "ana", { series: [] })).status, 403)
+  assert.equal((await call("classSeries", "coach", { series: [{ day: 0, start: 19 }] })).status, 400) // ends after 20:00
+  const r = await call("classSeries", "coach", { series: [{ day: 0, start: 7 }, { day: 2, start: 7 }, { day: 0, start: 7 }] })
+  assert.equal(r.status, 200)
+  assert.deepEqual(JSON.parse(t("class_weeks").get("series")!.blocks), [{ day: 0, start: 7 }, { day: 2, start: 7 }])
+  assert.equal((await call("classSeries", "coach", { series: [{ day: 1, start: 6.5 }] })).status, 200)
+  assert.deepEqual(JSON.parse(t("class_weeks").get("series")!.blocks), [{ day: 1, start: 6.5 }])
+}
+
 console.log("classes: all tests passed")
