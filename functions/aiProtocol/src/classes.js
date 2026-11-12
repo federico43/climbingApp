@@ -701,7 +701,7 @@ export async function runClassCron(ctx, date = new Date()) {
     await ctx.db.update(REQUESTS, r.$id, { status: "expired" })
     report.expired++
     await pushUser(ctx, r.athleteId, "No answer from your coach",
-      from ? `${classLabel(from)} stays as it was.` : "Your extra class wasn't confirmed.", { type: "class_answer", requestId: r.$id })
+      r.kind === "skip" && from ? `You're still in ${classLabel(from)}.` : from ? `${classLabel(from)} stays as it was.` : "Your extra class wasn't confirmed.", { type: "class_answer", requestId: r.$id })
   }
 
   // From 20:00 the night before (until midnight).
