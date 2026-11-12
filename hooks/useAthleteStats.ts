@@ -3,6 +3,7 @@ import {
 } from "@/services/BoulderGraphService"
 import type { PeriodStats } from "@/utils/athleteStats"
 import { buildAllBlocksStats, buildBlockStats, parseSessions, type StatsLibraryExercise } from "@/utils/athleteStatsData"
+import { useLevelDifficulty } from "@/utils/boulderLevelsCache"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { localDateStr } from "@/utils/planRotation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -20,6 +21,7 @@ export function useAthleteStats({ athlete, plan, sessions, planWorkouts }: {
   const [plans, setPlans] = useState<TrainingPlanRow[] | null>(null)
   const [workoutsByPlan, setWorkoutsByPlan] = useState<Record<string, ProtocolRow[]>>({})
   const [loadingPlans, setLoadingPlans] = useState(false)
+  const levelDifficulty = useLevelDifficulty()
   const today = localDateStr(new Date())
 
   useEffect(() => {
@@ -74,13 +76,13 @@ export function useAthleteStats({ athlete, plan, sessions, planWorkouts }: {
 
   const blockStats: PeriodStats | null = useMemo(() => {
     if (!plan || plan.windowStart > today) return null
-    return buildBlockStats({ athlete, sessions, library, today, plan, planWorkouts }, parsed)
-  }, [athlete, plan, sessions, library, today, planWorkouts, parsed])
+    return buildBlockStats({ athlete, sessions, library, levelDifficulty, today, plan, planWorkouts }, parsed)
+  }, [athlete, plan, sessions, library, levelDifficulty, today, planWorkouts, parsed])
 
   const allStats: PeriodStats | null = useMemo(() => {
     if (!plansNow) return null
-    return buildAllBlocksStats({ athlete, sessions, library, today, plans: plansNow, workoutsByPlan: workoutsNow })
-  }, [athlete, sessions, library, today, plansNow, workoutsNow])
+    return buildAllBlocksStats({ athlete, sessions, library, levelDifficulty, today, plans: plansNow, workoutsByPlan: workoutsNow })
+  }, [athlete, sessions, library, levelDifficulty, today, plansNow, workoutsNow])
 
   // Plans that have started, newest first — the ones a review can show.
   const reviewPlans = useMemo(
@@ -89,8 +91,8 @@ export function useAthleteStats({ athlete, plan, sessions, planWorkouts }: {
   )
 
   const statsForPlan = useCallback((p: TrainingPlanRow): PeriodStats => {
-    return buildBlockStats({ athlete, sessions, library, today, plan: p, planWorkouts: workoutsNow[p.$id] ?? [] }, parsed)
-  }, [athlete, sessions, library, today, workoutsNow, parsed])
+    return buildBlockStats({ athlete, sessions, library, levelDifficulty, today, plan: p, planWorkouts: workoutsNow[p.$id] ?? [] }, parsed)
+  }, [athlete, sessions, library, levelDifficulty, today, workoutsNow, parsed])
 
   return { blockStats, allStats, reviewPlans, statsForPlan, loadPlans, loadingPlans, plansLoaded: plans != null }
 }

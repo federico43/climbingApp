@@ -1,0 +1,96 @@
+// Tests for the strength-based pull-up assessment (utils/pullupAssessment.ts). Run:
+//   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/pullupAssessment.test.ts
+
+import assert from "node:assert/strict"
+import { ladderIndexOf } from "@/utils/bands"
+import { testLevelRow } from "@/utils/scPrefill"
+import { bandStartFor, easierThanBands, isPullupLadder, parsePullupTest, planFromTest, retestDue, stepForVariation, testIsNewer } from "@/utils/pullupAssessment"
+
+const idx = ladderIndexOf
+
+// No pull-up, no controlled negatives → band everywhere
+assert.deepEqual(planFromTest({ maxReps: 0, negatives: 1 }), { max_force: "band", hypertrophy: "band", explosiveness: "band" })
+// No pull-up but 4 negatives → negatives for max force, band for the rest
+assert.deepEqual(planFromTest({ maxReps: 0, negatives: 4 }), { max_force: "negative", hypertrophy: "band", explosiveness: "band" })
+// 2 pull-ups + negatives → still negatives for max force (3–6 not reachable)
+assert.deepEqual(planFromTest({ maxReps: 2, negatives: 5 }), { max_force: "negative", hypertrophy: "band", explosiveness: "band" })
+// 5 pull-ups: max force on bodyweight, hypertrophy and explosive with a band
+assert.deepEqual(planFromTest({ maxReps: 5 }), { max_force: "bodyweight", hypertrophy: "band", explosiveness: "band" })
+// 9: weighted max force, bodyweight hypertrophy, still a band for speed
+assert.deepEqual(planFromTest({ maxReps: 9 }), { max_force: "weighted", hypertrophy: "bodyweight", explosiveness: "band" })
+// 12: explosive on bodyweight once 6 fast reps are half the max
+assert.deepEqual(planFromTest({ maxReps: 12 }), { max_force: "weighted", hypertrophy: "bodyweight", explosiveness: "bodyweight" })
+// 15: weighted for both strength focuses
+assert.deepEqual(planFromTest({ maxReps: 15 }), { max_force: "weighted", hypertrophy: "weighted", explosiveness: "bodyweight" })
+
+// Band finder start: the bigger the gap, the more help
+assert.equal(bandStartFor("hypertrophy", { maxReps: 0 }), idx("green"))
+assert.equal(bandStartFor("hypertrophy", { maxReps: 4 }), idx("purple"))
+assert.equal(bandStartFor("hypertrophy", { maxReps: 6 }), idx("black"))
+assert.equal(bandStartFor("max_force", { maxReps: 2 }), idx("red"))
+assert.equal(bandStartFor("explosiveness", { maxReps: 0 }), idx("green"))
+assert.equal(bandStartFor("explosiveness", { maxReps: 6 }), idx("red"))
+
+// Retest every 6 weeks, or sooner once a band focus reached "no band"
+const tested = (date: string, maxReps = 0) => ({ date, maxReps, negatives: 0 })
+assert.equal(retestDue(null, "2026-11-11"), false)
+assert.equal(retestDue(tested("2026-10-01"), "2026-11-11"), false)
+assert.equal(retestDue(tested("2026-09-30"), "2026-11-11"), true)
+assert.equal(retestDue(tested("2026-10-20"), "2026-11-11", { hypertrophy: "" }), true)
+assert.equal(retestDue(tested("2026-11-08"), "2026-11-11", { hypertrophy: "" }), false)   // test too fresh
+assert.equal(retestDue(tested("2026-10-20", 9), "2026-11-11", { hypertrophy: "" }), false)  // hypertrophy wasn't on bands
+assert.equal(retestDue(tested("2026-10-20"), "2026-11-11", { hypertrophy: "red" }), false)
+// The newer of test and history wins
+assert.equal(testIsNewer(tested("2026-11-01"), undefined), true)
+assert.equal(testIsNewer(tested("2026-11-01"), "2026-10-30T10:00:00Z"), true)
+assert.equal(testIsNewer(tested("2026-11-01"), "2026-11-01T10:00:00Z"), false)
+assert.equal(testIsNewer(null, undefined), false)
+
+// Stored JSON
+assert.equal(parsePullupTest(null), null)
+assert.equal(parsePullupTest("{}"), null)
+assert.deepEqual(parsePullupTest('{"date":"2026-11-11","maxReps":3,"negatives":4}'), { date: "2026-11-11", maxReps: 3, negatives: 4 })
+assert.deepEqual(parsePullupTest('{"date":"2026-11-11","maxReps":7}'), { date: "2026-11-11", maxReps: 7 })
+
+// ── on the ladder ──
+const full = ["Chin-up isometric", "Band Assisted Pull-Ups", "Negative pull-ups", "Pull Ups", "Weighted pull-ups"].map((name, i) => ({ exerciseId: `l${i}`, name }))
+assert.ok(isPullupLadder(full))
+assert.ok(!isPullupLadder([{ exerciseId: "a", name: "Push-ups" }, { exerciseId: "b", name: "Elevated push-ups" }]))
+assert.equal(stepForVariation(full, "band"), 1)
+assert.equal(stepForVariation(full, "negative"), 2)
+assert.equal(stepForVariation(full, "bodyweight"), 3)
+assert.equal(stepForVariation(full, "weighted"), 4)
+// Missing steps fall back: no weighted → pull-ups, no negatives → band
+const short = full.filter((l) => !/weighted|negative/i.test(l.name))
+assert.equal(short[stepForVariation(short, "weighted")].name, "Pull Ups")
+assert.equal(short[stepForVariation(short, "negative")].name, "Band Assisted Pull-Ups")
+// Nothing helps enough: the step below the bands, if any
+assert.equal(full[easierThanBands(full)].name, "Chin-up isometric")
+assert.equal(easierThanBands(full.slice(1)), -1)
+
+// ── plan generator: the test's step when there's no history at the focus ──
+{
+  const row = (over: any) => ({ $createdAt: "", type: "reps", movementType: "pull_vertical", ...over })
+  const lib: any[] = [
+    row({ $id: "band", name: "Band Assisted Pull-Ups", loadMode: "level", levels: [{ exerciseId: "neg", name: "Negative pull-ups" }, { exerciseId: "pu", name: "Pull Ups" }] }),
+    row({ $id: "neg", name: "Negative pull-ups" }),
+    row({ $id: "pu", name: "Pull Ups" }),
+  ]
+  const draft = (r: any) => ({ exerciseId: r.$id, name: r.name, loadMode: r.loadMode, levels: r.levels })
+  const test = { maxReps: 0, negatives: 4, date: "2026-10-20" }
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [], lib, test)?.$id, "neg")
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "hypertrophy", [], lib, test)?.$id, "band")
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [], lib, null), null)
+  // History at the focus wins
+  const session: any = {
+    $id: "s1", $createdAt: "2026-11-01T10:00:00Z", userId: "a",
+    protocol: JSON.stringify([{ type: "strength_conditioning", exercises: [{ name: "Pull Ups", exerciseId: "pu", focus: "max_force", reps: "3-6" }] }]),
+    attempts: JSON.stringify([{ type: "strength_conditioning", blockIndex: 0, scData: { exerciseId: "pu", exerciseName: "Pull Ups", focus: "max_force", round: 1, repsCompleted: "4" } }]),
+  }
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [session], lib, test), null)
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "hypertrophy", [session], lib, test)?.$id, "band")
+  // …unless the test is newer (a retest)
+  assert.equal(testLevelRow(lib[2], draft(lib[2]), "max_force", [session], lib, { ...test, date: "2026-11-05" })?.$id, "neg")
+}
+
+console.log("pull-up assessment tests passed")

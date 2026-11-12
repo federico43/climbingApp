@@ -1,19 +1,34 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
 import { loadWeightUnit, saveWeightUnit, WeightUnit } from "@/utils/weightUnit"
-import { getSessions, getUsers, setEdgeLiftMax, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
+import { getSessions, getUsers, setBandCombos, setEdgeLiftMax, setHangMax, setPullupTest, type ExerciseRow as LibraryExercise, type SessionRow } from "@/services/BoulderGraphService"
 import { currentMax, EDGE_WARMUP, needsWarmup, warmupRamp, type WarmupSet } from "@/utils/edgeWarmup"
 import { loadCachedEdgeMax, saveCachedEdgeMax } from "@/utils/edgeMaxCache"
 import {
-  Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
+  bestHeld, biggerEdge, HANG_TEST_JUMP, hangEdgeOf, hangLoadLabel, hangMaxFor, hangTriesSummary, hangWarmupRamp, isMaxHang, MAX_HANGS,
+  needsHangWarmup, nextHangTry, parseHangLog, SCAPULA_CUE, withHangMax, type HangMaxEntry, type HangTestNext, type HangTry,
+} from "@/utils/maxHangs"
+import { loadCachedHangLog, saveCachedHangLog } from "@/utils/hangMaxCache"
+import { localDateStr } from "@/utils/planRotation"
+import {
+  BAND_HEX, BAND_LADDER, bandRoundChange, comboId, comboLabel, DEFAULT_START_INDEX, isBandAssisted, ladderIndexOf, nextTestStep,
+  parseSavedBands, planBandNext, withSavedBand, type BandCombo, type SavedBands, type TestAttempt, type TestDoneReason,
+} from "@/utils/bands"
+import { loadCachedBands, loadCachedPullupTest, saveCachedBands, saveCachedPullupTest } from "@/utils/bandCache"
+import {
+  bandStartFor, easierThanBands, isPullupLadder, NEGATIVES_ASKED_UP_TO, planFromTest, retestDue, testIsNewer, stepForVariation, variationFor, VARIATION_LABEL,
+  parsePullupTest, type PullupTestResult, type SavedPullupTest,
+} from "@/utils/pullupAssessment"
+import {
+  Direction, Effort, EFFORT_LABEL, effortToRpe, EFFORTS, Focus, FOCUSES, FOCUS_COLOR, FOCUS_CUE, FOCUS_LABEL, convertWeight, DEFAULT_LOAD_STEP, LevelStep, LoadMode, planRoundDrop, planRoundRaise, repChoices, targetFor, type RoundDrop, type Target,
 } from "@/utils/scProgression"
 import { readRound, setsAtFinalLoad } from "@/utils/scHistory"
 import { basisLine, planNextForFocus, type FocusEntry, type NextPlan } from "@/utils/scNext"
 import { planFromHistory, type ExerciseSetting } from "@/utils/scPrefill"
-import { chainIds, chainIndexOf, findLibraryRow, usableAt, type ResolvedChain } from "@/utils/levelChain"
+import { chainIds, chainIndexOf, findLibraryRow, isWeightedStep, usableAt, type ResolvedChain } from "@/utils/levelChain"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/movementTypes"
 import { planPickFor, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
@@ -45,6 +60,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { ScReviewSlides } from "@/components/ScReviewSlides"
+import { reviewExercise, reviewLog, type ExerciseReview, type ReviewAnswers } from "@/utils/scReview"
 
 const SC_HERO = require("@/assets/images/SCPicture.jpeg")
 
@@ -65,7 +82,8 @@ export interface RepExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
-  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
+  maxTest?: boolean     // Edge Lifts / Max Hangs max test (utils/edgeWarmup.ts, utils/maxHangs.ts)
+  edge?: string         // Max Hangs: the grip, as an edge size (utils/maxHangs.ts)
 }
 
 export interface BothSidesExercise {
@@ -83,7 +101,8 @@ export interface BothSidesExercise {
   settingHarder?: string // adjustable-setting hints; the live library's win
   settingEasier?: string
   movementType?: string // "mobility" = no weight/RPE/progression, just done
-  maxTest?: boolean     // Edge Lifts max test (utils/edgeWarmup.ts)
+  maxTest?: boolean     // Edge Lifts / Max Hangs max test (utils/edgeWarmup.ts, utils/maxHangs.ts)
+  edge?: string         // Max Hangs: the grip, as an edge size (utils/maxHangs.ts)
 }
 
 export interface SevenThreesExercise {
@@ -118,6 +137,8 @@ interface ExerciseLog {
   // its identity (id + exerciseName above) is what gets logged and matched
   // against next time, not the container exercise's.
   levelId?: string
+  // Band-assisted: the band combo used (utils/bands.ts comboId, "" = none).
+  band?: string
   rpe?: string
   effort?: Effort   // what the athlete tapped; rpe is its mapping
   notes?: string
@@ -128,12 +149,12 @@ interface ExerciseLog {
   weightRight?: string
   rpeLeft?: string
   rpeRight?: string
-  // 7/3s
+  // 7/3s, and Max Hangs' grip
   edge?: string
   seriesDone?: number
   // Set when this round ran at an automatic easier load (planRoundDrop) and
   // the athlete kept it: what the load was before the drop.
-  adjustedFrom?: { weight?: string; levelId?: string }
+  adjustedFrom?: { weight?: string; levelId?: string; band?: string }
   // Done as another library exercise the athlete swapped in (its id), and why.
   swappedTo?: string
   swapReason?: SwapReason
@@ -157,6 +178,9 @@ interface Props {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
   const nextLabel = useNextBlockLabel("Continue")
   const blockTimer = useBlockTimer()
   // The plan workout this block belongs to, if any: a "Change exercise" can
@@ -247,6 +271,28 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // read it, e.g. offline), read on mount — max force Edge Lifts start on
   // it, after a warm-up built from it (utils/edgeWarmup.ts).
   const [edgeMax, setEdgeMax] = useState<number | null | undefined>(undefined)
+  // Band-assisted exercises (utils/bands.ts): the athlete's band per focus
+  // (users.bandCombos, device copy offline), each exercise's planned band
+  // for round 1 (ladder index, -1 = no band yet → guided test), and the
+  // band used in its last round this session.
+  const savedBandsRef = useRef<SavedBands>({})
+  const [bandStarts, setBandStarts] = useState<Record<number, number>>({})
+  // Pull-up assessment (utils/pullupAssessment.ts): the athlete's result
+  // (null = never tested), and the pull-up ladders that ask for it in
+  // round 1 — only for athletes with no pull-up data at all.
+  const pullupTestRef = useRef<SavedPullupTest | null>(null)
+  const [needsPullupTest, setNeedsPullupTest] = useState<Record<number, boolean>>({})
+  const [lastBands, setLastBands] = useState<Record<number, number>>({})
+  // The athlete's Max Hangs maxes, one per edge (undefined = couldn't read
+  // them) — max force hangs start on the max for their edge
+  // (utils/maxHangs.ts).
+  const [hangLog, setHangLog] = useState<HangMaxEntry[] | undefined>(undefined)
+  // Max Hangs: the max for the exercise's edge (kg added; null = none yet,
+  // undefined = not a max force hang, or the maxes couldn't be read).
+  function hangMaxOf(ex: Exercise, log: HangMaxEntry[] | undefined = hangLog): number | null | undefined {
+    if (ex.type === "7/3s" || !needsHangWarmup(ex) || !log) return undefined
+    return hangMaxFor(log, hangEdgeOf(ex))
+  }
 
   // The setting hints for the exercise as it's being done (a swap's prefill
   // brings its own).
@@ -354,11 +400,18 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       withTimeout(getExerciseLibrary(), PREFILL_TIMEOUT_MS).catch(() => null),
       loadWeightUnit(),
       User?.$id ? readEdgeMax(User.$id) : Promise.resolve(undefined),
+      User?.$id ? readPullupProfile(User.$id) : Promise.resolve({ bands: {} as SavedBands, test: null }),
+      User?.$id ? readHangLog(User.$id) : Promise.resolve(undefined),
     ])
-      .then(([sessions, library, unit, max]) => {
+      .then(([sessions, library, unit, max, { bands: savedBands, test: pullupTest }, hangs]) => {
         if (cancelled) return
         setWeightUnitState(unit)
         setEdgeMax(max)
+        setHangLog(hangs)
+        savedBandsRef.current = savedBands
+        pullupTestRef.current = pullupTest
+        const bandIdx: Record<number, number> = {}
+        const needsTest: Record<number, boolean> = {}
         const resolved: Record<number, ResolvedChain> = {}
         const weights: Record<number, string> = {}
         const levels: Record<number, LevelStep> = {}
@@ -383,6 +436,33 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           if (p.weight != null) weights[idx] = p.weight
           if (p.note) notes[idx] = p.note
           if (p.detail) details[idx] = p.detail
+          // Band-assisted: bands move before the level (planBandNext).
+          if (ex.type !== "7/3s" && ex.focus) {
+            const basis = p.basis
+            const lastWasBand = !!basis && basis.focus === ex.focus && isBandAssisted(basis.exerciseName)
+            const plan = planBandNext(ladderIndexOf(savedBands[ex.focus]), p.direction, lastWasBand)
+            bandIdx[idx] = plan.bandIdx
+            const lastStep = lastWasBand && p.chain ? p.chain.chain.find((l) => l.exerciseId === basis!.summary.exerciseId) : undefined
+            if (plan.keepLevel && lastStep) levels[idx] = lastStep
+            if (plan.note) notes[idx] = plan.note
+            else if (plan.keepLevel && lastStep && lastStep.exerciseId !== p.level?.exerciseId) delete notes[idx]
+          }
+          // Pull-up ladder: no pull-up data at all → the assessment in
+          // round 1. With a result and no history at today's focus → the
+          // variation it assigns (history, when there is some, wins).
+          if (ex.type !== "7/3s" && ex.focus && p.chain && isPullupLadder(p.chain.chain)) {
+            const today = localDateStr(new Date())
+            if (!p.past?.length && !pullupTest && Object.keys(savedBands).length === 0) needsTest[idx] = true
+            else if (retestDue(pullupTest, today, savedBands)) needsTest[idx] = true
+            if (pullupTest && testIsNewer(pullupTest, p.basis?.focus === ex.focus ? p.basis.date : undefined)) {
+              const at = stepForVariation(p.chain.chain, variationFor(ex.focus, pullupTest))
+              if (at >= 0) {
+                levels[idx] = p.chain.chain[at]
+                notes[idx] = `From your pull-up test: ${p.chain.chain[at].name}`
+                delete details[idx]
+              }
+            }
+          }
           // Edge Lifts with a max: the rounds are at the max, not last
           // time's weight.
           if (max != null && ex.type !== "7/3s" && needsWarmup(ex)) {
@@ -390,9 +470,18 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             delete notes[idx]
             delete details[idx]
           }
+          // Max Hangs with a max for their edge: the same (kg added).
+          const hangMax = hangMaxOf(ex, hangs)
+          if (hangMax != null) {
+            weights[idx] = String(convertWeight(hangMax, "kg", unit))
+            delete notes[idx]
+            delete details[idx]
+          }
         })
 
         setChains(resolved)
+        setBandStarts(bandIdx)
+        setNeedsPullupTest(needsTest)
         setLibrary(library)
         setLoadSteps(steps)
         setSettings(sets)
@@ -429,6 +518,28 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     }, 200)
   }
 
+  // The band the athlete used (or found in the test) becomes their band at
+  // this focus: on the device first, then their users row (best effort — a
+  // missing column or no signal keeps the device copy).
+  function saveBand(focus: Focus, idx: number) {
+    if (!User?.$id || savedBandsRef.current[focus] === comboId(BAND_LADDER[idx])) return
+    const next = withSavedBand(savedBandsRef.current, focus, idx)
+    savedBandsRef.current = next
+    saveCachedBands(User.$id, next)
+    setBandCombos(User.$id, next).catch(() => {})
+  }
+
+  // The assessment's result: kept on the device and on the users row (best
+  // effort), and no other exercise in the block asks for it again.
+  function savePullupTest(r: PullupTestResult) {
+    const saved: SavedPullupTest = { ...r, date: localDateStr(new Date()) }
+    pullupTestRef.current = saved
+    setNeedsPullupTest({})
+    if (!User?.$id) return
+    saveCachedPullupTest(User.$id, saved)
+    setPullupTest(User.$id, saved).catch(() => {})
+  }
+
   function handleExerciseDone(log: Omit<ExerciseLog, "round">) {
     const idx = currentExerciseIndex
     const swap = swaps[idx]
@@ -450,6 +561,11 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     if (chainNow) setLastLevels((prev) => ({ ...prev, [idx]: { exerciseId: log.levelId ?? "", name: log.exerciseName } }))
     const setting = settingFor(idx)
     if (setting) setLastHardest((prev) => ({ ...prev, [idx]: !!log.atHardestSetting }))
+    const bandAt = log.band != null ? ladderIndexOf(log.band) : -1
+    if (bandAt >= 0) {
+      setLastBands((prev) => ({ ...prev, [idx]: bandAt }))
+      if (ex.type !== "7/3s" && ex.focus) saveBand(ex.focus, bandAt)
+    }
 
     // Under the floor → the next round of this exercise starts one step
     // easier (weaker side for both-sides). Only when there is a next round.
@@ -462,6 +578,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // An adjustable setting: the banner says how to make it easier;
         // nothing changes automatically (sc-modifications-plan Q5).
         drop = planRoundDrop(target, round.amount, { kind: "weight", weight: 0, unit: weightUnit }, setting.easier)
+      } else if (bandAt >= 0 && ex.focus && (drop = bandRoundChange(ex.focus, round.amount, bandAt))) {
+        // Band-assisted: more help / less help before any level change.
       } else if (chain) {
         const at = chainIndexOf(chain, log.levelId)
         // Only levels tagged for today's focus ("Used for") — e.g. never a
@@ -485,6 +603,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
     })
     if (drop?.weight != null) setLastWeights((prev) => ({ ...prev, [idx]: String(drop!.weight) }))
     if (drop?.level) setLastLevels((prev) => ({ ...prev, [idx]: drop!.level! }))
+    if (drop?.band != null) setLastBands((prev) => ({ ...prev, [idx]: drop!.band! }))
     if (drop?.bannerOnly && !drop.raise && setting) setLastHardest((prev) => ({ ...prev, [idx]: false }))
 
     logAttempt({
@@ -495,6 +614,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // performed, and next time's history lookup needs to find it there.
         exerciseId: log.levelId ?? ex?.exerciseId,
         exerciseName: log.exerciseName,
+        band: log.band,
         // The focus it was programmed for, so next time's prefill only
         // compares against rounds done at the same focus.
         focus: ex.type !== "7/3s" ? ex.focus : undefined,
@@ -627,7 +747,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             <AnimatedCircularProgress
               size={ringSize} width={ringSize > 200 ? 10 : 8} fill={fillPercent}
               tintColor={restUrgent ? C.red : C.green}
-              backgroundColor={C.surface}
+              backgroundColor={C.surfaceHigh}
               rotation={0}
             >
               {() => {
@@ -706,7 +826,21 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
         </View>
-        {exercise.type !== "7/3s" && exercise.maxTest ? (
+        {exercise.type !== "7/3s" && exercise.maxTest && isMaxHang(exercise) ? (
+          <HangTestUI
+            key={roundKey}
+            exercise={exercise}
+            userId={User?.$id}
+            hangLog={hangLog}
+            weightUnit={weightUnit}
+            onSaved={(edge, kg) => {
+              const next = withHangMax(hangLog ?? [], { edge, kg, date: localDateStr(new Date()), source: "test" })
+              setHangLog(next)
+              if (User?.$id) saveCachedHangLog(User.$id, next)
+            }}
+            onDone={(log) => handleExerciseDone(log)}
+          />
+        ) : exercise.type !== "7/3s" && exercise.maxTest ? (
           <MaxTestUI
             key={roundKey}
             exercise={exercise}
@@ -736,6 +870,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             onWeightUnitChange={setWeightUnit}
             initialWeight={lastWeights[currentExerciseIndex] ?? ""}
             initialLevel={lastLevels[currentExerciseIndex]}
+            initialBand={lastBands[currentExerciseIndex] ?? bandStarts[currentExerciseIndex] ?? (exercise.focus ? ladderIndexOf(savedBandsRef.current[exercise.focus]) : -1)}
+            suggestedBand={bandStarts[currentExerciseIndex]}
+            onBandFound={(i) => { if (exercise.focus) saveBand(exercise.focus, i) }}
+            pullupTest={pullupTestRef.current ?? undefined}
+            pullupRetest={!!pullupTestRef.current}
+            needsPullupTest={currentRound === 0 && !swapped && !!needsPullupTest[currentExerciseIndex]}
+            onPullupTestDone={savePullupTest}
             setting={settingFor(currentExerciseIndex)}
             initialHardest={!!lastHardest[currentExerciseIndex]}
             suggestionNote={currentRound === 0 || justSwapped ? suggestionNotes[currentExerciseIndex] : undefined}
@@ -746,8 +887,12 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             swapNote={swapNote}
             onUndoSwap={undoCurrentSwap}
             startOnBrief={startOnBrief}
-            warmup={currentRound === 0 && !swapped && edgeMax != null && needsWarmup(exercise) ? warmupRamp(edgeMax, weightUnit, loadSteps[currentExerciseIndex]) : undefined}
-            noMax={currentRound === 0 && !swapped && edgeMax === null && needsWarmup(exercise)}
+            warmup={currentRound !== 0 || swapped ? undefined
+              : edgeMax != null && needsWarmup(exercise) ? warmupRamp(edgeMax, weightUnit, loadSteps[currentExerciseIndex])
+              : hangMaxOf(exercise) != null ? hangWarmupRamp(hangMaxOf(exercise), weightUnit, loadSteps[currentExerciseIndex])
+              : undefined}
+            noMax={currentRound === 0 && !swapped && ((edgeMax === null && needsWarmup(exercise)) || hangMaxOf(exercise) === null)}
+            grip={isMaxHang(exercise) ? hangEdgeOf(exercise) : undefined}
             showSwitchCard={!switchCardSeen}
             onSwitchCardShown={() => setSwitchCardSeen(true)}
             onDone={(log) => handleExerciseDone(log)}
@@ -780,15 +925,16 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   if (phase === "review") {
     // What next session will start on, per exercise — the same rule the
     // prefill applies, run over today's rounds.
+    // Today's working sets at the load the block ended on.
+    const todaySets = (ex: Exercise, roundLogs: ExerciseLog[]) => setsAtFinalLoad(roundLogs
+      .sort((a, b) => a.round - b.round)
+      .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit)))
     const judge = (ex: Exercise, roundLogs: ExerciseLog[], p: Prefill): string => {
       if (ex.type === "7/3s" || ex.movementType === "mobility") return ""
       // The max decides Edge Lifts' weight (utils/edgeWarmup.ts), not the
       // progression rule.
-      if (ex.maxTest || (edgeMax != null && needsWarmup(ex))) return ""
-      const rounds = roundLogs
-        .sort((a, b) => a.round - b.round)
-        .map((l) => readRound({ ...l, exerciseId: l.levelId ?? ex.exerciseId }, weightUnit))
-      const summary = setsAtFinalLoad(rounds)
+      if (ex.maxTest || (edgeMax != null && needsWarmup(ex)) || hangMaxOf(ex) != null) return ""
+      const summary = todaySets(ex, roundLogs)
       const today: FocusEntry | null = summary ? { focus: ex.focus, date: new Date().toISOString(), prescribed: ex.reps, unit: ex.unit === "seconds" ? "seconds" : "reps", summary } : null
       return today ? planNextForFocus({ ...ex, setting: p.setting }, p.chain, p.loadStep, weightUnit, [today, ...(p.past ?? [])], "today").note : ""
     }
@@ -810,12 +956,35 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       }
       return out
     })
-    return (
-      <View style={shared_styles.screen}>
+    // The slides: each exercise today vs last time at the same focus
+    // (utils/scReview). Mobility and 7/3s don't progress, so they're left out.
+    const review = (key: string, ex: Exercise, roundLogs: ExerciseLog[], p: Prefill) => {
+      if (ex.type === "7/3s" || ex.movementType === "mobility") return null
+      const today = todaySets(ex, roundLogs)
+      if (!today) return null
+      const lastLog = roundLogs.reduce<ExerciseLog | undefined>((a, l) => (!a || l.round > a.round ? l : a), undefined)
+      return reviewExercise({
+        key, name: lastLog?.exerciseName ?? ex.name, focus: ex.focus, today, past: p.past,
+        ladder: p.chain?.chain, amountUnit: (lastLog?.unit ?? ex.unit) === "seconds" ? "seconds" : "reps", weightUnit,
+      })
+    }
+    const reviews = block.exercises.flatMap((ex, idx) => {
+      const swap = swaps[idx]
+      const own = review(`${idx}`, ex, logs.filter((l) => l.exerciseIndex === idx && !l.swappedTo), swap ? originals[idx] ?? {} : prefillAt(idx))
+      const swapped = swap
+        ? review(`${idx}:${swap.row.$id}`, effectiveExercise(idx), logs.filter((l) => l.exerciseIndex === idx && l.swappedTo === swap.row.$id), prefillAt(idx))
+        : null
+      return [own, swapped].filter((r): r is ExerciseReview => !!r)
+    })
+    const finish = (answers: Record<string, ReviewAnswers>) => {
+      for (const r of reviews) logAttempt({ success: true, scReview: reviewLog(r, answers[r.key]) })
+      goToNextBlock()
+    }
+    const details = (
         <ScrollView contentContainerStyle={styles.reviewContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.introHead}>
-            <Text style={styles.exKicker}>Block done</Text>
-            <Text style={styles.introTitle}>Circuit complete</Text>
+            <Text style={styles.exKicker}>{reviews.length ? "Summary" : "Block done"}</Text>
+            <Text style={styles.introTitle}>{reviews.length ? "Your rounds" : "Circuit complete"}</Text>
           </View>
 
           {nextTime.length > 0 && (
@@ -848,6 +1017,7 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
                       <Text style={styles.reviewDetail}>
                         {amountLabel(l.repsCompleted, exUnit)}
                         {l.weight ? ` · ${l.weight}${l.weightUnit ?? "kg"}` : ""}
+                        {l.band != null && ladderIndexOf(l.band) >= 0 ? ` · ${comboLabel(BAND_LADDER[ladderIndexOf(l.band)])}` : ""}
                         {l.rpe ? ` · RPE ${l.rpe}` : ""}
                       </Text>
                     )}
@@ -883,9 +1053,10 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
             </View>
           ))}
         </ScrollView>
-        <View style={styles.screenFooter}>
-          <PillButton title={nextLabel} icon="arrow-forward" onPress={goToNextBlock} />
-        </View>
+    )
+    return (
+      <View style={shared_styles.screen}>
+        <ScReviewSlides reviews={reviews} details={details} finishLabel={nextLabel} onFinish={finish} />
       </View>
     )
   }
@@ -899,9 +1070,202 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 //
 // Shows the whole chain, easiest → hardest, including levels easier than
 // the one the coach prescribed — the athlete can always step down.
+// ─── Band-assisted exercises (utils/bands.ts) ────────────────────────────────
+
+// The bands of a combo as coloured dots ("No band" = an empty ring).
+function BandDots({ combo, size = 12 }: { combo: BandCombo; size?: number }) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  if (!combo.length) return <View style={[styles.bandDot, { width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: C.textMuted }]} />
+  return (
+    <View style={styles.bandDots}>
+      {combo.map((c) => (
+        <View key={c} style={[styles.bandDot, { width: size, height: size, borderRadius: size / 2, backgroundColor: BAND_HEX[c] }, c === "black" && styles.bandDotBlack]} />
+      ))}
+    </View>
+  )
+}
+
+// The band to use, one chip per ladder step (most help first), like the
+// level chips. "Suggested" marks last time's plan.
+function BandPicker({ value, suggested, onChange, onRetest }: {
+  value: number; suggested?: number; onChange: (i: number) => void; onRetest?: () => void
+}) {
+  const styles = useSheet(sheet)
+  return (
+    <View style={{ width: "100%", gap: 12 }}>
+      <View style={styles.weightLabelRow}>
+        <Text style={styles.sectionLabel}>Band</Text>
+        {!!onRetest && (
+          <Pressable onPress={onRetest} hitSlop={6}>
+            <Text style={styles.linkText}>Test again</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.levelPickerRow}>
+        {BAND_LADDER.map((combo, i) => {
+          const selected = value === i
+          return (
+            <Pressable key={comboId(combo) || "none"} style={[styles.levelChip, selected && styles.levelChipSelected]} onPress={() => onChange(i)}>
+              <View style={styles.bandChipRow}>
+                <BandDots combo={combo} />
+                <Text style={[styles.levelChipText, selected && styles.levelChipTextSelected]} numberOfLines={1}>{comboLabel(combo)}</Text>
+              </View>
+              {suggested === i && (
+                <Text style={[styles.levelChipSuggested, selected && styles.levelChipSuggestedSelected]}>Suggested</Text>
+              )}
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+// The pull-up assessment: max strict pull-ups, then (0–2 of them) max slow
+// negatives; the result picks each focus's pull-up (planFromTest).
+function PullupTestUI({ exercise, name, onDone, onCancel }: {
+  exercise: RepExercise | BothSidesExercise; name: string
+  onDone: (r: PullupTestResult) => void; onCancel: () => void
+}) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  const [phase, setPhase] = useState<"max" | "negatives" | "result">("max")
+  const [maxReps, setMaxReps] = useState(0)
+  const [negatives, setNegatives] = useState(0)
+  const askNegatives = maxReps <= NEGATIVES_ASKED_UP_TO
+  const result: PullupTestResult = askNegatives ? { maxReps, negatives } : { maxReps }
+  const head = <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+
+  if (phase === "result") {
+    const plan = planFromTest(result)
+    return (
+      <ExerciseScreen scrollKey="pullupResult" footer={<PillButton title="Continue" icon="checkmark" onPress={() => onDone(result)} />}>
+        {head}
+        <Text style={styles.sectionLabel}>Your pull-ups</Text>
+        {FOCUSES.map((f) => (
+          <View key={f} style={styles.bandChipRow}>
+            <View style={[styles.exFocusDot, { backgroundColor: FOCUS_COLOR[f] }]} />
+            <Text style={styles.noMaxText}>
+              <Text style={{ color: FOCUS_COLOR[f] }}>{FOCUS_LABEL[f]}</Text> · {VARIATION_LABEL[plan[f]]}
+            </Text>
+          </View>
+        ))}
+      </ExerciseScreen>
+    )
+  }
+
+  const isMax = phase === "max"
+  return (
+    <ExerciseScreen
+      scrollKey={`pullupTest-${phase}`}
+      footer={<PillButton title="Next" icon="arrow-forward" onPress={() => setPhase(isMax && askNegatives ? "negatives" : "result")} />}
+    >
+      {head}
+      <Text style={[styles.sectionLabel, { color: C.yellow }]}>Pull-up test · {isMax ? "1" : "2"} of {isMax && !askNegatives ? "1" : "2"}</Text>
+      <Text style={styles.noMaxText}>
+        {isMax
+          ? "One set: as many strict pull-ups as you can, no band. Scapulas retracted on every rep. 0 is fine."
+          : "Rest 3 min. One set: as many slow negatives as you can. Start at the top, lower in 5 s, scapulas retracted."}
+      </Text>
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>{isMax ? "Pull-ups" : "Negatives (5 s down)"}</Text>
+        <Stepper value={isMax ? maxReps : negatives} onChange={isMax ? setMaxReps : setNegatives} />
+      </View>
+      <Pressable onPress={onCancel} hitSlop={6}>
+        <Text style={styles.linkText}>Cancel test</Text>
+      </Pressable>
+    </ExerciseScreen>
+  )
+}
+
+// The guided test: one set per try, aiming at the focus's rep range. Too
+// many reps → less help, too few → more (nextTestStep), until a set lands
+// in the range; that band is kept for this focus.
+function BandTestUI({ exercise, name, focus, start, onFound, onCancel }: {
+  exercise: RepExercise | BothSidesExercise; name: string; focus: Focus; start: number
+  onFound: (idx: number, reason: TestDoneReason) => void; onCancel: () => void
+}) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  const target = targetFor(focus, undefined, "reps")!
+  const [attempts, setAttempts] = useState<TestAttempt[]>([])
+  const [current, setCurrent] = useState(start)
+  const [reps, setReps] = useState<number | null>(null)
+  const [found, setFound] = useState<number | null>(null)
+  const [reason, setReason] = useState<TestDoneReason>("in_range")
+  const range = `${target.low}–${target.high}`
+
+  function next() {
+    if (reps == null) return
+    const all = [...attempts, { index: current, reps }]
+    setAttempts(all)
+    setReps(null)
+    const r = nextTestStep(focus, all)
+    if (r.done) { setFound(r.index); setReason(r.reason) }
+    else setCurrent(r.next)
+  }
+
+  const tries = attempts.length > 0 && (
+    <View style={{ gap: 6 }}>
+      {attempts.map((a, i) => (
+        <View key={i} style={styles.bandChipRow}>
+          <BandDots combo={BAND_LADDER[a.index]} size={10} />
+          <Text style={styles.noMaxText}>{comboLabel(BAND_LADDER[a.index])} · {a.reps} reps</Text>
+        </View>
+      ))}
+    </View>
+  )
+
+  if (found != null) {
+    return (
+      <ExerciseScreen scrollKey="bandFound" footer={<PillButton title="Use this band" icon="checkmark" onPress={() => onFound(found, reason)} />}>
+        <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+        <Text style={styles.sectionLabel}>Your band · {FOCUS_LABEL[focus]}</Text>
+        <View style={styles.bandChipRow}>
+          <BandDots combo={BAND_LADDER[found]} size={18} />
+          <Text style={styles.bandBig}>{comboLabel(BAND_LADDER[found])}</Text>
+        </View>
+        {tries}
+      </ExerciseScreen>
+    )
+  }
+
+  const first = attempts.length === 0
+  return (
+    <ExerciseScreen
+      scrollKey={`bandTest-${attempts.length}`}
+      footer={<PillButton title={reps == null ? "Pick your reps first" : "Next"} icon="arrow-forward" onPress={next} disabled={reps == null} />}
+    >
+      <View style={{ marginTop: 16 }}><ExerciseRow exercise={exercise} name={name} /></View>
+      <Text style={[styles.sectionLabel, { color: C.yellow }]}>Band test · try {attempts.length + 1}</Text>
+      <Text style={styles.noMaxText}>
+        {first ? `Do ${range} reps with the band you think fits. Not sure? Green.` : `Rest 2–3 min, then ${range} reps with:`}
+      </Text>
+      {first
+        ? <BandPicker value={current} onChange={setCurrent} />
+        : (
+          <View style={styles.bandChipRow}>
+            <BandDots combo={BAND_LADDER[current]} size={18} />
+            <Text style={styles.bandBig}>{comboLabel(BAND_LADDER[current])}</Text>
+          </View>
+        )}
+      <View style={styles.inputSection}>
+        <Text style={styles.sectionLabel}>How many reps?</Text>
+        <AmountInput key={attempts.length} target={target} value={reps} onChange={setReps} />
+      </View>
+      {tries}
+      <Pressable onPress={onCancel} hitSlop={6}>
+        <Text style={styles.linkText}>Cancel test</Text>
+      </Pressable>
+    </ExerciseScreen>
+  )
+}
+
 function LevelPicker({ levelChain, value, suggested, onChange }: {
   levelChain: ResolvedChain; value?: string; suggested?: string; onChange: (v: LevelStep) => void
 }) {
+  const styles = useSheet(sheet)
   const prescribedId = levelChain.chain[levelChain.prescribedIdx]?.exerciseId
   return (
     <>
@@ -952,6 +1316,8 @@ interface Prefill {
   detail?: string     // what the note is based on
   hardest?: boolean
   past?: FocusEntry[] // recent sessions, any focus, newest first
+  basis?: FocusEntry  // the session the plan is based on
+  direction?: Direction // its decision, same focus only
 }
 
 // null for exercises that don't progress (mobility, 7/3s).
@@ -963,6 +1329,8 @@ function prefillFor(ex: Exercise, sessions: SessionRow[] | null, library: Librar
   if (next.level) out.level = next.level
   if (next.weight != null) out.weight = String(next.weight)
   if (next.note) out.note = next.note
+  if (next.basis) out.basis = next.basis
+  if (next.decision) out.direction = next.decision.direction
   const basis = basisLine(next, ex.focus, next.level?.name ?? ex.name, unit)
   if (basis) out.detail = basis
   return out
@@ -991,6 +1359,7 @@ function targetNumber(s: string): number {
 function Stepper({ value, onChange, step = 1, min = 0, suffix }: {
   value: number; onChange: (v: number) => void; step?: number; min?: number; suffix?: string
 }) {
+  const styles = useSheet(sheet)
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(String(value))
 
@@ -1056,6 +1425,8 @@ const TIMED_PREP_SECS = 5
 
 // `fixed`: the length isn't the athlete's to change (warm-up holds).
 function TimedAmountControl({ target, onChange, fixed }: { target: number; onChange: (v: number) => void; fixed?: boolean }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   type Phase = "idle" | "prepare" | "running" | "done"
   const [phase, setPhase] = useState<Phase>("idle")
   const [dur, setDur] = useState(Math.max(1, target || 30))
@@ -1189,6 +1560,7 @@ function AmountInput({ target, value, onChange }: {
   value: number | null
   onChange: (v: number) => void
 }) {
+  const styles = useSheet(sheet)
   const [manual, setManual] = useState(false)
   if (!target || manual) {
     return <Stepper value={value ?? target?.low ?? 0} onChange={onChange} />
@@ -1218,6 +1590,7 @@ function AmountInput({ target, value, onChange }: {
 
 // Effort in three words, optional; tapping the selected one clears it.
 function EffortChips({ value, onChange }: { value: Effort | null; onChange: (v: Effort | null) => void }) {
+  const styles = useSheet(sheet)
   return (
     <View style={styles.chipGrid}>
       {EFFORTS.map((e) => {
@@ -1236,8 +1609,9 @@ function EffortChips({ value, onChange }: { value: Effort | null; onChange: (v: 
 // the kg / lb switch only when tapped. Level mode shows the ladder instead.
 function LoadControl({
   weight, setWeight, weightUnit, onWeightUnitChange, weightStep,
-  levelChain, level, setLevel, suggestedLevelId, suggestionNote, suggestionDetail, prefix,
+  levelChain, level, setLevel, weightWithLevel, suggestedLevelId, suggestionNote, suggestionDetail, prefix,
 }: {
+  weightWithLevel?: boolean   // level mode on a weighted step: the ladder and the weight
   weight: number; setWeight: (v: number) => void; weightUnit: WeightUnit; weightStep: number
   onWeightUnitChange: (u: WeightUnit) => void
   levelChain?: ResolvedChain   // present = level mode
@@ -1247,6 +1621,8 @@ function LoadControl({
   suggestionDetail?: string
   prefix?: string   // before the weight on the line ("Then 30 kg")
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [editing, setEditing] = useState(false)
   return (
     <View style={{ width: "100%", gap: 12 }}>
@@ -1256,12 +1632,13 @@ function LoadControl({
           {!!suggestionDetail && <Text style={styles.suggestionBannerDetail}>{suggestionDetail}</Text>}
         </View>
       )}
-      {levelChain ? (
+      {!!levelChain && (
         <LevelPicker
           levelChain={levelChain} value={level?.exerciseId} suggested={suggestedLevelId}
           onChange={(v) => setLevel?.(v)}
         />
-      ) : editing ? (
+      )}
+      {levelChain && !weightWithLevel ? null : editing ? (
         <View style={styles.inputSection}>
           <View style={styles.weightLabelRow}>
             <Text style={styles.sectionLabel}>Weight</Text>
@@ -1297,6 +1674,8 @@ function LoadControl({
 // floor and this round was made one step easier (planRoundDrop). Undo puts
 // the load back; a note-only drop (nothing to lower) has no Undo.
 function RoundDropBanner({ drop, onUndo, onPickEasier }: { drop: RoundDrop; onUndo: () => void; onPickEasier?: () => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   return (
     <View style={[styles.roundDropBanner, drop.raise && styles.roundRaiseBanner]}>
       <View style={styles.roundDropTop}>
@@ -1310,7 +1689,7 @@ function RoundDropBanner({ drop, onUndo, onPickEasier }: { drop: RoundDrop; onUn
       </View>
       {drop.pickEasier && !!onPickEasier && (
         <Pressable onPress={onPickEasier} style={styles.roundDropPick}>
-          <Ionicons name="swap-horizontal" size={16} color={C.bg} />
+          <Ionicons name="swap-horizontal" size={16} color={C.onAccent} />
           <Text style={styles.roundDropPickText}>Pick an easier exercise</Text>
         </Pressable>
       )}
@@ -1320,6 +1699,8 @@ function RoundDropBanner({ drop, onUndo, onPickEasier }: { drop: RoundDrop; onUn
 
 // Shown while a block exercise is swapped for another one; Undo goes back.
 function SwapBanner({ note, onUndo }: { note: string; onUndo: () => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   return (
     <View style={[styles.roundDropBanner, styles.swapBanner]}>
       <View style={styles.roundDropTop}>
@@ -1350,6 +1731,8 @@ function ExerciseSwapPicker({ visible, reason, original, current, planOption, li
   onPick: (row: LibraryExercise, scope: SwapScope) => void
   onClose: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [scope, setScope] = useState<SwapScope>("session")
   const own = original && library ? findLibraryRow(original, library) : undefined
   const pattern = (own?.movementType ?? (original && original.type !== "7/3s" ? original.movementType : undefined)) as MovementType | undefined
@@ -1474,8 +1857,9 @@ function ExerciseSwapPicker({ visible, reason, original, current, planOption, li
 
 // The pre-drop load to log on a round done at the easier load — only while
 // the athlete is still on it (not undone, not changed by hand).
-function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: LevelStep | undefined): ExerciseLog["adjustedFrom"] {
+function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: LevelStep | undefined, band: number): ExerciseLog["adjustedFrom"] {
   if (!drop?.undo) return undefined
+  if (drop.band != null && band === drop.band && drop.undo.band != null) return { band: comboId(BAND_LADDER[drop.undo.band]) }
   if (drop.weight != null && weight === drop.weight) return { weight: String(drop.undo.weight) }
   if (drop.level && level?.exerciseId === drop.level.exerciseId) return { levelId: drop.undo.level?.exerciseId || undefined }
   return undefined
@@ -1490,6 +1874,8 @@ function adjustedFromFor(drop: RoundDrop | undefined, weight: number, level: Lev
 // (useful for reading the coach's notes, if any, or zooming in), but seeing
 // the photo itself no longer requires that tap.
 function ExercisePhotoBanner({ photoUri, notes }: { photoUri?: string; notes?: string }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   // "sheet" = photo + coach's notes; "full" = photo alone, filling the screen
   // (pinch / double-tap to zoom, swipe down to close — see ZoomableImage). One Modal with swapped content rather than two
   // stacked Modals, which iOS doesn't present reliably.
@@ -1564,7 +1950,7 @@ function ExercisePhotoBanner({ photoUri, notes }: { photoUri?: string; notes?: s
         )}
         <LinearGradient colors={["transparent", C.bg]} style={styles.exercisePhotoFade} pointerEvents="none" />
         <View style={[styles.exercisePhotoExpandBadge, styles.exercisePhotoExpandBadgeHero]}>
-          <Ionicons name="expand" size={13} color={C.bg} />
+          <Ionicons name="expand" size={13} color={C.onAccent} />
         </View>
       </Pressable>
       <Modal visible={view !== null} transparent animationType="fade" onRequestClose={close}>
@@ -1588,7 +1974,7 @@ function ExercisePhotoBanner({ photoUri, notes }: { photoUri?: string; notes?: s
               <Pressable onPress={() => setView("full")}>
                 <Image source={{ uri: photoUri }} style={styles.exerciseInfoSheetImage} contentFit="contain" />
                 <View style={styles.exercisePhotoExpandBadge}>
-                  <Ionicons name="expand" size={13} color={C.bg} />
+                  <Ionicons name="expand" size={13} color={C.onAccent} />
                 </View>
               </Pressable>
               {notes && (
@@ -1612,6 +1998,8 @@ function ExercisePhotoBanner({ photoUri, notes }: { photoUri?: string; notes?: s
 // When there's no photo, there's nothing to show inline — coach's notes stay
 // behind a plain "i" trigger next to the exercise name, same as before.
 function ExerciseNotesIcon({ notes }: { notes?: string }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [expanded, setExpanded] = useState(false)
   const { height: winHeight } = useWindowDimensions()
   if (!notes) return null
@@ -1652,8 +2040,10 @@ function PillButton({ title, onPress, icon, variant = "primary", disabled }: {
   variant?: "primary" | "secondary"
   disabled?: boolean
 }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const primary = variant === "primary"
-  const color = primary ? C.bg : C.textPrimary
+  const color = primary ? C.onAccent : C.textPrimary
   return (
     <Pressable
       onPress={onPress}
@@ -1680,6 +2070,7 @@ function PillButton({ title, onPress, icon, variant = "primary", disabled }: {
 function ExerciseScreen({ children, footer, background, overlay, scrollKey }: {
   children: React.ReactNode; footer?: React.ReactNode; background?: React.ReactNode; overlay?: React.ReactNode; scrollKey?: string
 }) {
+  const styles = useSheet(sheet)
   return (
     <View style={{ flex: 1 }}>
       {background}
@@ -1706,6 +2097,7 @@ const GLOW_ALPHA = { normal: [0.16, 0.04, 0], strong: [0.35, 0.08, 0] }
 const SIDE_RGB = "167,139,250"   // C.side
 
 function SideGlow({ side, strong }: { side: Side; strong?: boolean }) {
+  const styles = useSheet(sheet)
   const from = { x: side === "left" ? 0 : 1, y: 0.5 }
   const to = { x: side === "left" ? 1 : 0, y: 0.5 }
   const alpha = strong ? GLOW_ALPHA.strong : GLOW_ALPHA.normal
@@ -1723,7 +2115,8 @@ function SideGlow({ side, strong }: { side: Side; strong?: boolean }) {
 // Text on a both-sides screen sits on the side being worked: left on the
 // left side, right on the right.
 function sideAlign(side?: Side) {
-  return side === "right" ? styles.alignRight : undefined
+  // Layout only, the same in every theme.
+  return side === "right" ? sheet.get(null).alignRight : undefined
 }
 
 // The moment athletes used to miss: switching sides. A full-screen card for
@@ -1731,6 +2124,8 @@ function sideAlign(side?: Side) {
 // can't go unnoticed. First switch of the block only — later switches get
 // the glow, the title and a haptic, without the wait.
 function SwitchSidesCard({ side, onDone }: { side: Side; onDone: () => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   useEffect(() => {
     const t = setTimeout(onDone, 1500)
     return () => clearTimeout(t)
@@ -1750,7 +2145,7 @@ function SwitchSidesCard({ side, onDone }: { side: Side; onDone: () => void }) {
 
 // What to do, in one glance: the target paired with the trained quality —
 // "● Max force · 3–6 reps" — so the athlete knows why this rep range.
-function targetLine(ex: Exercise): { label?: string; color?: string; amount: string } {
+function targetLine(ex: Exercise, C: Palette): { label?: string; color?: string; amount: string } {
   if (ex.type === "7/3s") return { amount: `7s hang · 3s rest × ${ex.series} · ${ex.edge}` }
   // A mobility hold typed as "30s" on a reps exercise reads as seconds.
   const timed = isTimedExercise(ex)
@@ -1769,7 +2164,9 @@ function targetLine(ex: Exercise): { label?: string; color?: string; amount: str
 // `side` "right" mirrors it (thumb and text on the right) to follow the side
 // being worked.
 function ExerciseRow({ exercise, name, load, onPress, side }: { exercise: Exercise; name?: string; load?: string; onPress?: () => void; side?: Side }) {
-  const { label, color, amount } = targetLine(exercise)
+  const C = useC()
+  const styles = useSheet(sheet)
+  const { label, color, amount } = targetLine(exercise, C)
   const icon = exercise.type === "7/3s" ? "hand-left-outline"
     : exercise.movementType === "mobility" ? "body-outline" : "barbell-outline"
   const mirror = side === "right"
@@ -1811,7 +2208,9 @@ function formatRest(secs: number): string {
 // Kicker + name + target line, sitting right under the photo (overlapping
 // its fade) so photo and name read as one thing.
 function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }) {
-  const { label, color, amount } = targetLine(exercise)
+  const C = useC()
+  const styles = useSheet(sheet)
+  const { label, color, amount } = targetLine(exercise, C)
   return (
     <View style={[styles.exHeader, !exercise.photoUri && { marginTop: 16 }]}>
       <View style={styles.exNameRow}>
@@ -1843,7 +2242,7 @@ function ExerciseHeader({ name, exercise }: { name: string; exercise: Exercise }
 
 type Side = "left" | "right"
 // Edge Lifts with a max, round 1: brief → warmup ⇄ warmupRest (× 4) → timer.
-type Step = "brief" | "warmup" | "warmupRest" | "timer" | "log"
+type Step = "brief" | "pullupTest" | "bandTest" | "warmup" | "warmupRest" | "timer" | "log"
 
 interface LoggedExerciseUIProps {
   exercise: RepExercise | BothSidesExercise
@@ -1852,6 +2251,18 @@ interface LoggedExerciseUIProps {
   onWeightUnitChange: (u: WeightUnit) => void
   initialWeight?: string
   initialLevel?: LevelStep
+  // Band-assisted (utils/bands.ts): the band to start on (ladder index,
+  // -1 = none yet → the guided test), the one planned from last time, and
+  // where a test result goes.
+  initialBand: number
+  suggestedBand?: number
+  onBandFound: (idx: number) => void
+  // Pull-up assessment: the saved result, whether round 1 asks for it, and
+  // where a new result goes.
+  pullupTest?: PullupTestResult
+  needsPullupTest?: boolean
+  pullupRetest?: boolean     // the athlete has a result: this is the 6-week retest (skippable)
+  onPullupTestDone: (r: PullupTestResult) => void
   suggestionNote?: string
   suggestionDetail?: string   // what the note is based on
   roundDrop?: RoundDrop
@@ -1863,16 +2274,19 @@ interface LoggedExerciseUIProps {
   initialHardest?: boolean   // the "hardest setting" switch to start on
   startOnBrief: boolean    // false in round 2+ unless something changed
   warmup?: WarmupSet[]     // Edge Lifts, round 1: the warm-up holds before it
-  noMax?: boolean          // Edge Lifts, round 1, and the athlete has no max yet
+  noMax?: boolean          // Edge Lifts / Max Hangs, round 1, and the athlete has no max yet
+  grip?: string            // Max Hangs: the edge size it's done on
   showSwitchCard: boolean  // timed both-sides: first switch of the block only
   onSwitchCardShown: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }
 
 function LoggedExerciseUI({
-  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, suggestionNote, suggestionDetail,
-  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, showSwitchCard, onSwitchCardShown, onDone,
+  exercise, levelChain, weightUnit, onWeightUnitChange, initialWeight, initialLevel, initialBand, suggestedBand, onBandFound, pullupTest, needsPullupTest, pullupRetest, onPullupTestDone, suggestionNote, suggestionDetail,
+  roundDrop, onPickEasier, onChangeExercise, swapNote, onUndoSwap, setting, initialHardest, startOnBrief, warmup, noMax, grip, showSwitchCard, onSwitchCardShown, onDone,
 }: LoggedExerciseUIProps) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const sides = exercise.type === "both_sides"
   const isTimed = exercise.unit === "seconds"
   const isLevelMode = !!levelChain
@@ -1887,6 +2301,15 @@ function LoggedExerciseUI({
   // One load for the exercise (both sides included) — it's set before lifting.
   const [weight, setWeight] = useState<number>(startWeight)
   const [level, setLevel] = useState<LevelStep | undefined>(startLevel)
+  const [band, setBand] = useState<number>(initialBand)
+  // Fresh result from this brief (a retest's starts empty: the old one is
+  // what's being redone).
+  const [testResult, setTestResult] = useState<PullupTestResult | undefined>(pullupRetest ? undefined : pullupTest)
+  const [retestSkipped, setRetestSkipped] = useState(false)
+  // Shown on the brief after the band finder couldn't reach the range even
+  // with the most help (no negatives either).
+  const [fallbackNote, setFallbackNote] = useState<string | null>(null)
+  const askPullupTest = !!needsPullupTest && !testResult && !retestSkipped
   const [effort, setEffort] = useState<Effort | null>(null)
   // Set on the brief, like the load: the app can't measure the setting, so
   // the athlete says when they're on the hardest one.
@@ -1909,6 +2332,7 @@ function LoggedExerciseUI({
   const [dropUndone, setDropUndone] = useState(false)
   const activeDrop = roundDrop && !dropUndone ? roundDrop : undefined
   function undoDrop() {
+    if (roundDrop?.undo?.band != null) setBand(roundDrop.undo.band)
     if (roundDrop?.undo?.weight != null) setWeight(roundDrop.undo.weight)
     if (roundDrop?.undo?.level) setLevel(roundDrop.undo.level)
     setDropUndone(true)
@@ -1917,20 +2341,28 @@ function LoggedExerciseUI({
   // athlete picks something else, showing it would misdescribe what's
   // actually selected, so it disappears (the suggested chip/value stays
   // marked separately so they can still see and return to it).
-  const stillMatchesSuggestion = isLevelMode ? level?.exerciseId === startLevel?.exerciseId : weight === startWeight
+  const stillMatchesSuggestion = (isLevelMode ? level?.exerciseId === startLevel?.exerciseId && weight === startWeight : weight === startWeight)
+    && band === initialBand
   const activeSuggestionNote = stillMatchesSuggestion ? suggestionNote : undefined
 
   // The displayed/logged identity — once in level mode, this exercise IS
   // whichever level is selected, not the container it was authored under.
   const displayName = isLevelMode && level ? level.name : exercise.name
-  const loadLabel = !isLevelMode && weight > 0 ? `${weight} ${weightUnit}` : undefined
+  // A weighted ladder step (Weighted pull-ups) carries a weight too.
+  const usesWeight = !isLevelMode || isWeightedStep(displayName)
+  // Band-assisted (by the name actually done — a ladder can step on and off
+  // the band level). Needs a focus: the test aims at its rep range.
+  const bandFocus = exercise.focus && isBandAssisted(displayName) ? exercise.focus : undefined
+  const needsBandTest = !!bandFocus && band < 0
+  const loadLabel = bandFocus && band >= 0 ? comboLabel(BAND_LADDER[band])
+    : usesWeight && weight > 0 ? `${weight} ${weightUnit}` : undefined
   const logSides: Side[] = sides ? ["left", "right"] : ["left"]
   const complete = logSides.every((s) => amounts[s] != null)
 
   function handleSave() {
     if (!complete) return
     const rpe = effort ? String(effortToRpe(effort, exercise.focus)) : undefined
-    const w = !isLevelMode && weight > 0 ? String(weight) : undefined
+    const w = usesWeight && weight > 0 ? String(weight) : undefined
     const base = {
       exerciseIndex: 0,
       exerciseName: displayName,
@@ -1938,8 +2370,10 @@ function LoggedExerciseUI({
       // "" = an id-less fallback step; log it as no id so name matching works.
       levelId: isLevelMode ? level?.exerciseId || undefined : undefined,
       effort: effort ?? undefined,
-      adjustedFrom: adjustedFromFor(activeDrop, weight, level),
+      ...(bandFocus && band >= 0 ? { band: comboId(BAND_LADDER[band]) } : {}),
+      adjustedFrom: adjustedFromFor(activeDrop, weight, level, band),
       ...(setting ? { atHardestSetting: hardest } : {}),
+      ...(grip ? { edge: grip } : {}),
     }
     onDone(sides
       // Both sides share the load and the effort (readRound takes the weaker
@@ -1964,16 +2398,21 @@ function LoggedExerciseUI({
     return (
       <ExerciseScreen
         scrollKey="brief"
-        footer={hasWarmup && !warmedUp
+        footer={askPullupTest
+          ? <PillButton title="Start pull-up test" icon="arrow-forward" onPress={() => setStep("pullupTest")} />
+          : needsBandTest
+          ? <PillButton title="Find your band" icon="arrow-forward" onPress={() => setStep("bandTest")} />
+          : hasWarmup && !warmedUp
           ? <PillButton title="Start warm-up" icon="timer-outline" onPress={() => { setWarmIdx(0); setStep("warmup") }} />
           : <PillButton title={isTimed ? "Start timer" : "Log reps"} icon={isTimed ? "timer-outline" : "arrow-forward"} onPress={() => setStep(firstSetStep)} />}
       >
         <ExercisePhotoBanner photoUri={exercise.photoUri} notes={exercise.notes} />
         <ExerciseHeader name={displayName} exercise={exercise} />
+        {!!grip && <GripCard edge={grip} secs={timerTarget} />}
         {hasWarmup && !warmedUp ? <WarmupList sets={warmup!} unit={weightUnit} /> : <FocusCue exercise={exercise} />}
         {!!noMax && (
           <View style={styles.noMaxCard}>
-            <Text style={styles.noMaxTitle}>No max yet</Text>
+            <Text style={styles.noMaxTitle}>{grip ? `No max yet on ${grip}` : "No max yet"}</Text>
             <Text style={styles.noMaxText}>Warm up by feel today. Your coach will set up a test.</Text>
           </View>
         )}
@@ -1982,14 +2421,94 @@ function LoggedExerciseUI({
         <LoadControl
           weight={weight} setWeight={setWeight} weightUnit={weightUnit} onWeightUnitChange={onWeightUnitChange} weightStep={weightStep}
           levelChain={levelChain} level={level} setLevel={setLevel}
+          weightWithLevel={isLevelMode && usesWeight}
           suggestedLevelId={initialLevel?.exerciseId}
           suggestionNote={activeSuggestionNote}
           suggestionDetail={activeSuggestionNote ? suggestionDetail : undefined}
           prefix={hasWarmup && !warmedUp ? "Then" : undefined}
         />
+        {askPullupTest && (
+          <View style={styles.noMaxCard}>
+            <Text style={styles.noMaxTitle}>{pullupRetest ? "Pull-up retest" : "First pull-up session"}</Text>
+            <Text style={styles.noMaxText}>
+              {pullupRetest ? "Time to check your pull-ups again: the test updates your pull-up for each focus." : "A short test picks the right pull-up for each focus."} Scapulas retracted on every rep.
+            </Text>
+            {pullupRetest && (
+              <Pressable onPress={() => setRetestSkipped(true)} hitSlop={6}>
+                <Text style={styles.linkText}>Not today</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+        {!!fallbackNote && (
+          <View style={styles.noMaxCard}>
+            <Text style={styles.noMaxText}>{fallbackNote}</Text>
+          </View>
+        )}
+        {!askPullupTest && !!bandFocus && (needsBandTest
+          ? (
+            <>
+              <View style={styles.noMaxCard}>
+                <Text style={styles.noMaxTitle}>No band yet</Text>
+                <Text style={styles.noMaxText}>A short test finds the band for {target ? `${target.low}–${target.high}` : "your"} reps. Already know it? Pick it below.</Text>
+              </View>
+              <BandPicker value={band} onChange={(i) => { setBand(i); onBandFound(i) }} />
+            </>
+          )
+          : <BandPicker value={band} suggested={suggestedBand} onChange={setBand} onRetest={() => setStep("bandTest")} />)}
         {!!setting && <SettingCard setting={setting} hardest={hardest} onChange={setHardest} />}
         {!!onChangeExercise && <ChangeExerciseLink onPress={onChangeExercise} />}
       </ExerciseScreen>
+    )
+  }
+
+  // ── Pull-up assessment ──
+  if (step === "pullupTest") {
+    return (
+      <PullupTestUI
+        exercise={exercise}
+        name={displayName}
+        onDone={(r) => {
+          onPullupTestDone(r)
+          setTestResult(r)
+          const focus = exercise.focus
+          const at = levelChain && focus ? stepForVariation(levelChain.chain, variationFor(focus, r)) : -1
+          if (at >= 0) setLevel(levelChain!.chain[at])
+          // Band-assisted today and no band yet → straight to the band finder.
+          setStep(at >= 0 && isBandAssisted(levelChain!.chain[at].name) && band < 0 ? "bandTest" : "brief")
+        }}
+        onCancel={() => setStep("brief")}
+      />
+    )
+  }
+
+  // ── Band test ──
+  if (step === "bandTest" && bandFocus) {
+    return (
+      <BandTestUI
+        exercise={exercise}
+        name={displayName}
+        focus={bandFocus}
+        start={band >= 0 ? band : testResult ? bandStartFor(bandFocus, testResult) : DEFAULT_START_INDEX}
+        onFound={(i, reason) => {
+          setBand(i)
+          onBandFound(i)
+          // Short of the range even with the most help: the step below the
+          // bands today, if the ladder has one; otherwise the most help and
+          // as many clean reps as they can.
+          if (reason === "max_help" && levelChain) {
+            const easier = easierThanBands(levelChain.chain)
+            if (easier >= 0) {
+              setLevel(levelChain.chain[easier])
+              setFallbackNote(`Not in range yet even with ${comboLabel(BAND_LADDER[i])}: ${levelChain.chain[easier].name} today. Bands again once it gets easy.`)
+            } else {
+              setFallbackNote(`Not in range yet even with ${comboLabel(BAND_LADDER[i])}: use it and do as many clean reps as you can.`)
+            }
+          }
+          setStep("brief")
+        }}
+        onCancel={() => setStep("brief")}
+      />
     )
   }
 
@@ -2016,7 +2535,7 @@ function LoggedExerciseUI({
         <View style={[{ gap: 4 }, sideAlign(sides ? warmSide : undefined)]}>
           <Text style={[styles.sectionLabel, { color: C.yellow }, sideAlign(sides ? warmSide : undefined)]}>Warm-up {warmIdx + 1} of {warmup!.length}</Text>
           <Text style={[styles.timedBig, { color: C.textPrimary }, sideAlign(sides ? warmSide : undefined)]}>
-            {set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text>
+            {set.weight > 0 ? <>{set.weight}<Text style={styles.timedBigUnit}> {weightUnit}</Text></> : "Bodyweight"}
           </Text>
         </View>
         {sides && <Text style={[styles.timerSideTitle, sideAlign(warmSide)]}>{warmSide === "left" ? "Left side" : "Right side"}</Text>}
@@ -2046,7 +2565,7 @@ function LoggedExerciseUI({
         upNext={<ExerciseRow
           exercise={exercise}
           name={last ? displayName : `${displayName} · warm-up ${warmIdx + 2}`}
-          load={last ? loadLabel : `${next!.weight} ${weightUnit} · ${next!.secs} s`}
+          load={last ? loadLabel : `${next!.weight > 0 ? `${next!.weight} ${weightUnit}` : "Bodyweight"} · ${next!.secs} s`}
         />}
         onDone={done}
       />
@@ -2118,7 +2637,7 @@ function LoggedExerciseUI({
             : <AmountInput target={target} value={amounts[s]} onChange={setAmount(s)} />}
         </View>
       ))}
-      {!isLevelMode && (
+      {usesWeight && (
         <View style={styles.inputSection}>
           <Text style={styles.sectionLabel}>How did it feel? (optional)</Text>
           <EffortChips value={effort} onChange={setEffort} />
@@ -2141,8 +2660,308 @@ async function readEdgeMax(userId: string): Promise<number | null | undefined> {
   return max
 }
 
+// The athlete's band combos from their `users` row, kept on the device too;
+// when the row can't be read, the device's copy. A combo found offline
+// (device copy has a focus the row lacks) isn't lost: the device wins for it.
+// …and the pull-up assessment the same way (the newer one wins).
+async function readPullupProfile(userId: string): Promise<{ bands: SavedBands; test: SavedPullupTest | null }> {
+  const [me, cached, cachedTest] = await Promise.all([
+    withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null),
+    loadCachedBands(userId),
+    loadCachedPullupTest(userId),
+  ])
+  if (!me) return { bands: cached ?? {}, test: cachedTest ?? null }
+  const bands = { ...parseSavedBands((me as any).bandCombos), ...(cached ?? {}) }
+  saveCachedBands(userId, bands)
+  const rowTest = parsePullupTest((me as any).pullupTest)
+  const test = !rowTest ? cachedTest ?? null : !cachedTest || rowTest.date >= cachedTest.date ? rowTest : cachedTest
+  if (test) saveCachedPullupTest(userId, test)
+  return { bands, test }
+}
+
+// The athlete's Max Hangs log, the same way (undefined = neither the row
+// nor a device copy).
+async function readHangLog(userId: string): Promise<HangMaxEntry[] | undefined> {
+  const me = await withTimeout(getUsers(userId), PREFILL_TIMEOUT_MS).catch(() => null)
+  if (!me) return loadCachedHangLog(userId)
+  const log = parseHangLog((me as any).hangMaxLog)
+  saveCachedHangLog(userId, log)
+  return log
+}
+
+// Max Hangs' brief: the grip (edge size) and the hang.
+function GripCard({ edge, secs }: { edge: string; secs: number }) {
+  const styles = useSheet(sheet)
+  return (
+    <View style={styles.inputSection}>
+      <Text style={styles.sectionLabel}>Grip</Text>
+      <View style={styles.warmupRow}>
+        <Text style={styles.warmupRowWeight}>{edge} edge</Text>
+        <Text style={styles.warmupRowSecs}>{secs || MAX_HANGS.holdSecs} s hangs</Text>
+      </View>
+      <Text style={styles.warmupRowNote}>Weight is added to your bodyweight.</Text>
+      <ScapulaCue />
+    </View>
+  )
+}
+
+// Max Hangs: shoulder blades retracted on every hang (coach 2026-11-11).
+function ScapulaCue() {
+  const styles = useSheet(sheet)
+  return (
+    <View style={styles.noMaxCard}>
+      <Text style={styles.noMaxTitle}>Shoulder blades back</Text>
+      <Text style={styles.noMaxText}>{SCAPULA_CUE}</Text>
+    </View>
+  )
+}
+
+// The Max Hangs test (homework the coach sends for one edge), try by try:
+// set the load → 10 s hang on the hold timer → held: how hard was it? /
+// let go early: a mistake (same load again) or too hard? → rest → the
+// next load (utils/maxHangs.ts nextHangTry). Ends on the heaviest load held,
+// saved as the edge's max. Can't hang bodyweight on the edge → offers the
+// next bigger one (its max is saved for that edge instead).
+type HangTestStep = "set" | "hang" | "held" | "failed" | "rest" | "summary"
+
+function HangTestUI({ exercise, userId, hangLog, weightUnit, onSaved, onDone }: {
+  exercise: RepExercise | BothSidesExercise
+  userId?: string
+  hangLog: HangMaxEntry[] | undefined
+  weightUnit: WeightUnit
+  onSaved: (edge: string, kg: number) => void
+  onDone: (log: Omit<ExerciseLog, "round">) => void
+}) {
+  const C = useC()
+  const styles = useSheet(sheet)
+  const [edge, setEdge] = useState(hangEdgeOf(exercise))
+  const lastMaxKg = hangLog ? hangMaxFor(hangLog, edge) : null
+  // Start a bit under the last max (or at bodyweight) — the test builds up.
+  const startFor = (maxKg: number | null) => maxKg ? Math.max(0, convertWeight(maxKg, "kg", weightUnit) - HANG_TEST_JUMP[weightUnit].easy) : 0
+  const [tries, setTries] = useState<HangTry[]>([])
+  const [weight, setWeight] = useState(() => startFor(lastMaxKg))
+  const [secs, setSecs] = useState(0)
+  const [step, setStep] = useState<HangTestStep>("set")
+  const [result, setResult] = useState<HangTestNext | null>(null)
+  const [saving, setSaving] = useState(false)
+  const hold = MAX_HANGS.holdSecs
+  const best = bestHeld(tries)
+
+  function record(t: HangTry) {
+    const all = [...tries, t]
+    setTries(all)
+    const next = nextHangTry(all, weightUnit, edge)
+    setResult(next)
+    if (next.kind === "try") {
+      setWeight(next.weight)
+      setStep("rest")
+    } else {
+      setStep("summary")
+    }
+  }
+
+  function switchEdge(to: string) {
+    setEdge(to)
+    setTries([])
+    setResult(null)
+    setWeight(startFor(hangLog ? hangMaxFor(hangLog, to) : null))
+    setStep("set")
+  }
+
+  function finish(maxWeight: number | null) {
+    onDone({
+      exerciseIndex: 0, exerciseName: exercise.name, edge, weightUnit,
+      repsCompleted: String(maxWeight != null ? hold : Math.max(0, ...tries.map((t) => t.secs ?? 0))),
+      weight: maxWeight != null ? String(maxWeight) : undefined,
+      notes: `Max test on ${edge}: ${hangTriesSummary(tries, weightUnit)}`,
+    })
+  }
+
+  async function save(maxWeight: number) {
+    if (!userId) return finish(maxWeight)
+    const kg = weightUnit === "kg" ? maxWeight : convertWeight(maxWeight, "lb", "kg")
+    setSaving(true)
+    try {
+      await setHangMax(userId, edge, kg, "test")
+      onSaved(edge, kg)
+      finish(maxWeight)
+    } catch (e: any) {
+      setSaving(false)
+      Alert.alert("Max not saved", `${e?.message ?? "Couldn't reach the server."} Tell your coach: ${hangLoadLabel(maxWeight, weightUnit)} on ${edge}.`, [
+        { text: "Try again", onPress: () => { void save(maxWeight) } },
+        { text: "Continue", style: "cancel", onPress: () => finish(maxWeight) },
+      ])
+    }
+  }
+
+  const header = (
+    <View style={{ marginTop: 16 }}>
+      <ExerciseRow exercise={exercise} name={`${exercise.name} · ${edge} · max test`} load={hangLoadLabel(weight, weightUnit)} />
+    </View>
+  )
+  const triesList = tries.length > 0 && (
+    <View style={styles.inputSection}>
+      <Text style={styles.sectionLabel}>Tries</Text>
+      <View style={{ gap: 6 }}>
+        {tries.map((t, i) => (
+          <View key={i} style={styles.warmupRow}>
+            <Text style={styles.warmupRowNum}>{i + 1}</Text>
+            <Text style={styles.warmupRowWeight}>{hangLoadLabel(t.weight, weightUnit)}</Text>
+            <Text style={styles.warmupRowSecs}>
+              {t.held ? `Held · ${t.effort ? EFFORT_LABEL[t.effort] : ""}` : `${t.secs ?? 0} s · ${t.reason === "mistake" ? "Mistake" : "Too hard"}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+
+  // ── Set the load ──
+  if (step === "set") {
+    return (
+      <ExerciseScreen
+        scrollKey="hang-test-set"
+        footer={<PillButton title={`Hang ${hold} s`} icon="timer-outline" onPress={() => setStep("hang")} />}
+      >
+        {header}
+        <Text style={styles.warmupRowNote}>
+          Warm up by feel first. Each try is a {hold} s hang on the {edge} edge, {formatRest(MAX_HANGS.testRestSecs)} rest between tries. The app picks the next load from how it went.
+        </Text>
+        <ScapulaCue />
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Weight added (0 = bodyweight)</Text>
+          <Stepper value={weight} onChange={setWeight} step={DEFAULT_LOAD_STEP[weightUnit]} suffix={` ${weightUnit}`} />
+          <Text style={styles.warmupRowNote}>
+            {hangLoadLabel(weight, weightUnit)}{lastMaxKg != null ? ` · last max on ${edge}: ${hangLoadLabel(convertWeight(lastMaxKg, "kg", weightUnit), weightUnit)}` : ""}
+          </Text>
+        </View>
+        {triesList}
+        {tries.length > 0 && (
+          <Pressable onPress={() => { setResult(best != null ? { kind: "done", weight: best } : { kind: "bigger_edge", edge: biggerEdge(edge) }); setStep("summary") }} hitSlop={6}>
+            <Text style={styles.linkText}>End the test here</Text>
+          </Pressable>
+        )}
+      </ExerciseScreen>
+    )
+  }
+
+  // ── The hang ──
+  if (step === "hang") {
+    return (
+      <ExerciseScreen
+        scrollKey={`hang-test-${tries.length}`}
+        footer={<PillButton title="Hang first" icon="arrow-forward" onPress={() => {}} disabled />}
+      >
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Try {tries.length + 1} · {hangLoadLabel(weight, weightUnit)}</Text>
+          <TimedAmountControl
+            target={hold}
+            fixed
+            onChange={(s) => { setSecs(s); setStep(s >= hold ? "held" : "failed") }}
+          />
+          <Text style={styles.warmupRowNote}>Tap Stop if you come off early.</Text>
+        </View>
+        <ScapulaCue />
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Held: how hard? ──
+  if (step === "held") {
+    return (
+      <ExerciseScreen scrollKey="hang-test-held" footer={<PillButton title="Pick how it felt" icon="checkmark" onPress={() => {}} disabled />}>
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Held {hold} s · how hard was it?</Text>
+          <View style={styles.chipGrid}>
+            {EFFORTS.map((e) => (
+              <Pressable key={e} style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: true, secs, effort: e })}>
+                <Text style={styles.repChipText}>{EFFORT_LABEL[e]}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.warmupRowNote}>{"Max = nothing left in the tank: that's your max."}</Text>
+        </View>
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Let go early: mistake or too hard? ──
+  if (step === "failed") {
+    return (
+      <ExerciseScreen scrollKey="hang-test-failed" footer={<PillButton title="Pick one" icon="checkmark" onPress={() => {}} disabled />}>
+        {header}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Came off at {secs} s · what happened?</Text>
+          <View style={styles.chipGrid}>
+            <Pressable style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: false, secs, reason: "mistake" })}>
+              <Text style={styles.repChipText}>A mistake</Text>
+            </Pressable>
+            <Pressable style={[styles.repChip, styles.effortChip]} onPress={() => record({ weight, held: false, secs, reason: "too_hard" })}>
+              <Text style={styles.repChipText}>Too hard</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.warmupRowNote}>A mistake: bad grip, slipped, shoulders let go — you get the same load again.</Text>
+        </View>
+      </ExerciseScreen>
+    )
+  }
+
+  // ── Rest before the next try ──
+  if (step === "rest" && result?.kind === "try") {
+    const why = result.why === "retry" ? "Same load again" : result.why === "down" ? "Lighter" : "Heavier"
+    return (
+      <WarmupRest
+        key={tries.length}
+        secs={MAX_HANGS.testRestSecs}
+        title={`Try ${tries.length + 1} next · ${why}`}
+        upNext={<ExerciseRow exercise={exercise} name={`${exercise.name} · ${edge}`} load={`${hangLoadLabel(result.weight, weightUnit)} · ${hold} s`} />}
+        onDone={() => setStep("set")}
+      />
+    )
+  }
+
+  // ── Summary ──
+  const max = result?.kind === "done" ? result.weight : best
+  const bigger = result?.kind === "bigger_edge" ? result.edge : null
+  return (
+    <ExerciseScreen
+      scrollKey="hang-test-summary"
+      footer={max != null
+        ? <PillButton title={saving ? "Saving…" : `Save max · ${hangLoadLabel(max, weightUnit)}`} icon="checkmark" onPress={() => { void save(max) }} disabled={saving} />
+        : bigger
+          ? <PillButton title={`Try the ${bigger} edge`} icon="arrow-forward" onPress={() => switchEdge(bigger)} />
+          : <PillButton title="Finish without a max" icon="checkmark" onPress={() => finish(null)} />}
+    >
+      {header}
+      {max != null ? (
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionLabel}>Your max on {edge}</Text>
+          <Text style={[styles.timedBig, { color: C.textPrimary }]}>{max > 0 ? <>+{max}<Text style={styles.timedBigUnit}> {weightUnit}</Text></> : "Bodyweight"}</Text>
+          <Text style={styles.warmupRowNote}>The heaviest load you held {hold} s.</Text>
+        </View>
+      ) : (
+        <View style={styles.noMaxCard}>
+          <Text style={styles.noMaxTitle}>No hang on {edge} yet</Text>
+          <Text style={styles.noMaxText}>
+            {bigger ? `Bodyweight was too hard on this edge. Rest ${formatRest(MAX_HANGS.testRestSecs)} and test the ${bigger} edge instead.` : "Tell your coach how it went."}
+          </Text>
+        </View>
+      )}
+      {triesList}
+      {max == null && bigger && (
+        <Pressable onPress={() => finish(null)} hitSlop={6}>
+          <Text style={styles.linkText}>Finish without a max</Text>
+        </Pressable>
+      )}
+    </ExerciseScreen>
+  )
+}
+
 // The brief's warm-up: one line per hold, weight and seconds only.
 function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
+  const styles = useSheet(sheet)
   return (
     <View style={styles.inputSection}>
       <Text style={styles.sectionLabel}>Warm-up first</Text>
@@ -2150,7 +2969,7 @@ function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
         {sets.map((s, i) => (
           <View key={i} style={styles.warmupRow}>
             <Text style={styles.warmupRowNum}>{i + 1}</Text>
-            <Text style={styles.warmupRowWeight}>{s.weight} {unit}</Text>
+            <Text style={styles.warmupRowWeight}>{s.weight > 0 ? `${s.weight} ${unit}` : "Bodyweight"}</Text>
             <Text style={styles.warmupRowSecs}>{s.secs} s</Text>
           </View>
         ))}
@@ -2163,6 +2982,8 @@ function WarmupList({ sets, unit }: { sets: WarmupSet[]; unit: WeightUnit }) {
 // Rest after a warm-up hold: the same ring as the rest between rounds. Goes
 // on by itself when it runs out.
 function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: string; upNext: React.ReactNode; onDone: () => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [remaining, setRemaining] = useState(secs)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -2192,7 +3013,7 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
       <View style={styles.restCircle}>
         <AnimatedCircularProgress
           size={220} width={10} fill={(remaining / secs) * 100}
-          tintColor={urgent ? C.red : C.green} backgroundColor={C.surface} rotation={0}
+          tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
         >
           {() => <Text style={[styles.restTimerText, { fontSize: 56 }]}>{`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}</Text>}
         </AnimatedCircularProgress>
@@ -2204,6 +3025,7 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
 }
 
 function WarmedUpNote() {
+  const styles = useSheet(sheet)
   return (
     <View style={styles.suggestionBanner}>
       <Text style={styles.suggestionBannerText}>Warm-up done</Text>
@@ -2223,15 +3045,17 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
   onSaved: (kg: number) => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }) {
+  const styles = useSheet(sheet)
   const start = currentMaxKg ? convertWeight(currentMaxKg, "kg", weightUnit) : 0
   const [weight, setWeight] = useState(start)
   const [saving, setSaving] = useState(false)
   const secs = EDGE_WARMUP.testHoldSecs
+  const valid = weight > 0
   function finish() {
     onDone({ exerciseIndex: 0, exerciseName: exercise.name, repsCompleted: String(secs), weight: String(weight), weightUnit })
   }
   async function save() {
-    if (!(weight > 0) || !userId) return
+    if (!valid || !userId) return
     const kg = weightUnit === "kg" ? weight : convertWeight(weight, "lb", "kg")
     setSaving(true)
     try {
@@ -2249,7 +3073,7 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
   return (
     <ExerciseScreen
       scrollKey="max-test"
-      footer={<PillButton title={saving ? "Saving…" : weight > 0 ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !(weight > 0)} />}
+      footer={<PillButton title={saving ? "Saving…" : valid ? "Save max" : "Enter the weight first"} icon="checkmark" onPress={save} disabled={saving || !valid} />}
     >
       <View style={{ marginTop: 16 }}>
         <ExerciseRow exercise={exercise} name={`${exercise.name} · max test`} />
@@ -2271,6 +3095,8 @@ function MaxTestUI({ exercise, userId, currentMaxKg, weightUnit, onSaved, onDone
 // athlete's own call on whether they're at the hardest one. Progression
 // only moves past the setting once that switch is on (scNext.planNext).
 function SettingCard({ setting, hardest, onChange }: { setting: ExerciseSetting; hardest: boolean; onChange: (v: boolean) => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   return (
     <View style={styles.settingCard}>
       <Text style={styles.sectionLabel}>Exercise setup</Text>
@@ -2296,6 +3122,8 @@ function SettingCard({ setting, hardest, onChange }: { setting: ExerciseSetting;
 // "Change exercise": opens the swap picker (any library exercise, this
 // session only). Low-key — the default is doing what the coach set.
 function ChangeExerciseLink({ onPress }: { onPress: () => void }) {
+  const C = useC()
+  const styles = useSheet(sheet)
   return (
     <Pressable onPress={onPress} hitSlop={6} style={styles.changeExercise}>
       <Ionicons name="swap-horizontal" size={16} color={C.textSecondary} />
@@ -2306,6 +3134,7 @@ function ChangeExerciseLink({ onPress }: { onPress: () => void }) {
 
 // The brief's "what this focus means right now" line, under the target.
 function FocusCue({ exercise }: { exercise: Exercise }) {
+  const styles = useSheet(sheet)
   if (exercise.type === "7/3s" || exercise.movementType === "mobility" || !exercise.focus) return null
   return (
     <Text style={[styles.focusCue, { borderLeftColor: FOCUS_COLOR[exercise.focus] }]}>
@@ -2332,6 +3161,7 @@ function MobilityExerciseUI({ exercise, showSwitchCard, onSwitchCardShown, onCha
   onUndoSwap?: () => void
   onDone: (log: Omit<ExerciseLog, "round">) => void
 }) {
+  const styles = useSheet(sheet)
   const isTimed = isTimedExercise(exercise)
   const sides = exercise.type === "both_sides"
   const target = targetNumber(exercise.reps)
@@ -2391,6 +3221,8 @@ interface SevenThreesUIProps {
 type SevenThreesPhase = "ready" | "hanging" | "prepare" | "resting" | "done"
 
 function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
+  const C = useC()
+  const styles = useSheet(sheet)
   const [seriesDone, setSeriesDone] = useState(0)
   const [innerPhase, setInnerPhase] = useState<SevenThreesPhase>("ready")
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
@@ -2544,7 +3376,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
             width={10}
             fill={((timeRemaining ?? 0) / 5) * 100}
             tintColor={C.textMuted}
-            backgroundColor={C.surface}
+            backgroundColor={C.surfaceHigh}
           >
             {() => (
               <>
@@ -2574,7 +3406,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
             width={10}
             fill={fillPercent}
             tintColor={innerPhase === "hanging" ? C.green : C.textMuted}
-            backgroundColor={C.surface}
+            backgroundColor={C.surfaceHigh}
           >
             {() => (
               <>
@@ -2611,7 +3443,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   introContent: { flexGrow: 1, padding: 20, gap: 16 },
   // Full-bleed hero: negative margins cancel the introContent padding; capped
   // height + cover crops it so it doesn't dominate the screen.
@@ -2680,7 +3512,7 @@ const styles = StyleSheet.create({
   roundDropBanner: { gap: 10, width: "100%", backgroundColor: "rgba(254,215,102,0.12)", borderRadius: 14, padding: 12 },
   roundDropTop: { flexDirection: "row", alignItems: "center", gap: 10 },
   roundDropPick: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 44, borderRadius: 14, backgroundColor: C.yellow },
-  roundDropPickText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  roundDropPickText: { fontSize: 15, fontWeight: "800", color: C.onAccent },
   swapBanner: { backgroundColor: "rgba(111,207,151,0.10)", borderColor: C.green },
   pickerBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" },
   pickerSheet: { maxHeight: "85%", backgroundColor: C.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 16, paddingTop: 16 },
@@ -2697,13 +3529,13 @@ const styles = StyleSheet.create({
   pickerChip: { paddingHorizontal: 12, height: 34, justifyContent: "center", borderRadius: 999, backgroundColor: C.surfaceHigh },
   pickerChipSelected: { backgroundColor: C.green },
   pickerChipText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
-  pickerChipTextSelected: { color: C.bg },
+  pickerChipTextSelected: { color: C.onAccent },
   pickerSheetTall: { height: "85%" },
   scopeRow: { flexDirection: "row", backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 4, gap: 4, marginTop: 10 },
   scopeBtn: { flex: 1, height: 36, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   scopeBtnSelected: { backgroundColor: C.green },
   scopeText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
-  scopeTextSelected: { color: C.bg },
+  scopeTextSelected: { color: C.onAccent },
   changeExercise: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 18, paddingVertical: 6 },
   changeExerciseText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   roundDropText: { flex: 1, fontSize: 14, fontWeight: "600", color: C.textPrimary, lineHeight: 19 },
@@ -2724,7 +3556,7 @@ const styles = StyleSheet.create({
   unitChip: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: C.surfaceHigh },
   unitChipSelected: { backgroundColor: C.green, borderColor: C.green },
   unitChipText: { fontSize: 12, fontWeight: "600", color: C.textSecondary },
-  unitChipTextSelected: { color: C.bg },
+  unitChipTextSelected: { color: C.onAccent },
 
   exerciseCard: { flex: 1, width: "100%", justifyContent: "center", gap: 8, paddingVertical: 16 },
   // Full-bleed: the negative margin cancels screenContent's side padding.
@@ -2837,7 +3669,7 @@ const styles = StyleSheet.create({
   effortChip: { flex: 1 },
   repChipSelected: { backgroundColor: C.green },
   repChipText: { fontSize: 18, fontWeight: "700", color: C.textPrimary },
-  repChipTextSelected: { color: C.bg },
+  repChipTextSelected: { color: C.onAccent },
   linkText: { fontSize: 14, fontWeight: "700", color: C.green },
   settingCard: { backgroundColor: C.surface, borderRadius: 16, padding: 14, gap: 8, width: "100%" },
   settingHint: { fontSize: 15, color: C.textPrimary, lineHeight: 20 },
@@ -2856,9 +3688,14 @@ const styles = StyleSheet.create({
   levelChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, backgroundColor: C.surfaceHigh, alignItems: "center" },
   levelChipSelected: { backgroundColor: C.green },
   levelChipText: { fontSize: 14, fontWeight: "500", color: C.textSecondary },
-  levelChipTextSelected: { color: C.bg, fontWeight: "700" },
+  levelChipTextSelected: { color: C.onAccent, fontWeight: "700" },
   levelChipSuggested: { fontSize: 9.5, fontWeight: "700", color: C.green, letterSpacing: 0.4, marginTop: 2, textTransform: "uppercase" },
-  levelChipSuggestedSelected: { color: C.bg },
+  levelChipSuggestedSelected: { color: C.onAccent },
+  bandDots: { flexDirection: "row", gap: 3 },
+  bandDot: {},
+  bandDotBlack: { borderWidth: 1, borderColor: C.textMuted },
+  bandChipRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  bandBig: { fontSize: 22, fontWeight: "700", color: C.textPrimary },
   levelEmptyHint: { fontSize: 12.5, color: C.textMuted, fontStyle: "italic" },
 
   reviewContainer: { padding: 20, gap: 16 },
@@ -2868,4 +3705,4 @@ const styles = StyleSheet.create({
   reviewExerciseName: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
   reviewDetail: { fontSize: 14, color: C.textSecondary },
   reviewNotes: { fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 2 },
-})
+}))

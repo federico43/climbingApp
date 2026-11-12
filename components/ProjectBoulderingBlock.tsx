@@ -1,5 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
@@ -12,10 +12,11 @@ import {
   reviewPromptHistory, shouldPromptReviewClip, summarizeProjectAttempts,
 } from "@/utils/progression/projectBouldering"
 import { saveVideoLocally } from "@/utils/saveVideo"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { Ionicons } from "@expo/vector-icons"
 import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
@@ -53,6 +54,9 @@ export function ProjectBoulderingBlock({
   block, logAttempt, updateLastAttempt, undoLastAttempt, restTimeRemaining, startRestTimer,
   attempts, allAttempts, goToNextBlock, goToPreviousBlock,
 }: Props) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const shared_styles = useSheet(shared_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const settings = normalizeProjectBlock(block)
   const blockTitle: string = block.blockName || "Project bouldering"
@@ -70,6 +74,11 @@ export function ProjectBoulderingBlock({
     attempts.length === 0 ? "intro" : secondsLeft <= 0 ? "review" : "ready"
   )
   const [overtime, setOvertime] = useState(false)   // "One more attempt" after time's up
+  // Beeps when the block's time runs out, and notifies if the app is in the background.
+  useBlockTimerAlert(
+    startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? startedAt + limitSecs * 1000 : null,
+    blockTitle,
+  )
 
   // Review-clip prompt: the per-block caps come from the attempts themselves
   // (reviewPromptHistory); only the unanswered card and an accepted "film the
@@ -191,29 +200,43 @@ export function ProjectBoulderingBlock({
 
   const timeChip = startedAt != null && (
     <View style={[s.timeChip, secondsLeft <= 60 && s.timeChipUrgent]}>
-      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.bg : C.green} />
-      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.bg }]}>
+      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.onAccent : C.green} />
+      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.onAccent }]}>
         {secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
       </Text>
     </View>
   )
 
-  // Shown on rest and, if rest ran out (or was skipped) before it was
-  // answered, on ready too — it has already used up one of the block's prompts.
-  const promptCard = promptVisible && !recordNext && (
-    <View style={s.promptCard}>
-      <Ionicons name="videocam" size={22} color={C.yellow} />
-      <View style={{ flex: 1, gap: 10 }}>
-        <Text style={s.promptText}>Film your next attempt so your coach can review it?</Text>
-        <View style={s.promptActions}>
-          <Pressable style={s.promptYes} onPress={() => { setRecordNext(true); setPromptVisible(false) }}>
-            <Text style={s.promptYesText}>Sure</Text>
-          </Pressable>
-          <Pressable onPress={() => setPromptVisible(false)} hitSlop={8}>
-            <Text style={s.linkMuted}>Not now</Text>
-          </Pressable>
-        </View>
+  // The algorithm asks for a review clip: a full-screen takeover so it can't be
+  // missed (Federico 2026-11-05: the small card was being ignored). Shown on
+  // rest and, if rest ran out (or was skipped) before it was answered, on
+  // ready too — it has already used up one of the block's prompts.
+  function acceptPrompt() {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+    setRecordNext(true)
+    setPromptVisible(false)
+  }
+  const promptOverlay = promptVisible && !recordNext && (
+    <View style={s.promptOverlay}>
+      <View style={s.promptIconRing}>
+        <Ionicons name="videocam" size={64} color={C.bg} />
       </View>
+      <Text style={s.promptTitle}>Your next attempt{"\n"}goes on video</Text>
+      <Text style={s.promptBody}>
+        Your coach wants to review it. Get ready: set up your phone to film the whole climb.
+      </Text>
+      {phase === "rest" && (
+        <Text style={s.promptRest}>Rest {clock(restTimeRemaining ?? 0)}</Text>
+      )}
+      <Pressable
+        style={({ pressed }) => [s.promptYes, pressed && { transform: [{ scale: 0.97 }] }]}
+        onPress={acceptPrompt}
+      >
+        <Text style={s.promptYesText}>Got it, I&apos;ll film it</Text>
+      </Pressable>
+      <Pressable onPress={() => setPromptVisible(false)} hitSlop={12}>
+        <Text style={s.linkMuted}>Not this time</Text>
+      </Pressable>
     </View>
   )
 
@@ -222,7 +245,7 @@ export function ProjectBoulderingBlock({
   if (phase === "intro") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} />
+        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <View style={s.introPills}>
             {settings.grade ? <GradePill grade={settings.grade} /> : (
@@ -301,7 +324,7 @@ export function ProjectBoulderingBlock({
             onPress={() => (recordNext ? film(true) : record())}
             style={({ pressed }) => [s.bigButton, recordNext && s.bigButtonRecord, pressed && { transform: [{ scale: 0.96 }] }]}
           >
-            {recordNext && <Ionicons name="videocam" size={40} color={C.bg} />}
+            {recordNext && <Ionicons name="videocam" size={40} color={C.onAccent} />}
             <Text style={s.bigButtonText}>{recordNext ? "Record\nattempt" : "Attempt"}</Text>
           </Pressable>
 
@@ -312,9 +335,7 @@ export function ProjectBoulderingBlock({
                 <Text style={s.linkMuted}>Don&apos;t film it</Text>
               </Pressable>
             </View>
-          ) : promptVisible ? (
-            promptCard
-          ) : (
+          ) : promptVisible ? null : (
             <Pressable onPress={() => film(false)} hitSlop={8} style={s.filmLink}>
               <Ionicons name="videocam-outline" size={16} color={C.textSecondary} />
               <Text style={s.linkMuted}>Film this one</Text>
@@ -326,6 +347,7 @@ export function ProjectBoulderingBlock({
             <Text style={s.finishText}>Finish block</Text>
           </Pressable>
         </View>
+        {promptOverlay}
         {showCamera && (
           <View style={s.cameraOverlay}>
             <VideoRecorder onFinish={onVideo} onClose={() => setShowCamera(false)} />
@@ -351,7 +373,7 @@ export function ProjectBoulderingBlock({
           </View>
           <AnimatedCircularProgress
             size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surface}
+            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
           >
             {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
           </AnimatedCircularProgress>
@@ -359,7 +381,7 @@ export function ProjectBoulderingBlock({
 
         <ScrollView contentContainerStyle={s.restContent}>
           <Pressable onPress={toggleSent} style={[s.sentToggle, sent && s.sentToggleOn]}>
-            <Text style={[s.sentText, sent && { color: C.bg }]}>{sent ? "Sent! 🎉" : "Sent it?"}</Text>
+            <Text style={[s.sentText, sent && { color: C.onAccent }]}>{sent ? "Sent! 🎉" : "Sent it?"}</Text>
           </Pressable>
 
           {!sent && (
@@ -378,9 +400,11 @@ export function ProjectBoulderingBlock({
             </>
           )}
 
-          {promptCard}
           {recordNext && (
-            <Text style={s.hint}>📹 Your next attempt will be filmed for your coach.</Text>
+            <View style={s.recordBanner}>
+              <Ionicons name="videocam" size={22} color={C.bg} />
+              <Text style={s.recordBannerText}>Next attempt goes on video. Set up your phone.</Text>
+            </View>
           )}
         </ScrollView>
 
@@ -392,6 +416,7 @@ export function ProjectBoulderingBlock({
             <Text style={s.pillBtnText}>Skip rest</Text>
           </Pressable>
         </View>
+        {promptOverlay}
       </View>
     )
   }
@@ -436,6 +461,8 @@ export function ProjectBoulderingBlock({
 // ─── Shared pieces (also used by the workout summary and history) ──────────────
 
 export function GradePill({ grade, small }: { grade: string; small?: boolean }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const opt = BoulderLevelOptions.find((o) => o.value === grade)
   return (
     <View style={[s.gradePill, small && s.gradePillSmall, { backgroundColor: opt?.color ?? C.surfaceHigh }]}>
@@ -447,6 +474,8 @@ export function GradePill({ grade, small }: { grade: string; small?: boolean }) 
 // Grade · attempts · sent, then the fall-reason counts. `compact` = one line
 // of stats and small chips (workout summary rows, coach dashboard).
 export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] | any[]; compact?: boolean }) {
+  const C = useC()
+  const s = useSheet(sheet)
   const sum = summarizeProjectAttempts(attempts)
   if (compact) {
     return (
@@ -507,7 +536,7 @@ export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] 
   )
 }
 
-const s = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
   introPills: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -549,7 +578,7 @@ const s = StyleSheet.create({
     shadowColor: C.green, shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 0 }, elevation: 8,
   },
   bigButtonRecord: { backgroundColor: C.yellow, shadowColor: C.yellow },
-  bigButtonText: { fontSize: 30, fontWeight: "900", color: C.bg, textAlign: "center" },
+  bigButtonText: { fontSize: 30, fontWeight: "900", color: C.onAccent, textAlign: "center" },
   filmLink: { flexDirection: "row", alignItems: "center", gap: 6 },
   linkMuted: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
   footer: { alignItems: "center", paddingBottom: 36, paddingTop: 8 },
@@ -577,14 +606,28 @@ const s = StyleSheet.create({
   chipOn: { backgroundColor: C.red, borderColor: C.red },
   chipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
   chipTextOn: { color: "#fff", fontWeight: "800" },
-  promptCard: {
-    flexDirection: "row", gap: 12, padding: 16, borderRadius: 16, alignSelf: "stretch",
-    backgroundColor: C.surface, borderWidth: 1, borderColor: C.yellow,
+  promptOverlay: {
+    ...StyleSheet.absoluteFillObject, zIndex: 5, backgroundColor: C.bg,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 18,
   },
-  promptText: { fontSize: 15, fontWeight: "700", color: C.textPrimary, lineHeight: 21 },
-  promptActions: { flexDirection: "row", alignItems: "center", gap: 18 },
-  promptYes: { backgroundColor: C.yellow, borderRadius: 18, paddingHorizontal: 20, paddingVertical: 8 },
-  promptYesText: { fontSize: 15, fontWeight: "800", color: C.bg },
+  promptIconRing: {
+    width: 128, height: 128, borderRadius: 64, backgroundColor: C.yellow,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: C.yellow, shadowOpacity: 0.45, shadowRadius: 28, shadowOffset: { width: 0, height: 0 }, elevation: 8,
+  },
+  promptTitle: { fontSize: 32, fontWeight: "900", color: C.textPrimary, textAlign: "center", lineHeight: 38 },
+  promptBody: { fontSize: 17, color: C.textSecondary, textAlign: "center", lineHeight: 24 },
+  promptRest: { fontSize: 15, fontWeight: "700", color: C.textMuted, fontVariant: ["tabular-nums"] },
+  promptYes: {
+    alignSelf: "stretch", alignItems: "center", backgroundColor: C.yellow,
+    borderRadius: 28, paddingVertical: 18, marginTop: 8,
+  },
+  promptYesText: { fontSize: 18, fontWeight: "900", color: C.onAccent },
+  recordBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10, padding: 16, borderRadius: 16,
+    backgroundColor: C.yellow,
+  },
+  recordBannerText: { flex: 1, fontSize: 16, fontWeight: "800", color: C.onAccent },
   footerRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 24, paddingTop: 12, paddingBottom: 36,
@@ -606,4 +649,4 @@ const s = StyleSheet.create({
   compactText: { fontSize: 13, color: C.textSecondary },
   reasonTag: { backgroundColor: C.surfaceHigh, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   reasonTagText: { fontSize: 12, color: C.textSecondary, fontWeight: "600" },
-})
+}))

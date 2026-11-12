@@ -330,7 +330,7 @@ const tones = StyleSheet.create({
   // A class with a free spot the athlete can join: Google-Calendar style bar on the left.
   open: { backgroundColor: "rgba(111,207,151,0.14)", borderLeftWidth: 3, borderLeftColor: C.green },
   other: { backgroundColor: "#2F3A35" },
-  full: { backgroundColor: "#26282A" },
+  full: { backgroundColor: "#26282A", borderWidth: 1, borderColor: C.border },
   pending: { backgroundColor: C.yellow },
   skip: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border },
   pick: { backgroundColor: "#2F3A35", borderWidth: 2, borderColor: C.yellow },
@@ -340,7 +340,7 @@ const toneText = StyleSheet.create({
   mine: { color: "#10251A" },
   open: { color: C.textPrimary },
   other: { color: C.textSecondary },
-  full: { color: C.textMuted },
+  full: { color: C.textSecondary },
   pending: { color: "#3A2E00" },
   skip: { color: C.textMuted, textDecorationLine: "line-through" },
   pick: { color: C.textPrimary },
@@ -348,8 +348,9 @@ const toneText = StyleSheet.create({
 })
 
 const s = StyleSheet.create({
-  heads: { flexDirection: "row", paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
-  gutter: { width: 30 },
+  // Left padding: thick screen-protector rims cover the screen's very edge.
+  heads: { flexDirection: "row", paddingLeft: 12, paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  gutter: { width: 34 },
   head: { flex: 1, alignItems: "center", gap: 2 },
   letter: { fontSize: 11, fontWeight: "700", color: C.textSecondary, letterSpacing: 0.4 },
   num: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
@@ -358,8 +359,8 @@ const s = StyleSheet.create({
   numText: { fontSize: 17, fontWeight: "500", color: C.textSecondary, fontVariant: ["tabular-nums"] },
   numTextToday: { color: "#10251A", fontWeight: "800" },
   numOff: { textDecorationLine: "line-through", color: C.textMuted },
-  body: { flexDirection: "row", paddingRight: 6 },
-  hour: { position: "absolute", right: 4, fontSize: 10, color: C.textSecondary, fontVariant: ["tabular-nums"] },
+  body: { flexDirection: "row", paddingLeft: 12, paddingRight: 6 },
+  hour: { position: "absolute", right: 4, fontSize: 10, fontWeight: "600", color: C.textSecondary, fontVariant: ["tabular-nums"] },
   col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
   line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.07)" },
   now: { position: "absolute", left: -1, right: 0, height: 2, backgroundColor: C.red, zIndex: 20 },

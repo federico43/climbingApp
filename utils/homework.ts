@@ -5,6 +5,7 @@
 
 import { addDays, localDateStr } from "@/utils/planRotation"
 import { sessionLocalDate, type ProgressSession } from "@/utils/planProgress"
+import { BENCHMARK_NAME, isBenchmark } from "@/utils/benchmark"
 
 // Days the athlete gets by default (coach 2026-10-07); the coach can change it.
 export const HOMEWORK_DAYS = 5
@@ -81,7 +82,8 @@ export function shortDay(dateStr: string): string {
 
 // The name a homework workout gets: its block's name when it's just one,
 // else the workout's name + " · Homework".
-export function homeworkName(workoutName: string, blocks: { blockName?: string }[]): string {
+export function homeworkName(workoutName: string, blocks: { type?: string; blockName?: string }[]): string {
+  if (isBenchmark(blocks)) return BENCHMARK_NAME
   const only = blocks.length === 1 ? blocks[0].blockName?.trim() : ""
   return only || `${workoutName.trim()} · Homework`
 }

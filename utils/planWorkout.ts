@@ -5,6 +5,8 @@ import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
 import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
+import { benchmarkBlockDraft, benchmarkComparison } from "@/utils/benchmark"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 // A training-plan workout as blocks (docs/training-plan.md §5):
 //   S&C → warm-up → main block × 2 (the same library block twice; Max
@@ -14,8 +16,10 @@ import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 //   route exploration → S&C → main block × 2
 // or, on a conditioning plan (no climbing): S&C only.
 // On a test day (first workout, and the first one of the last week) the
-// Density test comes back separately in `homework` — the athlete does it on
-// a day of their own (coach 2026-10-07).
+// tests come back separately in `homework` — the athlete does them on a day
+// of their own (coach 2026-10-07): the Density test, then the Benchmark
+// sequence (coach 2026-11-11, utils/benchmark.ts) — picked on workout 1,
+// the same one again on the last-week test day.
 // Blocks come back without local ids — the caller adds them
 // (injectLocalIds) before opening the workout builder. Anything that can't
 // be built (a library block or exercise missing) is left out and reported
@@ -125,13 +129,14 @@ export function buildPlanWorkout(
   exercises: ExerciseRow[],
   sessions: SessionRow[],
   flash: string | null | undefined,
+  pullupTest?: SavedPullupTest | null,
 ): PlanWorkout {
   const warnings: string[] = []
   const blocks: PlanBlockDraft[] = []
   // Exploration goes before everything, S&C included (coach 2026-11-05).
   if (spec.warmup === "exploration") blocks.push(explorationDraft(library, flash))
 
-  const sc = buildScBlocks(plan, spec, exercises, sessions)
+  const sc = buildScBlocks(plan, spec, exercises, sessions, pullupTest)
   blocks.push(...sc.blocks)
   warnings.push(...sc.warnings)
 
@@ -149,7 +154,12 @@ export function buildPlanWorkout(
 
   const homework: PlanBlockDraft[] = []
   if (!spec.mainBlock) return { blocks, homework, warnings } // conditioning: S&C only
-  if (spec.withTest) libraryBlock(TEST_BLOCK, 1, homework)
+  if (spec.withTest) {
+    libraryBlock(TEST_BLOCK, 1, homework)
+    const first = spec.index === 1 ? null : benchmarkComparison(sessions, plan.windowStart)
+    if (spec.index !== 1 && !first) warnings.push("No Benchmark logged yet in this plan — the athlete will pick a new sequence, so there's nothing to compare it with.")
+    homework.push(benchmarkBlockDraft(first?.routeId ?? null) as PlanBlockDraft)
+  }
   if (spec.warmup !== "exploration") blocks.push(...warmupDrafts(plan, spec, library, sessions, flash, warnings))
   const run = mainBlockRun(spec.mainBlock)
   libraryBlock(spec.mainBlock, run.copies, blocks, run.timeLimit)

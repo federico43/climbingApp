@@ -28,6 +28,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | --- | --- |
 | `utils/planRotation.ts` | Pure. Plan constants, focuses, main blocks, dates, `workoutSpec` (what workout *n* is), `nextPlanIndex`, `planIsOver` |
 | `utils/scPlanBuilder.ts` | Pure. S&C blocks for a workout: pattern order, exercise choice, special cases, mobility, layout |
+| `utils/benchmark.ts` | Pure. The plan's Benchmark sequence: block draft, first try vs retry (`benchmarkComparison`), homework name |
 | `utils/planWorkout.ts` | Pure. Whole workout as blocks (`buildPlanWorkout`), warnings, `withUpcomingWorkouts` |
 | `utils/progression/constraintWarmup.ts`, `profiles.ts` | Constraint warm-up rotation + the focus → constraint table |
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
@@ -145,7 +146,7 @@ gives two different workouts.
 | Main type | Fixed cycle **Strength → Power endurance → Power** (each 4 times in 12). Starts with Strength unless the coach picks another **first workout** type when creating the plan (not editable afterwards) (`startType`, since 2026-10-14) — e.g. Power endurance → Power → Strength → … |
 | Main block | Strength: Project Bouldering ↔ Max bouldering. Power endurance: Power endurance - 4x4 ↔ Base 1 (the `sequence` one). Power: Power boulders, then Coordination boulders × 2 (coach 2026-11-09). Picked from what earlier workouts of the type **actually used** (see below). **Always twice in the workout** (same library block, back to back). Max bouldering, Base 1, Power boulders and Coordination boulders are the spray-wall blocks: the athlete adds sequences or picks a suggested one (utils/sprayBlocks.ts), never coached |
 | Warm-up | Alternates: odd workouts **3 constraints** for the plan's focus, even workouts **1 on 1 off** |
-| Test | **Density test as homework** (since 2026-10-07) on workout 1 and on the first workout built in the plan's last week (week 6): the workout keeps its warm-up, the test is split off into a homework workout (§7.6) |
+| Test | **Tests as homework** on workout 1 and on the first workout built in the plan's last week (week 6): the workout keeps its warm-up, the tests are split off into one homework workout named "Benchmark" (§7.6): the **Density test** (since 2026-10-07; sets the flash colour) then the **Benchmark** (since 2026-11-11): a spray-wall sequence at the limit (a spray block, 5 attempts, max bouldering sequences around flash + 1). On workout 1 the athlete picks it; on the last-week test day the block is pinned and locked to the sequence of the plan's first Benchmark (`lockRoute`, straight to the wall, no choosing). The coach's Plan card shows first try vs retry (tops / tries, first top). `utils/benchmark.ts`. Conditioning plans have no tests |
 | S&C focus | Tied to the main type: Strength → **max force**, Power endurance → **hypertrophy**, Power → **explosiveness**. **Core** has its own cycle (below) |
 | S&C exercise | Workout 1 of the week → each pattern's exercise 1, workout 2 → exercise 2 (by index parity) |
 
@@ -166,13 +167,13 @@ Example — plan with S&C, focus Technique:
 
 | # | Week | S&C | Warm-up | Main block (×2) |
 | --- | --- | --- | --- | --- |
-| 1 | 1 | Max force (ex 1) | 3 technique constraints + **Density test** homework | Project Bouldering |
+| 1 | 1 | Max force (ex 1) | 3 technique constraints + **Benchmark** homework | Project Bouldering |
 | 2 | 1 | Hypertrophy (ex 2) | 1 on 1 off | Power endurance - 4x4 |
 | 3 | 2 | Explosiveness (ex 1) | 3 technique constraints | Power boulders |
 | 4 | 2 | Max force (ex 2) | 1 on 1 off | Max bouldering |
 | 5 | 3 | Hypertrophy (ex 1) | 3 technique constraints | Base 1 |
 | … | | | | |
-| 11 | 6 | Hypertrophy (ex 1) | 3 technique constraints + **Density test** homework (first in week 6) | Base 1 |
+| 11 | 6 | Hypertrophy (ex 1) | 3 technique constraints + **Benchmark** homework (first in week 6) | Base 1 |
 | 12 | 6 | Explosiveness (ex 2) | 1 on 1 off | Power boulders |
 
 Library blocks are found by **name + block type** (constants in

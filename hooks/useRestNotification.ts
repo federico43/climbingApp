@@ -3,6 +3,7 @@ import {
   ensureRestNotificationPermission,
   showRestNotifications,
 } from "@/services/restNotification"
+import { useTimerEndSound } from "@/hooks/useTimerEndSound"
 import { useEffect, useRef } from "react"
 import { AppState } from "react-native"
 
@@ -10,10 +11,12 @@ import { AppState } from "react-native"
  * While a rest is running (`endsAt`, ms since the epoch; null when none),
  * leaving the app posts a notification with when it ends and schedules one
  * for the end. Coming back, or the rest ending/being skipped, clears them.
+ * With the app open, the end beeps instead.
  */
 export function useRestNotification(endsAt: number | null) {
   const endsAtRef = useRef(endsAt)
   endsAtRef.current = endsAt
+  useTimerEndSound(endsAt)
 
   useEffect(() => {
     if (endsAt != null) ensureRestNotificationPermission()

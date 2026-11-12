@@ -1,3 +1,4 @@
+import { usePopupTurn } from "@/utils/popupTurn"
 import { C } from "@/utils/theme"
 import { CheckinRow, saveCheckin } from "@/services/BoulderGraphService"
 import { useEffect, useState } from "react"
@@ -30,6 +31,8 @@ export function DailyCheckInModal({ visible, onDone, onClose, initial }: Props) 
     setAte(initial?.ate ?? null)
   }, [visible, initial])
 
+  // Waits for any other pop-up (e.g. a feature intro) to close first.
+  const shown = usePopupTurn(visible)
   const canSubmit = restRating != null && ate != null
 
   async function handleSubmit() {
@@ -44,7 +47,7 @@ export function DailyCheckInModal({ visible, onDone, onClose, initial }: Props) 
   }
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
+    <Modal visible={shown} animationType="fade" transparent onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.card}>
           <Pressable style={s.closeBtn} onPress={onClose} hitSlop={8}>

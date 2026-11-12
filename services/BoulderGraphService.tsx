@@ -6,6 +6,9 @@ import type { Focus, LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
+import type { SavedBands } from "@/utils/bands"
+import { parseHangLog, withHangMax } from "@/utils/maxHangs"
+import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -145,6 +148,9 @@ export interface AppUser {
   // set by the max test or the coach. See utils/edgeWarmup.ts.
   edgeLiftMax?: number | null
   edgeLiftMaxLog?: string | null
+  // Max Hangs maxes, one per edge size, every change newest first (JSON
+  // text) — set by the max test or the coach. See utils/maxHangs.ts.
+  hangMaxLog?: string | null
   // The workout the coach picked for the athlete's Home (a protocol id).
   // Unset → the newest coach workout. See pickLatestWorkout.
   homeWorkoutId?: string | null
@@ -713,6 +719,33 @@ export async function setEdgeLiftMax(userId: string, kg: number, source: MaxSour
     data: { edgeLiftMax: kg, edgeLiftMaxLog: JSON.stringify(log) },
   })
   return updated as unknown as AppUser
+}
+
+// Band-assisted exercises: the athlete's band combo per focus, as JSON
+// (utils/bands.ts). Throws when the `bandCombos` column doesn't exist on
+// `users` yet (scripts/class-tables/create-tables.mjs adds it).
+export async function setBandCombos(userId: string, saved: SavedBands): Promise<void> {
+  await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { bandCombos: JSON.stringify(saved) } })
+}
+
+// Saves a new Max Hangs max for one edge (kg added, 0 = bodyweight) on top
+// of the athlete's log. Throws when the `hangMaxLog` column doesn't exist on
+// `users` yet (scripts/max-hangs/setup.mjs creates it).
+export async function setHangMax(userId: string, edge: string, kg: number, source: MaxSource): Promise<AppUser> {
+  const row: any = await getUsers(userId)
+  const log = withHangMax(parseHangLog(row?.hangMaxLog), { edge, kg, date: localDateStr(new Date()), source })
+  const updated = await tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId,
+    data: { hangMaxLog: JSON.stringify(log) },
+  })
+  return updated as unknown as AppUser
+}
+
+// The athlete's last pull-up assessment, as JSON (utils/pullupAssessment.ts).
+// Throws when the `pullupTest` column doesn't exist on `users` yet
+// (scripts/class-tables/create-tables.mjs adds it).
+export async function setPullupTest(userId: string, test: SavedPullupTest): Promise<void> {
+  await tablesDB.updateRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId, data: { pullupTest: JSON.stringify(test) } })
 }
 
 export async function deleteAthlete(userId: string): Promise<void> {

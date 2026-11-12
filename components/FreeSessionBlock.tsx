@@ -1,11 +1,13 @@
+import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
-import { shared_styles, TopBar } from "@/utils/BlockStyles"
+import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -55,12 +57,18 @@ function formatElapsed(seconds: number): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logAttempt }: Props) {
+  const C = useC()
+  const shared_styles = useSheet(shared_stylesSheet)
+  const styles = useSheet(sheet)
   const nextLabel = useNextBlockLabel("Next block")
   const [phase, setPhase] = useState<Phase>("intro")
   const [elapsed, setElapsed] = useState(0)
   const startTimeRef = useRef<number | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [note, setNote] = useState("")
+  // When the time limit (if any) runs out while running — beeps / notifies.
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  useBlockTimerAlert(endsAt, block.blockName || "Free session")
 
   const holds = useMemo(() => {
     if (!block.routeHolds) return []
@@ -78,6 +86,8 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 
   function start() {
     startTimeRef.current = Date.now()
+    const limitSec = (block.timeLimit ?? 0) * 60
+    setEndsAt(limitSec > 0 ? startTimeRef.current + limitSec * 1000 : null)
     intervalRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startTimeRef.current!) / 1000))
     }, 500)
@@ -89,6 +99,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
+    setEndsAt(null)
     setPhase("done")
   }
 
@@ -104,7 +115,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   if (phase === "intro") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={block.blockName} onBack={goToPreviousBlock} />
+        <TopBar title={block.blockName} onBack={goToPreviousBlock} poster />
         <ScrollView
           contentContainerStyle={shared_styles.introContent}
           showsVerticalScrollIndicator={false}
@@ -112,9 +123,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           <BlockNotes text={block.description} />
         </ScrollView>
         <View style={shared_styles.footer}>
-          <Pressable style={styles.startBtn} onPress={start}>
-            <Text style={styles.startBtnText}>Start</Text>
-          </Pressable>
+          <CustomButton title="Start" onPress={start} />
         </View>
       </View>
     )
@@ -191,7 +200,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   centerContent: {
     flex: 1,
     alignItems: "center",
@@ -273,7 +282,7 @@ const styles = StyleSheet.create({
   startBtnText: {
     fontSize: 18,
     fontWeight: "700",
-    color: C.bg,
+    color: C.onAccent,
     letterSpacing: 0.3,
   },
 
@@ -325,7 +334,7 @@ const styles = StyleSheet.create({
   nextBtnText: {
     fontSize: 18,
     fontWeight: "700",
-    color: C.bg,
+    color: C.onAccent,
     letterSpacing: 0.3,
   },
-})
+}))

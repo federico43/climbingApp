@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { Card, CardTitle, DayCircle, IconCircle, MintButton, Mono, SectionHeader, usePaper, usePaperStyles } from "@/components/paper"
+import { font, type PaperTheme } from "@/theme/paper/tokens"
 import { ConsumeAuth } from "@/components/auth-context"
 import { getCardioUser, listCardioSessions, saveCardioPlan, type CardioSessionRow } from "@/services/cardio"
 import { syncCardioReminders } from "@/services/cardioReminders"
@@ -12,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useCallback, useEffect, useState } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import type { DayState } from "@/components/paper"
 import { CardioIntro } from "./CardioIntro"
 import { CardioSessionModal } from "./CardioSessionModal"
 
@@ -32,6 +34,8 @@ export function CardioSection() {
   const [dismissed, setDismissed] = useState(true)
   const [intro, setIntro] = useState<"off" | "full" | "days">("off")
   const [running, setRunning] = useState(false)
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -76,11 +80,7 @@ export function CardioSection() {
 
   return (
     <View style={s.group}>
-      <View style={s.groupLabel}>
-        <Ionicons name="pulse" size={14} color={C.green} />
-        <Text style={s.groupLabelText}>Cardio</Text>
-        <View style={s.groupLabelLine} />
-      </View>
+      <SectionHeader style={{ marginTop: 16, marginBottom: 0 }}>Cardio</SectionHeader>
 
       {committed && plan ? (
         <PlanCard
@@ -90,10 +90,10 @@ export function CardioSection() {
           onEdit={() => setIntro("days")}
         />
       ) : !dismissed ? (
-        <Pressable style={({ pressed }) => [s.card, s.invite, pressed && { opacity: 0.9 }]} onPress={() => setIntro("full")}>
-          <View style={s.inviteIcon}><Ionicons name="heart-outline" size={26} color={C.green} /></View>
+        <Pressable style={({ pressed }) => [s.invite, pressed && { opacity: 0.9 }]} onPress={() => setIntro("full")}>
+          <IconCircle icon="heart-outline" size={44} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={s.cardTitle}>Now you can train cardio</Text>
+            <CardTitle size={22}>Now you can train cardio</CardTitle>
             <Text style={s.muted}>Start your jump rope plan</Text>
           </View>
           <Pressable
@@ -101,7 +101,7 @@ export function CardioSection() {
             accessibilityLabel="Hide for a week"
             onPress={() => { setDismissed(true); AsyncStorage.setItem(DISMISS_KEY, String(Date.now())).catch(() => {}) }}
           >
-            <Ionicons name="close" size={18} color={C.textSecondary} />
+            <Ionicons name="close" size={18} color={t.ink} />
           </Pressable>
         </Pressable>
       ) : null}
@@ -128,12 +128,9 @@ export function CardioSection() {
   )
 }
 
-const DOT: Record<DayStatus, { bg: string; fg: string; border?: string }> = {
-  done: { bg: C.green, fg: "#10251A" },
-  today: { bg: "transparent", fg: C.green, border: C.green },
-  planned: { bg: C.surfaceHigh, fg: C.textPrimary },
-  missed: { bg: "transparent", fg: C.textMuted, border: C.surfaceHigh },
-  rest: { bg: "transparent", fg: C.textMuted },
+// Cardio day → the shared timeline circle (docs/design-system.md §5).
+const CIRCLE: Record<DayStatus, DayState | null> = {
+  done: "trained", today: "today", planned: "upcoming", missed: "past", rest: null,
 }
 
 const LEGEND: { st: DayStatus; label: string }[] = [
@@ -146,6 +143,8 @@ const LEGEND: { st: DayStatus; label: string }[] = [
 function PlanCard({ plan, sessions, onStart, onEdit }: {
   plan: CardioPlan; sessions: CardioSessionRow[]; onStart: () => void; onEdit: () => void
 }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   const today = localDateStr(new Date())
   const dates = sessions.map((r) => r.date)
   const week = weekStatus(today, plan.days, dates, plan.committedAt ? localDateStr(new Date(plan.committedAt)) : null)
@@ -160,89 +159,50 @@ function PlanCard({ plan, sessions, onStart, onEdit }: {
     : isTrainingDay ? "Today" : "Not a cardio day, but you can go"
 
   return (
-    <View style={s.card}>
+    <Card style={{ gap: 12 }}>
       <View style={s.row}>
-        <Text style={s.kicker}>{next.kind === "deload" ? `Light week · ${status}` : status}</Text>
+        <Mono>{next.kind === "deload" ? `Light week · ${status}` : status}</Mono>
         <Pressable onPress={onEdit} hitSlop={10} accessibilityLabel="Change days and reminder">
-          <Ionicons name="pencil" size={16} color={C.textSecondary} />
+          <Ionicons name="pencil" size={16} color={t.ink} />
         </Pressable>
       </View>
-      <Text style={s.title}>{title}</Text>
-      {next.kind === "test" ? (
-        <Text style={s.muted}>About 10 min · finds your starting point</Text>
-      ) : (
-        <Text style={s.muted}>
-          About {protocolMinutes(next.protocol)} min
-        </Text>
-      )}
+      <CardTitle size={30} style={{ marginTop: -4 }}>{title}</CardTitle>
+      <Text style={s.muted}>
+        {next.kind === "test" ? "About 10 min · finds your starting point" : `About ${protocolMinutes(next.protocol)} min`}
+      </Text>
       <View style={s.week}>
-        {week.map((st, i) => {
-          const d = DOT[st]
-          return (
-            <View key={i} style={s.dayCol}>
-              <Text style={s.dayLabel}>{WEEKDAY_SHORT[i][0]}</Text>
-              <View style={[s.dot, { backgroundColor: d.bg, borderColor: d.border ?? "transparent" }]}>
-                {st === "done" ? <Ionicons name="checkmark" size={14} color={d.fg} />
-                  : st === "missed" ? <Ionicons name="remove" size={14} color={d.fg} /> : null}
-              </View>
-            </View>
-          )
-        })}
+        {week.map((st, i) => (
+          <View key={i} style={s.dayCol}>
+            <Mono size={9.5}>{WEEKDAY_SHORT[i][0]}</Mono>
+            {CIRCLE[st] ? <DayCircle state={CIRCLE[st]!} size={28} /> : <View style={{ width: 28, height: 28 }} />}
+          </View>
+        ))}
       </View>
       <View style={s.legend}>
-        {LEGEND.map(({ st, label }) => {
-          const d = DOT[st]
-          return (
-            <View key={st} style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: d.bg, borderColor: d.border ?? "transparent" }]}>
-                {st === "done" ? <Ionicons name="checkmark" size={9} color={d.fg} />
-                  : st === "missed" ? <Ionicons name="remove" size={9} color={d.fg} /> : null}
-              </View>
-              <Text style={s.legendText}>{label}</Text>
-            </View>
-          )
-        })}
+        {LEGEND.map(({ st, label }) => (
+          <View key={st} style={s.legendItem}>
+            <DayCircle state={CIRCLE[st]!} size={12} />
+            <Mono size={9.5}>{label}</Mono>
+          </View>
+        ))}
       </View>
       {/* Dev builds can start again the same day, to test the flow quickly. */}
-      {(can.ok || __DEV__) && (
-        <Pressable style={({ pressed }) => [s.btn, pressed && { opacity: 0.85 }]} onPress={onStart}>
-          <Ionicons name="play" size={16} color="#10251A" />
-          <Text style={s.btnText}>Start</Text>
-        </Pressable>
-      )}
-      <Text style={s.small}>Reminder at {formatTime12(plan.reminderTime)}</Text>
-    </View>
+      {(can.ok || __DEV__) && <MintButton label="Start" icon="play" onPress={onStart} />}
+      <Mono style={{ textAlign: "center" }}>Reminder at {formatTime12(plan.reminderTime)}</Mono>
+    </Card>
   )
 }
 
-const s = StyleSheet.create({
-  group: { gap: 12, marginBottom: 16 },
-  groupLabel: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 },
-  groupLabelText: { fontSize: 13, fontWeight: "800", color: C.textPrimary, textTransform: "uppercase", letterSpacing: 1 },
-  groupLabelLine: { flex: 1, height: 1, backgroundColor: C.border },
-  card: { backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, gap: 12 },
-  invite: { flexDirection: "row", alignItems: "center", gap: 14 },
-  inviteIcon: {
-    width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(111,207,151,0.12)",
-    alignItems: "center", justifyContent: "center",
+const makeStyles = (t: PaperTheme) => StyleSheet.create({
+  group: { gap: 12 },
+  invite: {
+    flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: t.card, borderRadius: 26,
+    borderWidth: 1, borderColor: t.cardBorder, padding: 18,
   },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: C.textPrimary },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  title: { marginTop: -6, fontSize: 22, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
-  muted: { fontSize: 13, color: C.textSecondary },
-  small: { fontSize: 13, color: C.textSecondary, textAlign: "center" },
+  muted: { fontFamily: font.body, fontSize: 13, color: t.textMuted },
   week: { flexDirection: "row", justifyContent: "space-between" },
   dayCol: { alignItems: "center", gap: 6 },
-  dayLabel: { fontSize: 11, fontWeight: "700", color: C.textSecondary },
-  dot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  legend: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 14, marginTop: -4 },
+  legend: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 14 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  legendDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  legendText: { fontSize: 11, color: C.textSecondary },
-  btn: {
-    flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center",
-    backgroundColor: C.green, borderRadius: 24, paddingVertical: 13,
-  },
-  btnText: { fontSize: 15, fontWeight: "800", color: "#10251A" },
 })

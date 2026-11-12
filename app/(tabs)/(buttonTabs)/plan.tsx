@@ -1,12 +1,15 @@
-import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
-import { ScalePressable } from "@/components/ScalePressable"
-import { ScreenEntry } from "@/components/ScreenEntry"
-import { ScreenGradient } from "@/components/ScreenGradient"
+import {
+  Body, Card, CardTitle, IconButton, Melt, MintButton, Mono, PaperScreen, PosterHeadline, ProgressBar,
+  RailAnchor, SectionHeader, SpecsRow, usePaper, usePaperStyles,
+} from "@/components/paper"
 import { SettingsButton } from "@/components/SettingsButton"
+import { font, type PaperTheme } from "@/theme/paper/tokens"
 import { LatestWorkoutCard, pickLatestWorkout } from "@/components/LatestWorkoutCard"
 import { LaunchExtras } from "@/components/LaunchExtras"
 import { HomeworkSection } from "@/components/HomeworkSection"
+import { ConditioningBasics, ConditioningBasicsCard } from "@/components/ConditioningBasics"
+import { trainingDays } from "@/utils/extraSession"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
 import { BlockProgressCard } from "@/components/BlockProgressCard"
 import type { StatsLibraryExercise } from "@/utils/athleteStatsData"
@@ -34,6 +37,7 @@ import {
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import {
+  daysLeft as planDaysLeft,
   donePlanWorkouts,
   doneThisWeek,
 } from "@/utils/planProgress"
@@ -41,9 +45,12 @@ import {
   addDays,
   localDateStr,
   builtMainType,
+  hasBuiltMainBlock,
   canRotate,
   isConditioningOnly,
   MAIN_CYCLE,
+  PLAN_WEEKS,
+  planWeek,
   mainTypeFor,
   mainTypeLabel,
   MainType,
@@ -69,13 +76,10 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import Svg, { Circle } from "react-native-svg"
 
 function shortDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number)
@@ -95,7 +99,7 @@ interface Slot {
   mainBlock: string        // main block name, e.g. "Project Bouldering"
   week: number
   kicker: string           // main type, e.g. "Power endurance"
-  kickerColor: string
+  kickerColor: string // category dot
   title: string            // the built workout's name, else the main block
   when: string             // "Done 25 Sep" / "Week 3"
   summary: WorkoutSummary | null
@@ -116,6 +120,8 @@ export default function PlanScreen() {
   const [exercises, setExercises] = useState<StatsLibraryExercise[]>([])
   const [edgeLiftMaxLog, setEdgeLiftMaxLog] = useState<string | null>(null)
   const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(null)
+  // The athlete's fixed classes ("day@start"), for the conditioning slides.
+  const [defaultClasses, setDefaultClasses] = useState<string[]>([])
   const activePlan = useActivePlan()
   // Read through a ref so load() doesn't change (and re-fire) whenever the context re-renders.
   const activePlanRef = useRef(activePlan)
@@ -147,6 +153,7 @@ export default function PlanScreen() {
       setEdgeLiftMaxLog((userRow as any)?.edgeLiftMaxLog ?? null)
       setTemplates(templateRows)
       setHomeWorkoutId((userRow as any)?.homeWorkoutId ?? null)
+      setDefaultClasses((userRow as any)?.defaultClasses ?? [])
       setLibrary(blocks)
       setWorkouts(planWorkouts)
       setSessions(sessionRows)
@@ -173,76 +180,65 @@ export default function PlanScreen() {
   }, [User, load, workoutCtx.refreshKey])
 
 
+  const t = usePaper()
+  const refresh = async () => {
+    setRefreshing(true)
+    // The This week card reads the class store, not this screen's state.
+    try { await Promise.all([load(), refreshClassSchedule()]) }
+    finally { setRefreshing(false) }
+  }
+
   return (
-    <ScreenGradient>
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <ScreenEntry>
+    <>
+      <PaperScreen
+        rail={{ top: 230 }}
+        bottomPad={48}
+        header={
           <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title} numberOfLines={1}>
-                {userName ? `${userName}'s plan` : "Training plan"}
-              </Text>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {plan ? `${plan.name}` : "Your current training period"}
-              </Text>
-            </View>
+            <Body weight={800} size={24} numberOfLines={1} style={{ flex: 1 }}>
+              {userName ? `Hi, ${userName}` : "Your plan"}
+            </Body>
             <View style={styles.headerActions}>
-              {plan && <NewSequenceButton />}
-              <SettingsButton />
+              {plan && <NewSequenceButton paper />}
+              <SettingsButton paper />
             </View>
           </View>
-
-          {loading ? (
-            <ActivityIndicator style={{ marginTop: 60 }} color={C.green} />
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.scroll}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={async () => {
-                    setRefreshing(true)
-                    // The This week card reads the class store, not this screen's state.
-                    try { await Promise.all([load(), refreshClassSchedule()]) }
-                    finally { setRefreshing(false) }
-                  }}
-                  tintColor={C.green}
-                  colors={[C.green]}
-                />
-              }
-            >
-              <ThisWeekCard />
-              <CardioSection />
-              {error ? (
-                <Empty icon="cloud-offline-outline" title="Couldn't load your plan" text="Pull down to try again." />
-              ) : !plan ? (
-                <Empty
-                  icon="calendar-outline"
-                  title="No training plan yet"
-                  text="Your coach will set one up — it'll show here."
-                />
-              ) : (
-                <PlanBody
-                  plan={plan}
-                  templates={templates}
-                  homeWorkoutId={homeWorkoutId}
-                  workouts={workouts}
-                  sessions={sessions}
-                  library={library}
-                  exercises={exercises}
-                  edgeLiftMaxLog={edgeLiftMaxLog}
-                  onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
-                  onChanged={load}
-                />
-              )}
-            </ScrollView>
-          )}
-        </ScreenEntry>
-      </SafeAreaView>
+        }
+        scrollProps={{
+          refreshControl: <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={t.mintDeep} colors={[t.mintDeep]} />,
+        }}
+      >
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 60 }} color={t.mintDeep} />
+        ) : error || !plan ? (
+          <View style={{ gap: 12, marginTop: 12 }}>
+            <ThisWeekCard />
+            <CardioSection />
+            {error ? (
+              <Empty icon="cloud-offline-outline" title="Couldn't load your plan" text="Pull down to try again." />
+            ) : (
+              <Empty icon="calendar-outline" title="No training plan yet" text="Your coach will set one up. It'll show here." />
+            )}
+          </View>
+        ) : (
+          <PlanBody
+            plan={plan}
+            templates={templates}
+            homeWorkoutId={homeWorkoutId}
+            workouts={workouts}
+            sessions={sessions}
+            library={library}
+            exercises={exercises}
+            edgeLiftMaxLog={edgeLiftMaxLog}
+            defaultClasses={defaultClasses}
+            onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
+            onChanged={load}
+          />
+        )}
+      </PaperScreen>
       {/* With a plan this tab is the app's home — Home's launch extras run here. */}
       {activePlan.plan && <LaunchExtras />}
-    </ScreenGradient>
+    </>
   )
 }
 
@@ -257,6 +253,7 @@ function PlanBody({
   library,
   exercises,
   edgeLiftMaxLog,
+  defaultClasses,
   onStart,
   onChanged,
 }: {
@@ -268,6 +265,7 @@ function PlanBody({
   library: BlockRow[]
   exercises: StatsLibraryExercise[]
   edgeLiftMaxLog: string | null
+  defaultClasses: string[]
   onStart: (w: ProtocolRow) => void
   onChanged: () => void
 }) {
@@ -276,9 +274,8 @@ function PlanBody({
   const notStarted = today < windowStart
   const over = today > windowEnd
   const conditioning = isConditioningOnly(plan)
-  const focusColor = conditioning
-    ? ADAPTATION_COLOR.conditioning
-    : plan.focus ? ADAPTATION_COLOR[plan.focus] : C.textSecondary
+  const week = Math.min(Math.max(planWeek(windowStart, today, plan.pauses), 1), PLAN_WEEKS)
+  const left = planDaysLeft(windowStart, windowEnd, today, plan.pauses)
 
   const done = donePlanWorkouts(plan.$id, workouts, sessions)
   const doneCount = done.size
@@ -318,7 +315,7 @@ function PlanBody({
       mainBlock: spec?.mainBlock?.name ?? mainPhase?.title ?? "",
       week: Math.ceil(n / WORKOUTS_PER_WEEK),
       kicker: spec ? mainTypeLabel(spec.mainType, plan.kind) : `Workout ${n}`,
-      kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : C.textSecondary,
+      kickerColor: spec ? ADAPTATION_COLOR[spec.mainType] : "transparent",
       title: workout?.name ?? mainPhase?.title ?? `Workout ${n}`,
       when: doneOn
         ? `Done ${shortDate(doneOn)}`
@@ -334,114 +331,121 @@ function PlanBody({
   const [selected, setSelected] = useState<number | null>(null)
   const shown = selected ? slots.find((s) => s.index === selected) ?? null : null
   const { workout: latest, scPart } = pickLatestWorkout(templates, homeWorkoutId)
+  // The headline: the main attribute of the workout on screen ("Today's
+  // focus"); the plan's focus when there's none or it has no climbing block.
+  const showsWorkout = !!latest && !(pause && (pausedNow || pauseSoon))
+  const todayType = showsWorkout && hasBuiltMainBlock(latest!.blocks)
+    ? builtMainType(latest!.planIndex ?? 1, latest!.blocks)
+    : null
+  const focusWord = todayType
+    ? mainTypeLabel(todayType, plan.kind)
+    : conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Training"
+  const focusEyebrow = todayType ? "Today's focus" : conditioning ? "Your plan" : "This week's focus"
   // Homework rides on the athlete's templates (planPart "homework"); its
   // picked days show on the timeline like events.
   const homework = templates.filter((t) => t.planPart === "homework")
+  // The conditioning slides wait while "You've got homework" may want the
+  // screen (a homework without a day yet).
+  const homeworkPrompt = homework.some((h) => !h.scheduledFor)
+  const gymDays = useMemo(() => trainingDays(defaultClasses, sessions, today), [defaultClasses, sessions, today])
 
+  const specsRight = notStarted
+    ? [`Starts *${shortDate(windowStart)}*`]
+    : over
+      ? ["Plan finished"]
+      : pausedNow
+        ? ["Paused", `Back *${shortDate(addDays(pause!.end, 1))}*`]
+        : [`*${left}* day${left !== 1 ? "s" : ""} left`, `*${thisWeek}* of ${WORKOUTS_PER_WEEK} this week`]
 
   return (
     <>
-      {/* Two groups: what to do now, then the plan as a whole. Homework
-          first — it has a deadline, the next workout doesn't. */}
-      {homework.length > 0 && (
-        <View style={styles.group}>
-          <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
-        </View>
-      )}
-
-      {pause && (pausedNow || pauseSoon) ? (
-        <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
-          <GroupLabel icon="pause" text={pausedNow ? "Plan paused" : "Pause coming up"} />
-          <PauseCard pause={pause} now={pausedNow} />
-        </View>
-      ) : latest && (
-        <View style={[styles.group, homework.length > 0 && styles.groupSpaced]}>
-          <GroupLabel icon="flash" text="Up next" />
-          <LatestWorkoutCard workout={latest} scPart={scPart} />
-        </View>
-      )}
-
-      <View style={[styles.group, (latest || pausedNow || pauseSoon || homework.length > 0) && styles.groupSpaced]}>
-      <GroupLabel icon="calendar" text="Your training plan" />
-
-      {/* ── Focus ─────────────────────────────────────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.kicker}>{conditioning ? "Your plan" : "This week's focus"}</Text>
-        <Text style={[styles.focusName, { color: focusColor }]}>
-          {conditioning ? "Conditioning" : plan.focus ? PLAN_FOCUS_LABEL[plan.focus] : "Not set yet"}
-        </Text>
+      {/* ── Poster: the week's focus, melting into the cards ─────────────── */}
+      <View style={{ marginTop: 20 }}>
+        <Melt top={40} />
+        <Mono>{focusEyebrow}</Mono>
+        <PosterHeadline style={{ marginTop: 8 }}>{focusWord}</PosterHeadline>
+        <SpecsRow
+          left={[`Week *${week}* of ${PLAN_WEEKS}`, `${shortDate(windowStart)} – ${shortDate(windowEnd)}`]}
+          right={specsRight}
+        />
         {plan.hasSc && (plan.scPatterns.length > 0 || plan.hasMobility) && (
           <ScSummary patterns={plan.scPatterns.map((p) => p.movementType)} hasMobility={plan.hasMobility} />
         )}
       </View>
 
-      {/* ── Timeline: start → end, status, the 6-week day grid ─────────────── */}
-      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+      {/* ── Now: homework (it has a deadline), then the next workout ────── */}
+      <View style={{ gap: 12, marginTop: 48 }}>
+        {homework.length > 0 && (
+          <RailAnchor label="Homework">
+            <HomeworkSection homework={homework} sessions={sessions} onStart={onStart} onChanged={onChanged} />
+          </RailAnchor>
+        )}
+        {pause && (pausedNow || pauseSoon) ? (
+          <PauseCard pause={pause} now={pausedNow} />
+        ) : latest && (
+          <RailAnchor label="Sequence">
+            <LatestWorkoutCard workout={latest} scPart={scPart} />
+          </RailAnchor>
+        )}
+        <ThisWeekCard />
+        <CardioSection />
+        {plan.hasSc && <ConditioningBasicsCard />}
+      </View>
+      {plan.hasSc && <ConditioningBasics gymDays={gymDays} ready={!homeworkPrompt} />}
 
-      {!notStarted && (
-        <BlockProgressCard plan={plan} workouts={workouts} sessions={sessions} library={exercises} edgeLiftMaxLog={edgeLiftMaxLog} />
-      )}
+      {/* ── The plan as a whole ───────────────────────────────────────────── */}
+      <RailAnchor label="Training plan">
+        <SectionHeader>Your training plan</SectionHeader>
+      </RailAnchor>
+      <View style={{ gap: 12 }}>
+        <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
 
-      {/* ── Workouts ──────────────────────────────────────────────────────── */}
-      <View style={styles.card}>
-        <View style={styles.workoutsTop}>
-          <ProgressRing done={doneCount} total={PLAN_WORKOUTS} />
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={styles.cardTitle}>Workouts</Text>
-            <Text style={styles.workoutsLeft}>
-              {Math.max(PLAN_WORKOUTS - doneCount, 0)} left
-            </Text>
-            {!over && !notStarted && !pausedNow && (
-              <Text style={styles.workoutsWeek}>
-                This week: {thisWeek} of {WORKOUTS_PER_WEEK} done
-              </Text>
-            )}
-          </View>
-        </View>
+        {!notStarted && (
+          <BlockProgressCard plan={plan} workouts={workouts} sessions={sessions} library={exercises} edgeLiftMaxLog={edgeLiftMaxLog} />
+        )}
 
-        <TypeColumns
+        <WorkoutsCard
           slots={slots}
-          hasSc={plan.hasSc}
-          kind={plan.kind}
-          startType={plan.startType}
+          doneCount={doneCount}
+          thisWeek={!over && !notStarted && !pausedNow ? thisWeek : null}
+          plan={plan}
           selected={selected}
           onSelect={(n) => setSelected((cur) => (cur === n ? null : n))}
         />
-      </View>
 
-      {shown && (
-        <WorkoutDetail
-          slot={shown}
-          isNext={shown.index === featured}
-          onClose={() => setSelected(null)}
-          onStart={onStart}
-        />
-      )}
+        {shown && (
+          <WorkoutDetail
+            slot={shown}
+            isNext={shown.index === featured}
+            onClose={() => setSelected(null)}
+            onStart={onStart}
+          />
+        )}
       </View>
-
     </>
   )
 }
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 
-// The plan's S&C movement patterns, under the focus title. Specific
-// exercises are left to the workout.
+// The plan's S&C movement patterns, under the specs. Specific exercises
+// are left to the workout.
 function ScSummary({ patterns, hasMobility }: { patterns: string[]; hasMobility: boolean }) {
+  const s = usePaperStyles(makeStyles)
   return (
-    <View style={styles.scBox}>
-      <Text style={styles.scBoxLabel}>Our conditioning focus</Text>
-      <View style={styles.chips}>
-      {patterns.map((p) => (
-        <View key={p} style={styles.chip}>
-          <Text style={styles.chipText}>{MOVEMENT_TYPE_LABEL[p as keyof typeof MOVEMENT_TYPE_LABEL] ?? p}</Text>
-        </View>
-      ))}
-      {hasMobility && (
-        <View style={[styles.chip, styles.chipMuted]}>
-          <Text style={[styles.chipText, { color: C.textSecondary }]}>+ Mobility</Text>
-        </View>
-      )}
+    <View style={s.scBox}>
+      <Mono size={10}>S&C focus</Mono>
+      <View style={s.chips}>
+        {patterns.map((p) => (
+          <View key={p} style={s.chip}>
+            <Text style={s.chipText}>{MOVEMENT_TYPE_LABEL[p as keyof typeof MOVEMENT_TYPE_LABEL] ?? p}</Text>
+          </View>
+        ))}
+        {hasMobility && (
+          <View style={[s.chip, s.chipMuted]}>
+            <Text style={s.chipText}>+ Mobility</Text>
+          </View>
+        )}
       </View>
     </View>
   )
@@ -450,62 +454,59 @@ function ScSummary({ patterns, hasMobility }: { patterns: string[]; hasMobility:
 // The coach paused the plan (holidays, an injury): until when, and why.
 function PauseCard({ pause, now }: { pause: PlanPause; now: boolean }) {
   return (
-    <View style={styles.card}>
-      <Text style={styles.kicker}>{pause.reason ?? "Pause"}</Text>
-      <Text style={styles.pauseTitle}>
+    <Card eyebrow={pause.reason ?? (now ? "Plan paused" : "Pause coming up")}>
+      <CardTitle size={30}>
         {now ? `Back on ${shortDate(addDays(pause.end, 1))}` : `${shortDate(pause.start)} – ${shortDate(pause.end)}`}
-      </Text>
-      <Text style={styles.pauseText}>
+      </CardTitle>
+      <Body muted size={14} style={{ marginTop: 8, lineHeight: 20 }}>
         {now
           ? "Your plan is on hold and its end date moved back. No classes until then, and your package and homework deadlines moved too."
           : "Your coach set a pause. Your plan and package will wait for you."}
-      </Text>
-    </View>
+      </Body>
+    </Card>
   )
 }
 
-// Heading for a group of cards on the page.
-function GroupLabel({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+// Workouts done out of 12, then the 12 grouped by main type.
+function WorkoutsCard({ slots, doneCount, thisWeek, plan, selected, onSelect }: {
+  slots: Slot[]
+  doneCount: number
+  thisWeek: number | null
+  plan: TrainingPlanRow
+  selected: number | null
+  onSelect: (index: number) => void
+}) {
+  const t = usePaper()
   return (
-    <View style={styles.groupLabel}>
-      <Ionicons name={icon} size={14} color={C.green} />
-      <Text style={styles.groupLabelText}>{text}</Text>
-      <View style={styles.groupLabelLine} />
-    </View>
-  )
-}
-
-function ProgressRing({ done, total }: { done: number; total: number }) {
-  const size = 84
-  const stroke = 8
-  const r = (size - stroke) / 2
-  const circumference = 2 * Math.PI * r
-  const pct = Math.min(done / total, 1)
-  return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke={C.surfaceHigh} strokeWidth={stroke} fill="none" />
-        {pct > 0 && <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke={C.green}
-          strokeWidth={stroke}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${circumference * pct} ${circumference}`}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />}
-      </Svg>
-      <Text style={styles.ringNum}>{done}</Text>
-      <Text style={styles.ringTotal}>of {total}</Text>
-    </View>
+    <Card eyebrow="Workouts">
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10 }}>
+        <CardTitle size={56} style={{ lineHeight: 52 }}>{String(doneCount)}</CardTitle>
+        <View style={{ paddingBottom: 6, gap: 2 }}>
+          <Mono color={t.ink}>of {PLAN_WORKOUTS} done</Mono>
+          <Mono>{Math.max(PLAN_WORKOUTS - doneCount, 0)} left</Mono>
+        </View>
+        {thisWeek != null && (
+          <Mono style={{ marginLeft: "auto", paddingBottom: 6 }} color={t.mintText}>
+            This week {thisWeek}/{WORKOUTS_PER_WEEK}
+          </Mono>
+        )}
+      </View>
+      <ProgressBar progress={doneCount / PLAN_WORKOUTS} style={{ marginTop: 14 }} />
+      <TypeColumns
+        slots={slots}
+        hasSc={plan.hasSc}
+        kind={plan.kind}
+        startType={plan.startType}
+        selected={selected}
+        onSelect={onSelect}
+      />
+    </Card>
   )
 }
 
 // The 12 workouts grouped by main type — the rotation's three pillars, 4
-// each. Per type: one dot per workout (filled = done, ring = built and
-// ready, faint = to come) and the count. Tap a dot for that workout.
+// each. Per type: one circle per workout (filled = done, thick ring = built
+// and ready, faint ring = to come) and the count. Tap one for that workout.
 function TypeColumns({
   slots,
   hasSc,
@@ -521,49 +522,49 @@ function TypeColumns({
   selected: number | null
   onSelect: (index: number) => void
 }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   return (
-    <View style={styles.columns}>
+    <View style={s.columns}>
       {/* In the plan's own order: its first workout's type first. */}
       {MAIN_CYCLE.map((_, i) => mainTypeFor(i + 1, startType)).map((type) => {
-        const mine = slots.filter((s) => s.mainType === type)
-        const color = ADAPTATION_COLOR[type]
-        const doneN = mine.filter((s) => s.status === "done").length
+        const mine = slots.filter((x) => x.mainType === type)
+        const doneN = mine.filter((x) => x.status === "done").length
         return (
-          <View key={type} style={[styles.column, { borderTopColor: color }]}>
-            <Text style={[styles.columnTitle, { color }]} numberOfLines={2}>
-              {mainTypeLabel(type, kind)}
-            </Text>
+          <View key={type} style={s.column}>
+            <View style={{ flexDirection: "row", gap: 6, minHeight: 28 }}>
+              <View style={[s.catDot, { backgroundColor: ADAPTATION_COLOR[type] }]} />
+              <Mono color={t.ink} size={9.5} style={{ flex: 1, lineHeight: 13 }} numberOfLines={2}>
+                {mainTypeLabel(type, kind)}
+              </Mono>
+            </View>
             {/* Conditioning plans: the title already is the S&C focus. */}
-            {hasSc && kind !== "conditioning" && <Text style={styles.columnSub} numberOfLines={1}>{FOCUS_LABEL[SC_FOCUS_FOR[type]]}</Text>}
-            <View style={styles.dots}>
-              {mine.map((s) => {
-                const isDone = s.status === "done"
-                const isReady = s.status === "ready"
+            {hasSc && kind !== "conditioning" && <Mono size={9} numberOfLines={1}>{FOCUS_LABEL[SC_FOCUS_FOR[type]]}</Mono>}
+            <View style={s.dots}>
+              {mine.map((x) => {
+                const isDone = x.status === "done"
+                const isReady = x.status === "ready"
                 return (
                   <Pressable
-                    key={s.index}
-                    onPress={() => onSelect(s.index)}
+                    key={x.index}
+                    onPress={() => onSelect(x.index)}
                     hitSlop={4}
-                    accessibilityLabel={`Workout ${s.index}`}
+                    accessibilityLabel={`Workout ${x.index}, ${isDone ? "done" : isReady ? "ready" : "to come"}`}
                     style={[
-                      styles.dot,
-                      isDone
-                        ? { backgroundColor: color, borderColor: color }
-                        : isReady
-                          ? { borderColor: color, borderWidth: 3 }
-                          : { borderColor: `${color}55` },
-                      s.index === selected && styles.dotSelected,
+                      s.dot,
+                      isDone ? s.dotDone : isReady ? s.dotReady : s.dotUpcoming,
+                      x.index === selected && s.dotSelected,
                     ]}
                   >
-                    {isDone && <Ionicons name="checkmark" size={12} color={C.bg} />}
+                    {isDone && <Ionicons name="checkmark" size={11} color={t.onMint} />}
                   </Pressable>
                 )
               })}
             </View>
-            <Text style={styles.columnCount}>
-              <Text style={[styles.columnCountNum, { color }]}>{doneN}</Text>
-              <Text style={styles.columnCountOf}> of {mine.length} done</Text>
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4, marginTop: 8 }}>
+              <CardTitle size={26}>{String(doneN)}</CardTitle>
+              <Mono size={9} style={{ paddingBottom: 3 }}>of {mine.length}</Mono>
+            </View>
           </View>
         )
       })}
@@ -571,7 +572,7 @@ function TypeColumns({
   )
 }
 
-// The selected workout (default: the next one) — phases with minutes.
+// The selected workout — phases with minutes.
 function WorkoutDetail({
   slot,
   isNext,
@@ -583,32 +584,32 @@ function WorkoutDetail({
   onClose: () => void
   onStart: (w: ProtocolRow) => void
 }) {
+  const t = usePaper()
+  const s = usePaperStyles(makeStyles)
   const { summary } = slot
-  const color = ADAPTATION_COLOR[slot.mainType]
   const isReady = slot.status === "ready"
   return (
-    <View style={[styles.card, isReady && { borderColor: color }]}>
-      <View style={styles.detailHeadRow}>
-        <Text style={styles.kicker}>
-          {isNext ? "Next up · " : ""}Workout {slot.index} · Week {slot.week}
-        </Text>
-        <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close">
-          <Ionicons name="close" size={18} color={C.textSecondary} />
-        </Pressable>
+    <Card>
+      <View style={s.detailHeadRow}>
+        <Mono>{isNext ? "Next up · " : ""}Workout {slot.index} · Week {slot.week}</Mono>
+        <IconButton icon="close" label="Close" size={32} onPress={onClose} />
       </View>
-      <View style={styles.detailTitleRow}>
+      <View style={s.detailTitleRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.slotKicker, { color }]}>{slot.kicker}</Text>
-          <Text style={styles.detailTitle}>{slot.title}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={[s.catDot, { backgroundColor: slot.kickerColor, marginTop: 0 }]} />
+            <Mono>{slot.kicker}</Mono>
+          </View>
+          <CardTitle size={28} style={{ marginTop: 4 }}>{slot.title}</CardTitle>
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          {summary && <Text style={styles.detailMinutes}>~{formatMinutes(summary.minutes)}</Text>}
-          <Text style={[styles.slotWhen, slot.status === "done" && { color }]}>{slot.when}</Text>
+          {summary && <CardTitle size={24}>{`~${formatMinutes(summary.minutes)}`}</CardTitle>}
+          <Mono color={slot.status === "done" ? t.mintText : t.label}>{slot.when}</Mono>
         </View>
       </View>
 
       {summary && summary.minutes > 0 && (
-        <View style={styles.timeBar}>
+        <View style={s.timeBar}>
           {summary.phases.map((p, i) => (
             <View key={i} style={{ flex: p.minutes, backgroundColor: ADAPTATION_COLOR[p.adaptation] }} />
           ))}
@@ -616,146 +617,79 @@ function WorkoutDetail({
       )}
 
       {summary && (
-        <View style={styles.phaseList}>
+        <View style={s.phaseList}>
           {summary.phases.map((p, i) => (
-            <View key={i} style={styles.phaseRow}>
-              <View style={[styles.phaseRail, { backgroundColor: ADAPTATION_COLOR[p.adaptation] }]} />
+            <View key={i} style={s.phaseRow}>
+              <View style={[s.phaseRail, { backgroundColor: ADAPTATION_COLOR[p.adaptation] }]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.phaseLabel}>{p.label}</Text>
-                <Text style={styles.phaseTitle} numberOfLines={1}>{p.title}</Text>
-                {p.detail ? <Text style={styles.phaseDetail} numberOfLines={2}>{p.detail}</Text> : null}
+                <Mono size={9.5}>{p.label}</Mono>
+                <Body weight={700} size={15} numberOfLines={1} style={{ marginTop: 2 }}>{p.title}</Body>
+                {p.detail ? <Body muted size={12.5} numberOfLines={2}>{p.detail}</Body> : null}
               </View>
-              <Text style={styles.phaseMinutes}>{formatMinutes(p.minutes)}</Text>
+              <Mono color={t.ink}>{formatMinutes(p.minutes)}</Mono>
             </View>
           ))}
         </View>
       )}
 
       {isReady && slot.workout ? (
-        <ScalePressable style={styles.slotStartBtn} onPress={() => onStart(slot.workout!)}>
-          <Ionicons name="play" size={15} color={C.bg} />
-          <Text style={styles.slotStartText}>Start workout</Text>
-        </ScalePressable>
+        <MintButton label="Start workout" icon="play" onPress={() => onStart(slot.workout!)} style={{ marginTop: 16 }} />
       ) : slot.status === "upcoming" ? (
-        <Text style={styles.phaseNote}>Preview — your coach builds the exact workout.</Text>
+        <Mono italic style={{ marginTop: 14 }}>Preview · your coach builds the exact workout</Mono>
       ) : null}
-    </View>
+    </Card>
   )
 }
 
 function Empty({ icon, title, text }: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string }) {
+  const t = usePaper()
   return (
-    <View style={styles.empty}>
-      <Ionicons name={icon} size={36} color={C.textMuted} />
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyText}>{text}</Text>
-    </View>
+    <Card style={{ alignItems: "center", paddingVertical: 36, gap: 10 }}>
+      <Ionicons name={icon} size={34} color={t.label} />
+      <CardTitle size={26} style={{ textAlign: "center" }}>{title}</CardTitle>
+      <Body muted size={14} style={{ textAlign: "center" }}>{text}</Body>
+    </Card>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     gap: 12,
   },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
-  title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
-  scroll: { paddingHorizontal: 16, paddingBottom: 40, gap: 16 },
+})
 
-  card: {
-    backgroundColor: C.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 16,
-    gap: 12,
-  },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
-
-  kicker: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  focusName: { marginTop: -6, fontSize: 30, fontWeight: "800", letterSpacing: -0.5 },
-
-
-  // Workouts
-  workoutsTop: { flexDirection: "row", alignItems: "center", gap: 16 },
-  workoutsLeft: { fontSize: 22, fontWeight: "800", color: C.textPrimary },
-  workoutsWeek: { fontSize: 13, color: C.textSecondary },
-  ringNum: { fontSize: 24, fontWeight: "800", color: C.green, lineHeight: 26 },
-  ringTotal: { fontSize: 11, color: C.textSecondary },
+const makeStyles = (t: PaperTheme) => StyleSheet.create({
+  // S&C patterns under the specs
+  scBox: { marginTop: 14, gap: 6 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: { borderRadius: 999, borderWidth: 1.5, borderColor: t.ink, paddingHorizontal: 10, paddingVertical: 4 },
+  chipMuted: { borderColor: t.ghostBorder },
+  chipText: { fontFamily: font.bodyBold, fontSize: 12.5, color: t.ink },
 
   // Type columns
-  columns: { flexDirection: "row", gap: 10 },
-  column: { flex: 1, borderTopWidth: 3, paddingTop: 10, gap: 4 },
-  columnTitle: { height: 32, fontSize: 12.5, lineHeight: 16, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.4 },
-  columnSub: { fontSize: 11, color: C.textSecondary },
-  dots: { flexDirection: "row", gap: 5, marginTop: 10 },
-  dot: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2,
-    alignItems: "center", justifyContent: "center",
-  },
-  dotSelected: { transform: [{ scale: 1.2 }] },
-  columnCount: { marginTop: 8 },
-  columnCountNum: { fontSize: 22, fontWeight: "800" },
-  columnCountOf: { fontSize: 12, fontWeight: "600", color: C.textSecondary },
+  columns: { flexDirection: "row", gap: 10, marginTop: 18 },
+  column: { flex: 1, borderTopWidth: 1.5, borderTopColor: t.ink, paddingTop: 10, gap: 4 },
+  catDot: { width: 8, height: 8, borderRadius: 4, marginTop: 2 },
+  dots: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 10 },
+  dot: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  dotDone: { backgroundColor: t.mint, borderWidth: 1.5, borderColor: t.mode === "dark" ? t.mint : t.ink },
+  dotReady: { borderWidth: 2.5, borderColor: t.mintDeep },
+  dotUpcoming: { borderWidth: 1.5, borderColor: t.ringIdle },
+  dotSelected: { transform: [{ scale: 1.25 }] },
 
   // Workout detail
   detailHeadRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  detailTitleRow: { flexDirection: "row", alignItems: "flex-end", gap: 12, marginTop: -4 },
-  detailTitle: { marginTop: 1, fontSize: 20, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.3 },
-  detailMinutes: { fontSize: 20, fontWeight: "800", color: C.textPrimary },
-  slotKicker: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
-  slotWhen: { fontSize: 11.5, color: C.textMuted },
-
-  // Time split by phase
-  timeBar: { flexDirection: "row", height: 6, borderRadius: 3, overflow: "hidden", gap: 2 },
-
-  phaseList: { gap: 10, paddingTop: 2 },
+  detailTitleRow: { flexDirection: "row", alignItems: "flex-end", gap: 12, marginTop: 10 },
+  timeBar: { flexDirection: "row", height: 6, borderRadius: 3, overflow: "hidden", gap: 2, marginTop: 16 },
+  phaseList: { gap: 12, paddingTop: 14 },
   phaseRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   phaseRail: { width: 3, alignSelf: "stretch", borderRadius: 2 },
-  phaseLabel: { fontSize: 10.5, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
-  phaseTitle: { marginTop: 1, fontSize: 14, fontWeight: "600", color: C.textPrimary },
-  phaseDetail: { marginTop: 1, fontSize: 12, color: C.textSecondary },
-  phaseMinutes: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
-  phaseNote: { fontSize: 11.5, color: C.textMuted, fontStyle: "italic" },
-
-  slotStartBtn: {
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: C.green,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  slotStartText: { fontSize: 14.5, fontWeight: "800", color: C.bg },
-
-  // S&C patterns under the focus title
-  scBox: { marginTop: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border, gap: 8 },
-  scBoxLabel: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-
-  // Page groups
-  group: { gap: 12 },
-  pauseTitle: { fontSize: 20, fontWeight: "800", color: C.textPrimary },
-  pauseText: { fontSize: 13, lineHeight: 18, color: C.textSecondary },
-  groupSpaced: { marginTop: 16 },
-  groupLabel: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 },
-  groupLabelText: { fontSize: 13, fontWeight: "800", color: C.textPrimary, textTransform: "uppercase", letterSpacing: 1 },
-  groupLabelLine: { flex: 1, height: 1, backgroundColor: C.border },
-  chip: { backgroundColor: C.surfaceHigh, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
-  chipMuted: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.surfaceHigh },
-  chipText: { fontSize: 12.5, fontWeight: "600", color: C.textPrimary },
-
-  empty: { alignItems: "center", paddingHorizontal: 40, paddingTop: 80, gap: 10 },
-  emptyTitle: { fontSize: 17, fontWeight: "700", color: C.textPrimary },
-  emptyText: { fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 20 },
 })

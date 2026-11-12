@@ -304,3 +304,27 @@ assert.equal(basisLine(planNextForFocus(bench, pushChain, undefined, "kg", [benc
 assert.equal(basisLine({ note: "", flags: {} }, "hypertrophy", "x", "kg"), undefined)
 
 console.log("all scNext tests passed")
+
+// ── Weighted step on top of a ladder (Weighted pull-ups) ──
+{
+  const ladder = { chain: [{ exerciseId: "neg", name: "Negative pull-ups" }, { exerciseId: "pu", name: "Pull Ups" }, { exerciseId: "wpu", name: "Weighted pull-ups" }], prescribedIdx: 1 }
+  const mf = { focus: "max_force" as const, reps: "3-6" }
+  const onW = (weight: number, ...reps: number[]): ScSetsSummary => ({ exerciseId: "wpu", weight, sets: reps.map((amount) => ({ amount })) })
+  // Top of the range with weight → more weight, same level
+  let p = planNext(mf, ladder, 2.5, "kg", [onW(10, 6, 6, 6)], "last time")
+  assert.equal(p.level?.exerciseId, "wpu")
+  assert.equal(p.weight, 12.5)
+  // A miss with weight to take off → less weight, same level
+  p = planNext(mf, ladder, 2.5, "kg", [onW(10, 2)], "last time")
+  assert.equal(p.level?.exerciseId, "wpu")
+  assert.equal(p.weight, 7.5)
+  // In range → same weight
+  assert.equal(planNext(mf, ladder, 2.5, "kg", [onW(10, 4, 4)], "last time").weight, 10)
+  // A miss with no weight logged → down to Pull Ups
+  assert.equal(planNext(mf, ladder, 2.5, "kg", [onW(0, 2)], "last time").level?.exerciseId, "pu")
+  // Topping out on Pull Ups → onto the weighted step, weight for the athlete to set
+  p = planNext(mf, ladder, 2.5, "kg", [{ exerciseId: "pu", sets: [{ amount: 6 }, { amount: 6 }] }], "last time")
+  assert.equal(p.level?.exerciseId, "wpu")
+  assert.equal(p.weight, undefined)
+}
+console.log("weighted step tests passed")

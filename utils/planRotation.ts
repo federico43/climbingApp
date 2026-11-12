@@ -19,7 +19,7 @@ export const PLAN_FOCUS_LABEL: Record<PlanFocus, string> = {
   power_endurance: "Power endurance",
   power: "Power",
   technique: "Technique",
-  fear_management: "Fear management",
+  fear_management: "Mental",
 }
 
 // What a plan trains. "climbing": the full workout (warm-up, main climbing

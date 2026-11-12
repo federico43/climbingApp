@@ -27,7 +27,7 @@ export const WARMUP_PILLAR_LABEL: Record<WarmupPillar, string> = {
   strength_power_endurance: "Strength & power endurance",
   power: "Power",
   technique: "Technique",
-  fear_management: "Fear management",
+  fear_management: "Mental",
 }
 
 // The rotation group for a plan focus / adaptation (strength and power

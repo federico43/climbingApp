@@ -3,6 +3,7 @@
 // workouts (from their blocks) and upcoming ones (from the rotation).
 
 import { EXPLORATION_PART_MIN } from "@/utils/routeExploration"
+import { isBenchmarkBlock } from "@/utils/benchmark"
 import type { BlockRow } from "@/services/BoulderGraphService"
 import { type Adaptation, resolveAdaptation } from "@/utils/adaptations"
 import { findLibraryBlock } from "@/utils/planWorkout"
@@ -132,7 +133,7 @@ const toMinutes = (secs: number) => Math.max(5, Math.round(secs / 60 / 5) * 5)
 function phaseOf(b: any): PhaseKey {
   if (b.type === "strength_conditioning") return "sc"
   if (b.type === "constraint_warmup" || b.type === "route_exploration" || (b.type === "intervals" && b.kind === "warmup")) return "warmup"
-  if (b.adaptation === "test" || (b.type === TEST_BLOCK.type && (b.blockName ?? "").trim().toLowerCase() === TEST_BLOCK.name.toLowerCase())) return "test"
+  if (b.adaptation === "test" || isBenchmarkBlock(b) || (b.type === TEST_BLOCK.type && (b.blockName ?? "").trim().toLowerCase() === TEST_BLOCK.name.toLowerCase())) return "test"
   return "main"
 }
 

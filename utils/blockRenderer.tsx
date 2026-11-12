@@ -1,6 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { CONSTRAINT_WORDS } from "@/utils/blockNotes"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { ExplorationSessionBlock } from "@/components/ExplorationSessionBlock"
 import { FourByFourBlock } from "@/components/FourByFourBlock"
@@ -28,7 +28,7 @@ import {
   Text,
   View
 } from "react-native"
-import { shared_styles, TopBar, warmup_styles } from "../utils/BlockStyles"
+import { shared_stylesSheet, TopBar, warmup_stylesSheet } from "../utils/BlockStyles"
 import { saveVideoLocally } from "./saveVideo"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
@@ -233,6 +233,7 @@ export function BlockRenderer({
 // A grade-colored pill (orange pill orange, blue blue, etc.) used wherever the
 // boulder difficulty is shown.
 function DifficultyPill({ level, fontSize = 18 }: { level: string; fontSize?: number }) {
+  const C = useC()
   const opt = BoulderLevelOptions.find((o) => o.value === String(level).toLowerCase())
   return (
     <View style={{
@@ -241,7 +242,7 @@ function DifficultyPill({ level, fontSize = 18 }: { level: string; fontSize?: nu
     }}>
       <Text style={{
         fontSize, fontWeight: "800",
-        color: opt?.on ?? C.bg, textTransform: "capitalize",
+        color: opt?.on ?? C.onAccent, textTransform: "capitalize",
       }}>
         {opt?.label ?? level}
       </Text>
@@ -269,6 +270,10 @@ function ConstraintWarmupBlock({
   goToPreviousBlock,
   blockStartTime,
 }: ConstraintWarmupBlockProps) {
+  const C = useC()
+  const cwStyles = useSheet(cwStylesSheet)
+  const shared_styles = useSheet(shared_stylesSheet)
+  const warmup_styles = useSheet(warmup_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const targetAttempts = block.targetAttempts ?? 1
   const attemptsDone = attempts.length
@@ -341,7 +346,7 @@ function ConstraintWarmupBlock({
   if (phase === "intro") {
     return (
       <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} />
+        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
         <ScrollView
 
           contentContainerStyle={shared_styles.introContent}
@@ -411,7 +416,7 @@ function ConstraintWarmupBlock({
                   style={{
                     position: "absolute",
                     right: 14,
-                    color: C.bg,
+                    color: C.onAccent,
                     fontSize: 16,
                     fontWeight: "800",
                     opacity: plusOneOpacity,
@@ -462,7 +467,7 @@ function ConstraintWarmupBlock({
 
 // Constraint-warmup ready-phase controls — same look as the sequence active
 // buttons (side-by-side rounded), with the register action emphasized in green.
-const cwStyles = StyleSheet.create({
+const cwStylesSheet = paperSheet((C) => StyleSheet.create({
   readyCenter: { alignItems: "center", paddingHorizontal: 20, paddingTop: 24, paddingBottom: 8 },
   readySpacer: { flex: 1 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32 },
@@ -476,5 +481,5 @@ const cwStyles = StyleSheet.create({
     flex: 1, backgroundColor: C.green, borderRadius: 22,
     paddingVertical: 14, alignItems: "center", justifyContent: "center",
   },
-  registerBtnText: { color: C.bg, fontSize: 15, fontWeight: "800" },
-})
+  registerBtnText: { color: C.onAccent, fontSize: 15, fontWeight: "800" },
+}))

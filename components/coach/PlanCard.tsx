@@ -1,6 +1,7 @@
 import { C } from "@/utils/theme"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
+import { ExtraSessionRow } from "@/components/coach/ExtraSessionRow"
 import { PlanPauses } from "@/components/coach/PlanPauses"
 import { Block, injectLocalIds } from "@/components/workoutBlocks"
 import { card } from "@/components/coach/styles"
@@ -14,6 +15,8 @@ import {
   type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
+import { benchmarkComparison, benchmarkTryLabel } from "@/utils/benchmark"
+import { parsePullupTest } from "@/utils/pullupAssessment"
 import { buildPlanWorkout, withUpcomingWorkouts, workoutPreview, type PlanWorkout } from "@/utils/planWorkout"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
@@ -23,6 +26,7 @@ import {
   createProtocol,
   deleteProtocol,
   getSessionsByUserId,
+  getUsers,
   listBlocks,
   listExercises,
   listPlanWorkouts,
@@ -58,6 +62,7 @@ export function PlanCard({
   loading,
   planWorkouts,
   sessions,
+  homework,
   flashLevel,
   onPlanChanged,
   onSessions,
@@ -69,6 +74,8 @@ export function PlanCard({
   loading: boolean
   planWorkouts: ProtocolRow[]
   sessions: SessionRow[]
+  // The athlete's homework — for the extra session's "already sent" line.
+  homework: ProtocolRow[]
   flashLevel: string | null
   onPlanChanged: (plan: TrainingPlanRow | null) => void
   onSessions: (rows: SessionRow[]) => void
@@ -117,7 +124,7 @@ export function PlanCard({
   // loaded — the same generation Edit details / Create run on fresh data.
   const preview = planShape && nextSpec && libraries
     ? workoutPreview(buildPlanWorkout(
-      planShape, nextSpec, libraries.blocks, libraries.exercises, withUpcomingWorkouts(sessions, planWorkouts), flashLevel,
+      planShape, nextSpec, libraries.blocks, libraries.exercises, withUpcomingWorkouts(sessions, planWorkouts), flashLevel, parsePullupTest((athlete as any).pullupTest),
     ).blocks)
     : null
   function swap(change: Omit<SpecSwaps, "index">) {
@@ -128,6 +135,8 @@ export function PlanCard({
   const done = plan ? donePlanWorkouts(plan.$id, planWorkouts, sessions) : new Map<number, string>()
   const thisWeek = plan ? doneThisWeek(plan.windowStart, done, today, plan.pauses) : 0
   const pausedNow = plan ? pauseOn(plan.pauses, today) : null
+  // The plan's Benchmark sequence: first try and, once done, the retry.
+  const benchmark = plan ? benchmarkComparison(sessions, plan.windowStart) : null
   const inWindow = !!plan && today >= plan.windowStart && today <= plan.windowEnd && !pausedNow
 
   // Re-reads sessions, the plan's workouts and both libraries first, so
@@ -135,8 +144,10 @@ export function PlanCard({
   // exercise re-tagged with a different movement pattern).
   async function generateNext() {
     if (!plan || !planShape || !nextSpec) return null
-    const [fresh, built, exerciseRows, blockRows] = await Promise.all([
+    const [fresh, built, exerciseRows, blockRows, me] = await Promise.all([
       getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
+      // A pull-up test done since this page opened counts too.
+      getUsers(athlete.$id).catch(() => null),
     ])
     onSessions(fresh)
     onPlanWorkouts(built)
@@ -144,14 +155,14 @@ export function PlanCard({
       // Conditioning plans: named after the day's S&C focus (swaps included).
       name: `Workout ${nextSpec.index} · ${conditioning && nextSpec.scFocus ? FOCUS_LABEL[nextSpec.scFocus] : mainTypeLabel(nextSpec.mainType)}`,
       slot: { planId: plan.$id, planIndex: nextSpec.index },
-      ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel),
+      ...buildPlanWorkout(planShape, nextSpec, blockRows, exerciseRows, withUpcomingWorkouts(fresh, built), flashLevel, parsePullupTest(((me ?? athlete) as any).pullupTest)),
     }
   }
 
   // Opens the generated workout in the builder, to review and adjust
   // before saving.
   function openInBuilder(next: GeneratedWorkout) {
-    // The Density test rides along pre-marked as homework (split off on save).
+    // The benchmark rides along pre-marked as homework (split off on save).
     const withIds = injectLocalIds([...next.homework, ...next.blocks])
     setDraftWorkout({
       name: next.name,
@@ -205,7 +216,7 @@ export function PlanCard({
     }
   }
 
-  // Same rows the builder's Save makes: the Density test first as homework
+  // Same rows the builder's Save makes: the benchmark first as homework
   // (undone if the workout can't be saved), then the workout, then the
   // athlete hears about the homework.
   async function create(next: GeneratedWorkout) {
@@ -284,6 +295,15 @@ export function PlanCard({
             <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
             {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
           </View>
+          {benchmark && (
+            <View style={styles.benchRow}>
+              <Text style={styles.benchLabel}>Benchmark</Text>
+              <Text style={styles.benchText}>
+                {formatPlanDate(benchmark.first.date)}: {benchmarkTryLabel(benchmark.first)}
+                {benchmark.last ? `  →  ${formatPlanDate(benchmark.last.date)}: ${benchmarkTryLabel(benchmark.last)}` : "  ·  retry in the last week"}
+              </Text>
+            </View>
+          )}
           {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
 
           {planEnded ? (
@@ -337,12 +357,12 @@ export function PlanCard({
                 {nextSpec.mainBlock && (
                   <PickRow
                     color={ADAPTATION_COLOR[nextSpec.mainType]}
-                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} × ${mainBlockRun(nextSpec.mainBlock).copies}${mainBlockRun(nextSpec.mainBlock).timeLimit ? ` (${mainBlockRun(nextSpec.mainBlock).timeLimit} min)` : ""}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
+                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
                     onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
                   />
                 )}
               </>)}
-              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text="+ Density test as homework" />}
+              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text={nextSpec.index === 1 || !benchmark ? "+ Tests as homework: Density test + Benchmark (new sequence)" : "+ Tests as homework: Density test + Benchmark (same sequence again)"} />}
               <View style={styles.actions}>
                 <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
                   <Text style={card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
@@ -352,6 +372,16 @@ export function PlanCard({
                 </Pressable>
               </View>
             </View>
+          )}
+          {planShape && !planEnded && (
+            <ExtraSessionRow
+              athlete={athlete}
+              plan={plan}
+              sessions={sessions}
+              homework={homework}
+              flashLevel={flashLevel}
+              onSent={onHomeworkChanged}
+            />
           )}
         </>
       )}
@@ -430,6 +460,9 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: C.surfaceHigh, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   chipText: { fontSize: 11.5, fontWeight: "600", color: C.textSecondary },
   statsRow: { flexDirection: "row", gap: 8 },
+  benchRow: { gap: 2 },
+  benchLabel: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
+  benchText: { fontSize: 13, color: C.textPrimary },
   stat: { flex: 1, backgroundColor: C.surfaceHigh, borderRadius: 12, paddingVertical: 10, alignItems: "center" },
   statNum: { fontSize: 20, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
   statLabel: { fontSize: 11, color: C.textSecondary },

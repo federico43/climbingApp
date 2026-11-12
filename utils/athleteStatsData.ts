@@ -1,7 +1,7 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import type {
-  PeriodStats, ProjectSessionStat, ScExerciseStats, ScPatternStats, StatFocus, StatMetric, StatPoint, WarmupSessionStat,
+  DensitySessionStat, PeriodStats, ProjectSessionStat, ScExerciseStats, ScPatternStats, StatFocus, StatMetric, StatPoint, WarmupSessionStat,
 } from "@/utils/athleteStats"
 import { colourIndex } from "@/utils/boulderColours"
 import { parseMaxLog } from "@/utils/edgeWarmup"
@@ -42,6 +42,9 @@ export interface StatsInput {
   sessions: SessionRow[]          // any order
   library: StatsLibraryExercise[]
   today: string                   // "YYYY-MM-DD"
+  // Boulder level id → difficulty (niveles_boulder), to score the Density
+  // tests. Left out (not loaded yet): no density tests.
+  levelDifficulty?: Record<string, number>
 }
 
 // ─── Sessions, parsed once ────────────────────────────────────────────────────
@@ -173,6 +176,28 @@ export function warmupSessions(sessions: ParsedSession[], from: string, to: stri
   return blockLogs(sessions, from, to, isOneOnOneOff).flatMap((log) => {
     const last = [...log.attempts].reverse().map(intervalsLog).find((l) => l != null)
     return last ? [{ label: shortDay(log.date), minutes: Math.round((last.series * last.workTime) / 6) / 10 }] : []
+  })
+}
+
+// Density test: the Boulder Logger block the plan gives as homework
+// (TEST_BLOCK). Its score is what the athlete saw at the end: the sum of
+// the difficulty of every boulder logged (attempt.level = the level's id).
+export function isDensityTest(block: any): boolean {
+  return block?.type === "exploration_session" && /density/i.test(String(block?.blockName ?? ""))
+}
+
+export function densitySessions(
+  sessions: ParsedSession[],
+  from: string,
+  to: string,
+  levelDifficulty: Record<string, number> | undefined,
+): DensitySessionStat[] {
+  if (!levelDifficulty) return []
+  return blockLogs(sessions, from, to, isDensityTest).flatMap((log) => {
+    const climbs = log.attempts.filter((a) => typeof a?.level === "string" && a.level !== "")
+    if (climbs.length === 0) return []
+    const score = climbs.reduce((sum, a) => sum + (levelDifficulty[a.level!] ?? 0), 0)
+    return [{ label: shortDay(log.date), score, climbs: climbs.length }]
   })
 }
 
@@ -377,6 +402,7 @@ export function buildBlockStats(input: StatsInput & { plan: StatsPlan; planWorko
     sc: scPatternStats(parsed, input.library, from, to),
     projects: projectSessions(parsed, from, to),
     warmups: warmupSessions(parsed, from, to),
+    density: densitySessions(parsed, from, to, input.levelDifficulty),
   }
 }
 
@@ -414,5 +440,6 @@ export function buildAllBlocksStats(input: StatsInput & { plans: StatsPlan[]; wo
     sc: scPatternStats(parsed, input.library, "0000-01-01", input.today),
     projects: projectSessions(parsed, from, input.today),
     warmups: warmupSessions(parsed, from, input.today),
+    density: densitySessions(parsed, from, input.today, input.levelDifficulty),
   }
 }

@@ -104,7 +104,11 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   const activeLensId = selectedLens
 
   // Preview playback of the just-recorded clip, looping and autoplaying.
+  // expo-video's default audioMixingMode ("auto") makes iOS stop other apps'
+  // audio as soon as an unmuted player starts, so the athlete's music
+  // (Spotify etc.) died on every preview. Mixing keeps it going.
   const previewPlayer = useVideoPlayer(previewUri ? { uri: previewUri } : null, (p) => {
+    p.audioMixingMode = "mixWithOthers"
     p.loop = true
     p.play()
   })
