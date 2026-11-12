@@ -94,6 +94,8 @@ export function FourByFourBlock({
   const [stepNotice, setStepNotice] = useState<string | null>(null)
   // True once the athlete chose to pick one colour themselves.
   const [pickOwn, setPickOwn] = useState(false)
+  // True once the athlete chose to pick each boulder's colour separately.
+  const [perBoulder, setPerBoulder] = useState(false)
   const [tops, setTops] = useState<number>(bouldersPerSet)
   const blockTimer = useBlockTimer()
   const { User } = ConsumeAuth()
@@ -132,7 +134,23 @@ export function FourByFourBlock({
     setGrades([])
     setPickOwn(true)
   }
-  const ready = grades.length === bouldersPerSet
+  // Each boulder its own colour: start from what's picked (blank slots if nothing yet).
+  function choosePerBoulder() {
+    setGrades((g) => (g.length === bouldersPerSet ? g : Array.from({ length: bouldersPerSet }, () => "")))
+    setPerBoulder(true)
+  }
+  function chooseOneForAll() {
+    setGrades([])
+    setPerBoulder(false)
+  }
+  function setSlot(slot: number, value: string) {
+    setGrades((g) => {
+      const next = g.length === bouldersPerSet ? [...g] : Array.from({ length: bouldersPerSet }, () => "")
+      next[slot] = value
+      return next
+    })
+  }
+  const ready = grades.length === bouldersPerSet && grades.every((g) => !!g)
 
   function startSetRest() {
     setTops(bouldersPerSet)
@@ -197,6 +215,39 @@ export function FourByFourBlock({
             <>
               <Text style={styles.sectionLabel}>Boulders in each set</Text>
               <BoulderList grades={grades} />
+              {/* The athlete can still change any boulder's colour. */}
+              <Pressable onPress={() => { setSuggestion(null); setPickOwn(true); setPerBoulder(true) }} hitSlop={8}>
+                <Text style={styles.suggestionDecline}>Change colours</Text>
+              </Pressable>
+            </>
+          ) : perBoulder ? (
+            <>
+              {/* The athlete picks each boulder's colour separately. */}
+              <Text style={styles.sectionLabel}>Colour of each boulder</Text>
+              <View style={styles.boulderList}>
+                {Array.from({ length: bouldersPerSet }).map((_, i) => (
+                  <View key={i} style={[styles.slotRow, i > 0 && styles.boulderRowSep]}>
+                    <Text style={styles.boulderName}>Boulder {i + 1}</Text>
+                    <View style={styles.slotDots}>
+                      {BoulderLevelOptions.map((g) => {
+                        const sel = grades[i] === g.value
+                        return (
+                          <Pressable
+                            key={g.value}
+                            onPress={() => setSlot(i, g.value)}
+                            hitSlop={4}
+                            accessibilityLabel={`Boulder ${i + 1}: ${g.label}`}
+                            style={[styles.slotDot, { backgroundColor: g.color }, sel && styles.slotDotSel]}
+                          />
+                        )
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <Pressable onPress={chooseOneForAll} hitSlop={8}>
+                <Text style={styles.suggestionDecline}>Same colour for every boulder</Text>
+              </Pressable>
             </>
           ) : (
             <>
@@ -217,6 +268,9 @@ export function FourByFourBlock({
                   )
                 })}
               </View>
+              <Pressable onPress={choosePerBoulder} hitSlop={8}>
+                <Text style={styles.suggestionDecline}>Choose a colour for each boulder</Text>
+              </Pressable>
             </>
           )}
         </ScrollView>
@@ -405,6 +459,13 @@ const sheet = paperSheet((C) => StyleSheet.create({
     width: 14, height: 14, borderRadius: 7,
     borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.45)",
   },
+  slotRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10 },
+  slotDots: { flexDirection: "row", gap: 8 },
+  slotDot: {
+    width: 26, height: 26, borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.45)",
+  },
+  slotDotSel: { borderWidth: 3, borderColor: C.textPrimary, transform: [{ scale: 1.1 }] },
   boulderName: { flex: 1, fontSize: 15, color: C.textSecondary, fontVariant: ["tabular-nums"] },
   boulderColour: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
 
