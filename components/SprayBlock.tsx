@@ -14,7 +14,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import {
-  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
+  newSprayRoutes, routeRecords, SPRAY_LEGEND, SPRAY_REST_OPTIONS_S, sprayBlockSteps, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
@@ -440,18 +440,8 @@ export function SprayBlock({
             ]}
           />
           <BlockNotes text={block.description} />
-          <StepList
-            steps={[
-              { title: "Choose a sequence", text: "A new one, or one of the suggested ones." },
-              {
-                title: "Climb it",
-                text: isTime
-                  ? `As many attempts as you can in ${settings.minutes} min. Tap Top or Fell after each one.`
-                  : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}. Tap Top or Fell after each one.`,
-              },
-              { title: "Rest", text: "The rest timer starts on its own." },
-            ]}
-          />
+          <StepList steps={sprayBlockSteps(block, settings)} />
+          <Text style={s.legend}>{SPRAY_LEGEND}</Text>
         </ScrollView>
         <View style={shared_styles.footer}>
           {block.lockRoute && block.routeId
@@ -796,6 +786,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   reloadBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 4, paddingHorizontal: 8 },
   reloadText: { fontSize: 13, fontWeight: "700", color: C.green },
+  legend: { fontSize: 12.5, color: C.textMuted, textAlign: "center", lineHeight: 18 },
   sectionLabel: { fontSize: 12, fontWeight: "800", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.8 },
   empty: { fontSize: 14, color: C.textMuted, lineHeight: 20 },
   row: {

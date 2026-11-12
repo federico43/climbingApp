@@ -214,3 +214,67 @@ export function newSprayRoutes(
     .slice(0, limit)
     .map((r) => r.$id)
 }
+
+// ── Instructions (to-do 2026-11-11: better instructions for every spray block) ──
+// What the intro of each spray block tells the athlete, one short line per
+// step: the goal, which sequence to pick, how to climb it, how to rest.
+// Coach's own description (block.description) still shows above it.
+
+export interface SprayStep { title: string; text: string }
+
+interface SprayCopy { goal: string; choose: string; climb: string; rest: string }
+
+const SPRAY_COPY: Record<string, SprayCopy> = {
+  max_bouldering: {
+    goal: "Your hardest moves. Every attempt at 100%.",
+    choose: "One you can't flash, but could top in about 5 tries.",
+    climb: "Full effort from the first move. Stop if your attempts get sloppy.",
+    rest: "Rest fully. A tired attempt doesn't count as max.",
+  },
+  base: {
+    goal: "Clean, precise climbing below your limit.",
+    choose: "One you can top in 1–3 tries.",
+    climb: "Quiet feet, no readjusting, the same way every time.",
+    rest: "Short rests are fine. Keep the quality.",
+  },
+  power: {
+    goal: "Fast, explosive moves.",
+    choose: "Short (3–6 moves) with at least one big move.",
+    climb: "Move fast and commit. Push with the legs, don't lock off.",
+    rest: "Rest enough that every attempt is fast.",
+  },
+  coordination: {
+    goal: "Timing: deadpoints, jumps, paddles, double-clutches.",
+    choose: "One with a move that needs timing, not strength.",
+    climb: "Commit to the timing. Falling is part of it. Change one thing each try.",
+    rest: "Rest enough to stay sharp.",
+  },
+}
+
+const BENCHMARK_COPY: SprayCopy = {
+  goal: "Your test at the start and at the end of the plan.",
+  choose: "Week 1: one at your limit. Last week: the same one, already set.",
+  climb: "Full effort every attempt, like a max day.",
+  rest: "Rest fully between attempts.",
+}
+
+// The sequence legend on the wall: S start, numbers = hand moves in order,
+// F feet, ★ finish, B hand bounce (tap it and keep moving with the same hand).
+export const SPRAY_LEGEND = "S start · 1, 2, 3 hands in order · F foot · ★ top · B hand bounce"
+
+export function sprayBlockSteps(
+  block: { type?: string; blockName?: string },
+  settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null },
+): SprayStep[] {
+  const ref = sprayBlockFor(block)
+  const copy = ref?.name === "Benchmark" ? BENCHMARK_COPY : SPRAY_COPY[ref?.routeType ?? ""]
+  const count = settings.mode === "time"
+    ? `As many attempts as you can in ${settings.minutes} min.`
+    : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}.`
+  const steps: SprayStep[] = []
+  if (copy) steps.push({ title: "Goal", text: copy.goal })
+  steps.push({ title: "Choose a sequence", text: copy ? copy.choose : "A new one, or one of the suggested ones." })
+  steps.push({ title: "Climb it", text: `${count} ${copy ? copy.climb + " " : ""}Tap Top or Fell after each one.` })
+  steps.push({ title: "Rest", text: `The timer starts on its own. ${copy ? copy.rest : ""}`.trim() })
+  return steps
+}
