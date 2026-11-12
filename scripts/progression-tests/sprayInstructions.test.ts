@@ -2,31 +2,43 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/sprayInstructions.test.ts
 
 import assert from "node:assert/strict"
-import { SPRAY_BLOCKS, sprayBlockSteps, spraySettings } from "@/utils/sprayBlocks"
+import { sprayBlockSteps, spraySettings, sprayShowsAttempts } from "@/utils/sprayBlocks"
 
-// every spray block gets its own goal + the four steps
-for (const ref of SPRAY_BLOCKS) {
-  const block = { type: ref.type, blockName: ref.name }
-  const steps = sprayBlockSteps(block, spraySettings(block))
-  assert.deepEqual(steps.map((s) => s.title), ["Goal", "Choose a sequence", "Climb it", "Rest"], ref.name)
-  assert.ok(steps.every((s) => s.text.length > 0 && s.text.length < 160), ref.name)
+const steps = (b: any) => sprayBlockSteps(b, spraySettings(b))
+const text = (b: any) => steps(b).map((s) => s.text).join(" ")
+
+// Power, Coordination, Max, Benchmark: Goal + steps; time only, never the attempt count
+for (const name of ["Power boulders", "Coordination boulders"]) {
+  const b = { type: "free_session", blockName: name }
+  assert.deepEqual(steps(b).map((s) => s.title), ["Goal", "Choose a sequence", "Climb it", "Rest"], name)
+  assert.match(text(b), /15 min/, name)
+  assert.doesNotMatch(text(b), /attempts? (in|·)|\d+ attempts/, name)
+  assert.ok(!sprayShowsAttempts(b, spraySettings(b)), name)
+}
+const max = { type: "sequence", blockName: "Max bouldering", targetAttempts: 4, timeLimit: 15 }
+assert.equal(steps(max)[0].title, "Goal")
+assert.match(text(max), /15 min/)
+assert.doesNotMatch(text(max), /4 attempts/)
+assert.ok(!sprayShowsAttempts(max, spraySettings(max)))
+
+// no technique talk
+for (const b of [max, { type: "free_session", blockName: "Power boulders" }, { type: "free_session", blockName: "Coordination boulders" }]) {
+  assert.doesNotMatch(text(b), /feet|legs|lock off|quiet|sloppy|full effort|commit/i)
 }
 
-// the goals differ between blocks
-const goals = new Set(SPRAY_BLOCKS.map((r) => sprayBlockSteps({ type: r.type, blockName: r.name }, spraySettings({ type: r.type, blockName: r.name }))[0].text))
-assert.equal(goals.size, SPRAY_BLOCKS.length)
+// Base 1: the plain steps with the attempt count (the coach's notes explain it)
+const base = { type: "sequence", blockName: "Base 1", targetAttempts: 6 }
+assert.deepEqual(steps(base).map((s) => s.title), ["Choose a sequence", "Climb it", "Rest"])
+assert.match(text(base), /^A new one/)
+assert.match(text(base), /6 attempts/)
+assert.ok(sprayShowsAttempts(base, spraySettings(base)))
 
-// counts follow the block's settings
-const power = { type: "free_session", blockName: "Power boulders", timeLimit: 12 }
-assert.match(sprayBlockSteps(power, spraySettings(power))[2].text, /in 12 min/)
-const max = { type: "sequence", blockName: "Max bouldering", targetAttempts: 4, timeLimit: 15 }
-assert.match(sprayBlockSteps(max, spraySettings(max))[2].text, /^4 attempts in 15 min\./)
+// Benchmark with no time limit still says something to climb
+const bench = { type: "sequence", blockName: "Benchmark" }
+assert.match(steps(bench)[0].text, /start and at the end/)
+assert.ok(sprayShowsAttempts(bench, spraySettings(bench)))
 
-// benchmark has its own copy
-assert.match(sprayBlockSteps({ type: "sequence", blockName: "Benchmark" }, spraySettings({ type: "sequence", blockName: "Benchmark" }))[0].text, /start and at the end/)
-
-// unknown block: no Goal, generic copy
-const other = sprayBlockSteps({ type: "free_session", blockName: "Something" }, spraySettings({ type: "free_session", blockName: "Something" }))
-assert.equal(other[0].title, "Choose a sequence")
+// not a spray block: plain steps
+assert.equal(steps({ type: "free_session", blockName: "Something" })[0].title, "Choose a sequence")
 
 console.log("sprayInstructions: ok")

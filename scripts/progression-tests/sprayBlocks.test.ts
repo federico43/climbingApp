@@ -18,7 +18,8 @@ assert.ok(!isSprayBlock(null))
 // by time (Power, Coordination) or by attempts (Max, Base 1), with defaults
 assert.deepEqual(spraySettings({ type: "free_session", blockName: "Power boulders", timeLimit: 25 }),
   { mode: "time", routeType: "power", minutes: 25, timeCap: null, attempts: 5, rest: 120 })
-assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).minutes, 20)
+// Power / Coordination default to 15 min (coach 2026-11-12)
+assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).minutes, 15)
 assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).mode, "time")
 assert.deepEqual(spraySettings({ type: "sequence", blockName: "Base 1", targetAttempts: 6, restTime: 90 }),
   { mode: "attempts", routeType: "base", minutes: 20, timeCap: null, attempts: 6, rest: 90 })

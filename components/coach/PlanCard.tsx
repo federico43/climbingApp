@@ -357,7 +357,7 @@ export function PlanCard({
                 {nextSpec.mainBlock && (
                   <PickRow
                     color={ADAPTATION_COLOR[nextSpec.mainType]}
-                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
+                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit ? `${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).copies} × ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit} min` : `× ${MAIN_BLOCK_COPIES}`}` : ""}`}
                     onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
                   />
                 )}

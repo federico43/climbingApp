@@ -36,6 +36,8 @@ export const SPRAY_BLOCKS: SprayBlockRef[] = [
 
 // Defaults when the block doesn't set them.
 export const SPRAY_DEFAULT_MINUTES = 20
+// Power and Coordination boulders: 15 min (coach 2026-11-12).
+export const SPRAY_TIME_BLOCK_MINUTES = 15
 export const SPRAY_DEFAULT_ATTEMPTS = 5
 export const SPRAY_DEFAULT_REST_S = 120
 // The rest lengths the athlete can switch to between attempts.
@@ -65,7 +67,7 @@ export function spraySettings(block: { type?: string; blockName?: string; timeLi
   return {
     mode,
     routeType: ref?.routeType ?? null,
-    minutes: (block.timeLimit ?? 0) > 0 ? block.timeLimit! : SPRAY_DEFAULT_MINUTES,
+    minutes: (block.timeLimit ?? 0) > 0 ? block.timeLimit! : mode === "time" ? SPRAY_TIME_BLOCK_MINUTES : SPRAY_DEFAULT_MINUTES,
     // Attempts blocks with a time limit too (Max bouldering in the plan:
     // 15 min) end at whichever comes first. null = no time limit.
     timeCap: mode === "attempts" && (block.timeLimit ?? 0) > 0 ? block.timeLimit! : null,
@@ -215,66 +217,82 @@ export function newSprayRoutes(
     .map((r) => r.$id)
 }
 
-// ── Instructions (to-do 2026-11-11: better instructions for every spray block) ──
-// What the intro of each spray block tells the athlete, one short line per
-// step: the goal, which sequence to pick, how to climb it, how to rest.
-// Coach's own description (block.description) still shows above it.
+// ── Instructions (to-do 2026-11-11, coach feedback 2026-11-12) ──
+// What the intro of each spray block tells the athlete: only what's needed to
+// understand the exercise (no technique). Base 1 keeps the plain steps, the
+// coach's notes explain it better. The others say the time limit, never the
+// number of attempts. The coach's description (block.description) shows above.
 
 export interface SprayStep { title: string; text: string }
 
-interface SprayCopy { goal: string; choose: string; climb: string; rest: string }
+interface SprayCopy { goal: string; choose: string }
 
-const SPRAY_COPY: Record<string, SprayCopy> = {
+const SPRAY_COPY: Partial<Record<RouteType, SprayCopy>> = {
   max_bouldering: {
-    goal: "Your hardest moves. Every attempt at 100%.",
-    choose: "One you can't flash, but could top in about 5 tries.",
-    climb: "Full effort from the first move. Stop if your attempts get sloppy.",
-    rest: "Rest fully. A tired attempt doesn't count as max.",
-  },
-  base: {
-    goal: "Clean, precise climbing below your limit.",
-    choose: "One you can top in 1–3 tries.",
-    climb: "Quiet feet, no readjusting, the same way every time.",
-    rest: "Short rests are fine. Keep the quality.",
+    goal: "Your hardest moves, at your limit.",
+    choose: "One you can't flash, but could top in a few tries.",
   },
   power: {
-    goal: "Fast, explosive moves.",
+    goal: "Short, explosive sequences.",
     choose: "Short (3–6 moves) with at least one big move.",
-    climb: "Move fast and commit. Push with the legs, don't lock off.",
-    rest: "Rest enough that every attempt is fast.",
   },
   coordination: {
-    goal: "Timing: deadpoints, jumps, paddles, double-clutches.",
-    choose: "One with a move that needs timing, not strength.",
-    climb: "Commit to the timing. Falling is part of it. Change one thing each try.",
-    rest: "Rest enough to stay sharp.",
+    goal: "Moves that need timing: deadpoints, jumps, paddles.",
+    choose: "One with a move that needs timing.",
   },
 }
 
 const BENCHMARK_COPY: SprayCopy = {
   goal: "Your test at the start and at the end of the plan.",
   choose: "Week 1: one at your limit. Last week: the same one, already set.",
-  climb: "Full effort every attempt, like a max day.",
-  rest: "Rest fully between attempts.",
 }
 
-// The sequence legend on the wall: S start, numbers = hand moves in order,
-// F feet, ★ finish, B hand bounce (tap it and keep moving with the same hand).
-export const SPRAY_LEGEND = "S start · 1, 2, 3 hands in order · F foot · ★ top · B hand bounce"
+// Base 1 and blocks that aren't spray blocks: the plain steps.
+function plainSteps(settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null }): SprayStep[] {
+  return [
+    { title: "Choose a sequence", text: "A new one, or one of the suggested ones." },
+    {
+      title: "Climb it",
+      text: settings.mode === "time"
+        ? `As many attempts as you can in ${settings.minutes} min. Tap Top or Fell after each one.`
+        : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}. Tap Top or Fell after each one.`,
+    },
+    { title: "Rest", text: "The rest timer starts on its own." },
+  ]
+}
+
+// The block's time limit in minutes, if it has one (time mode, or a time cap).
+export function sprayMinutes(settings: { mode: SprayMode; minutes: number; timeCap: number | null }): number | null {
+  return settings.mode === "time" ? settings.minutes : settings.timeCap
+}
 
 export function sprayBlockSteps(
   block: { type?: string; blockName?: string },
   settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null },
 ): SprayStep[] {
   const ref = sprayBlockFor(block)
-  const copy = ref?.name === "Benchmark" ? BENCHMARK_COPY : SPRAY_COPY[ref?.routeType ?? ""]
-  const count = settings.mode === "time"
-    ? `As many attempts as you can in ${settings.minutes} min.`
-    : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}.`
-  const steps: SprayStep[] = []
-  if (copy) steps.push({ title: "Goal", text: copy.goal })
-  steps.push({ title: "Choose a sequence", text: copy ? copy.choose : "A new one, or one of the suggested ones." })
-  steps.push({ title: "Climb it", text: `${count} ${copy ? copy.climb + " " : ""}Tap Top or Fell after each one.` })
-  steps.push({ title: "Rest", text: `The timer starts on its own. ${copy ? copy.rest : ""}`.trim() })
-  return steps
+  const copy = ref?.name === "Benchmark" ? BENCHMARK_COPY : ref ? SPRAY_COPY[ref.routeType] : undefined
+  if (!copy) return plainSteps(settings)
+  const minutes = sprayMinutes(settings)
+  return [
+    { title: "Goal", text: copy.goal },
+    { title: "Choose a sequence", text: `${copy.choose} A new one, or one of the suggested ones.` },
+    {
+      title: "Climb it",
+      text: minutes != null
+        ? `${minutes} min. Tap Top or Fell after each attempt.`
+        : "Tap Top or Fell after each attempt.",
+    },
+    { title: "Rest", text: "The rest timer starts on its own." },
+  ]
+}
+
+// Whether the intro shows the attempt count: only Base 1 (and blocks with no
+// time limit), the others go by time (coach 2026-11-12).
+export function sprayShowsAttempts(
+  block: { type?: string; blockName?: string },
+  settings: { mode: SprayMode; minutes: number; timeCap: number | null },
+): boolean {
+  const ref = sprayBlockFor(block)
+  return settings.mode !== "time" && (ref?.routeType === "base" || sprayMinutes(settings) == null)
 }
