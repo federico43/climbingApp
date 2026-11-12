@@ -55,6 +55,15 @@ export async function loadHistory(athleteId: string, weekStart: string): Promise
   return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests }
 }
 
+// Every class and request since `weekStart` (coach: sessions left for all athletes).
+export async function loadAllHistory(weekStart: string): Promise<{ classes: (GymClass & { weekStart: string })[]; requests: (ClassRequestRow & { $createdAt?: string })[] }> {
+  const [classes, requests] = await Promise.all([
+    listAllRows<any>(CLASSES_TABLE, [Query.greaterThanEqual("weekStart", weekStart)]),
+    listAllRows<ClassRequestRow & { $createdAt?: string }>(REQUESTS_TABLE, [Query.equal("kind", "skip"), Query.greaterThanEqual("weekStart", weekStart)]),
+  ])
+  return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests }
+}
+
 async function call(action: string, body: Record<string, any>): Promise<any> {
   const execution = await functions.createExecution({
     functionId: AI_PROTOCOL_FUNCTION_ID,

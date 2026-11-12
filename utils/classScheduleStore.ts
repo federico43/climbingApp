@@ -3,7 +3,7 @@ import * as api from "@/services/classSchedule"
 import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedule"
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
-  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
+  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, packageUsage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
   WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
@@ -68,6 +68,7 @@ interface State {
   blocks: BlockedTime[]
   published: boolean               // published and nothing changed since
   packages: ClassPackage[]
+  left: Record<string, PackageInfo>  // coach: sessions left per athlete with a package
 }
 
 const emptyWeek = (weekStart: string): AthleteWeek => ({
@@ -77,7 +78,7 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
   thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, nextWeek: null, defaults: [], pkg: null,
-  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
+  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], left: {},
 }
 const listeners = new Set<() => void>()
 
@@ -184,20 +185,33 @@ function weekFor(w: ClassWeek, requests: ClassRequestRow[], me: string, names: R
 // Same count as the server (athletePackage in functions/aiProtocol/src/classes.js):
 // classes count from when the package was added.
 async function packageInfo(me: string, now: Date): Promise<PackageInfo | null> {
-  const today = ymd(now)
-  const pkg = currentPackage(await api.loadPackages(me), today)
+  const pkg = currentPackage(await api.loadPackages(me), ymd(now))
   if (!pkg) return null
-  const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
   const { classes, requests } = await api.loadHistory(me, ymd(mondayOf(dateOf(pkg.startsOn))))
-  const done = classes.filter((c) => {
-    const at = classDate(c.weekStart, c)
-    const end = at.getTime() + CLASS_HOURS * 3600000
-    return ymd(at) >= pkg.startsOn && end > since && end <= now.getTime()
-  }).length
-  const skips = requests.filter((r) =>
-    r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
-  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, today) }
+  return packageUsage(pkg, classes, requests, now)
+}
+
+// Coach: every athlete's sessions left, in two reads (all classes and
+// requests since the oldest current package's week).
+async function allPackageInfo(packages: ClassPackage[], athleteIds: string[], now: Date): Promise<Record<string, PackageInfo>> {
+  const today = ymd(now)
+  const current = athleteIds
+    .map((id) => [id, currentPackage(packages.filter((p) => p.athleteId === id), today)] as const)
+    .filter((x): x is readonly [string, ClassPackage] => !!x[1])
+  if (!current.length) return {}
+  const from = current.map(([, p]) => ymd(mondayOf(dateOf(p.startsOn)))).sort()[0]
+  const { classes, requests } = await api.loadAllHistory(from)
+  const out: Record<string, PackageInfo> = {}
+  for (const [id, p] of current) {
+    const weekFrom = ymd(mondayOf(dateOf(p.startsOn)))
+    out[id] = packageUsage(
+      p,
+      classes.filter((c) => c.weekStart >= weekFrom && c.roster.includes(id)),
+      requests.filter((r) => r.athleteId === id && r.weekStart >= weekFrom),
+      now,
+    )
+  }
+  return out
 }
 
 async function load() {
@@ -226,6 +240,8 @@ async function load() {
       coach ? Promise.resolve(null) : packageInfo(me, now),
       coach ? api.loadPackages() : Promise.resolve([]),
     ])
+    const athletes = users.filter((u) => u.role !== "coach" && u.active !== false)
+    const left = coach ? await allPackageInfo(packages, athletes.map((a) => a.id), now) : {}
     server = { this: thisWeek, next: nextWeek }
     const thisOpen = coach
     if (coach) {
@@ -236,9 +252,9 @@ async function load() {
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
-      status: "ready", error: null, me, names, requests, pkg, packages,
+      status: "ready", error: null, me, names, requests, pkg, packages, left,
       // Deactivated accounts can't be added to classes.
-      athletes: users.filter((u) => u.role !== "coach" && u.active !== false),
+      athletes,
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,

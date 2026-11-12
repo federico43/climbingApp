@@ -89,13 +89,18 @@ export function DetailRow({ icon, text, sub, color }: { icon: keyof typeof Ionic
 }
 
 // One person in a class, with an optional action on the right (the coach's ×).
-export function PersonRow({ name, you, right }: { name: string; you?: boolean; right?: React.ReactNode }) {
+export function PersonRow({
+  name, you, sub, subLow, right,
+}: { name: string; you?: boolean; sub?: string; subLow?: boolean; right?: React.ReactNode }) {
   return (
     <View style={s.person}>
       <View style={[s.avatar, you && { backgroundColor: C.green }]}>
         <Text style={[s.avatarText, you && { color: "#10251A" }]}>{name[0]?.toUpperCase()}</Text>
       </View>
-      <Text style={s.personName} numberOfLines={1}>{you ? `${name} (you)` : name}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={s.personName} numberOfLines={1}>{you ? `${name} (you)` : name}</Text>
+        {sub ? <Text style={[s.rowSub, subLow && { color: C.red }]}>{sub}</Text> : null}
+      </View>
       {right}
     </View>
   )

@@ -231,6 +231,27 @@ export function currentPackage<P extends { startsOn: string; $createdAt?: string
 export const packageLocked = (pkg: { useBy: string } | null, left: number, today: string) =>
   !!pkg && (left <= 0 || pkg.useBy < today)
 
+// Sessions left in `pkg` on `now`, from the athlete's classes and requests
+// since the package's week (same count as athletePackage on the server):
+// classes ended since the package was added, and skips made after it.
+export function packageUsage(
+  pkg: { total: number; startsOn: string; useBy: string; $createdAt?: string },
+  classes: { weekStart: string; day: number; start: number }[],
+  requests: { kind: string; status: string; $createdAt?: string }[],
+  now: Date,
+): { total: number; left: number; useBy: string; locked: boolean } {
+  const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
+  const done = classes.filter((c) => {
+    const at = classDate(c.weekStart, c)
+    const end = at.getTime() + CLASS_HOURS * 3600000
+    return ymd(at) >= pkg.startsOn && end > since && end <= now.getTime()
+  }).length
+  const skips = requests.filter((r) =>
+    r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
+  const left = sessionsLeft(pkg.total, done, skips)
+  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, ymd(now)) }
+}
+
 // A request row from the server (table class_requests).
 export interface ClassRequestRow {
   $id: string

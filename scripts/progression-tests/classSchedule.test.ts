@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import {
   GRID_END, type GymClass, athleteView, currentPackage, packageLocked, proposeProblem, classDate, parseSlot, sessionsLeft, slotKey, GRID_START, addClassProblem, adjacentDays, athleteWeek, busyDays, formatTime,
-  headcount, isBlocked, usualFits, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
+  headcount, isBlocked, packageUsage, usualFits, mondayOf, openDays, restDayOk, startFromOffset, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 
 // A week of classes to test against
@@ -162,4 +162,16 @@ console.log("classSchedule tests passed")
   const join = classesToJoin(EXAMPLE_CLASSES, inThu, 0, { day: 2, start: 7 }).map((c) => c.id)
   assert.deepEqual(join, ["c3", "c1", "c13"])
 }
+// Sessions left for one package (the coach's list uses the same count)
+{
+  const pkg = { total: 8, startsOn: "2026-11-02", useBy: "2026-12-01", $createdAt: "2026-11-02T00:00:00Z" }
+  const done = [{ weekStart: "2026-11-02", day: 0, start: 9.5 }, { weekStart: "2026-11-02", day: 2, start: 9.5 }]
+  const ahead = [{ weekStart: "2026-11-09", day: 4, start: 9.5 }]
+  const skips = [1, 2, 3].map(() => ({ kind: "skip", status: "accepted", $createdAt: "2026-11-05T00:00:00Z" }))
+  const u = packageUsage(pkg, [...done, ...ahead], skips, new Date(2026, 10, 10, 12))
+  assert.equal(u.left, 5) // 8 − 2 done − 1 skip past the 2 that carry over
+  assert.equal(u.locked, false)
+  assert.equal(packageUsage(pkg, [], [], new Date(2026, 11, 2)).locked, true) // past use-by
+}
+
 console.log("usual schedule ok")

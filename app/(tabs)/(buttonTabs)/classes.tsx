@@ -5,7 +5,7 @@ import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid
 import { SettingsButton } from "@/components/SettingsButton"
 import { DetailRow, Legend, OpenSpot, PersonRow, WeekSwitch, longDay, monthTitle } from "@/components/schedule/CalendarBits"
 import {
-  BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  BlockedTime, CAPACITY, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
   dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
@@ -115,7 +115,7 @@ export default function ClassesScreen() {
             tone={joining(c).length || leaving(c).length ? "pick" : c.roster.length >= CAPACITY ? "full" : "open"}
             text={[
               formatTime(c.start),
-              ...c.roster,
+              ...c.roster.map((n, i) => (c.ids?.[i] && st.left[c.ids[i]] ? `${n} ${st.left[c.ids[i]].left}` : n)),
               ...joining(c).map((r) => `·+${r.who}`),
               ...leaving(c).map((r) => `·−${r.who}`),
               ...(c.roster.length < CAPACITY ? [`·${CAPACITY - c.roster.length} free`] : []),
@@ -140,6 +140,16 @@ export default function ClassesScreen() {
   const cls = sheet?.kind === "class" ? classes.find((c) => c.id === sheet.id) ?? null : null
   const clsRequests = cls ? [...joining(cls), ...leaving(cls)] : []
   const req = sheet?.kind === "request" ? requests.find((r) => r.key === sheet.key) ?? null : null
+  // "3 left", for an athlete's row; red when it's running out.
+  const leftOf = (id?: string) => (id ? st.left[id] : undefined)
+  const leftText = (id?: string) => {
+    const p = leftOf(id)
+    if (!p) return "No package"
+    if (p.locked) return p.left <= 0 ? "No sessions left" : `Expired ${p.useBy}`
+    return `${p.left} of ${p.total} left · use by ${p.useBy}`
+  }
+  const leftLow = (id?: string) => { const p = leftOf(id); return !!p && (p.locked || p.left <= LOW_SESSIONS) }
+  const lowCount = st.athletes.filter((a) => leftLow(a.id)).length
   const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
   const [athleteQuery, setAthleteQuery] = useState("")
 
@@ -185,8 +195,10 @@ export default function ClassesScreen() {
         </View>
         <View style={s.top}>
           <WeekSwitch value={week} onChange={(w) => { setWeek(w); setSheet(null) }} />
-          <Pressable style={s.pkgRow} onPress={() => setSheet({ kind: "packages" })}>
-            <Text style={s.pkgRowText}>Packages</Text>
+          <Pressable style={s.pkgRow} onPress={() => { setPkgQuery(""); setSheet({ kind: "packages" }) }}>
+            <Ionicons name="ticket-outline" size={18} color={C.textSecondary} />
+            <Text style={[s.pkgRowText, { flex: 1 }]}>Sessions left</Text>
+            {lowCount > 0 && <Text style={s.lowBadge}>{lowCount} running low</Text>}
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
           {requests.length > 0 && (
@@ -285,6 +297,8 @@ export default function ClassesScreen() {
                   <PersonRow
                     key={`${n}${i}`}
                     name={n}
+                    sub={id ? leftText(id) : undefined}
+                    subLow={leftLow(id)}
                     right={canEdit ? (
                       <Pressable
                         hitSlop={10}
@@ -368,6 +382,8 @@ export default function ClassesScreen() {
               >
                 <PersonRow
                   name={a.name}
+                  sub={leftText(a.id)}
+                  subLow={leftLow(a.id)}
                   right={inIt
                     ? <Text style={s.hint}>In this class</Text>
                     : <Ionicons name="add-circle" size={24} color={C.green} />}
@@ -399,8 +415,8 @@ export default function ClassesScreen() {
 
       <Sheet
         visible={sheet?.kind === "packages"}
-        title="Packages"
-        subtitle="Sessions each athlete paid for"
+        title="Sessions left"
+        subtitle="Fewest first. Add a package to renew."
         onClose={() => setSheet(null)}
       >
         <View style={s.search}>
@@ -416,13 +432,21 @@ export default function ClassesScreen() {
             clearButtonMode="while-editing"
           />
         </View>
-        {st.athletes.filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())).map((a) => {
-          const latest = st.packages.filter((p) => p.athleteId === a.id).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
+        {st.athletes
+          .filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase()))
+          // Fewest sessions left first; athletes with no package last.
+          .sort((x, y) => (leftOf(x.id)?.left ?? 999) - (leftOf(y.id)?.left ?? 999) || x.name.localeCompare(y.name))
+          .map((a) => {
+          const p = leftOf(a.id)
+          const low = leftLow(a.id)
           return (
             <View key={a.id} style={s.req}>
+              <View style={[s.leftBox, low && s.leftBoxLow]}>
+                <Text style={[s.leftN, low && { color: C.red }]}>{p ? p.left : "–"}</Text>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.reqWho}>{a.name}</Text>
-                <Text style={s.reqText}>{latest ? `${latest.total} sessions · use by ${latest.useBy}` : "No package"}</Text>
+                <Text style={[s.reqText, low && { color: C.red }]}>{leftText(a.id)}</Text>
               </View>
               <Pressable
                 style={[s.reqBtn, s.reqNo]}
@@ -512,10 +536,14 @@ const s = StyleSheet.create({
   },
   requestsText: { color: C.yellow, fontSize: 14, fontWeight: "700" },
   pkgRow: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    flexDirection: "row", alignItems: "center", gap: 10,
     borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 12,
   },
   pkgRowText: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+  lowBadge: { color: C.red, fontSize: 12, fontWeight: "800" },
+  leftBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
+  leftBoxLow: { backgroundColor: "rgba(219,80,74,0.15)" },
+  leftN: { fontSize: 20, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   stepRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   stepper: { flexDirection: "row", alignItems: "center", gap: 12 },
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
