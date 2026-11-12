@@ -120,7 +120,6 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  if (h.bounce) return `${dn.first}B`
   return String(dn.first)
 }
 
@@ -919,7 +918,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                   </Text>
                 </Pressable>
                 {selectedHold.bounce && (
-                  <Text style={styles.bounceHint}>B = tap this hold and keep moving with the same hand.</Text>
+                  <Text style={styles.bounceHint}>Purple = hand bounce: touch this hold and keep moving with the same hand.</Text>
                 )}
               </>
             )}

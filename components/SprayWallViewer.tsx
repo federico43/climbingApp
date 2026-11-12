@@ -5,7 +5,8 @@ import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
 import { Image } from "expo-image"
 import React, { useEffect, useMemo, useState } from "react"
-import { StyleSheet, Text, View, ViewStyle } from "react-native"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { Pressable, StyleSheet, Text, View, ViewStyle } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
   useAnimatedStyle,
@@ -39,9 +40,10 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  if (h.bounce) return `${dn.first}B`
   return String(dn.first)
 }
+
+const BOUNCE_HINT_KEY = "sprayBounceHintMinimised"
 
 interface Props {
   imageSource: any
@@ -130,11 +132,23 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   }))
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
-  // The first hand-bounce move's number, for the hint under the wall.
-  const firstBounce = useMemo(() => {
-    const nums = holds.filter((h) => h.type === "move" && h.bounce).map((h) => displayNums.get(h.id)?.first).filter((n): n is number => n != null)
-    return nums.length ? Math.min(...nums) : null
-  }, [holds, displayNums])
+  // The hand-bounce moves' numbers, for the hint on the wall.
+  const bounceNums = useMemo(
+    () => holds.filter((h) => h.type === "move" && h.bounce).map((h) => displayNums.get(h.id)?.first).filter((n): n is number => n != null).sort((a, b) => a - b),
+    [holds, displayNums],
+  )
+  // Athletes who already know can shrink the hint to a small purple chip;
+  // remembered on the phone (coach 2026-11-12).
+  const [hintMin, setHintMin] = useState(false)
+  useEffect(() => {
+    AsyncStorage.getItem(BOUNCE_HINT_KEY).then((v) => setHintMin(v === "1")).catch(() => {})
+  }, [])
+  const toggleHint = () => {
+    setHintMin((m) => {
+      AsyncStorage.setItem(BOUNCE_HINT_KEY, m ? "0" : "1").catch(() => {})
+      return !m
+    })
+  }
 
   const BADGE_R    = 5
   const BADGE_H    = 18
@@ -275,16 +289,26 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
             </>
         )}
       </Animated.View>
-      {/* Explains the "nB" badge wherever an athlete reads a sequence with a
-          hand bounce (not on thumbnails). Fixed to the frame, not the zoom. */}
-      {interactive && firstBounce != null && (
-        <View pointerEvents="none" style={styles.bounceHint}>
+      {/* Explains the purple badges wherever an athlete reads a sequence with
+          a hand bounce (not on thumbnails). Fixed to the frame, not the zoom.
+          Tap to shrink it to a chip, tap the chip to open it again. */}
+      {interactive && bounceNums.length > 0 && (hintMin ? (
+        <Pressable onPress={toggleHint} hitSlop={8} accessibilityLabel="Show hand bounce help" style={[styles.bounceChip, { backgroundColor: BOUNCE_COLOR }]}>
+          <Text style={[styles.badgeText, { color: C.bg }]}>Bounce ?</Text>
+        </Pressable>
+      ) : (
+        <Pressable onPress={toggleHint} accessibilityLabel="Hide hand bounce help" style={styles.bounceHint}>
           <View style={[styles.bounceHintBadge, { backgroundColor: BOUNCE_COLOR }]}>
-            <Text style={[styles.badgeText, { color: C.bg }]}>{firstBounce}B</Text>
+            <Text style={[styles.badgeText, { color: C.bg }]}>{bounceNums.length === 1 ? bounceNums[0] : "  "}</Text>
           </View>
-          <Text style={styles.bounceHintText}>Hand bounce: touch hold {firstBounce}, then keep moving with the same hand</Text>
-        </View>
-      )}
+          <Text style={styles.bounceHintText}>
+            {bounceNums.length === 1
+              ? `Purple = hand bounce: touch hold ${bounceNums[0]}, then keep moving with the same hand`
+              : `Purple = hand bounce on holds ${bounceNums.join(", ")}: touch the hold, then keep moving with the same hand`}
+          </Text>
+          <Text style={styles.bounceHintClose}>–</Text>
+        </Pressable>
+      ))}
     </View>
   )
 
@@ -309,4 +333,6 @@ const styles = StyleSheet.create({
   },
   bounceHintBadge: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   bounceHintText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "600", lineHeight: 16 },
+  bounceHintClose: { color: "#fff", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
+  bounceChip: { position: "absolute", left: 10, bottom: 10, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
 })
