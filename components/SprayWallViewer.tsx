@@ -1,4 +1,4 @@
-import { PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
+import { BOUNCE_COLOR, PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
 import { C } from "@/utils/theme"
 import { getDisplayRadius } from "@/utils/holdRadius"
 import { wallPreviewUrl } from "@/services/BoulderGraphService"
@@ -39,6 +39,7 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
+  if (h.bounce) return `${dn.first}B`
   return String(dn.first)
 }
 
@@ -219,8 +220,9 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                   hold.type === "start"  ? C.green :
                   hold.type === "finish" ? C.yellow :
                   hold.type === "foot"   ? "#4FA3E0" :
+                  hold.bounce            ? BOUNCE_COLOR :
                   "rgba(0,0,0,0.75)"
-                const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                const badgeFg = hold.type === "move" && !hold.bounce ? "#fff" : C.bg
                 // Scale the badge with the circle so small holds get small numbers.
                 const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                 return (
