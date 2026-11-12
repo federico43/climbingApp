@@ -77,6 +77,7 @@ export interface PlacedHold {
   order?: number
   hand?: StartingHand  // move hold #1 only
   match?: boolean      // move holds: both hands match on this hold
+  bounce?: boolean     // move holds: hand bounce (tap it and keep moving with the same hand)
 }
 
 const TYPE_CONFIG: Record<HoldType, { label: string; symbol: string }> = {
@@ -87,6 +88,8 @@ const TYPE_CONFIG: Record<HoldType, { label: string; symbol: string }> = {
 }
 
 const FOOT_COLOR = "#4FA3E0"
+// Badge colour of a hand-bounce move (shared with SprayWallViewer).
+export const BOUNCE_COLOR = "#B48CF2"
 
 const HAND_LABEL: Record<StartingHand, string> = { left: "L", right: "R", both: "LR" }
 
@@ -117,6 +120,7 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
+  if (h.bounce) return `${dn.first}B`
   return String(dn.first)
 }
 
@@ -553,7 +557,19 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   function toggleMatch() {
     const snapId = selectedId
     setHolds((prev) => {
-      const newHolds = prev.map((h) => h.id === snapId ? { ...h, match: !h.match } : h)
+      // Match and bounce exclude each other: a matched hold is held, not tapped.
+      const newHolds = prev.map((h) => h.id === snapId ? { ...h, match: !h.match, bounce: false } : h)
+      pushToHistory(newHolds)
+      return newHolds
+    })
+    setCanUndo(true)
+    setCanRedo(false)
+  }
+
+  function toggleBounce() {
+    const snapId = selectedId
+    setHolds((prev) => {
+      const newHolds = prev.map((h) => h.id === snapId ? { ...h, bounce: !h.bounce, match: false } : h)
       pushToHistory(newHolds)
       return newHolds
     })
@@ -769,8 +785,9 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                           hold.type === "start"  ? C.green :
                           hold.type === "finish" ? C.yellow :
                           hold.type === "foot"   ? FOOT_COLOR :
+                          hold.bounce            ? BOUNCE_COLOR :
                           "rgba(0,0,0,0.75)"
-                        const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                        const badgeFg = hold.type === "move" && !hold.bounce ? "#fff" : C.bg
                         // Scale the badge with the circle so small holds get small numbers.
                         const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                         return (
@@ -889,6 +906,22 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                   {selectedHold.match ? "Match ✓" : "Match"}
                 </Text>
               </Pressable>
+            )}
+
+            {selectedHold.type === "move" && (
+              <>
+                <Pressable
+                  style={[styles.matchBtn, selectedHold.bounce && styles.matchBtnActive]}
+                  onPress={toggleBounce}
+                >
+                  <Text style={[styles.matchBtnText, selectedHold.bounce && styles.matchBtnTextActive]}>
+                    {selectedHold.bounce ? "Hand bounce ✓" : "Hand bounce"}
+                  </Text>
+                </Pressable>
+                {selectedHold.bounce && (
+                  <Text style={styles.bounceHint}>B = tap this hold and keep moving with the same hand.</Text>
+                )}
+              </>
             )}
 
             <Pressable style={styles.removeBtn} onPress={deleteSelected}>
@@ -1092,6 +1125,7 @@ const styles = StyleSheet.create({
   matchBtnActive: { backgroundColor: C.greenDeep, borderColor: C.green },
   matchBtnText: { fontSize: 14, fontWeight: "600", color: "#555" },
   matchBtnTextActive: { color: C.green },
+  bounceHint: { fontSize: 12, color: "#999", textAlign: "center" },
   removeBtn: {
     backgroundColor: C.red, borderRadius: 12,
     paddingHorizontal: 20, paddingVertical: 12, alignItems: "center",
