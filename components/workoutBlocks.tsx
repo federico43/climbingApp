@@ -65,6 +65,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -3124,12 +3125,21 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
     setWallPickerVisible(true)
   }
 
-  useEffect(() => {
+  // Reload (header button or pull-to-refresh) picks up sequences created
+  // since the picker opened, e.g. one another athlete just saved.
+  const [refreshing, setRefreshing] = useState(false)
+  const loadRoutes = useCallback(() =>
     Promise.all([getSprayRoutes(), getSprayWalls()])
       .then(([r, w]) => { setRoutes(r); setWalls(w) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+      .catch(console.error), [])
+  useEffect(() => {
+    loadRoutes().finally(() => setLoading(false))
+  }, [loadRoutes])
+  function reload() {
+    if (refreshing) return
+    setRefreshing(true)
+    loadRoutes().finally(() => setRefreshing(false))
+  }
 
   // Parse holds once per load (not on every render) and index walls by id so
   // each card is an O(1) lookup instead of a JSON.parse + walls.find.
@@ -3161,7 +3171,11 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
           <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
         </Pressable>
         <Text style={[styles.modalTitle, { textAlign: "center", marginRight: 0 }]}>Select route</Text>
-        <View style={styles.iconBackBtn} />
+        <Pressable onPress={reload} style={styles.iconBackBtn} hitSlop={10} accessibilityLabel="Reload sequences" disabled={loading || refreshing}>
+          {refreshing
+            ? <ActivityIndicator size="small" color={C.textSecondary} />
+            : <Ionicons name="refresh" size={20} color={C.textSecondary} />}
+        </Pressable>
       </View>
 
       <Pressable style={styles.createNewRow} onPress={startCreateNew}>
@@ -3181,7 +3195,7 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
       ) : routes.length === 0 ? (
-        <Text style={styles.emptyState}>No routes saved yet.</Text>
+        <Text style={styles.emptyState} onPress={reload}>No routes saved yet. Tap to reload.</Text>
       ) : filteredRoutes.length === 0 ? (
         <Text style={styles.emptyState}>No routes match your filters.</Text>
       ) : (
@@ -3196,6 +3210,7 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
         <FlatList
           data={filteredRoutes}
           keyExtractor={(route) => route.$id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={reload} tintColor={C.green} />}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           windowSize={5}
           maxToRenderPerBatch={6}
