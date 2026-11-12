@@ -67,7 +67,7 @@ export default function ClassesScreen() {
   // Requests drawn on the grid: who's asking to join a class (or a new time)
   // and who's asking to leave one.
   const at = (c: Slot, s?: Slot) => !!s && c.day === s.day && c.start === s.start
-  const joining = (c: GymClass) => gridRequests.filter((r) => at(c, r.to))
+  const joining = (c: GymClass) => gridRequests.filter((r) => r.kind !== "skip" && at(c, r.to))
   const leaving = (c: GymClass) => gridRequests.filter((r) => at(c, r.from))
   const newTimes = gridRequests.filter((r) => !classes.some((c) => at(c, r.to)))
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`

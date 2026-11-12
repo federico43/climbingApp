@@ -13,6 +13,9 @@ export const GRID_END = 20
 // Missed sessions an athlete can move to a later week, per package.
 export const MAX_CARRY = 2
 export const LOW_SESSIONS = 2
+// Free changes (move, cancel) until this many hours before a class; after
+// that they're requests the coach answers.
+export const CHANGE_DEADLINE_H = 12
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 export function formatTime(h) {

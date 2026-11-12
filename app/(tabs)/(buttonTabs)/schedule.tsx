@@ -8,7 +8,7 @@ import {
   CalendarHeader, DAYS_LONG, Legend, OpenSpot, PersonRow, RepeatChoice, longDay, monthName,
 } from "@/components/schedule/CalendarBits"
 import {
-  AddClassProblem, CAPACITY, MAX_CARRY, WEEK_DAYS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classDate, classLabel, formatTime,
+  AddClassProblem, CAPACITY, CHANGE_DEADLINE_H, MAX_CARRY, WEEK_DAYS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classDate, classLabel, formatTime,
   classesToJoin, headcount, missingUsual, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, usualFits, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
@@ -71,6 +71,10 @@ export default function ScheduleScreen() {
   const started = (c: { day: number; start: number }) => !!wk.weekStart && classDate(wk.weekStart, c).getTime() <= Date.now()
   const fits = (c: { day: number; start: number }, except?: string) => !started(c) && restDayOk(busyDays(week, except), c.day)
   const hasClasses = week.some((e) => e.state !== "skip")
+  // Changes are free until CHANGE_DEADLINE_H before the class; after that
+  // they're requests to the coach.
+  const deadlineOf = (c: { day: number; start: number }) => new Date(classDate(wk.weekStart, c).getTime() - CHANGE_DEADLINE_H * 3600000)
+  const lateFor = (c: { day: number; start: number }) => !!wk.weekStart && deadlineOf(c).getTime() <= Date.now()
 
   // Usual times still ahead with no class this week → offer the ones there are.
   const missing = wk.published && !wk.extra ? missingUsual(st.defaults, wk.classes, week, today) : []
@@ -220,9 +224,15 @@ export default function ScheduleScreen() {
   const confirmMove = async () => {
     if (!movingFrom || !moveToClass) return
     const to = moveToClass
+    const late = !!moveFromClass && lateFor(moveFromClass)
     exitMode()
     if (await changeClass(movingFrom, { status: "move", to: to.id })) {
-      Alert.alert("Moved", `You're in ${longDay(dates, to.day)} at ${formatTime(to.start)}. This week only, your usual classes stay.`)
+      Alert.alert(
+        late ? "Sent to your coach" : "Moved",
+        late
+          ? `Less than ${CHANGE_DEADLINE_H} h before your class, so your coach confirms. You keep your class until then.`
+          : `You're in ${longDay(dates, to.day)} at ${formatTime(to.start)}. This week only, your usual classes stay.`,
+      )
     }
   }
   const openToBook = wk.classes.filter((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c))
@@ -395,6 +405,8 @@ export default function ScheduleScreen() {
         defaults={st.defaults}
         busy={st.busy}
         started={started}
+        late={lateFor}
+        deadline={(c) => { const d = deadlineOf(c); return `${WEEK_DAYS[(d.getDay() + 6) % 7]} ${formatTime(d.getHours() + d.getMinutes() / 60)}` }}
         changedAway={sheet?.kind === "class" && ["move", "propose"].includes(wk.changes[sheet.id]?.status ?? "")}
         fits={fits}
         onClose={() => setSheet(null)}
@@ -404,9 +416,13 @@ export default function ScheduleScreen() {
         onPropose={(id) => { setSheet(null); setMode({ kind: "propose", from: id }) }}
         onSkip={(id) => {
           setSheet(null)
-          Alert.alert("Cancel just this class?", `Your spot goes to someone else. It moves to a later week, up to ${MAX_CARRY} per package; after that you lose it. Your coach is told.`, [
+          const c = wk.classes.find((x) => x.id === id)
+          const late = !!c && lateFor(c)
+          Alert.alert(late ? "Ask your coach to cancel?" : "Cancel just this class?", late
+            ? `It's less than ${CHANGE_DEADLINE_H} h before the class, so your coach decides. You stay in it until they answer.`
+            : `Your spot goes to someone else. It moves to a later week, up to ${MAX_CARRY} per package; after that you lose it. Your coach is told.`, [
             { text: "Keep it", style: "cancel" },
-            { text: "Cancel class", style: "destructive", onPress: () => { changeClass(id, { status: "skip" }) } },
+            { text: late ? "Ask" : "Cancel class", style: "destructive", onPress: () => { changeClass(id, { status: "skip" }) } },
           ])
         }}
         onUndoSkip={(id) => { changeClass(id, null); setSheet(null) }}
@@ -448,7 +464,7 @@ export default function ScheduleScreen() {
 }
 
 function ClassSheet({
-  cls, me, week, dates, defaults, busy, started, changedAway, fits, canMove, canPropose, onClose, onMove, onPropose, onSkip, onUndoSkip,
+  cls, me, week, dates, defaults, busy, started, late, deadline, changedAway, fits, canMove, canPropose, onClose, onMove, onPropose, onSkip, onUndoSkip,
 }: {
   cls: GymClass | null
   me: string
@@ -457,6 +473,8 @@ function ClassSheet({
   defaults: string[]
   busy: boolean
   started: (c: GymClass) => boolean
+  late: (c: GymClass) => boolean
+  deadline: (c: GymClass) => string
   changedAway: boolean // the athlete asked to move this class somewhere else
   fits: (c: GymClass, except?: string) => boolean
   canMove: (id: string) => boolean
@@ -491,13 +509,17 @@ function ClassSheet({
     // Propose waits for the coach; Cancel is this class only.
     const mv = canMove(cls.id)
     const pr = canPropose(cls.id)
+    const ask = late(cls)
     actions = (
       <>
         <View style={s.tiles}>
-          <Tile icon="swap-horizontal" title="Move" text={mv ? "This week only, to an open class" : "No open class fits"} primary disabled={!mv} onPress={() => { setEvery(null); onMove(cls.id) }} />
+          <Tile icon="swap-horizontal" title="Move" text={!mv ? "No open class fits" : ask ? "Ask your coach" : "This week only, to an open class"} primary disabled={!mv} onPress={() => { setEvery(null); onMove(cls.id) }} />
           <Tile icon="time-outline" title="Propose" text={pr ? "Suggest a time, coach confirms" : "No day left with room"} disabled={!pr} onPress={() => { setEvery(null); onPropose(cls.id) }} />
-          <Tile icon="close-circle-outline" title="Cancel" text="Just this class" onPress={() => { setEvery(null); onSkip(cls.id) }} />
+          <Tile icon="close-circle-outline" title="Cancel" text={ask ? "Ask your coach" : "Just this class"} onPress={() => { setEvery(null); onSkip(cls.id) }} />
         </View>
+        <Text style={s.policy}>
+          {ask ? `LESS THAN ${CHANGE_DEADLINE_H} H TO GO · CHANGES NEED YOUR COACH` : `FREE CHANGES UNTIL ${deadline(cls).toUpperCase()} · ${CHANGE_DEADLINE_H} H BEFORE`}
+        </Text>
         {usual && <SheetButton kind="line" label="Stop repeating every week" onPress={() => { stopUsual(cls); close() }} />}
       </>
     )
@@ -583,6 +605,7 @@ const Chip = ({ text }: { text: string }) => <View style={s.chip}><Text style={s
 
 const s = StyleSheet.create({
   tiles: { flexDirection: "row", gap: 8 },
+  policy: { fontFamily: KF.mono, fontSize: 10, color: C.label, letterSpacing: 0.4 },
   tile: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surfaceHigh, padding: 12, gap: 4, minHeight: 112 },
   tilePrimary: { borderColor: C.green, backgroundColor: "rgba(138,214,162,0.08)" },
   tileTitle: { fontFamily: KF.bold, fontSize: 15, color: C.textPrimary },

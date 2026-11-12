@@ -420,4 +420,26 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.deepEqual(JSON.parse(t("class_weeks").get("series")!.blocks), [{ day: 1, start: 6.5 }])
 }
 
+// ── Less than 12 h before: cancel and move are requests ─────────────────────
+{
+  const at6 = new Date(Date.now() + 6 * 3600000)
+  const ymdOf = (d: Date) => d.toISOString().slice(0, 10)
+  const wk = mondayOfYmd(ymdOf(at6))
+  const day = (at6.getUTCDay() + 6) % 7
+  const start = at6.getUTCHours() + (at6.getUTCMinutes() >= 30 ? 0.5 : 0)
+  t("users").set("hugo", { $id: "hugo", role: "athlete", username: "hugo" })
+  if (!t("class_weeks").has(wk)) await ctx.db.create("class_weeks", { published: true, blocks: "[]" }, wk)
+  else t("class_weeks").get(wk)!.published = true
+  const soon = await ctx.db.create("classes", { weekStart: wk, day, start, roster: ["hugo"] })
+  pushes.length = 0
+  const r = await call("classRequest", "hugo", { kind: "skip", classId: soon.$id })
+  assert.equal(r.status, 200)
+  assert.equal(r.json.request.status, "pending")
+  assert.deepEqual(t("classes").get(soon.$id)!.roster, ["hugo"]) // still in until the coach says
+  assert.ok(pushes.some((p) => p.to === "coach" && p.body.includes("less than 12 h")))
+  assert.equal((await call("classAnswer", "coach", { requestId: r.json.request.$id, accept: true })).status, 200)
+  assert.deepEqual(t("classes").get(soon.$id)!.roster, [])
+  assert.ok(pushes.some((p) => p.to === "hugo" && p.title === "Cancel accepted"))
+}
+
 console.log("classes: all tests passed")

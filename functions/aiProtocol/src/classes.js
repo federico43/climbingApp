@@ -1,5 +1,5 @@
 import {
-  CAPACITY, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
+  CAPACITY, CHANGE_DEADLINE_H, CLASS_HOURS, LOW_SESSIONS, MAX_CARRY, PROBLEM_TEXT, addDays, classLabel, classMs, classProblem,
   currentPackage, gymNow, mondayOfYmd, packageLocked, parseSlot, proposeProblem, restDayOk, sessionsLeft, slotKey,
 } from "./classRules.js"
 import { parsePauses, pauseLength, pauseOn, pausedDayCount, pausesProblem, planEndWith } from "./planPauses.js"
@@ -118,6 +118,22 @@ async function request(ctx, userId, body) {
   const data = { athleteId: userId, weekStart, kind: body.kind, status: "pending", fromClassId: from?.$id ?? null }
   const toDate = to ? classDate(to) : body.kind === "propose" ? addDays(weekStart, Number(body.day)) : null
   if (toDate && pauseOn((await pausesByAthlete(ctx)).get(userId), toDate)) return fail(409, "Your plan is paused that day.")
+
+  // Within CHANGE_DEADLINE_H of the class, a cancel or a move is a request
+  // the coach answers (no answer before the class = no change).
+  const late = !!from && classMs(from) - now.ms < CHANGE_DEADLINE_H * 3600000
+  if (late && (body.kind === "skip" || body.kind === "move")) {
+    if (body.kind === "move") {
+      if ((to.roster ?? []).includes(userId)) return fail(409, "You're already in that class.")
+      if ((to.roster ?? []).length >= CAPACITY) return fail(409, "That class is full.")
+      if (!restDayOk(busy, to.day)) return fail(409, "Leave a rest day between classes.")
+    }
+    const row = await ctx.db.create(REQUESTS, { ...data, ...(to ? { toClassId: to.$id } : {}) })
+    if (!row) return fail(502, "Could not save.")
+    const what = body.kind === "skip" ? `can't make ${classLabel(from)} (less than ${CHANGE_DEADLINE_H} h before)` : `${classLabel(from)} → ${classLabel(to)} (less than ${CHANGE_DEADLINE_H} h before)`
+    await pushCoaches(ctx, userId, "Class request", `${name(caller)}: ${what}`, { type: "class_request", requestId: row.$id })
+    return ok({ request: row, late: true })
+  }
 
   if (body.kind === "skip") {
     await setRoster(ctx, from, from.roster.filter((u) => u !== userId))
@@ -290,6 +306,19 @@ async function answer(ctx, userId, body) {
   let to = r.toClassId ? await ctx.db.get(CLASSES, r.toClassId) : null
   const accept = body.accept === true
   const label = to ? classLabel(to) : r.kind === "propose" ? classLabel(r) : "your class"
+
+  // A late cancel: accepting frees the spot (it counts like any skip).
+  if (r.kind === "skip") {
+    if (accept && from) await setRoster(ctx, from, (from.roster ?? []).filter((u) => u !== r.athleteId))
+    const updated = await ctx.db.update(REQUESTS, r.$id, { status: accept ? "accepted" : "rejected" })
+    if (!updated) return fail(502, "Could not save.")
+    const what = from ? classLabel(from) : "your class"
+    await pushUser(ctx, r.athleteId,
+      accept ? "Cancel accepted" : "Cancel declined",
+      accept ? `You're out of ${what}.` : `Your coach kept you in ${what}.`,
+      { type: "class_answer", requestId: r.$id })
+    return ok({ request: updated })
+  }
 
   if (accept) {
     if (r.kind === "propose") {

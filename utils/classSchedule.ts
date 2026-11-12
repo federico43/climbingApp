@@ -22,6 +22,7 @@ export interface BlockedTime {
 // What the athlete did with one of their classes this week.
 export type ClassChange =
   | { status: "skip" }
+  | { status: "cancelAsk" }                         // a late cancel, waiting for the coach
   | { status: "move"; to: string }                  // to another class, waiting for the coach
   | { status: "propose"; day: number; start: number } // a new time, waiting for the coach
 
@@ -49,6 +50,9 @@ export const MAX_CLASSES_PER_DAY = 3
 export const MAX_BIG_DAYS = 2
 // Sessions left at which the athlete and the coach get a heads-up.
 export const LOW_SESSIONS = 2
+// Free changes (move, cancel) until this many hours before a class; after
+// that they're requests the coach answers (same as the server's classRules.js).
+export const CHANGE_DEADLINE_H = 12
 
 export function formatTime(h: number): string {
   const H = Math.floor(h)
@@ -93,6 +97,8 @@ export function athleteWeek(
       // A move into a class that's gone leaves the athlete where they were.
       const to = byId(ch.to)
       out.push(to ? { cls: to, state: "pending", from: id } : { cls, state: "on" })
+    } else if (ch?.status === "cancelAsk") {
+      out.push({ cls, state: "pending", from: id })
     } else if (ch?.status === "propose") {
       out.push({ cls: { id: `prop-${id}`, day: ch.day, start: ch.start, roster: [] }, state: "pending", from: id, proposal: true })
     } else {
@@ -286,6 +292,7 @@ export function athleteView(
     }
     if (r.status !== "pending") continue
     if (r.kind === "move" && r.toClassId) changes[from] = { status: "move", to: r.toClassId }
+    if (r.kind === "skip") changes[from] = { status: "cancelAsk" }
     if (r.kind === "propose" && r.day != null && r.start != null) changes[from] = { status: "propose", day: r.day, start: r.start }
     if (r.kind === "extra" && r.toClassId) extra = { to: r.toClassId, approved: false }
   }

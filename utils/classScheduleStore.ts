@@ -4,7 +4,7 @@ import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedul
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
   CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, packageUsage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
-  WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
+  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -26,6 +26,7 @@ export interface ClassRequest {
   who: string
   text: string
   weekStart: string
+  kind: ClassRequestRow["kind"]
   from?: Slot  // the class they'd leave (none for an extra class)
   to: Slot     // where they want to go: another class or a new time
 }
@@ -321,7 +322,7 @@ export function changeClass(id: string, change: ClassChange | null): Promise<boo
     return r ? run(() => api.cancelRequest(r.$id)) : Promise.resolve(true)
   }
   return run(() => api.sendRequest(
-    change.status === "skip" ? { kind: "skip", classId: id }
+    change.status === "skip" || change.status === "cancelAsk" ? { kind: "skip", classId: id }
     : change.status === "move" ? { kind: "move", classId: id, toClassId: change.to }
     : { kind: "propose", classId: id, day: change.day, start: change.start },
   ))
@@ -365,14 +366,16 @@ export function pendingRequests(s: State): ClassRequest[] {
   for (const r of s.requests) {
     if (r.status !== "pending") continue
     const from = byId(r.fromClassId)
-    const to = r.kind === "propose" && r.day != null && r.start != null ? { day: r.day, start: r.start } : byId(r.toClassId)
+    // A late cancel has nowhere to go: it's about the class itself.
+    const to = r.kind === "propose" && r.day != null && r.start != null ? { day: r.day, start: r.start } : r.kind === "skip" ? from : byId(r.toClassId)
     if (!to || (r.kind !== "extra" && !from)) continue
     const week = r.weekStart === s.thisWeek.weekStart ? " (this week)" : ""
     const text =
       r.kind === "extra" ? `Extra class: ${classLabel(to)}`
+      : r.kind === "skip" ? `Can't make ${classLabel(from!)} (less than ${CHANGE_DEADLINE_H} h before)`
       : r.kind === "propose" ? `${classLabel(from!)} → new time: ${WEEK_DAYS[to.day]} ${formatTime(to.start)}`
       : `${classLabel(from!)} → ${classLabel(to)}`
-    out.push({ key: r.$id, who: s.names[r.athleteId] ?? "athlete", text: text + week, weekStart: r.weekStart, from, to })
+    out.push({ key: r.$id, kind: r.kind, who: s.names[r.athleteId] ?? "athlete", text: text + week, weekStart: r.weekStart, from, to })
   }
   return out
 }
