@@ -2,9 +2,8 @@ import { useAuth } from "@/components/auth-context"
 import { refreshClassSchedule, useClassSchedule } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
-import * as Notifications from "expo-notifications"
 import { useEffect, useState } from "react"
-import { ActivityIndicator, AppState, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, AppState, Modal, Pressable, StyleSheet, Text, View } from "react-native"
 
 // Athletes whose package is used up or past its use-by date can't use the
 // app until the coach renews it. The package is checked again whenever the
@@ -23,10 +22,8 @@ function Lock() {
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") refreshClassSchedule() })
-    const push = Platform.OS === "web" ? null : Notifications.addNotificationReceivedListener((n) => {
-      if (n.request.content.data?.type === "class_package") refreshClassSchedule()
-    })
-    return () => { sub.remove(); push?.remove() }
+    // Class pushes (class_package included) reload it: ClassNotificationRouter.
+    return () => sub.remove()
   }, [])
 
   const pkg = st.pkg

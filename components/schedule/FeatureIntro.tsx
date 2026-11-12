@@ -32,6 +32,18 @@ export function useIntroSeen(id: string): boolean | undefined {
   return seen
 }
 
+// For other first-run pop-ups (the spotlight tour) that share the same
+// "seen" flag and "i" button.
+export function onIntroReplay(id: string, cb: () => void): () => void {
+  const l = (which: string) => { if (which === id) cb() }
+  replay.add(l)
+  return () => { replay.delete(l) }
+}
+export function markIntroSeen(id: string) {
+  AsyncStorage.setItem(KEY(id), "1").catch(() => {})
+  closed.forEach((l) => l(id))
+}
+
 // Small "i" button that opens the screen's pop-ups again.
 export function IntroButton({ id }: { id: string }) {
   return (

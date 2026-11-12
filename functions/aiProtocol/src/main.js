@@ -163,7 +163,9 @@ async function pushToUsers(users, build, log, error, { receiptWaitMs = 0, source
   let outcomes = new Map()
   if (withToken.length > 0) {
     ;({ sent, invalidTokens, outcomes } = await sendExpoPush(
-      withToken.map((u) => ({ ...build(u), to: u.pushToken })),
+      // priority "high": Android delivers right away even with the phone
+      // idle (Doze); "normal" can hold it for minutes. iOS: sent at once.
+      withToken.map((u) => ({ priority: "high", ...build(u), to: u.pushToken })),
       { log, error, receiptWaitMs },
     ))
   }

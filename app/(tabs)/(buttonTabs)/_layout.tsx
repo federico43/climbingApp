@@ -1,5 +1,6 @@
 import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
+import { ClassNotificationRouter } from "@/components/schedule/ClassNotificationRouter"
 import { PackageLock } from "@/components/schedule/PackageLock"
 import { WorkOutState } from "@/components/workOutState"
 import { PaperScope } from "@/theme/paper/legacy"
@@ -134,6 +135,8 @@ function TabsWithPlan() {
       <WorkoutModalHost />
       {/* Tapped homework notifications → the homework card on home */}
       <HomeworkNotificationRouter hasPlan={hasPlan} />
+      {/* Class pushes: reload the calendar, and open it when tapped */}
+      <ClassNotificationRouter role={role} />
       <PackageLock />
     </WorkoutProvider>
   )

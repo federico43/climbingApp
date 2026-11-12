@@ -1,24 +1,25 @@
-import { ScreenGradient } from "@/components/ScreenGradient"
+
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
-import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
+import { IntroButton } from "@/components/schedule/FeatureIntro"
+import { SpotlightTour, TourSpot } from "@/components/schedule/SpotlightTour"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
+import { CalendarHeader, DetailRow, Legend, OpenSpot, PersonRow, longDay, monthName } from "@/components/schedule/CalendarBits"
 import {
-  BlockedTime, CAPACITY, GymClass, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
+  BlockedTime, CAPACITY, CHANGE_DEADLINE_H, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
+  dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
-import { C } from "@/utils/theme"
+import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const PROBLEM: Record<PlanProblem, string> = {
   past: "That time has already gone by",  // or the class has already started
   max: `This day already has ${MAX_CLASSES_PER_DAY} classes`,
@@ -37,6 +38,7 @@ type SheetState =
   | { kind: "request"; key: string }
   | { kind: "packages" }
   | { kind: "package"; athleteId: string }
+  | { kind: "addAthlete"; classId: string }
   | null
 
 // Coach tab: this week as it stands (who's in each class, read only), and
@@ -66,10 +68,9 @@ export default function ClassesScreen() {
   // Requests drawn on the grid: who's asking to join a class (or a new time)
   // and who's asking to leave one.
   const at = (c: Slot, s?: Slot) => !!s && c.day === s.day && c.start === s.start
-  const joining = (c: GymClass) => gridRequests.filter((r) => at(c, r.to))
+  const joining = (c: GymClass) => gridRequests.filter((r) => r.kind !== "skip" && at(c, r.to))
   const leaving = (c: GymClass) => gridRequests.filter((r) => at(c, r.from))
   const newTimes = gridRequests.filter((r) => !classes.some((c) => at(c, r.to)))
-  const range = `${MONTHS[dates[0].getMonth()]} ${dates[0].getDate()} – ${MONTHS[dates[6].getMonth()]} ${dates[6].getDate()}`
   const dayName = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
 
   const renderDay = (day: number) => {
@@ -112,12 +113,16 @@ export default function ClassesScreen() {
           <GridBlock
             key={c.id}
             start={c.start}
-            tone={joining(c).length || leaving(c).length ? "pick" : "other"}
+            tone={c.roster.length >= CAPACITY ? "full" : "open"}
+            seats={{ booked: c.roster.length, cap: CAPACITY }}
+            tag={joining(c).length + leaving(c).length ? `${joining(c).length + leaving(c).length} req` : undefined}
+            label={`${dayName(c.day)}, ${formatTime(c.start)} to ${formatTime(c.start + CLASS_HOURS)}, ${c.roster.length} of ${CAPACITY} booked${joining(c).length + leaving(c).length ? `, ${joining(c).length + leaving(c).length} requests` : ""}`}
             text={[
-              formatTime(c.start),
-              `${c.roster.length}/${CAPACITY}`,
-              ...joining(c).map((r) => `+${r.who}`),
-              ...leaving(c).map((r) => `−${r.who}`),
+              inSeries(c) ? `${formatTime(c.start)} ↻` : formatTime(c.start),
+              // Sessions left next to each name: the coach's at-a-glance check.
+              ...c.roster.map((n, i) => (c.ids?.[i] && st.left[c.ids[i]] ? `${n} ${st.left[c.ids[i]].left}` : n)),
+              ...joining(c).map((r) => `·+${r.who}`),
+              ...leaving(c).map((r) => `·−${r.who}`),
             ].join("\n")}
             onPress={() => setSheet({ kind: "class", id: c.id })}
             onDrop={live ? undefined : (days, hours) => {
@@ -139,6 +144,77 @@ export default function ClassesScreen() {
   const cls = sheet?.kind === "class" ? classes.find((c) => c.id === sheet.id) ?? null : null
   const clsRequests = cls ? [...joining(cls), ...leaving(cls)] : []
   const req = sheet?.kind === "request" ? requests.find((r) => r.key === sheet.key) ?? null : null
+  // "3 left", for an athlete's row; red when it's running out.
+  const leftOf = (id?: string) => (id ? st.left[id] : undefined)
+  const leftText = (id?: string) => {
+    const p = leftOf(id)
+    if (!p) return "No package"
+    if (p.locked) return p.left <= 0 ? "No sessions left" : `Expired ${p.useBy}`
+    return `${p.left} of ${p.total} left · use by ${p.useBy}`
+  }
+  const wide = useWindowDimensions().width >= WIDE
+  const leftLow = (id?: string) => { const p = leftOf(id); return !!p && (p.locked || p.left <= LOW_SESSIONS) }
+  const lowCount = st.athletes.filter((a) => leftLow(a.id)).length
+  // Recurring series (pre-fill): is this time in it, and its other days ("Wed").
+  const inSeries = (c: { day: number; start: number }) => st.series.some((x) => x.day === c.day && x.start === c.start)
+  const seriesPartners = (c: { day: number; start: number }) =>
+    st.series.filter((x) => x.start === c.start && x.day !== c.day).sort((a, b) => a.day - b.day).map((x) => WEEK_DAYS[x.day]).join(" & ")
+  const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
+  const [athleteQuery, setAthleteQuery] = useState("")
+
+  const openPackage = (athleteId: string) => {
+    if (!sheet) return setSheet({ kind: "package", athleteId })
+    setSheet(null)
+    // iOS won't present a sheet while the previous one is still closing.
+    setTimeout(() => setSheet({ kind: "package", athleteId }), 400)
+  }
+  // Searchable list of every athlete's sessions left (sheet, or side panel).
+  const packagesList = (
+      <>
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={pkgQuery}
+            onChangeText={setPkgQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {st.athletes
+          .filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase()))
+          // Fewest sessions left first; athletes with no package last.
+          .sort((x, y) => (leftOf(x.id)?.left ?? 999) - (leftOf(y.id)?.left ?? 999) || x.name.localeCompare(y.name))
+          .map((a) => {
+          const p = leftOf(a.id)
+          const low = leftLow(a.id)
+          return (
+            <View key={a.id} style={s.req}>
+              <View style={[s.leftBox, low && s.leftBoxLow]}>
+                <Text style={[s.leftN, low && { color: C.red }]}>{p ? p.left : "–"}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>{a.name}</Text>
+                <Text style={[s.reqText, low && { color: C.red }]}>{leftText(a.id)}</Text>
+              </View>
+              <Pressable
+                style={[s.reqBtn, s.reqNo]}
+                onPress={() => openPackage(a.id)}
+              >
+                <Text style={s.reqNoText}>Add package</Text>
+              </Pressable>
+            </View>
+          )
+        })}
+        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
+        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
+          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
+        )}
+      </>
+  )
 
   const requestRow = (r: ClassRequest) => (
     <View key={r.key} style={s.req}>
@@ -156,51 +232,59 @@ export default function ClassesScreen() {
   )
 
   return (
-    <ScreenGradient>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <FeatureIntro
-          id="coach-classes"
-          pages={[
-            { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
-            { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
-            { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
-            { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
+        <SpotlightTour
+          id="coach-classes-tour"
+          ready={st.status === "ready"}
+          steps={[
+            { target: "c-left", title: "Sessions left", text: "Who's running out, fewest first. The number next to each name on the calendar is that athlete's sessions left." },
+            { target: "c-grid", title: "Put athletes in classes", text: "Tap a class to see who's in it, Add athlete on a free spot, or × to take someone out. Athletes can also join a free spot themselves." },
+            { target: "c-grid", title: "Plan the week", text: `Tap a free time to add a class or block it. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days.` },
+            { target: "c-grid", title: "Repeats every week", text: "In a class, turn on Repeats every week (↻). New weeks start with those classes; you still check each week before publishing." },
+            { target: "c-requests", title: "Answer requests", text: `Moves, proposed times and late cancels (less than ${CHANGE_DEADLINE_H} h before) wait here. Unanswered ones are declined at class time.` },
+            { target: "c-publish", title: "Publish", text: "Athletes see nothing until you publish. They get a notification when you do." },
+            { target: "c-info", title: "See this again", text: "Tap here any time to replay this tour." },
           ]}
         />
-        <View style={s.header}>
-          <View style={{ flex: 1 }}>
-            <View style={s.tabs}>
-              {(["this", "next"] as const).map((w) => (
-                <Pressable key={w} onPress={() => { setWeek(w); setSheet(null) }} hitSlop={6}>
-                  <Text style={[s.title, week !== w && s.titleOff]}>{w === "this" ? "This week" : "Next week"}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={s.subtitle}>
-              {range} · {live
-                ? "who's in each class"
-                : week === "this"
-                ? (st.thisWeek.published ? "who's in each class · tap a free time to add one" : "not published yet · plan it now")
-                : `${CLASSES_PER_DAY} classes a day, ${MAX_CLASSES_PER_DAY} on up to ${MAX_BIG_DAYS} days`}
-            </Text>
-          </View>
-          <IntroButton id="coach-classes" />
-          <SettingsButton />
-        </View>
-        <View style={s.top}>
-          <Pressable style={s.pkgRow} onPress={() => setSheet({ kind: "packages" })}>
-            <Text style={s.pkgRowText}>Packages</Text>
+        <TourSpot name="c-header">
+        <CalendarHeader
+          title={monthName(dates)}
+          week={week}
+          canNext
+          onWeek={(w) => { setWeek(w); setSheet(null) }}
+          right={<><TourSpot name="c-info"><IntroButton id="coach-classes-tour" /></TourSpot><SettingsButton /></>}
+          summary={[
+            `${classes.length} classes`,
+            `${classes.reduce((n, c) => n + c.roster.length, 0)}/${classes.length * CAPACITY} spots`,
+            `${classes.filter((c) => c.roster.length >= CAPACITY).length} full`,
+            `${gridRequests.length} requests`,
+          ].join(" · ")}
+        />
+        </TourSpot>
+        {!wide && <View style={s.top}>
+          <TourSpot name="c-left">
+          <Pressable style={s.pkgRow} onPress={() => { setPkgQuery(""); setSheet({ kind: "packages" }) }}>
+            <Ionicons name="ticket-outline" size={18} color={C.textSecondary} />
+            <Text style={[s.pkgRowText, { flex: 1 }]}>Sessions left</Text>
+            {lowCount > 0 && <Text style={s.lowBadge}>{lowCount} running low</Text>}
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
+          </TourSpot>
           {requests.length > 0 && (
+            <TourSpot name="c-requests">
             <Pressable style={s.requests} onPress={() => setSheet({ kind: "requests" })}>
               <Text style={s.requestsText}>
                 {requests.length} request{requests.length > 1 ? "s" : ""} waiting
               </Text>
               <Ionicons name="chevron-forward" size={16} color={C.yellow} />
             </Pressable>
+            </TourSpot>
           )}
-        </View>
+        </View>}
+        <View style={{ flex: 1, flexDirection: "row" }}>
+        <View style={{ flex: 1 }}>
+        <TourSpot name="c-grid" style={{ flex: 1 }}>
         <WeekGrid
           dates={dates}
           today={week === "this" ? weekdayOf(new Date()) : -1}
@@ -214,15 +298,40 @@ export default function ClassesScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        </TourSpot>
+        <Legend keys={["open", "full", "request", "blocked"]} />
         {!live && (
-          <View style={s.footer}>
+          <TourSpot name="c-publish" style={s.footer}>
+            {/* Draft until published: athletes see nothing of it. */}
+            <View style={[s.draftTag, st.published && s.draftTagOn]}>
+              <Text style={[s.draftText, st.published && { color: C.green }]}>
+                {st.published ? "Published" : (week === "this" ? st.thisWeek.published : !!st.nextWeek) ? "Changes not published" : "Draft · athletes can't see it"}
+              </Text>
+            </View>
             <SheetButton
               label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : week === "this" ? (st.thisWeek.published ? "Publish changes" : "Publish this week") : "Publish week"}
               disabled={st.published || st.busy || st.status !== "ready"}
               onPress={publishWeek}
             />
-          </View>
+          </TourSpot>
         )}
+        </View>
+        {wide && (
+          // Big screen: requests and sessions left stay open beside the week.
+          <ScrollView style={s.side} contentContainerStyle={{ gap: 12, padding: 16 }} keyboardShouldPersistTaps="handled">
+            {requests.length > 0 && (
+              <TourSpot name="c-requests" style={{ gap: 10 }}>
+                <Text style={s.sideTitle}>REQUESTS · {requests.length}</Text>
+                {requests.map(requestRow)}
+              </TourSpot>
+            )}
+            <TourSpot name="c-left" style={{ gap: 10 }}>
+              <Text style={s.sideTitle}>SESSIONS LEFT{lowCount > 0 ? ` · ${lowCount} LOW` : ""}</Text>
+            </TourSpot>
+            {packagesList}
+          </ScrollView>
+        )}
+        </View>
       </SafeAreaView>
 
       <Sheet
@@ -270,15 +379,78 @@ export default function ClassesScreen() {
         <SheetButton kind="line" label="Unblock" onPress={() => { if (sheet?.kind === "block") unblock(sheet.block); setSheet(null) }} />
       </Sheet>
 
-      <Sheet
-        visible={!!cls}
-        title={cls ? `${dayName(cls.day)} · ${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}` : ""}
-        subtitle={cls ? `${cls.roster.length} of ${CAPACITY} climbers` : ""}
-        onClose={() => setSheet(null)}
-      >
-        {cls && (cls.roster.length
-          ? <Text style={s.names}>{cls.roster.join(", ")}</Text>
-          : <Text style={s.names}>No one yet.</Text>)}
+      <Sheet visible={!!cls} title={cls ? longDay(dates, cls.day) : ""} onClose={() => setSheet(null)}>
+        {cls && (
+          <>
+            <DetailRow icon="time-outline" text={`${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}`} />
+            {/* Recurring series: this time pre-fills every new week. */}
+            <View style={s.seriesRow}>
+              <Ionicons name="repeat" size={20} color={inSeries(cls) ? C.green : C.textSecondary} style={{ width: 24 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.reqWho}>Repeats every week</Text>
+                <Text style={s.reqText}>
+                  {inSeries(cls)
+                    ? `Fills in every new week${seriesPartners(cls) ? ` · with ${seriesPartners(cls)}` : ""}. Remove it from a week if you can't.`
+                    : "Turn on to fill this class in every new week"}
+                </Text>
+              </View>
+              <Switch
+                value={inSeries(cls)}
+                disabled={st.busy}
+                onValueChange={(on) => { setSeriesSlot(cls, on) }}
+                trackColor={{ true: C.greenDeep, false: C.surfaceHigh }}
+                thumbColor={C.textPrimary}
+              />
+            </View>
+            <DetailRow
+              icon="people-outline"
+              text={`${cls.roster.length} of ${CAPACITY} climbers`}
+              sub={cls.roster.length >= CAPACITY ? "Full" : `${CAPACITY - cls.roster.length} free spot${CAPACITY - cls.roster.length === 1 ? "" : "s"}`}
+            />
+            <View>
+              {cls.roster.map((n, i) => {
+                const id = cls.ids?.[i]
+                const fixed = !!id && !!st.athletes.find((a) => a.id === id)?.defaultClasses.includes(slotKey(cls))
+                const canEdit = !!id && !classStarted(cls)
+                return (
+                  <PersonRow
+                    key={`${n}${i}`}
+                    name={n}
+                    sub={id ? leftText(id) : undefined}
+                    subLow={leftLow(id)}
+                    tag={id ? (fixed ? "FIXED" : "DROP-IN") : undefined}
+                    right={canEdit ? (
+                      <Pressable
+                        hitSlop={10}
+                        accessibilityLabel={`Take ${n} out`}
+                        disabled={st.busy}
+                        onPress={() => Alert.alert(`Take ${n} out?`, `${n} gets a notification.`, [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Take out", style: "destructive", onPress: () => { setClassRoster(cls.id, id!, false) } },
+                        ])}
+                      >
+                        <Ionicons name="close-circle" size={22} color={C.textMuted} />
+                      </Pressable>
+                    ) : undefined}
+                  />
+                )
+              })}
+              {Array.from({ length: Math.max(0, CAPACITY - cls.roster.length) }, (_, i) => (
+                <OpenSpot
+                  key={`o${i}`}
+                  label={savedClass(cls) && !classStarted(cls) ? "Add athlete" : "Free spot"}
+                  onPress={savedClass(cls) && !classStarted(cls) ? () => {
+                    setSheet(null)
+                    setAthleteQuery("")
+                    // iOS won't present a sheet while the previous one is still closing.
+                    setTimeout(() => setSheet({ kind: "addAthlete", classId: cls.id }), 400)
+                  } : undefined}
+                />
+              ))}
+            </View>
+            {!savedClass(cls) && <Text style={s.hint}>Publish the week to add athletes to this class.</Text>}
+          </>
+        )}
         {clsRequests.length > 0 && (
           <View>
             <Text style={s.reqTitle}>Requests</Text>
@@ -288,6 +460,58 @@ export default function ClassesScreen() {
         {!live && cls && classStarted(cls) && <Text style={s.hint}>This class has already started.</Text>}
         {!live && cls && !classStarted(cls) && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
         {!live && cls && !classStarted(cls) && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
+      </Sheet>
+
+      <Sheet
+        visible={!!addTo}
+        title={addTo ? `Add to ${longDay(dates, addTo.day)}` : ""}
+        subtitle={addTo ? `${formatTime(addTo.start)} – ${formatTime(addTo.start + CLASS_HOURS)} · ${CAPACITY - addTo.roster.length} free spot${CAPACITY - addTo.roster.length === 1 ? "" : "s"}` : ""}
+        onClose={() => setSheet(null)}
+      >
+        <View style={s.search}>
+          <Ionicons name="search" size={16} color={C.textMuted} />
+          <TextInput
+            value={athleteQuery}
+            onChangeText={setAthleteQuery}
+            placeholder="Search athletes"
+            placeholderTextColor={C.textMuted}
+            style={s.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        {addTo && st.athletes
+          .filter((a) => a.name.toLowerCase().includes(athleteQuery.trim().toLowerCase()))
+          .map((a) => {
+            const inIt = !!addTo.ids?.includes(a.id)
+            const near = !inIt && classes.some((c) => c.id !== addTo.id && c.ids?.includes(a.id) && adjacentOrSame(c.day, addTo.day))
+            return (
+              <Pressable
+                key={a.id}
+                disabled={inIt || st.busy || addTo.roster.length >= CAPACITY}
+                onPress={async () => {
+                  const go = async () => { if (await setClassRoster(addTo.id, a.id, true)) setSheet(null) }
+                  if (!near) return go()
+                  Alert.alert(`${a.name} has a class next to this day`, "Add them anyway?", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Add", onPress: go },
+                  ])
+                }}
+                style={({ pressed }) => [s.athlete, inIt && { opacity: 0.45 }, pressed && { opacity: 0.7 }]}
+              >
+                <PersonRow
+                  name={a.name}
+                  sub={leftText(a.id)}
+                  subLow={leftLow(a.id)}
+                  right={inIt
+                    ? <Text style={s.hint}>In this class</Text>
+                    : <Ionicons name="add-circle" size={24} color={C.green} />}
+                />
+              </Pressable>
+            )
+          })}
+        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
       </Sheet>
 
       <Sheet
@@ -311,48 +535,11 @@ export default function ClassesScreen() {
 
       <Sheet
         visible={sheet?.kind === "packages"}
-        title="Packages"
-        subtitle="Sessions each athlete paid for"
+        title="Sessions left"
+        subtitle="Fewest first. Add a package to renew."
         onClose={() => setSheet(null)}
       >
-        <View style={s.search}>
-          <Ionicons name="search" size={16} color={C.textMuted} />
-          <TextInput
-            value={pkgQuery}
-            onChangeText={setPkgQuery}
-            placeholder="Search athletes"
-            placeholderTextColor={C.textMuted}
-            style={s.searchInput}
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
-        </View>
-        {st.athletes.filter((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())).map((a) => {
-          const latest = st.packages.filter((p) => p.athleteId === a.id).sort((x, y) => (x.startsOn < y.startsOn ? 1 : -1))[0]
-          return (
-            <View key={a.id} style={s.req}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.reqWho}>{a.name}</Text>
-                <Text style={s.reqText}>{latest ? `${latest.total} sessions · use by ${latest.useBy}` : "No package"}</Text>
-              </View>
-              <Pressable
-                style={[s.reqBtn, s.reqNo]}
-                onPress={() => {
-                  setSheet(null)
-                  // iOS won't present a sheet while the previous one is still closing.
-                  setTimeout(() => setSheet({ kind: "package", athleteId: a.id }), 400)
-                }}
-              >
-                <Text style={s.reqNoText}>Add package</Text>
-              </Pressable>
-            </View>
-          )
-        })}
-        {st.athletes.length === 0 && <Text style={s.names}>No athletes yet.</Text>}
-        {st.athletes.length > 0 && pkgQuery.trim() !== "" && !st.athletes.some((a) => a.name.toLowerCase().includes(pkgQuery.trim().toLowerCase())) && (
-          <Text style={s.names}>No athlete matches &ldquo;{pkgQuery.trim()}&rdquo;.</Text>
-        )}
+        {packagesList}
       </Sheet>
 
       <Sheet
@@ -397,11 +584,14 @@ export default function ClassesScreen() {
           }}
         />
       </Sheet>
-    </ScreenGradient>
+    </View>
   )
 }
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6]
+// A class saved on the server (a new one in the draft has no roster until published).
+const savedClass = (c: { id: string }) => !c.id.startsWith("new")
+const adjacentOrSame = (a: number, b: number) => a === b || Math.abs(a - b) === 1 || Math.abs(a - b) === 6
 const clampDay = (d: number) => Math.max(0, Math.min(6, d))
 
 const s = StyleSheet.create({
@@ -411,26 +601,35 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, color: C.textPrimary, fontSize: 14.5, height: 40 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, gap: 12 },
-  tabs: { flexDirection: "row", alignItems: "baseline", gap: 14 },
   title: { fontSize: 28, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
-  titleOff: { fontSize: 18, color: C.textMuted },
   subtitle: { fontSize: 13, fontWeight: "500", color: C.textSecondary, marginTop: 2 },
   top: { paddingHorizontal: 16, gap: 8, marginBottom: 10 },
   requests: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: "rgba(254,215,102,0.10)", borderWidth: 1, borderColor: "rgba(254,215,102,0.35)",
+    backgroundColor: "rgba(138,214,162,0.10)", borderWidth: 1, borderColor: "rgba(138,214,162,0.35)",
     borderRadius: 12, padding: 12,
   },
   requestsText: { color: C.yellow, fontSize: 14, fontWeight: "700" },
   pkgRow: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    flexDirection: "row", alignItems: "center", gap: 10,
     borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 12,
   },
   pkgRowText: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+  lowBadge: { color: C.red, fontSize: 12, fontWeight: "800" },
+  leftBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
+  leftBoxLow: { backgroundColor: "rgba(219,80,74,0.15)" },
+  leftN: { fontSize: 20, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   stepRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   stepper: { flexDirection: "row", alignItems: "center", gap: 12 },
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
   stepValue: { minWidth: 70, textAlign: "center", fontSize: 15, fontWeight: "800", color: C.textPrimary },
+  athlete: { borderTopWidth: 1, borderTopColor: C.border },
+  seriesRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  draftTag: { alignSelf: "center", borderWidth: 1, borderStyle: "dashed", borderColor: C.textMuted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
+  draftTagOn: { borderStyle: "solid", borderColor: C.green },
+  draftText: { fontFamily: KF.mono, fontSize: 10, color: C.label },
+  side: { width: 360, flexGrow: 0, borderLeftWidth: 1, borderLeftColor: C.border },
+  sideTitle: { fontFamily: KF.mono, fontSize: 11, color: C.label, letterSpacing: 0.8 },
   footer: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },
@@ -442,5 +641,5 @@ const s = StyleSheet.create({
   reqNo: { borderWidth: 1, borderColor: C.border },
   reqYes: { backgroundColor: C.green },
   reqNoText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
-  reqYesText: { fontSize: 13, fontWeight: "800", color: "#10251A" },
+  reqYesText: { fontSize: 13, fontWeight: "800", color: C.onMint },
 })

@@ -3,8 +3,8 @@ import * as api from "@/services/classSchedule"
 import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedule"
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
-  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
-  WEEK_DAYS, weekdayOf, ymd,
+  CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, packageUsage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
+  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -26,6 +26,7 @@ export interface ClassRequest {
   who: string
   text: string
   weekStart: string
+  kind: ClassRequestRow["kind"]
   from?: Slot  // the class they'd leave (none for an extra class)
   to: Slot     // where they want to go: another class or a new time
 }
@@ -56,6 +57,7 @@ interface State {
   thisWeek: AthleteWeek            // the Plan card
   shown: AthleteWeek               // the week screen: next week from Saturday once it's published
   shownNext: boolean
+  nextWeek: AthleteWeek | null     // next week once it's published
   defaults: string[]               // usual classes, "day@start"
   pkg: PackageInfo | null
   // Coach: the week being planned (next week, or this week while it's
@@ -63,10 +65,12 @@ interface State {
   planning: "this" | "next"
   thisOpen: boolean                // the coach can plan this week (always, for coaches)
   nextWeekStart: string
-  nextClasses: GymClass[]          // rosters as names
+  nextClasses: GymClass[]          // rosters as names, and as user ids in `ids`
   blocks: BlockedTime[]
   published: boolean               // published and nothing changed since
   packages: ClassPackage[]
+  series: Slot[]                     // coach: classes that repeat every week (pre-fill)
+  left: Record<string, PackageInfo>  // coach: sessions left per athlete with a package
 }
 
 const emptyWeek = (weekStart: string): AthleteWeek => ({
@@ -75,8 +79,8 @@ const emptyWeek = (weekStart: string): AthleteWeek => ({
 
 let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
-  thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, defaults: [], pkg: null,
-  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [],
+  thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, nextWeek: null, defaults: [], pkg: null,
+  planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], left: {}, series: [],
 }
 const listeners = new Set<() => void>()
 
@@ -108,15 +112,17 @@ let server: { this: ClassWeek | null; next: ClassWeek | null } = { this: null, n
 // A class (or new time) this week that has already started.
 const started = (weekStart: string, c: Slot, now = new Date()) => classDate(weekStart, c).getTime() <= now.getTime()
 
-// Start a week's draft from the week as saved, or from the seed week's times
-// (no rosters) when it's still empty, leaving out times already gone. A
+// Start a week's draft from the week as saved, or, when it's still empty,
+// from the coach's recurring series (or else the seed week's times, no
+// rosters), leaving out times already gone. A
 // changed draft keeps the coach's edits and picks up classes the server added
 // (an accepted new time).
 function syncDraft(week: ClassWeek, seed: ClassWeek | null) {
   const draft = drafts[week.weekStart]
   if (!draft || !draft.dirty) {
     const fresh = week.classes.length || week.published
-    const seeded = (seed?.classes ?? []).filter((c) => !started(week.weekStart, c))
+    const from: Slot[] = state.series.length ? state.series : seed?.classes ?? []
+    const seeded = from.filter((c) => !started(week.weekStart, c))
     drafts[week.weekStart] = {
       weekStart: week.weekStart,
       classes: fresh
@@ -146,7 +152,11 @@ function draftPatch(): Partial<State> {
   const rosters = new Map((week?.classes ?? []).map((c) => [c.id, c.roster]))
   return {
     nextWeekStart: draft.weekStart,
-    nextClasses: draft.classes.map((c) => ({ ...c, roster: (rosters.get(c.id) ?? []).map((u) => state.names[u] ?? "athlete") })),
+    nextClasses: draft.classes.map((c) => ({
+      ...c,
+      roster: (rosters.get(c.id) ?? []).map((u) => state.names[u] ?? "athlete"),
+      ids: rosters.get(c.id) ?? [],
+    })),
     blocks: draft.blocks,
     published: !!week?.published && !draft.dirty,
   }
@@ -179,20 +189,33 @@ function weekFor(w: ClassWeek, requests: ClassRequestRow[], me: string, names: R
 // Same count as the server (athletePackage in functions/aiProtocol/src/classes.js):
 // classes count from when the package was added.
 async function packageInfo(me: string, now: Date): Promise<PackageInfo | null> {
-  const today = ymd(now)
-  const pkg = currentPackage(await api.loadPackages(me), today)
+  const pkg = currentPackage(await api.loadPackages(me), ymd(now))
   if (!pkg) return null
-  const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
   const { classes, requests } = await api.loadHistory(me, ymd(mondayOf(dateOf(pkg.startsOn))))
-  const done = classes.filter((c) => {
-    const at = classDate(c.weekStart, c)
-    const end = at.getTime() + CLASS_HOURS * 3600000
-    return ymd(at) >= pkg.startsOn && end > since && end <= now.getTime()
-  }).length
-  const skips = requests.filter((r) =>
-    r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
-  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, today) }
+  return packageUsage(pkg, classes, requests, now)
+}
+
+// Coach: every athlete's sessions left, in two reads (all classes and
+// requests since the oldest current package's week).
+async function allPackageInfo(packages: ClassPackage[], athleteIds: string[], now: Date): Promise<Record<string, PackageInfo>> {
+  const today = ymd(now)
+  const current = athleteIds
+    .map((id) => [id, currentPackage(packages.filter((p) => p.athleteId === id), today)] as const)
+    .filter((x): x is readonly [string, ClassPackage] => !!x[1])
+  if (!current.length) return {}
+  const from = current.map(([, p]) => ymd(mondayOf(dateOf(p.startsOn)))).sort()[0]
+  const { classes, requests } = await api.loadAllHistory(from)
+  const out: Record<string, PackageInfo> = {}
+  for (const [id, p] of current) {
+    const weekFrom = ymd(mondayOf(dateOf(p.startsOn)))
+    out[id] = packageUsage(
+      p,
+      classes.filter((c) => c.weekStart >= weekFrom && c.roster.includes(id)),
+      requests.filter((r) => r.athleteId === id && r.weekStart >= weekFrom),
+      now,
+    )
+  }
+  return out
 }
 
 async function load() {
@@ -214,13 +237,20 @@ async function load() {
       coach ? api.loadWeek(ymd(last)) : Promise.resolve(null),
       api.loadUsers(),
       api.loadRequests([thisStart, nextStart], coach ? undefined : me),
-    ])
+      // The coach's recurring classes: they pre-fill each new week.
+      coach ? api.loadSeries() : Promise.resolve([] as Slot[]),
+    ]).then(([a, b, c, d, e, series]) => {
+      state.series = series
+      return [a, b, c, d, e] as const
+    })
     const names = Object.fromEntries(users.map((u) => [u.id, u.name]))
     const meRow = users.find((u) => u.id === me)
     const [pkg, packages] = await Promise.all([
       coach ? Promise.resolve(null) : packageInfo(me, now),
       coach ? api.loadPackages() : Promise.resolve([]),
     ])
+    const athletes = users.filter((u) => u.role !== "coach" && u.active !== false)
+    const left = coach ? await allPackageInfo(packages, athletes.map((a) => a.id), now) : {}
     server = { this: thisWeek, next: nextWeek }
     const thisOpen = coach
     if (coach) {
@@ -231,12 +261,13 @@ async function load() {
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
-      status: "ready", error: null, me, names, requests, pkg, packages,
+      status: "ready", error: null, me, names, requests, pkg, packages, left,
       // Deactivated accounts can't be added to classes.
-      athletes: users.filter((u) => u.role !== "coach" && u.active !== false),
+      athletes,
       defaults: meRow?.defaultClasses ?? [],
       thisWeek: thisView,
       shown: shownNext ? weekFor(nextWeek, requests, me, names) : thisView,
+      nextWeek: nextWeek.published ? weekFor(nextWeek, requests, me, names) : null,
       shownNext, thisOpen,
     })
     set(draftPatch())
@@ -291,7 +322,7 @@ export function changeClass(id: string, change: ClassChange | null): Promise<boo
     return r ? run(() => api.cancelRequest(r.$id)) : Promise.resolve(true)
   }
   return run(() => api.sendRequest(
-    change.status === "skip" ? { kind: "skip", classId: id }
+    change.status === "skip" || change.status === "cancelAsk" ? { kind: "skip", classId: id }
     : change.status === "move" ? { kind: "move", classId: id, toClassId: change.to }
     : { kind: "propose", classId: id, day: change.day, start: change.start },
   ))
@@ -310,6 +341,21 @@ export function saveUsualClasses(slots: string[]): Promise<boolean> {
   return run(() => api.saveDefaults(slots))
 }
 
+// Join a class with a free spot, right away. With `every`, it also becomes
+// one of their usual classes (kept for every new week) when that fits.
+export function joinClass(id: string, cls: Slot, every: boolean): Promise<boolean> {
+  return run(async () => {
+    await api.joinClass(id)
+    const key = slotKey(cls)
+    if (every && !state.defaults.includes(key) && usualFits(state.defaults, cls)) await api.saveDefaults([...state.defaults, key])
+  })
+}
+
+// Stop repeating a usual class (this week's class stays as it is).
+export function stopUsual(cls: Slot): Promise<boolean> {
+  return run(() => api.saveDefaults(state.defaults.filter((k) => k !== slotKey(cls))))
+}
+
 // ── Coach ───────────────────────────────────────────────────────────────────
 
 // Requests waiting for the coach, both weeks.
@@ -320,14 +366,16 @@ export function pendingRequests(s: State): ClassRequest[] {
   for (const r of s.requests) {
     if (r.status !== "pending") continue
     const from = byId(r.fromClassId)
-    const to = r.kind === "propose" && r.day != null && r.start != null ? { day: r.day, start: r.start } : byId(r.toClassId)
+    // A late cancel has nowhere to go: it's about the class itself.
+    const to = r.kind === "propose" && r.day != null && r.start != null ? { day: r.day, start: r.start } : r.kind === "skip" ? from : byId(r.toClassId)
     if (!to || (r.kind !== "extra" && !from)) continue
     const week = r.weekStart === s.thisWeek.weekStart ? " (this week)" : ""
     const text =
       r.kind === "extra" ? `Extra class: ${classLabel(to)}`
+      : r.kind === "skip" ? `Can't make ${classLabel(from!)} (less than ${CHANGE_DEADLINE_H} h before)`
       : r.kind === "propose" ? `${classLabel(from!)} → new time: ${WEEK_DAYS[to.day]} ${formatTime(to.start)}`
       : `${classLabel(from!)} → ${classLabel(to)}`
-    out.push({ key: r.$id, who: s.names[r.athleteId] ?? "athlete", text: text + week, weekStart: r.weekStart, from, to })
+    out.push({ key: r.$id, kind: r.kind, who: s.names[r.athleteId] ?? "athlete", text: text + week, weekStart: r.weekStart, from, to })
   }
   return out
 }
@@ -422,6 +470,21 @@ export async function publishWeek(): Promise<boolean> {
     delete drafts[d.weekStart]
   })
   return saved
+}
+
+// Coach: make a time repeat every week (pre-fills new weeks), or stop it.
+export function setSeriesSlot(slot: Slot, on: boolean): Promise<boolean> {
+  const rest = state.series.filter((x) => !(x.day === slot.day && x.start === slot.start))
+  const next = on ? [...rest, { day: slot.day, start: slot.start }] : rest
+  return run(async () => {
+    await api.saveSeries(next)
+    set({ series: next })
+  })
+}
+
+// Coach: put an athlete in a saved class, or take them out.
+export function setClassRoster(classId: string, athleteId: string, add: boolean): Promise<boolean> {
+  return run(() => api.setRoster(classId, athleteId, add))
 }
 
 export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string): Promise<boolean> {

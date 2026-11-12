@@ -8,6 +8,7 @@ export interface GymClass {
   day: number       // 0 = Monday … 6 = Sunday
   start: number     // hours from midnight, half-hour steps (9.5 = 9:30)
   roster: string[]  // usernames signed up, not counting the athlete using the app
+  ids?: string[]    // the same people as user ids (coach screens only)
 }
 
 // A time the coach can't teach. `all` blocks the whole day.
@@ -21,6 +22,7 @@ export interface BlockedTime {
 // What the athlete did with one of their classes this week.
 export type ClassChange =
   | { status: "skip" }
+  | { status: "cancelAsk" }                         // a late cancel, waiting for the coach
   | { status: "move"; to: string }                  // to another class, waiting for the coach
   | { status: "propose"; day: number; start: number } // a new time, waiting for the coach
 
@@ -48,6 +50,9 @@ export const MAX_CLASSES_PER_DAY = 3
 export const MAX_BIG_DAYS = 2
 // Sessions left at which the athlete and the coach get a heads-up.
 export const LOW_SESSIONS = 2
+// Free changes (move, cancel) until this many hours before a class; after
+// that they're requests the coach answers (same as the server's classRules.js).
+export const CHANGE_DEADLINE_H = 12
 
 export function formatTime(h: number): string {
   const H = Math.floor(h)
@@ -92,6 +97,8 @@ export function athleteWeek(
       // A move into a class that's gone leaves the athlete where they were.
       const to = byId(ch.to)
       out.push(to ? { cls: to, state: "pending", from: id } : { cls, state: "on" })
+    } else if (ch?.status === "cancelAsk") {
+      out.push({ cls, state: "pending", from: id })
     } else if (ch?.status === "propose") {
       out.push({ cls: { id: `prop-${id}`, day: ch.day, start: ch.start, roster: [] }, state: "pending", from: id, proposal: true })
     } else {
@@ -203,6 +210,12 @@ export function parseSlot(s: string): { day: number; start: number } | null {
   return Number.isInteger(d) && d >= 0 && d <= 6 && Number.isFinite(h) ? { day: d, start: h } : null
 }
 
+// Whether `c` can be one more usual class: up to 3, a rest day between them.
+export function usualFits(defaults: string[], c: { day: number; start: number }): boolean {
+  const days = defaults.map(parseSlot).filter(Boolean).map((x) => x!.day)
+  return defaults.length < 3 && restDayOk(days, c.day)
+}
+
 // Missed sessions that can move to a later week, per package.
 export const MAX_CARRY = 2
 
@@ -223,6 +236,27 @@ export function currentPackage<P extends { startsOn: string; $createdAt?: string
 // date, until the coach adds a new one. No package at all doesn't lock.
 export const packageLocked = (pkg: { useBy: string } | null, left: number, today: string) =>
   !!pkg && (left <= 0 || pkg.useBy < today)
+
+// Sessions left in `pkg` on `now`, from the athlete's classes and requests
+// since the package's week (same count as athletePackage on the server):
+// classes ended since the package was added, and skips made after it.
+export function packageUsage(
+  pkg: { total: number; startsOn: string; useBy: string; $createdAt?: string },
+  classes: { weekStart: string; day: number; start: number }[],
+  requests: { kind: string; status: string; $createdAt?: string }[],
+  now: Date,
+): { total: number; left: number; useBy: string; locked: boolean } {
+  const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
+  const done = classes.filter((c) => {
+    const at = classDate(c.weekStart, c)
+    const end = at.getTime() + CLASS_HOURS * 3600000
+    return ymd(at) >= pkg.startsOn && end > since && end <= now.getTime()
+  }).length
+  const skips = requests.filter((r) =>
+    r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
+  const left = sessionsLeft(pkg.total, done, skips)
+  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, ymd(now)) }
+}
 
 // A request row from the server (table class_requests).
 export interface ClassRequestRow {
@@ -258,6 +292,7 @@ export function athleteView(
     }
     if (r.status !== "pending") continue
     if (r.kind === "move" && r.toClassId) changes[from] = { status: "move", to: r.toClassId }
+    if (r.kind === "skip") changes[from] = { status: "cancelAsk" }
     if (r.kind === "propose" && r.day != null && r.start != null) changes[from] = { status: "propose", day: r.day, start: r.start }
     if (r.kind === "extra" && r.toClassId) extra = { to: r.toClassId, approved: false }
   }
