@@ -13,8 +13,8 @@ import type { RouteType } from "@/utils/sequenceVariations"
 // Pure: no fetching or UI (components/SprayBlock.tsx is the screen).
 
 // How a spray block ends (coach 2026-11-10): "time" — a countdown from the
-// block's time limit (Power, Coordination); "attempts" — a number of
-// attempts (Max bouldering, Base 1).
+// block's time limit (Max bouldering, Power, Coordination — Max by time since
+// coach 2026-11-12); "attempts" — a number of attempts (Base 1, Benchmark).
 export type SprayMode = "time" | "attempts"
 
 export interface SprayBlockRef {
@@ -25,7 +25,7 @@ export interface SprayBlockRef {
 }
 
 export const SPRAY_BLOCKS: SprayBlockRef[] = [
-  { name: "Max bouldering", type: "sequence", routeType: "max_bouldering", mode: "attempts" },
+  { name: "Max bouldering", type: "sequence", routeType: "max_bouldering", mode: "time" },
   { name: "Base 1", type: "sequence", routeType: "base", mode: "attempts" },
   { name: "Power boulders", type: "free_session", routeType: "power", mode: "time" },
   { name: "Coordination boulders", type: "free_session", routeType: "coordination", mode: "time" },
@@ -225,20 +225,31 @@ export function newSprayRoutes(
 
 export interface SprayStep { title: string; text: string }
 
-interface SprayCopy { goal: string; choose: string }
+interface SprayCopy {
+  goal: string
+  choose: string
+  // Hide the coach's description on the intro (Power, Max: coach 2026-11-12).
+  hideCoachNotes?: boolean
+}
+
+// Power and Max bouldering (coach 2026-11-12): no coach notes, and the
+// sequence comes from the wall or is made with the coach or alone.
+const CHOOSE_OR_CREATE = "Pick one of the available sequences, or create a new one with your coach or on your own."
 
 const SPRAY_COPY: Partial<Record<RouteType, SprayCopy>> = {
   max_bouldering: {
-    goal: "Your hardest moves, at your limit.",
-    choose: "One you can't flash, but could top in a few tries.",
+    goal: "A 4–5 move boulder problem at your limit.",
+    choose: CHOOSE_OR_CREATE,
+    hideCoachNotes: true,
   },
   power: {
     goal: "Short, explosive sequences.",
-    choose: "Short (3–6 moves) with at least one big move.",
+    choose: CHOOSE_OR_CREATE,
+    hideCoachNotes: true,
   },
   coordination: {
-    goal: "Moves that need timing: deadpoints, jumps, paddles.",
-    choose: "One with a move that needs timing.",
+    goal: "Moves that need timing: jumps, paddles.",
+    choose: "One with a move that needs timing. A new one, or one of the suggested ones.",
   },
 }
 
@@ -246,6 +257,15 @@ const BENCHMARK_COPY: SprayCopy = {
   goal: "Your test at the start and at the end of the plan.",
   choose: "Week 1: one at your limit. Last week: the same one, already set.",
 }
+
+function sprayCopyFor(block: { type?: string; blockName?: string }): SprayCopy | undefined {
+  const ref = sprayBlockFor(block)
+  return ref?.name === "Benchmark" ? BENCHMARK_COPY : ref ? SPRAY_COPY[ref.routeType] : undefined
+}
+
+// Whether the intro shows the coach's description above the steps.
+export const sprayShowsCoachNotes = (block: { type?: string; blockName?: string }) =>
+  !sprayCopyFor(block)?.hideCoachNotes
 
 // Base 1 and blocks that aren't spray blocks: the plain steps.
 function plainSteps(settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null }): SprayStep[] {
@@ -270,13 +290,12 @@ export function sprayBlockSteps(
   block: { type?: string; blockName?: string },
   settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null },
 ): SprayStep[] {
-  const ref = sprayBlockFor(block)
-  const copy = ref?.name === "Benchmark" ? BENCHMARK_COPY : ref ? SPRAY_COPY[ref.routeType] : undefined
+  const copy = sprayCopyFor(block)
   if (!copy) return plainSteps(settings)
   const minutes = sprayMinutes(settings)
   return [
     { title: "Goal", text: copy.goal },
-    { title: "Choose a sequence", text: `${copy.choose} A new one, or one of the suggested ones.` },
+    { title: "Choose a sequence", text: copy.choose },
     {
       title: "Climb it",
       text: minutes != null

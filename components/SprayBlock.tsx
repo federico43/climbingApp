@@ -15,7 +15,7 @@ import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import {
-  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
+  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, sprayShowsCoachNotes, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
@@ -32,8 +32,8 @@ const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 // Coordination boulders (utils/sprayBlocks.ts) — in Project bouldering's
 // shape (coach 2026-11-10):
 //   intro → choose a sequence → work (the wall, Top / Fell) ⇄ rest → … → end → review
-// "time" blocks (Power, Coordination) end when the block's time runs out;
-// "attempts" blocks (Max, Base 1) when the attempt target is reached. The
+// "time" blocks (Max, Power, Coordination) end when the block's time runs out;
+// "attempts" blocks (Base 1, Benchmark) when the attempt target is reached. The
 // athlete can change sequence at any time; each attempt is logged with its
 // routeId, so every sequence keeps its own tops / attempts.
 
@@ -440,7 +440,7 @@ export function SprayBlock({
               { value: restLabel(settings.rest), label: "rest", color: C.textSecondary },
             ]}
           />
-          <BlockNotes text={block.description} />
+          {sprayShowsCoachNotes(block) && <BlockNotes text={block.description} />}
           <StepList steps={sprayBlockSteps(block, settings)} />
         </ScrollView>
         <View style={shared_styles.footer}>
