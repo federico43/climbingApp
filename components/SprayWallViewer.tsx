@@ -130,6 +130,11 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   }))
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
+  // The first hand-bounce move's number, for the hint under the wall.
+  const firstBounce = useMemo(() => {
+    const nums = holds.filter((h) => h.type === "move" && h.bounce).map((h) => displayNums.get(h.id)?.first).filter((n): n is number => n != null)
+    return nums.length ? Math.min(...nums) : null
+  }, [holds, displayNums])
 
   const BADGE_R    = 5
   const BADGE_H    = 18
@@ -270,6 +275,16 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
             </>
         )}
       </Animated.View>
+      {/* Explains the "nB" badge wherever an athlete reads a sequence with a
+          hand bounce (not on thumbnails). Fixed to the frame, not the zoom. */}
+      {interactive && firstBounce != null && (
+        <View pointerEvents="none" style={styles.bounceHint}>
+          <View style={[styles.bounceHintBadge, { backgroundColor: BOUNCE_COLOR }]}>
+            <Text style={[styles.badgeText, { color: C.bg }]}>{firstBounce}B</Text>
+          </View>
+          <Text style={styles.bounceHintText}>Hand bounce: touch hold {firstBounce}, then keep moving with the same hand</Text>
+        </View>
+      )}
     </View>
   )
 
@@ -287,4 +302,11 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2,
   },
   badgeText: { color: "#fff", fontSize: 9, fontWeight: "800" },
+  bounceHint: {
+    position: "absolute", left: 10, right: 10, bottom: 10,
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7,
+  },
+  bounceHintBadge: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  bounceHintText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "600", lineHeight: 16 },
 })
