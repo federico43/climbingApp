@@ -73,7 +73,8 @@ assert.equal(u.phases[1].title, "1 on 1 off")
 // Power days: 2 Power boulders + 2 Coordination boulders
 assert.equal(u.phases[2].title, "Power boulders ×2 · Coordination boulders ×2")
 assert.equal(u.phases[2].detail, "4 blocks")
-assert.equal(u.phases[2].minutes, 90)
+// 15 min each in the plan (coach 2026-11-12), whatever the library says
+assert.equal(u.phases[2].minutes, 60)
 assert.equal(u.phases[2].adaptation, "power")
 
 // Constraint warm-up takes the plan's focus colour; no S&C when the plan has none

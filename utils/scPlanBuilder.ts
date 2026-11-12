@@ -211,7 +211,7 @@ export function buildScBlocks(
 
   const byId = new Map(exercises.map((e) => [e.$id, e]))
   // Core and joints follow their own max force ↔ hypertrophy cycle.
-  const focusOf = (p: ScPattern) => (skipsExplosiveness(p.movementType) ? noPowerFocusFor(spec.index) : focus)
+  const focusOf = (p: ScPattern) => (skipsExplosiveness(p.movementType) ? noPowerFocusFor(spec.index, plan.scFocuses) : focus)
   const draftFor = (row: ExerciseRow, f: Focus): ExerciseDraft => {
     const draftOf = (r: ExerciseRow) => withFocus(exerciseDraftFromLibrary(r), f)
     return draftOf(testLevelRow(row, draftOf(row), f, sessions, exercises, pullupTest) ?? startingLevelRow(row, draftOf, sessions, exercises))

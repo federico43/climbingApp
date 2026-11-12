@@ -1,11 +1,13 @@
-import { PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
+import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
+import { BOUNCE_COLOR, PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
 import { C } from "@/utils/theme"
 import { getDisplayRadius } from "@/utils/holdRadius"
 import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
 import { Image } from "expo-image"
 import React, { useEffect, useMemo, useState } from "react"
-import { StyleSheet, Text, View, ViewStyle } from "react-native"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { Pressable, StyleSheet, Text, View, ViewStyle } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
   useAnimatedStyle,
@@ -28,19 +30,22 @@ function computeDisplayNums(holds: PlacedHold[]): Map<string, { first: number; s
   return map
 }
 
-function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>) {
+function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>, afterBounce?: Map<string, HandLetter>) {
   if (h.type === "start") return "S"
   if (h.type === "finish") return "★"
   if (h.type === "foot")   return "F"
   const dn = displayNums.get(h.id)
   if (!dn) return ""
   if (dn.second != null) {
-    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : ""
+    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : afterBounce?.get(h.id) ?? ""
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  return String(dn.first)
+  // The move after a hand bounce says its hand (the same one again).
+  return `${dn.first}${afterBounce?.get(h.id) ?? ""}`
 }
+
+const BOUNCE_HINT_KEY = "sprayBounceHintMinimised"
 
 interface Props {
   imageSource: any
@@ -129,6 +134,24 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   }))
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
+  const afterBounce = useMemo(() => handsAfterBounce(holds), [holds])
+  // The hand-bounce moves' numbers, for the hint on the wall.
+  const bounceNums = useMemo(
+    () => holds.filter((h) => h.type === "move" && h.bounce).map((h) => displayNums.get(h.id)?.first).filter((n): n is number => n != null).sort((a, b) => a - b),
+    [holds, displayNums],
+  )
+  // Athletes who already know can shrink the hint to a small purple chip;
+  // remembered on the phone (coach 2026-11-12).
+  const [hintMin, setHintMin] = useState(false)
+  useEffect(() => {
+    AsyncStorage.getItem(BOUNCE_HINT_KEY).then((v) => setHintMin(v === "1")).catch(() => {})
+  }, [])
+  const toggleHint = () => {
+    setHintMin((m) => {
+      AsyncStorage.setItem(BOUNCE_HINT_KEY, m ? "0" : "1").catch(() => {})
+      return !m
+    })
+  }
 
   const BADGE_R    = 5
   const BADGE_H    = 18
@@ -214,13 +237,14 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                 const dist  = r + BADGE_R
                 const bx    = cx + dist * Math.cos(angle)
                 const by    = cy + dist * Math.sin(angle)
-                const badgeLabel = holdBadge(hold, displayNums)
+                const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                 const badgeBg =
                   hold.type === "start"  ? C.green :
                   hold.type === "finish" ? C.yellow :
                   hold.type === "foot"   ? "#4FA3E0" :
+                  hold.bounce            ? BOUNCE_COLOR :
                   "rgba(0,0,0,0.75)"
-                const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                const badgeFg = hold.type === "move" && !hold.bounce ? "#fff" : C.bg
                 // Scale the badge with the circle so small holds get small numbers.
                 const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                 return (
@@ -268,6 +292,26 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
             </>
         )}
       </Animated.View>
+      {/* Explains the purple badges wherever an athlete reads a sequence with
+          a hand bounce (not on thumbnails). Fixed to the frame, not the zoom.
+          Tap to shrink it to a chip, tap the chip to open it again. */}
+      {interactive && bounceNums.length > 0 && (hintMin ? (
+        <Pressable onPress={toggleHint} hitSlop={8} accessibilityLabel="Show hand bounce help" style={[styles.bounceChip, { backgroundColor: BOUNCE_COLOR }]}>
+          <Text style={[styles.badgeText, { color: C.bg }]}>Bounce ?</Text>
+        </Pressable>
+      ) : (
+        <Pressable onPress={toggleHint} accessibilityLabel="Hide hand bounce help" style={styles.bounceHint}>
+          <View style={[styles.bounceHintBadge, { backgroundColor: BOUNCE_COLOR }]}>
+            <Text style={[styles.badgeText, { color: C.bg }]}>{bounceNums.length === 1 ? bounceNums[0] : "  "}</Text>
+          </View>
+          <Text style={styles.bounceHintText}>
+            {bounceNums.length === 1
+              ? `Purple = hand bounce: touch hold ${bounceNums[0]}, then keep moving with the same hand`
+              : `Purple = hand bounce on holds ${bounceNums.join(", ")}: touch the hold, then keep moving with the same hand`}
+          </Text>
+          <Text style={styles.bounceHintClose}>–</Text>
+        </Pressable>
+      ))}
     </View>
   )
 
@@ -285,4 +329,13 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2,
   },
   badgeText: { color: "#fff", fontSize: 9, fontWeight: "800" },
+  bounceHint: {
+    position: "absolute", left: 10, right: 10, bottom: 10,
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7,
+  },
+  bounceHintBadge: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  bounceHintText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "600", lineHeight: 16 },
+  bounceHintClose: { color: "#fff", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
+  bounceChip: { position: "absolute", left: 10, bottom: 10, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
 })

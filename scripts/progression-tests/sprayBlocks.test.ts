@@ -15,16 +15,20 @@ assert.equal(sprayRouteTypeFor({ type: "free_session", blockName: "Base 1" }), n
 assert.equal(sprayRouteTypeFor({ type: "project_bouldering", blockName: "Project Bouldering" }), null)
 assert.ok(!isSprayBlock(null))
 
-// by time (Power, Coordination) or by attempts (Max, Base 1), with defaults
+// by time (Max, Power, Coordination) or by attempts (Base 1, Benchmark), with defaults
 assert.deepEqual(spraySettings({ type: "free_session", blockName: "Power boulders", timeLimit: 25 }),
   { mode: "time", routeType: "power", minutes: 25, timeCap: null, attempts: 5, rest: 120 })
-assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).minutes, 20)
+// Power / Coordination default to 15 min (coach 2026-11-12)
+assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).minutes, 15)
 assert.equal(spraySettings({ type: "free_session", blockName: "Coordination boulders" }).mode, "time")
 assert.deepEqual(spraySettings({ type: "sequence", blockName: "Base 1", targetAttempts: 6, restTime: 90 }),
   { mode: "attempts", routeType: "base", minutes: 20, timeCap: null, attempts: 6, rest: 90 })
-assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering" }).mode, "attempts")
-// attempts block with a time limit (Max bouldering in the plan): ends at whichever comes first
-assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering", timeLimit: 15 }).timeCap, 15)
+// Max bouldering goes by time now (coach 2026-11-12): 15 min in the plan
+assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering" }).mode, "time")
+assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering", timeLimit: 15 }).minutes, 15)
+assert.equal(spraySettings({ type: "sequence", blockName: "Max bouldering", timeLimit: 15 }).timeCap, null)
+// attempts block with a time limit (Base 1): ends at whichever comes first
+assert.equal(spraySettings({ type: "sequence", blockName: "Base 1", timeLimit: 10 }).timeCap, 10)
 
 // records across sessions (any block), totals and last time
 const session = (id: string, at: string, attempts: any[]) => ({ $id: id, $createdAt: at, userId: "u", protocol: "[]", attempts: JSON.stringify(attempts) })
