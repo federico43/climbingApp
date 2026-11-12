@@ -1,3 +1,4 @@
+import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { sequenceLevelColour } from "@/utils/sprayBlocks"
@@ -77,6 +78,7 @@ export interface PlacedHold {
   order?: number
   hand?: StartingHand  // move hold #1 only
   match?: boolean      // move holds: both hands match on this hold
+  bounce?: boolean     // move holds: hand bounce (tap it and keep moving with the same hand)
 }
 
 const TYPE_CONFIG: Record<HoldType, { label: string; symbol: string }> = {
@@ -87,6 +89,8 @@ const TYPE_CONFIG: Record<HoldType, { label: string; symbol: string }> = {
 }
 
 const FOOT_COLOR = "#4FA3E0"
+// Badge colour of a hand-bounce move (shared with SprayWallViewer).
+export const BOUNCE_COLOR = "#B48CF2"
 
 const HAND_LABEL: Record<StartingHand, string> = { left: "L", right: "R", both: "LR" }
 
@@ -105,7 +109,7 @@ function computeDisplayNums(holds: PlacedHold[]): Map<string, { first: number; s
   return map
 }
 
-function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>) {
+function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>, afterBounce?: Map<string, HandLetter>) {
   if (h.type === "start")  return "S"
   if (h.type === "finish") return "★"
   if (h.type === "foot")   return "F"
@@ -113,11 +117,12 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
   if (!dn) return ""
   if (dn.second != null) {
     // match hold — show both numbers, hand suffix on first if applicable
-    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : ""
+    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : afterBounce?.get(h.id) ?? ""
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  return String(dn.first)
+  // The move after a hand bounce says its hand (the same one again).
+  return `${dn.first}${afterBounce?.get(h.id) ?? ""}`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -553,7 +558,19 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   function toggleMatch() {
     const snapId = selectedId
     setHolds((prev) => {
-      const newHolds = prev.map((h) => h.id === snapId ? { ...h, match: !h.match } : h)
+      // Match and bounce exclude each other: a matched hold is held, not tapped.
+      const newHolds = prev.map((h) => h.id === snapId ? { ...h, match: !h.match, bounce: false } : h)
+      pushToHistory(newHolds)
+      return newHolds
+    })
+    setCanUndo(true)
+    setCanRedo(false)
+  }
+
+  function toggleBounce() {
+    const snapId = selectedId
+    setHolds((prev) => {
+      const newHolds = prev.map((h) => h.id === snapId ? { ...h, bounce: !h.bounce, match: false } : h)
       pushToHistory(newHolds)
       return newHolds
     })
@@ -564,6 +581,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   const selectedHold = holds.find((h) => h.id === selectedId)
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
+  const afterBounce = useMemo(() => handsAfterBounce(holds), [holds])
 
   // For each hold, pick the first angle (top-right first) where the badge
   // doesn't overlap any other hold's circle. Stores the angle, not pixel coords —
@@ -764,13 +782,14 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                         const dist  = r + BADGE_R + BADGE_GAP
                         const bx    = cx + dist * Math.cos(angle)
                         const by    = cy + dist * Math.sin(angle)
-                        const badgeLabel = holdBadge(hold, displayNums)
+                        const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                         const badgeBg =
                           hold.type === "start"  ? C.green :
                           hold.type === "finish" ? C.yellow :
                           hold.type === "foot"   ? FOOT_COLOR :
+                          hold.bounce            ? BOUNCE_COLOR :
                           "rgba(0,0,0,0.75)"
-                        const badgeFg = hold.type === "move" ? "#fff" : C.bg
+                        const badgeFg = hold.type === "move" && !hold.bounce ? "#fff" : C.bg
                         // Scale the badge with the circle so small holds get small numbers.
                         const badgeFont = Math.max(6, Math.min(12, r * 0.5))
                         return (
@@ -889,6 +908,22 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                   {selectedHold.match ? "Match ✓" : "Match"}
                 </Text>
               </Pressable>
+            )}
+
+            {selectedHold.type === "move" && (
+              <>
+                <Pressable
+                  style={[styles.matchBtn, selectedHold.bounce && styles.matchBtnActive]}
+                  onPress={toggleBounce}
+                >
+                  <Text style={[styles.matchBtnText, selectedHold.bounce && styles.matchBtnTextActive]}>
+                    {selectedHold.bounce ? "Hand bounce ✓" : "Hand bounce"}
+                  </Text>
+                </Pressable>
+                {selectedHold.bounce && (
+                  <Text style={styles.bounceHint}>Purple = hand bounce: touch this hold and keep moving with the same hand.</Text>
+                )}
+              </>
             )}
 
             <Pressable style={styles.removeBtn} onPress={deleteSelected}>
@@ -1092,6 +1127,7 @@ const styles = StyleSheet.create({
   matchBtnActive: { backgroundColor: C.greenDeep, borderColor: C.green },
   matchBtnText: { fontSize: 14, fontWeight: "600", color: "#555" },
   matchBtnTextActive: { color: C.green },
+  bounceHint: { fontSize: 12, color: "#999", textAlign: "center" },
   removeBtn: {
     backgroundColor: C.red, borderRadius: 12,
     paddingHorizontal: 20, paddingVertical: 12, alignItems: "center",

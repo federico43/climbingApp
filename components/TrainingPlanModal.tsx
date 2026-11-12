@@ -5,7 +5,7 @@ import {
   localDateStr, mainTypeFor, mainTypeLabel, planEndFor, type MainType, type PlanFocus, type PlanKind, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
-import { FOCUS_LABEL } from "@/utils/scProgression"
+import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   ExerciseRow,
   TrainingPlanRow,
@@ -60,6 +60,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [hasMobility, setHasMobility] = useState(false)
   // Mobility exercises the coach chose; none = the app picks.
   const [mobilityIds, setMobilityIds] = useState<string[]>([])
+  // S&C focuses on (coach 2026-11-12); all three by default.
+  const [scFocuses, setScFocuses] = useState<Focus[]>(FOCUSES)
   // In pick order — mp1…mp4.
   const [patterns, setPatterns] = useState<ScPattern[]>([])
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
@@ -80,6 +82,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
       setMobilityIds(current.mobilityIds)
+      setScFocuses(current.scFocuses.length ? current.scFocuses : FOCUSES)
       setPatterns(current.scPatterns)
     } else {
       setName("")
@@ -91,6 +94,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setHasMobility(false)
       // A new plan starts from the athlete's current mobility picks.
       setMobilityIds(current?.mobilityIds ?? [])
+      setScFocuses(FOCUSES)
       setPatterns([])
     }
     setPickerOpen(false)
@@ -119,6 +123,13 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       const exerciseIds = !FIXED_PATTERNS.has(m) && available.length === 1 ? [available[0].$id] : []
       return [...prev, { movementType: m, exerciseIds }]
     })
+  }
+
+  // At least one focus stays on.
+  function toggleFocus(f: Focus) {
+    setScFocuses((prev) => (prev.includes(f)
+      ? (prev.length > 1 ? prev.filter((x) => x !== f) : prev)
+      : FOCUSES.filter((x) => x === f || prev.includes(x))))
   }
 
   function toggleMobility(id: string) {
@@ -187,6 +198,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         // Only ids still in the library; kept when mobility is off, for next time.
         mobilityIds: mobilityLibrary.length === 0 ? mobilityIds : mobilityIds.filter((id) => mobilityLibrary.some((e) => e.$id === id)),
         scPatterns: withSc ? patterns : [],
+        scFocuses,
       }
       const plan = mode === "edit" && current
         ? await updateTrainingPlan(current, input)
@@ -328,6 +340,18 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
 
             {withSc && (
               <>
+                <Text style={s.label}>S&C focuses</Text>
+                <Text style={s.sub2}>A workout whose focus is off uses the next one on. Core, balance and joints never do explosiveness.</Text>
+                <View style={s.chipWrap}>
+                  {FOCUSES.map((f) => {
+                    const sel = scFocuses.includes(f)
+                    return (
+                      <Pressable key={f} style={[s.chip, sel && s.chipSelected]} onPress={() => toggleFocus(f)}>
+                        <Text style={[s.chipText, sel && s.chipTextSelected]}>{FOCUS_LABEL[f]}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
                 <View style={s.switchRow}>
                   <Text style={s.switchLabel}>With mobility</Text>
                   <Switch value={hasMobility} onValueChange={setHasMobility} trackColor={{ true: C.green }} />

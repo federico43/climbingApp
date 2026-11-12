@@ -2,13 +2,14 @@ import { account, tablesDB, storage, functions } from "@/components/AppWrite"
 import { ExecutionMethod, ID, Query } from "appwrite"
 import * as FileSystem from "expo-file-system/legacy"
 import { isNetworkError } from "@/utils/network"
-import type { Focus, LevelStep } from "@/utils/scProgression"
+import { FOCUSES, type Focus, type LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
+import { unknownColumn } from "@/utils/appwriteErrors"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -441,6 +442,9 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // the coach chose for the athlete — empty = the app picks from the whole
 // library; only written once a plan has some, so plans save before the
 // column exists (scripts/plan-mobility/create-column.mjs).
+// scFocuses (string, JSON Focus[], optional): the S&C focuses the coach left
+// on (coach 2026-11-12); empty = all three. Only written when some are off
+// (or were), like mobilityIds (scripts/sc-focuses/create-column.mjs).
 
 export interface TrainingPlanRow {
   $id: string
@@ -456,6 +460,7 @@ export interface TrainingPlanRow {
   hasMobility: boolean
   scPatterns: ScPattern[]
   mobilityIds: string[]       // coach-chosen mobility exercises; empty = app picks
+  scFocuses: Focus[]          // S&C focuses on; empty = all three
   startType: MainType | null  // null = strength (the default cycle)
   pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
@@ -480,6 +485,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     hasMobility: !!row.hasMobility,
     scPatterns: parseJsonArray(row.scPatterns),
     mobilityIds: parseJsonArray(row.mobilityIds).filter((id): id is string => typeof id === "string"),
+    scFocuses: parseJsonArray(row.scFocuses).filter((f): f is Focus => (FOCUSES as string[]).includes(f)),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
     pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
@@ -523,6 +529,7 @@ export interface TrainingPlanInput {
   hasMobility: boolean
   scPatterns: ScPattern[]
   mobilityIds?: string[]
+  scFocuses?: Focus[]
   startType?: MainType | null
 }
 
@@ -548,6 +555,14 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (ids.length > 0 || previous?.mobilityIds.length) data.mobilityIds = JSON.stringify(ids)
     else delete data.mobilityIds
   }
+  if ("scFocuses" in input) {
+    // All three on = the default: stored as nothing, so the column is only
+    // needed once the coach turns one off.
+    const on = FOCUSES.filter((f) => (input.scFocuses ?? []).includes(f))
+    const all = on.length === 0 || on.length === FOCUSES.length
+    if (!all || previous?.scFocuses.length) data.scFocuses = JSON.stringify(all ? [] : on)
+    else delete data.scFocuses
+  }
   return data
 }
 
@@ -562,6 +577,9 @@ function planWriteError(e: unknown): unknown {
   }
   if (/focus/i.test(String((e as any)?.message ?? "")) && /required/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Run scripts/conditioning-plan/create-column.mjs --apply: training_plans.focus must be optional for conditioning-only plans.')
+  }
+  if (/Unknown attribute:?\s*"?scFocuses/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/sc-focuses/create-column.mjs --apply: training_plans needs the "scFocuses" column to turn S&C focuses off.')
   }
   if (/Unknown attribute:?\s*"?mobilityIds/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "mobilityIds" to the training_plans table in Appwrite (scripts/plan-mobility/create-column.mjs) to choose the mobility exercises.')
@@ -1348,33 +1366,39 @@ export async function getMySprayRoutes(athleteId: string): Promise<SprayRouteRow
 
 export async function saveSprayRoute(name: string, holds: any[], wallId?: string, extras?: SprayRouteExtras): Promise<SprayRouteRow> {
   const data = buildRouteData(name, holds, wallId, extras)
-  try {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data,
-    })
-    return response as unknown as SprayRouteRow
-  } catch (e) {
-    const response = await tablesDB.createRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data: coreRouteData(data),
-    })
-    return response as unknown as SprayRouteRow
-  }
+  return writeRoute((d) => tablesDB.createRow({
+    databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: ID.unique(), data: d,
+  }), data)
 }
 
 export async function updateSprayRoute(id: string, name: string, holds: any[], extras?: SprayRouteExtras): Promise<SprayRouteRow> {
   const data = buildRouteData(name, holds, undefined, extras)
-  try {
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data,
-    })
-    return response as unknown as SprayRouteRow
-  } catch (e) {
-    const response = await tablesDB.updateRow({
-      databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data: coreRouteData(data),
-    })
-    return response as unknown as SprayRouteRow
-  }
+  return writeRoute((d) => tablesDB.updateRow({
+    databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id, data: d,
+  }), data)
 }
+
+// The route table may be missing an optional column (athleteId, variations…).
+// Drop only the column Appwrite names as unknown and retry, so the tag and the
+// level still save (dropping everything but name/holds left new sequences with
+// no tag, which the builder then showed as "Base"). Last resort: core fields.
+async function writeRoute(write: (data: any) => Promise<unknown>, data: any): Promise<SprayRouteRow> {
+  let current = { ...data }
+  for (let i = 0; i < 5; i++) {
+    try {
+      return (await write(current)) as SprayRouteRow
+    } catch (e: any) {
+      const key = unknownColumn(e?.message)
+      if (!key || !(key in current) || key === "name" || key === "holds") break
+      console.warn(`spray_routes: column "${key}" missing, saving without it`)
+      const { [key]: _drop, ...rest } = current
+      current = rest
+    }
+  }
+  console.warn("spray_routes: saving with core fields only (type and level lost)")
+  return (await write(coreRouteData(current))) as SprayRouteRow
+}
+
 
 export async function deleteSprayRoute(id: string): Promise<void> {
   await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: SPRAY_ROUTES_TABLE, rowId: id })

@@ -45,8 +45,11 @@ type GeneratedWorkout = PlanWorkout & { name: string; slot: { planId: string; pl
 type SpecSwaps = { index: number } & Partial<Pick<WorkoutSpec, "mainBlock" | "warmup" | "scFocus">>
 
 // S&C focus swap: Max force → Hypertrophy → Explosiveness → Max force.
-function nextFocus(focus: Focus): Focus {
-  return FOCUSES[(FOCUSES.indexOf(focus) + 1) % FOCUSES.length]
+// The coach's manual swap only cycles through the focuses the plan has on.
+function nextFocus(focus: Focus, enabled?: Focus[] | null): Focus {
+  const on = enabled && enabled.length ? FOCUSES.filter((f) => enabled.includes(f)) : FOCUSES
+  const i = on.indexOf(focus)
+  return on[(i + 1) % on.length]
 }
 
 function formatPlanDate(dateStr: string): string {
@@ -335,7 +338,7 @@ export function PlanCard({
                   <PickRow
                     color={ADAPTATION_COLOR.conditioning}
                     text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
-                    onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!) })}
+                    onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!, plan.scFocuses) })}
                   />
                 ))}
               {nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
@@ -357,7 +360,7 @@ export function PlanCard({
                 {nextSpec.mainBlock && (
                   <PickRow
                     color={ADAPTATION_COLOR[nextSpec.mainType]}
-                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} × ${MAIN_BLOCK_COPIES}` : ""}`}
+                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit ? `${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).copies} × ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit} min` : `× ${MAIN_BLOCK_COPIES}`}` : ""}`}
                     onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
                   />
                 )}
