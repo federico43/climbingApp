@@ -2,7 +2,7 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/sprayInstructions.test.ts
 
 import assert from "node:assert/strict"
-import { sprayBlockSteps, spraySettings, sprayShowsAttempts } from "@/utils/sprayBlocks"
+import { sprayBlockSteps, spraySettings, sprayShowsAttempts, sprayShowsCoachNotes } from "@/utils/sprayBlocks"
 
 const steps = (b: any) => sprayBlockSteps(b, spraySettings(b))
 const text = (b: any) => steps(b).map((s) => s.text).join(" ")
@@ -42,3 +42,12 @@ assert.ok(sprayShowsAttempts(bench, spraySettings(bench)))
 assert.equal(steps({ type: "free_session", blockName: "Something" })[0].title, "Choose a sequence")
 
 console.log("sprayInstructions: ok")
+
+// Power and Max: no coach notes, choose-or-create step, Max goal (coach 2026-11-12)
+assert.ok(!sprayShowsCoachNotes(max))
+assert.ok(!sprayShowsCoachNotes({ type: "free_session", blockName: "Power boulders" }))
+assert.ok(sprayShowsCoachNotes({ type: "free_session", blockName: "Coordination boulders" }))
+assert.ok(sprayShowsCoachNotes({ type: "sequence", blockName: "Base 1" }))
+assert.match(steps(max)[0].text, /4–5 move/)
+assert.match(steps(max)[1].text, /with your coach or on your own/)
+assert.doesNotMatch(text({ type: "free_session", blockName: "Coordination boulders" }), /deadpoint/i)
