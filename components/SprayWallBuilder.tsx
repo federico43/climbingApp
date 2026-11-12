@@ -1,3 +1,4 @@
+import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { sequenceLevelColour } from "@/utils/sprayBlocks"
@@ -108,7 +109,7 @@ function computeDisplayNums(holds: PlacedHold[]): Map<string, { first: number; s
   return map
 }
 
-function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>) {
+function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>, afterBounce?: Map<string, HandLetter>) {
   if (h.type === "start")  return "S"
   if (h.type === "finish") return "★"
   if (h.type === "foot")   return "F"
@@ -116,11 +117,12 @@ function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; seco
   if (!dn) return ""
   if (dn.second != null) {
     // match hold — show both numbers, hand suffix on first if applicable
-    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : ""
+    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : afterBounce?.get(h.id) ?? ""
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  return String(dn.first)
+  // The move after a hand bounce says its hand (the same one again).
+  return `${dn.first}${afterBounce?.get(h.id) ?? ""}`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -579,6 +581,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
   const selectedHold = holds.find((h) => h.id === selectedId)
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
+  const afterBounce = useMemo(() => handsAfterBounce(holds), [holds])
 
   // For each hold, pick the first angle (top-right first) where the badge
   // doesn't overlap any other hold's circle. Stores the angle, not pixel coords —
@@ -779,7 +782,7 @@ export function SprayWallBuilder({ imageSource, initialHolds = [], initialName =
                         const dist  = r + BADGE_R + BADGE_GAP
                         const bx    = cx + dist * Math.cos(angle)
                         const by    = cy + dist * Math.sin(angle)
-                        const badgeLabel = holdBadge(hold, displayNums)
+                        const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                         const badgeBg =
                           hold.type === "start"  ? C.green :
                           hold.type === "finish" ? C.yellow :
