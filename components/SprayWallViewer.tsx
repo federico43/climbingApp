@@ -1,3 +1,4 @@
+import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { BOUNCE_COLOR, PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
 import { C } from "@/utils/theme"
 import { getDisplayRadius } from "@/utils/holdRadius"
@@ -29,18 +30,19 @@ function computeDisplayNums(holds: PlacedHold[]): Map<string, { first: number; s
   return map
 }
 
-function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>) {
+function holdBadge(h: PlacedHold, displayNums: Map<string, { first: number; second?: number }>, afterBounce?: Map<string, HandLetter>) {
   if (h.type === "start") return "S"
   if (h.type === "finish") return "★"
   if (h.type === "foot")   return "F"
   const dn = displayNums.get(h.id)
   if (!dn) return ""
   if (dn.second != null) {
-    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : ""
+    const handSuffix = dn.first === 1 && h.hand ? HAND_LABEL[h.hand] : afterBounce?.get(h.id) ?? ""
     return `${dn.first}${handSuffix},${dn.second}`
   }
   if (dn.first === 1 && h.hand) return `${dn.first}${HAND_LABEL[h.hand]}`
-  return String(dn.first)
+  // The move after a hand bounce says its hand (the same one again).
+  return `${dn.first}${afterBounce?.get(h.id) ?? ""}`
 }
 
 const BOUNCE_HINT_KEY = "sprayBounceHintMinimised"
@@ -132,6 +134,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   }))
 
   const displayNums = useMemo(() => computeDisplayNums(holds), [holds])
+  const afterBounce = useMemo(() => handsAfterBounce(holds), [holds])
   // The hand-bounce moves' numbers, for the hint on the wall.
   const bounceNums = useMemo(
     () => holds.filter((h) => h.type === "move" && h.bounce).map((h) => displayNums.get(h.id)?.first).filter((n): n is number => n != null).sort((a, b) => a - b),
@@ -234,7 +237,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                 const dist  = r + BADGE_R
                 const bx    = cx + dist * Math.cos(angle)
                 const by    = cy + dist * Math.sin(angle)
-                const badgeLabel = holdBadge(hold, displayNums)
+                const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                 const badgeBg =
                   hold.type === "start"  ? C.green :
                   hold.type === "finish" ? C.yellow :
