@@ -133,6 +133,9 @@ export const MAIN_BLOCK_COPIES = 2
 export interface MainBlockRun { copies: number; timeLimit?: number }
 const MAIN_BLOCK_RUNS: { ref: LibraryBlockRef; run: MainBlockRun }[] = [
   { ref: { name: "Max bouldering", type: "sequence" }, run: { copies: 3, timeLimit: 15 } },
+  // Power days: Power boulders and Coordination boulders, 15 min each (coach 2026-11-12).
+  { ref: { name: "Power boulders", type: "free_session" }, run: { copies: MAIN_BLOCK_COPIES, timeLimit: 15 } },
+  { ref: { name: "Coordination boulders", type: "free_session" }, run: { copies: MAIN_BLOCK_COPIES, timeLimit: 15 } },
 ]
 
 export function mainBlockRun(ref: LibraryBlockRef): MainBlockRun {

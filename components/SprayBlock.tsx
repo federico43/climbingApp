@@ -14,7 +14,7 @@ import { useBlockTimer } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import {
-  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
+  newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, SPRAY_SUGGESTION_COUNT, spraySettings, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
@@ -434,24 +434,13 @@ export function SprayBlock({
           <StatsCard
             kicker={`${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`}
             items={[
-              ...(isTime ? [] : [{ value: String(settings.attempts), label: "attempts", color: C.textPrimary }]),
+              ...(sprayShowsAttempts(block, settings) ? [{ value: String(settings.attempts), label: "attempts", color: C.textPrimary }] : []),
               ...(timed ? [{ value: `${isTime ? settings.minutes : settings.timeCap}`, label: "min", color: C.green }] : []),
               { value: restLabel(settings.rest), label: "rest", color: C.textSecondary },
             ]}
           />
           <BlockNotes text={block.description} />
-          <StepList
-            steps={[
-              { title: "Choose a sequence", text: "A new one, or one of the suggested ones." },
-              {
-                title: "Climb it",
-                text: isTime
-                  ? `As many attempts as you can in ${settings.minutes} min. Tap Top or Fell after each one.`
-                  : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}. Tap Top or Fell after each one.`,
-              },
-              { title: "Rest", text: "The rest timer starts on its own." },
-            ]}
-          />
+          <StepList steps={sprayBlockSteps(block, settings)} />
         </ScrollView>
         <View style={shared_styles.footer}>
           {block.lockRoute && block.routeId

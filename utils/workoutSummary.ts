@@ -8,7 +8,6 @@ import type { BlockRow } from "@/services/BoulderGraphService"
 import { type Adaptation, resolveAdaptation } from "@/utils/adaptations"
 import { findLibraryBlock } from "@/utils/planWorkout"
 import {
-  MAIN_BLOCK_COPIES,
   MAIN_COMPANION_BLOCK,
   mainBlockRun,
   PLAN_FOCUS_LABEL,
@@ -325,7 +324,10 @@ export function summarizeSpec(
   const companionRef = MAIN_COMPANION_BLOCK[spec.mainType]
   if (companionRef) {
     const companion = fromLibrary(companionRef)
-    for (let i = 0; i < MAIN_BLOCK_COPIES; i++) mainBlocks.push({ ...companion, adaptation: spec.mainType })
+    const crun = mainBlockRun(companionRef)
+    for (let i = 0; i < crun.copies; i++) {
+      mainBlocks.push({ ...companion, adaptation: spec.mainType, ...(crun.timeLimit ? { timeLimit: crun.timeLimit } : {}) })
+    }
   }
   const mainSecs = mainBlocks.reduce((t, b) => t + estimateBlockSeconds(b, history), 0)
   phases.push(summarizeGroup("main", mainBlocks, toMinutes(mainSecs)))

@@ -36,6 +36,8 @@ export const SPRAY_BLOCKS: SprayBlockRef[] = [
 
 // Defaults when the block doesn't set them.
 export const SPRAY_DEFAULT_MINUTES = 20
+// Power and Coordination boulders: 15 min (coach 2026-11-12).
+export const SPRAY_TIME_BLOCK_MINUTES = 15
 export const SPRAY_DEFAULT_ATTEMPTS = 5
 export const SPRAY_DEFAULT_REST_S = 120
 // The rest lengths the athlete can switch to between attempts.
@@ -65,7 +67,7 @@ export function spraySettings(block: { type?: string; blockName?: string; timeLi
   return {
     mode,
     routeType: ref?.routeType ?? null,
-    minutes: (block.timeLimit ?? 0) > 0 ? block.timeLimit! : SPRAY_DEFAULT_MINUTES,
+    minutes: (block.timeLimit ?? 0) > 0 ? block.timeLimit! : mode === "time" ? SPRAY_TIME_BLOCK_MINUTES : SPRAY_DEFAULT_MINUTES,
     // Attempts blocks with a time limit too (Max bouldering in the plan:
     // 15 min) end at whichever comes first. null = no time limit.
     timeCap: mode === "attempts" && (block.timeLimit ?? 0) > 0 ? block.timeLimit! : null,
@@ -213,4 +215,84 @@ export function newSprayRoutes(
     .sort((a, b) => (b.$createdAt ?? "").localeCompare(a.$createdAt ?? "") || a.$id.localeCompare(b.$id))
     .slice(0, limit)
     .map((r) => r.$id)
+}
+
+// ── Instructions (to-do 2026-11-11, coach feedback 2026-11-12) ──
+// What the intro of each spray block tells the athlete: only what's needed to
+// understand the exercise (no technique). Base 1 keeps the plain steps, the
+// coach's notes explain it better. The others say the time limit, never the
+// number of attempts. The coach's description (block.description) shows above.
+
+export interface SprayStep { title: string; text: string }
+
+interface SprayCopy { goal: string; choose: string }
+
+const SPRAY_COPY: Partial<Record<RouteType, SprayCopy>> = {
+  max_bouldering: {
+    goal: "Your hardest moves, at your limit.",
+    choose: "One you can't flash, but could top in a few tries.",
+  },
+  power: {
+    goal: "Short, explosive sequences.",
+    choose: "Short (3–6 moves) with at least one big move.",
+  },
+  coordination: {
+    goal: "Moves that need timing: deadpoints, jumps, paddles.",
+    choose: "One with a move that needs timing.",
+  },
+}
+
+const BENCHMARK_COPY: SprayCopy = {
+  goal: "Your test at the start and at the end of the plan.",
+  choose: "Week 1: one at your limit. Last week: the same one, already set.",
+}
+
+// Base 1 and blocks that aren't spray blocks: the plain steps.
+function plainSteps(settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null }): SprayStep[] {
+  return [
+    { title: "Choose a sequence", text: "A new one, or one of the suggested ones." },
+    {
+      title: "Climb it",
+      text: settings.mode === "time"
+        ? `As many attempts as you can in ${settings.minutes} min. Tap Top or Fell after each one.`
+        : `${settings.attempts} attempts${settings.timeCap != null ? ` in ${settings.timeCap} min` : ""}. Tap Top or Fell after each one.`,
+    },
+    { title: "Rest", text: "The rest timer starts on its own." },
+  ]
+}
+
+// The block's time limit in minutes, if it has one (time mode, or a time cap).
+export function sprayMinutes(settings: { mode: SprayMode; minutes: number; timeCap: number | null }): number | null {
+  return settings.mode === "time" ? settings.minutes : settings.timeCap
+}
+
+export function sprayBlockSteps(
+  block: { type?: string; blockName?: string },
+  settings: { mode: SprayMode; minutes: number; attempts: number; timeCap: number | null },
+): SprayStep[] {
+  const ref = sprayBlockFor(block)
+  const copy = ref?.name === "Benchmark" ? BENCHMARK_COPY : ref ? SPRAY_COPY[ref.routeType] : undefined
+  if (!copy) return plainSteps(settings)
+  const minutes = sprayMinutes(settings)
+  return [
+    { title: "Goal", text: copy.goal },
+    { title: "Choose a sequence", text: `${copy.choose} A new one, or one of the suggested ones.` },
+    {
+      title: "Climb it",
+      text: minutes != null
+        ? `${minutes} min. Tap Top or Fell after each attempt.`
+        : "Tap Top or Fell after each attempt.",
+    },
+    { title: "Rest", text: "The rest timer starts on its own." },
+  ]
+}
+
+// Whether the intro shows the attempt count: only Base 1 (and blocks with no
+// time limit), the others go by time (coach 2026-11-12).
+export function sprayShowsAttempts(
+  block: { type?: string; blockName?: string },
+  settings: { mode: SprayMode; minutes: number; timeCap: number | null },
+): boolean {
+  const ref = sprayBlockFor(block)
+  return settings.mode !== "time" && (ref?.routeType === "base" || sprayMinutes(settings) == null)
 }

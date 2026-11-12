@@ -164,7 +164,7 @@ export function buildPlanWorkout(
   const run = mainBlockRun(spec.mainBlock)
   libraryBlock(spec.mainBlock, run.copies, blocks, run.timeLimit)
   const companion = MAIN_COMPANION_BLOCK[spec.mainType]
-  if (companion) libraryBlock(companion, MAIN_BLOCK_COPIES)
+  if (companion) libraryBlock(companion, mainBlockRun(companion).copies, blocks, mainBlockRun(companion).timeLimit)
 
   return { blocks, homework, warnings }
 }
