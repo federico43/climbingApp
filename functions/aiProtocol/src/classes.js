@@ -80,6 +80,8 @@ async function setRoster(ctx, cls, roster) {
 }
 
 // ── Athlete: a change to one of this week's classes ─────────────────────────
+// A move into a class with a free spot is instant; a new time (propose) and
+// an extra class wait for the coach; a skip frees the spot right away.
 // body: { kind: "move" | "propose" | "extra" | "skip", classId?, toClassId?, day?, start? }
 async function request(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
@@ -143,6 +145,17 @@ async function request(ctx, userId, body) {
     if (!restDayOk(busy, to.day)) return fail(409, "Leave a rest day between classes.")
     data.toClassId = to.$id
     what = body.kind === "extra" ? `Extra class: ${classLabel(to)}` : `${classLabel(from)} → ${classLabel(to)}`
+  }
+  if (body.kind === "move") {
+    // A class with a free spot: the move happens right away (this week only;
+    // their usual classes stay). The row records it, so a renewal or new
+    // usual classes don't put them back in the class they left.
+    await setRoster(ctx, to, [...(to.roster ?? []), userId])
+    await setRoster(ctx, from, (from.roster ?? []).filter((u) => u !== userId))
+    const row = await ctx.db.create(REQUESTS, { ...data, status: "accepted" })
+    if (!row) return fail(502, "Could not save.")
+    await pushCoaches(ctx, userId, "Moved a class", `${name(caller)}: ${what}`, { type: "class_request", requestId: row.$id })
+    return ok({ request: row })
   }
   const row = await ctx.db.create(REQUESTS, data)
   if (!row) return fail(502, "Could not save.")

@@ -122,14 +122,14 @@ assert.equal(r.status, 409)
 // Fri is next to Thu too
 r = await call("classRequest", "ana", { kind: "move", classId: at(0, 9.5).$id, toClassId: at(4, 15).$id })
 assert.equal(r.status, 409)
-// Moving Thu → Wed is fine (Mon, Wed)
+// Moving Thu → Wed is fine (Mon, Wed), and happens right away
 r = await call("classRequest", "ana", { kind: "move", classId: at(3, 9.5).$id, toClassId: at(2, 9.5).$id })
 assert.equal(r.status, 200)
 const moveId = r.json.request.$id
-assert.ok(pushes.some((p) => p.to === "coach" && p.body.includes("Thu 9:30 → Wed 9:30")))
-// Only coaches answer
-assert.equal((await call("classAnswer", "ana", { requestId: moveId, accept: true })).status, 403)
-assert.equal((await call("classAnswer", "coach", { requestId: moveId, accept: true })).status, 200)
+assert.equal(r.json.request.status, "accepted")
+assert.ok(pushes.some((p) => p.to === "coach" && p.title === "Moved a class" && p.body.includes("Thu 9:30 → Wed 9:30")))
+// Nothing left for the coach to answer
+assert.equal((await call("classAnswer", "coach", { requestId: moveId, accept: true })).status, 409)
 assert.deepEqual(at(3, 9.5).roster, [])
 assert.deepEqual(at(2, 9.5).roster, ["ana"])
 

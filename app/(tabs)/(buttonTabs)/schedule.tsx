@@ -1,24 +1,23 @@
 import { useAuth } from "@/components/auth-context"
-import { ScreenGradient } from "@/components/ScreenGradient"
+
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
 import { FeatureIntro, IntroButton, useIntroSeen } from "@/components/schedule/FeatureIntro"
 import { UsualSetup } from "@/components/schedule/UsualSetup"
 import { GridBlock, HOUR_HEIGHT, Tone, WeekGrid } from "@/components/schedule/WeekGrid"
 import {
-  DAYS_LONG, DetailRow, Legend, OpenSpot, PersonRow, RepeatChoice, WeekSwitch, longDay, monthTitle,
+  CalendarHeader, DAYS_LONG, Legend, OpenSpot, PersonRow, RepeatChoice, longDay, monthName,
 } from "@/components/schedule/CalendarBits"
-import { SubScreenHeader } from "@/components/SubScreenHeader"
 import {
-  AddClassProblem, CAPACITY, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classDate, classLabel, formatTime,
+  AddClassProblem, CAPACITY, MAX_CARRY, WEEK_DAYS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, GymClass, athleteWeek, busyDays, classDate, classLabel, formatTime,
   classesToJoin, headcount, missingUsual, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, usualFits, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
 import { cancelExtra, changeClass, joinClass, refreshClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
 import { setFixedAnswer, useFixedAnswer } from "@/utils/fixedScheduleAnswer"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { C } from "@/utils/theme"
+import { K as C, KF } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
-import { useFocusEffect } from "expo-router"
+import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -44,6 +43,7 @@ export default function ScheduleScreen() {
   const { userName } = useAuth()
   const me = userName || "you"
   const st = useClassSchedule()
+  const router = useRouter()
   useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
   // From Saturday, once the coach has published next week, it opens on that one.
   const [pick, setPick] = useState<"this" | "next" | null>(null)
@@ -61,12 +61,12 @@ export default function ScheduleScreen() {
   // Still finding out whether to show it: hold the intro pop-up back meanwhile.
   const deciding = !st.defaults.length && (st.status !== "ready" || answer === undefined)
   const introSeen = useIntroSeen("class-week-v3")
-  const [sheet, setSheet] = useState<{ kind: "class" | "cant"; id: string } | null>(null)
+  const [sheet, setSheet] = useState<{ kind: "class"; id: string } | { kind: "book" } | null>(null)
+  // Move mode: the class picked to move to, confirmed with the bottom button.
+  const [moveTo, setMoveTo] = useState<string | null>(null)
   // The time picked for a proposal, still to be adjusted and sent.
   const [draft, setDraft] = useState<{ day: number; start: number } | null>(null)
 
-  const cantId = sheet?.kind === "cant" ? sheet.id : null
-  const cantClass = cantId ? wk.classes.find((c) => c.id === cantId) ?? null : null
   const entryFor = (id: string) => week.find((e) => e.cls.id === id)
   const started = (c: { day: number; start: number }) => !!wk.weekStart && classDate(wk.weekStart, c).getTime() <= Date.now()
   const fits = (c: { day: number; start: number }, except?: string) => !started(c) && restDayOk(busyDays(week, except), c.day)
@@ -110,13 +110,36 @@ export default function ScheduleScreen() {
     setEditing(false)
   }
 
+  const movingFrom = mode?.kind === "move" ? mode.from : null
+  const validTarget = (c: GymClass) => !!movingFrom && !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c, movingFrom)
   const toneFor = (c: GymClass): Tone => {
+    if (movingFrom) {
+      if (c.id === moveTo) return "new"
+      if (c.id === movingFrom) return "skip"
+      if (validTarget(c)) return "pick"
+    }
     const e = entryFor(c.id)
     if (e) return e.state === "skip" ? "skip" : e.state === "pending" ? "pending" : "mine"
     if (headcount(c, week) >= CAPACITY) return "full"
-    if (mode?.kind === "move") return fits(c, mode.from) ? "pick" : "other"
     return !mode && fits(c) ? "open" : "other"
   }
+  // What a block says, first line first (spec: state word, then time).
+  const blockLines = (c: GymClass, tone: Tone): string[] => {
+    const time = formatTime(c.start)
+    const free = CAPACITY - headcount(c, week)
+    if (tone === "new") return ["New", time]
+    if (movingFrom && c.id === movingFrom) return ["From", time]
+    if (tone === "mine") return ["You", time, ...(st.defaults.includes(slotKey(c)) ? ["·Fixed"] : []), ...c.roster]
+    if (tone === "pending") return ["Pending", time]
+    if (tone === "skip") return ["Not going", time]
+    if (tone === "full") return ["Full", time, ...c.roster]
+    if (tone === "open" || tone === "pick") return ["Open", time, `·${free} left`, ...c.roster]
+    return [time, ...c.roster]
+  }
+  const blockLabel = (c: GymClass, tone: Tone) =>
+    `${longDay(dates, c.day)}, ${formatTime(c.start)} to ${formatTime(c.start + CLASS_HOURS)}, ${
+      tone === "mine" ? "your class" : tone === "full" ? "full" : tone === "pending" ? "waiting for your coach" : `${CAPACITY - headcount(c, week)} spots left`
+    }, ${headcount(c, week)} of ${CAPACITY} booked`
 
   const renderDay = (day: number) => (
     <>
@@ -127,25 +150,24 @@ export default function ScheduleScreen() {
           start={b.all ? GRID_START : b.start}
           hours={b.all ? GRID_END - GRID_START : b.end - b.start}
           tone="blocked"
-          text="No classes"
+          text="BLOCKED"
+          label="Coach away"
         />
       ))}
       {wk.classes.filter((c) => c.day === day).map((c) => {
-        const e = entryFor(c.id)
-        const names = [...(e && e.state !== "skip" ? ["You"] : []), ...c.roster]
         const tone = toneFor(c)
-        const free = CAPACITY - headcount(c, week)
         return (
           <GridBlock
             key={c.id}
             start={c.start}
             tone={tone}
-            text={[
-              formatTime(c.start),
-              ...names,
-              ...(tone === "open" || tone === "pick" ? [`·${free} free`] : tone === "full" ? ["·Full"] : []),
-            ].join("\n")}
-            onPress={() => setSheet({ kind: "class", id: c.id })}
+            text={blockLines(c, tone).join("\n")}
+            label={blockLabel(c, tone)}
+            faded={!!movingFrom && tone !== "pick" && tone !== "new" && c.id !== movingFrom}
+            onPress={() => {
+              if (!movingFrom) return setSheet({ kind: "class", id: c.id })
+              if (validTarget(c)) setMoveTo(c.id)
+            }}
           />
         )
       })}
@@ -154,7 +176,7 @@ export default function ScheduleScreen() {
           key={e.cls.id}
           start={e.cls.start}
           tone="pending"
-          text={`${formatTime(e.cls.start)}\nYou\n·proposed`}
+          text={`Pending\n${formatTime(e.cls.start)}\n·proposed`}
           onPress={() => e.from && setSheet({ kind: "class", id: e.from })}
         />
       ))}
@@ -163,7 +185,6 @@ export default function ScheduleScreen() {
   )
 
   const proposingFrom = mode?.kind === "propose" ? mode.from : null
-  const movingFrom = mode?.kind === "move" ? mode.from : null
   // Days a new time can go to: a rest day around the others, and fewer than
   // 2 classes that day (a third is the coach's call; pick an existing class).
   const daysFor = (from: string) =>
@@ -190,14 +211,28 @@ export default function ScheduleScreen() {
       Alert.alert("Proposal sent", `${classLabel(sent)}. Your coach answers before the class.`)
     }
   }
-  // The "I can't go" options that still have somewhere to go.
-  const canMove = !!cantId && wk.classes.some((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c, cantId))
-  const canPropose = !!cantId && daysFor(cantId).length > 0
+  // Where one of your classes can go: an open class, or a new time.
+  const canMoveFrom = (id: string) => wk.classes.some((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c, id))
+  const canProposeFrom = (id: string) => daysFor(id).length > 0
+  const exitMode = () => { setMode(null); setDraft(null); setMoveTo(null) }
+  const moveFromClass = movingFrom ? wk.classes.find((c) => c.id === movingFrom) ?? null : null
+  const moveToClass = moveTo ? wk.classes.find((c) => c.id === moveTo) ?? null : null
+  const confirmMove = async () => {
+    if (!movingFrom || !moveToClass) return
+    const to = moveToClass
+    exitMode()
+    if (await changeClass(movingFrom, { status: "move", to: to.id })) {
+      Alert.alert("Moved", `You're in ${longDay(dates, to.day)} at ${formatTime(to.start)}. This week only, your usual classes stay.`)
+    }
+  }
+  const openToBook = wk.classes.filter((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c))
+  const booked = week.filter((e) => e.state === "on").length
+  const pendingN = week.filter((e) => e.state === "pending").length
   const usualText = st.defaults.map((k) => parseSlot(k)).filter(Boolean).map((c) => classLabel(c!)).join(" · ")
-  const openCount = wk.classes.filter((c) => !entryFor(c.id) && headcount(c, week) < CAPACITY && fits(c)).length
+  const openCount = openToBook.length
 
   return (
-    <ScreenGradient>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         {!setup && !deciding && <FeatureIntro
           id="class-week-v3"
@@ -206,10 +241,18 @@ export default function ScheduleScreen() {
             { icon: "calendar", title: "Can't go? Tap your class", text: "Your classes are solid green. Tap one and choose I can't go: move to another class, propose a time, or skip this week." },
           ]}
         />}
-        <SubScreenHeader
-          title={monthTitle(dates)}
-          subtitle={st.pkg ? `${st.pkg.left} sessions left · use by ${st.pkg.useBy}` : "No package yet. Ask your coach."}
+        <CalendarHeader
+          title={monthName(dates)}
+          onBack={() => router.back()}
+          week={nextWeek ? "next" : "this"}
+          canNext={!!st.nextWeek}
+          onWeek={(w) => { setPick(w); exitMode() }}
           right={setup ? undefined : <IntroButton id="class-week-v3" />}
+          summary={[
+            `${booked} booked`,
+            ...(pendingN ? [`${pendingN} pending`] : []),
+            st.pkg ? `${st.pkg.left} sessions left` : "No package",
+          ].join(" · ")}
         />
         {setup ? (
           <UsualSetup
@@ -223,11 +266,6 @@ export default function ScheduleScreen() {
           />
         ) : (<>
         <View style={s.top}>
-          <WeekSwitch
-            value={nextWeek ? "next" : "this"}
-            onChange={(w) => { setPick(w); setMode(null); setDraft(null) }}
-            nextNote={st.nextWeek ? null : "Not published yet"}
-          />
           {st.status !== "ready" ? (
             st.status === "error"
               ? <Pressable onPress={() => refreshClassSchedule()}><Text style={s.note}>Couldn&apos;t load the classes. Tap to try again.</Text></Pressable>
@@ -236,10 +274,11 @@ export default function ScheduleScreen() {
             <Text style={s.note}>Your coach hasn&apos;t published this week&apos;s classes yet.</Text>
           ) : mode ? (
             <View style={s.banner}>
+              <Text style={s.bannerTitle}>{mode.kind === "move" ? "MOVE CLASS" : "PROPOSE A TIME"}</Text>
               <Text style={s.bannerText}>
-                {mode.kind === "move" ? "Tap a class with the yellow border to move there" : "Tap a bright day near the time you want"}
+                {mode.kind === "move" ? "Tap a class with a dashed mint outline. This week only, your usual classes stay." : "Tap a bright day near the time you want. Your coach confirms; you keep your class until then."}
               </Text>
-              <Pressable hitSlop={8} onPress={() => { setMode(null); setDraft(null) }}>
+              <Pressable hitSlop={8} onPress={exitMode}>
                 <Text style={s.bannerCancel}>Cancel</Text>
               </Pressable>
             </View>
@@ -251,7 +290,7 @@ export default function ScheduleScreen() {
                 <Text style={s.welcomeTitle}>{openCount ? "Pick your classes" : "No free spots left"}</Text>
                 <Text style={s.welcomeText}>
                   {openCount
-                    ? `Tap a class with a green bar (${openCount} with free spots) and press Join.`
+                    ? `Tap a class that says Open (${openCount} this week) and press Join, or use the + button.`
                     : "Every class this week is full or too close to another. Ask your coach."}
                 </Text>
               </View>
@@ -268,7 +307,6 @@ export default function ScheduleScreen() {
               </Pressable>
             </View>
           )}
-          <Legend keys={["mine", "open", "full", "pending"]} />
         </View>
         <WeekGrid
           dates={dates}
@@ -279,8 +317,51 @@ export default function ScheduleScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        {movingFrom ? (
+          <View style={s.moveBar}>
+            <View style={s.fromTo}>
+              <View style={[s.ft, s.ftFrom]}>
+                <Text style={s.ftLabel}>FROM</Text>
+                <Text style={s.ftText}>{moveFromClass ? `${WEEK_DAYS[moveFromClass.day]} ${dates[moveFromClass.day].getDate()} · ${formatTime(moveFromClass.start)}` : "–"}</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={16} color={C.textMuted} />
+              <View style={[s.ft, s.ftTo, moveToClass && { borderStyle: "solid" }]}>
+                <Text style={s.ftLabel}>TO</Text>
+                <Text style={s.ftText}>{moveToClass ? `${WEEK_DAYS[moveToClass.day]} ${dates[moveToClass.day].getDate()} · ${formatTime(moveToClass.start)}` : "Pick a class"}</Text>
+              </View>
+            </View>
+            <SheetButton
+              label={moveToClass ? `Move to ${WEEK_DAYS[moveToClass.day]} ${dates[moveToClass.day].getDate()} · ${formatTime(moveToClass.start)}` : "Pick a class to move to"}
+              disabled={!moveToClass || st.busy}
+              onPress={confirmMove}
+            />
+          </View>
+        ) : (
+          <Legend keys={["mine", "open", "full", "pending", "blocked"]} />
+        )}
         </>)}
       </SafeAreaView>
+
+      {/* Book an open class (Google Calendar's "+"). */}
+      {!setup && !mode && wk.published && st.status === "ready" && (
+        <Pressable style={s.fab} onPress={() => setSheet({ kind: "book" })} accessibilityLabel="Book an open class">
+          <Ionicons name="add" size={30} color={C.onMint} />
+        </Pressable>
+      )}
+      <Sheet visible={sheet?.kind === "book"} title="Book an open class" subtitle="Classes with a free spot that leave a rest day around yours." onClose={() => setSheet(null)}>
+        {openToBook.length ? openToBook.map((c) => (
+          <SheetOption
+            key={c.id}
+            title={`${longDay(dates, c.day)} · ${formatTime(c.start)} – ${formatTime(c.start + CLASS_HOURS)}`}
+            detail={`${CAPACITY - headcount(c, week)} of ${CAPACITY} spots left${c.roster.length ? ` · ${c.roster.join(", ")}` : ""}`}
+            onPress={() => {
+              setSheet(null)
+              // iOS won't present a sheet while the previous one is still closing.
+              setTimeout(() => setSheet({ kind: "class", id: c.id }), 400)
+            }}
+          />
+        )) : <Text style={s.lead}>No open class fits this week. Ask your coach.</Text>}
+      </Sheet>
 
       <Sheet
         visible={showMissing && !setup}
@@ -313,55 +394,23 @@ export default function ScheduleScreen() {
         dates={dates}
         defaults={st.defaults}
         busy={st.busy}
-        mode={mode}
         started={started}
         changedAway={sheet?.kind === "class" && ["move", "propose"].includes(wk.changes[sheet.id]?.status ?? "")}
         fits={fits}
         onClose={() => setSheet(null)}
-        onCant={(id) => {
-          // iOS won't present a sheet while the previous one is still closing.
+        canMove={canMoveFrom}
+        canPropose={canProposeFrom}
+        onMove={(id) => { setSheet(null); setMoveTo(null); setMode({ kind: "move", from: id }) }}
+        onPropose={(id) => { setSheet(null); setMode({ kind: "propose", from: id }) }}
+        onSkip={(id) => {
           setSheet(null)
-          setTimeout(() => setSheet({ kind: "cant", id }), 400)
+          Alert.alert("Cancel just this class?", `Your spot goes to someone else. It moves to a later week, up to ${MAX_CARRY} per package; after that you lose it. Your coach is told.`, [
+            { text: "Keep it", style: "cancel" },
+            { text: "Cancel class", style: "destructive", onPress: () => { changeClass(id, { status: "skip" }) } },
+          ])
         }}
         onUndoSkip={(id) => { changeClass(id, null); setSheet(null) }}
-        onMoveHere={(to) => {
-          if (movingFrom) changeClass(movingFrom, { status: "move", to })
-          setMode(null)
-          setSheet(null)
-        }}
       />
-
-      <Sheet
-        visible={!!cantClass}
-        title={cantClass ? `Can't make ${classLabel(cantClass)}?` : ""}
-        onClose={() => setSheet(null)}
-      >
-        {cantId && (
-          <>
-            <Text style={s.warn}>
-              Let your coach know early: each class has {CAPACITY} spots, and yours can go to someone who can come.
-              Make it up this week, or move it to a later week (2 per package).
-            </Text>
-            <SheetOption
-              title="Move to another class"
-              detail={canMove ? "Your coach approves the change" : "No class left this week with a rest day around it"}
-              disabled={!canMove}
-              onPress={() => { setMode({ kind: "move", from: cantId }); setSheet(null) }}
-            />
-            <SheetOption
-              title="Propose another time"
-              detail={canPropose ? "If no class fits, your coach decides" : "No day left this week with room and a rest day around it"}
-              disabled={!canPropose}
-              onPress={() => { setMode({ kind: "propose", from: cantId }); setSheet(null) }}
-            />
-            <SheetOption
-              title="I won't go this week"
-              detail="It moves to a later week, up to 2 of your 8. After that you lose it. Your coach is told"
-              onPress={() => { changeClass(cantId, { status: "skip" }); setSheet(null) }}
-            />
-          </>
-        )}
-      </Sheet>
 
       <Sheet
         visible={!!draft}
@@ -394,12 +443,12 @@ export default function ScheduleScreen() {
           </>
         )}
       </Sheet>
-    </ScreenGradient>
+    </View>
   )
 }
 
 function ClassSheet({
-  cls, me, week, dates, defaults, busy, mode, started, changedAway, fits, onClose, onCant, onUndoSkip, onMoveHere,
+  cls, me, week, dates, defaults, busy, started, changedAway, fits, canMove, canPropose, onClose, onMove, onPropose, onSkip, onUndoSkip,
 }: {
   cls: GymClass | null
   me: string
@@ -407,14 +456,16 @@ function ClassSheet({
   dates: Date[]
   defaults: string[]
   busy: boolean
-  mode: Mode
   started: (c: GymClass) => boolean
   changedAway: boolean // the athlete asked to move this class somewhere else
   fits: (c: GymClass, except?: string) => boolean
+  canMove: (id: string) => boolean
+  canPropose: (id: string) => boolean
   onClose: () => void
-  onCant: (id: string) => void
+  onMove: (id: string) => void
+  onPropose: (id: string) => void
+  onSkip: (id: string) => void
   onUndoSkip: (id: string) => void
-  onMoveHere: (id: string) => void
 }) {
   // Join: just this week or every week. Every week by default for someone
   // with no usual classes yet (a new athlete).
@@ -436,9 +487,17 @@ function ClassSheet({
   } else if (e?.extra) {
     actions = <SheetButton kind="red" label={e.state === "pending" ? "Cancel request" : "Cancel extra class"} onPress={() => { cancelExtra(); close() }} />
   } else if (e?.state === "on") {
+    // Spec A6: three equal tiles. Move is instant into an open class;
+    // Propose waits for the coach; Cancel is this class only.
+    const mv = canMove(cls.id)
+    const pr = canPropose(cls.id)
     actions = (
       <>
-        <SheetButton kind="red" label="I can't go" onPress={() => { setEvery(null); onCant(cls.id) }} />
+        <View style={s.tiles}>
+          <Tile icon="swap-horizontal" title="Move" text={mv ? "This week only, to an open class" : "No open class fits"} primary disabled={!mv} onPress={() => { setEvery(null); onMove(cls.id) }} />
+          <Tile icon="time-outline" title="Propose" text={pr ? "Suggest a time, coach confirms" : "No day left with room"} disabled={!pr} onPress={() => { setEvery(null); onPropose(cls.id) }} />
+          <Tile icon="close-circle-outline" title="Cancel" text="Just this class" onPress={() => { setEvery(null); onSkip(cls.id) }} />
+        </View>
         {usual && <SheetButton kind="line" label="Stop repeating every week" onPress={() => { stopUsual(cls); close() }} />}
       </>
     )
@@ -458,16 +517,8 @@ function ClassSheet({
     )
   } else if (e?.state === "skip") {
     actions = <SheetButton kind="line" label="I can go after all" onPress={() => onUndoSkip(cls.id)} />
-  } else if (mode?.kind === "move") {
-    const ok = !full && fits(cls, mode.from)
-    actions = (
-      <>
-        <SheetButton label="Move here" disabled={!ok} onPress={() => onMoveHere(cls.id)} />
-        {!ok && <Text style={s.hint}>{full ? "This class is full." : "Leave a rest day between classes."}</Text>}
-      </>
-    )
   } else if (full) {
-    actions = <Text style={s.note}>This class is full. Pick another one with a green bar.</Text>
+    actions = <Text style={s.note}>This class is full. Pick one that says Open, or ask your coach.</Text>
   } else if (!fits(cls)) {
     actions = <Text style={s.hint}>You have a class the day before or after. Leave a rest day between classes.</Text>
   } else {
@@ -490,13 +541,18 @@ function ClassSheet({
     )
   }
   return (
-    <Sheet visible title={longDay(dates, cls.day)} onClose={close}>
-      <DetailRow icon="time-outline" text={`${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}`} sub={usual ? "Repeats every week" : undefined} />
-      <DetailRow
-        icon="people-outline"
-        text={`${count} of ${CAPACITY} climbers`}
-        sub={full ? "Full" : `${CAPACITY - count} free spot${CAPACITY - count === 1 ? "" : "s"}`}
-      />
+    <Sheet
+      visible
+      eyebrow={inIt ? (usual ? "Your fixed class" : "Your class") : full ? "Full" : "Open class"}
+      poster={`${WEEK_DAYS[cls.day].toUpperCase()} ${formatTime(cls.start)}`}
+      title={longDay(dates, cls.day)}
+      onClose={close}
+    >
+      <View style={s.chips}>
+        <Chip text={`${formatTime(cls.start)}–${formatTime(cls.start + CLASS_HOURS)}`} />
+        {usual && <Chip text="Repeats every week" />}
+        <Chip text={full ? "Full" : `${count}/${CAPACITY}`} />
+      </View>
       <View>
         {inIt && <PersonRow name={me} you />}
         {cls.roster.map((u, i) => <PersonRow key={`${u}${i}`} name={u} />)}
@@ -507,31 +563,69 @@ function ClassSheet({
   )
 }
 
+function Tile({
+  icon, title, text, primary, disabled, onPress,
+}: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [s.tile, primary && s.tilePrimary, disabled && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+    >
+      <Ionicons name={icon} size={22} color={primary ? C.green : C.textPrimary} />
+      <Text style={s.tileTitle}>{title}</Text>
+      <Text style={s.tileText}>{text}</Text>
+    </Pressable>
+  )
+}
+
+const Chip = ({ text }: { text: string }) => <View style={s.chip}><Text style={s.chipText}>{text}</Text></View>
+
 const s = StyleSheet.create({
+  tiles: { flexDirection: "row", gap: 8 },
+  tile: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surfaceHigh, padding: 12, gap: 4, minHeight: 112 },
+  tilePrimary: { borderColor: C.green, backgroundColor: "rgba(138,214,162,0.08)" },
+  tileTitle: { fontFamily: KF.bold, fontSize: 15, color: C.textPrimary },
+  tileText: { fontFamily: KF.body, fontSize: 11.5, color: C.textSecondary, lineHeight: 15 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: { borderRadius: 10, borderWidth: 1, borderColor: C.border, paddingHorizontal: 9, paddingVertical: 4 },
+  chipText: { fontFamily: KF.mono, fontSize: 11, color: C.textSecondary },
+  fab: {
+    position: "absolute", right: 18, bottom: 84, width: 58, height: 58, borderRadius: 18, backgroundColor: C.green,
+    alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+  },
+  moveBar: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
+  fromTo: { flexDirection: "row", alignItems: "center", gap: 8 },
+  ft: { flex: 1, borderRadius: 12, borderWidth: 1.5, borderStyle: "dashed", paddingHorizontal: 10, paddingVertical: 6 },
+  ftFrom: { borderColor: C.textMuted },
+  ftTo: { borderColor: C.green },
+  ftLabel: { fontFamily: KF.mono, fontSize: 9.5, color: C.textMuted },
+  ftText: { fontFamily: KF.bold, fontSize: 13, color: C.textPrimary },
   top: { paddingHorizontal: 16, gap: 10, marginBottom: 10 },
   welcome: {
     flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, padding: 14,
-    backgroundColor: "rgba(111,207,151,0.10)", borderWidth: 1, borderColor: "rgba(111,207,151,0.35)",
+    backgroundColor: "rgba(138,214,162,0.10)", borderWidth: 1, borderColor: "rgba(138,214,162,0.35)",
   },
   welcomeTitle: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
   welcomeText: { fontSize: 13.5, color: C.textSecondary, marginTop: 2, lineHeight: 19 },
   usual: { flex: 1, fontSize: 14, color: C.textPrimary, fontWeight: "600" },
   usualRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   pill: {
-    flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "rgba(111,207,151,0.45)",
-    backgroundColor: "rgba(111,207,151,0.10)", borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12,
+    flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "rgba(138,214,162,0.45)",
+    backgroundColor: "rgba(138,214,162,0.10)", borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12,
   },
   pillText: { color: C.green, fontSize: 13, fontWeight: "800" },
   lead: { fontSize: 14, color: C.textPrimary, lineHeight: 20 },
   banner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
-    backgroundColor: "rgba(254,215,102,0.10)", borderWidth: 1, borderColor: "rgba(254,215,102,0.35)",
+    backgroundColor: "rgba(138,214,162,0.10)", borderWidth: 1, borderColor: "rgba(138,214,162,0.35)",
     borderRadius: 12, padding: 12,
   },
+  bannerTitle: { fontFamily: KF.poster, fontSize: 22, color: C.textPrimary, letterSpacing: -0.3 },
   bannerText: { flex: 1, color: C.yellow, fontSize: 13, fontWeight: "600" },
   bannerCancel: { color: C.textSecondary, fontSize: 13, fontWeight: "700" },
   warn: {
-    fontSize: 13, lineHeight: 19, color: C.yellow, backgroundColor: "rgba(254,215,102,0.08)",
+    fontSize: 13, lineHeight: 19, color: C.yellow, backgroundColor: "rgba(138,214,162,0.08)",
     borderRadius: 12, padding: 12, overflow: "hidden",
   },
   note: { fontSize: 13, color: C.textSecondary, fontWeight: "600" },

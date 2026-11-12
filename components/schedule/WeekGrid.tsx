@@ -1,5 +1,5 @@
 import { CLASS_HOURS, GRID_END, GRID_START, formatTime } from "@/utils/classSchedule"
-import { C } from "@/utils/theme"
+import { K as C, KF } from "@/components/schedule/calTheme"
 import * as Haptics from "expo-haptics"
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 // RefreshControl from gesture-handler: the react-native one never fires inside its ScrollView.
@@ -16,7 +16,10 @@ const LETTERS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 export const BIG_SCREEN = 700
 const Big = createContext(false)
 
-// Hours from midnight now, updated every minute (the red "now" line).
+// "7 AM", "12 PM", "6 PM" (Google Calendar's gutter).
+export const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? "AM" : "PM"}`
+
+// Hours from midnight now, updated every minute (the mint "now" line).
 function useNowHours(): number {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
@@ -74,7 +77,7 @@ export function WeekGrid({
             <Pressable key={i} style={s.head} disabled={!onPressDay} onPress={() => onPressDay?.(i)}>
               <Text style={[s.letter, big && { fontSize: 12 }, isToday && { color: C.green }]}>{big ? LETTERS[i] : LETTERS[i][0]}</Text>
               <View style={[s.num, big && s.numBig, isToday && s.numToday]}>
-                <Text style={[s.numText, big && { fontSize: 22 }, isToday && s.numTextToday, off && s.numOff]}>{d.getDate()}</Text>
+                <Text style={[s.numText, big && { fontSize: 22 }, dimPast && i < today && { color: C.past }, isToday && s.numTextToday, off && s.numOff]}>{d.getDate()}</Text>
               </View>
             </Pressable>
           )
@@ -90,7 +93,7 @@ export function WeekGrid({
         <View style={[s.body, { height: HOURS.length * hh }]}>
           <View style={[s.gutter, big && { width: 52 }]}>
             {HOURS.slice(1).map((h) => (
-              <Text key={h} style={[s.hour, big && { fontSize: 12 }, { top: (h - GRID_START) * hh - 7 }]}>{h}:00</Text>
+              <Text key={h} style={[s.hour, big && { fontSize: 12 }, { top: (h - GRID_START) * hh - 7 }]}>{hourLabel(h)}</Text>
             ))}
           </View>
           {dates.map((_, day) => (
@@ -124,21 +127,53 @@ export function WeekGrid({
   )
 }
 
-export type Tone = "mine" | "open" | "other" | "full" | "pending" | "skip" | "pick" | "blocked"
+export type Tone = "mine" | "open" | "other" | "full" | "pending" | "skip" | "pick" | "new" | "blocked"
+
+// Diagonal hatch (full classes, blocked time): thin rotated lines, clipped.
+function Hatch({ strong }: { strong?: boolean }) {
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+      {Array.from({ length: 24 }, (_, i) => (
+        <View
+          key={i}
+          style={{
+            position: "absolute", top: -40, left: i * 9 - 60, width: 4, height: 600,
+            backgroundColor: strong ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.04)",
+            transform: [{ rotate: "45deg" }],
+          }}
+        />
+      ))}
+    </View>
+  )
+}
+
+// Seat dots: one per spot, filled when taken.
+function Seats({ booked, cap, tone }: { booked: number; cap: number; tone: Tone }) {
+  const on = tone === "mine" || tone === "new" ? C.onMint : C.textPrimary
+  return (
+    <View style={s.seats}>
+      {Array.from({ length: cap }, (_, i) => (
+        <View key={i} style={[s.seat, { borderColor: on }, i < booked && { backgroundColor: on }]} />
+      ))}
+    </View>
+  )
+}
 
 // What a block says: a bold first line (the time), then one line per name
 // or note. Old callers pass `text` with "\n" between lines.
-function BlockText({ text, tone, hours }: { text: string; tone: Tone; hours: number }) {
+function BlockText({ text, tone, hours, seats }: { text: string; tone: Tone; hours: number; seats?: { booked: number; cap: number } }) {
   const big = useContext(Big)
   const hh = useContext(HourHeight)
   const [first, ...rest] = text.split("\n")
   const size = big ? 13 : 10
   const lineH = size + 3
   // As many lines as fit in the block.
-  const room = Math.max(0, Math.floor((hours * hh - 8) / lineH) - 1)
+  const room = Math.max(0, Math.floor((hours * hh - 8 - (seats ? 10 : 0)) / lineH) - 1)
   return (
     <>
-      <Text numberOfLines={1} style={[s.blockTitle, { fontSize: size, lineHeight: lineH }, toneText[tone]]}>{first}</Text>
+      {(tone === "full" || tone === "blocked") && <Hatch strong={tone === "full"} />}
+      <Text numberOfLines={1} style={[s.blockTitle, { fontSize: size + 1, lineHeight: lineH + 1 }, toneText[tone]]}>{first}</Text>
+      {seats && <Seats {...seats} tone={tone} />}
       {rest.slice(0, room).map((l, i) => (
         <Text key={i} numberOfLines={1} style={[s.blockText, { fontSize: size - 1, lineHeight: lineH }, toneText[tone], l.startsWith("·") && s.blockNote]}>
           {l.replace(/^·/, "")}
@@ -157,6 +192,10 @@ export function GridBlock({
   hours = CLASS_HOURS,
   tone,
   text,
+  label,
+  tag,
+  seats,
+  faded,
   onPress,
   onDrop,
   onResize,
@@ -165,21 +204,42 @@ export function GridBlock({
   hours?: number
   tone: Tone
   text: string
+  label?: string                         // screen readers: the whole block in words
+  tag?: string                           // small mint pill top-right, e.g. "1 req"
+  seats?: { booked: number; cap: number } // seat dots under the title
+  faded?: boolean                        // not a choice right now (move mode)
   onPress?: () => void
   onDrop?: (days: number, hours: number) => void
   onResize?: (start: number, end: number) => void
 }) {
   const hh = useContext(HourHeight)
-  if (onDrop) return <DraggableBlock start={start} hours={hours} tone={tone} text={text} onPress={onPress} onDrop={onDrop} onResize={onResize} />
+  const extras = (
+    <>
+      {tag ? <View style={s.tag}><Text style={s.tagText}>{tag}</Text></View> : null}
+    </>
+  )
+  if (onDrop) {
+    return (
+      <DraggableBlock start={start} hours={hours} tone={tone} text={text} seats={seats} label={label} onPress={onPress} onDrop={onDrop} onResize={onResize}>
+        {extras}
+      </DraggableBlock>
+    )
+  }
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={label}
       // Without an action, taps go through to the day column (e.g. to pick a time).
       pointerEvents={onPress ? "auto" : "none"}
-      style={({ pressed }) => [s.block, tones[tone], { top: (start - GRID_START) * hh + 1, height: hours * hh - 3 }, pressed && { opacity: 0.75 }]}
+      style={({ pressed }) => [
+        s.block, tones[tone], { top: (start - GRID_START) * hh + 1, height: hours * hh - 3 },
+        faded && { opacity: 0.25 }, pressed && { opacity: 0.75 },
+      ]}
     >
-      <BlockText text={text} tone={tone} hours={hours} />
+      <BlockText text={text} tone={tone} hours={hours} seats={seats} />
+      {extras}
     </Pressable>
   )
 }
@@ -187,12 +247,15 @@ export function GridBlock({
 export const blockTime = (start: number) => formatTime(start)
 
 function DraggableBlock({
-  start, hours, tone, text, onPress, onDrop, onResize,
+  start, hours, tone, text, seats, label, children, onPress, onDrop, onResize,
 }: {
   start: number
   hours: number
   tone: Tone
   text: string
+  seats?: { booked: number; cap: number }
+  label?: string
+  children?: React.ReactNode
   onPress?: () => void
   onDrop: (days: number, hours: number) => void
   onResize?: (start: number, end: number) => void
@@ -295,6 +358,9 @@ function DraggableBlock({
           onLayout={(e) => { colWidth.current = e.nativeEvent.layout.width + 2 }}
           // Keep the tap from also reaching the day column underneath.
           onStartShouldSetResponder={() => true}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={label}
           style={[
             s.block, tones[tone], { top, height },
             onResize && { paddingTop: 12 },
@@ -305,8 +371,10 @@ function DraggableBlock({
           <BlockText
             tone={tone}
             hours={shownHours}
+            seats={drag || resize ? undefined : seats}
             text={drag ? formatTime(start + drag.hours) : resize ? `${formatTime(resize.start)}\n${formatTime(resize.end)}` : text}
           />
+          {!drag && !resize && children}
         </View>
       </GestureDetector>
       {/* Siblings on top of the block, not inside it, so a touch on an edge
@@ -325,25 +393,27 @@ function DraggableBlock({
   )
 }
 
+// Event states (spec §5.2): never colour alone, each also says what it is.
 const tones = StyleSheet.create({
   mine: { backgroundColor: C.green },
-  // A class with a free spot the athlete can join: Google-Calendar style bar on the left.
-  open: { backgroundColor: "rgba(111,207,151,0.14)", borderLeftWidth: 3, borderLeftColor: C.green },
-  other: { backgroundColor: "#2F3A35" },
-  full: { backgroundColor: "#26282A", borderWidth: 1, borderColor: C.border },
-  pending: { backgroundColor: C.yellow },
-  skip: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border },
-  pick: { backgroundColor: "#2F3A35", borderWidth: 2, borderColor: C.yellow },
-  blocked: { backgroundColor: "#202224", borderWidth: 1, borderColor: C.border, borderStyle: "dashed" },
+  open: { backgroundColor: C.openBg, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" },
+  other: { backgroundColor: C.surfaceHigh, borderWidth: 1, borderColor: C.border },
+  full: { backgroundColor: "#1B1821", borderWidth: 1, borderColor: C.border },
+  pending: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: C.green, borderStyle: "dashed" },
+  skip: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: C.textMuted, borderStyle: "dashed" },
+  pick: { backgroundColor: C.openBg, borderWidth: 2, borderColor: C.green, borderStyle: "dashed" },
+  new: { backgroundColor: C.green, borderWidth: 2, borderColor: C.textPrimary },
+  blocked: { backgroundColor: "#141118", borderWidth: 1, borderColor: C.border },
 })
 const toneText = StyleSheet.create({
-  mine: { color: "#10251A" },
+  mine: { color: C.onMint },
   open: { color: C.textPrimary },
   other: { color: C.textSecondary },
-  full: { color: C.textSecondary },
-  pending: { color: "#3A2E00" },
+  full: { color: C.textMuted },
+  pending: { color: C.green },
   skip: { color: C.textMuted, textDecorationLine: "line-through" },
   pick: { color: C.textPrimary },
+  new: { color: C.onMint },
   blocked: { color: C.textMuted },
 })
 
@@ -352,24 +422,28 @@ const s = StyleSheet.create({
   heads: { flexDirection: "row", paddingLeft: 12, paddingRight: 6, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   gutter: { width: 34 },
   head: { flex: 1, alignItems: "center", gap: 2 },
-  letter: { fontSize: 11, fontWeight: "700", color: C.textSecondary, letterSpacing: 0.4 },
+  letter: { fontFamily: KF.mono, fontSize: 10.5, color: C.label, letterSpacing: 0.6 },
   num: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   numBig: { width: 40, height: 40, borderRadius: 20 },
   numToday: { backgroundColor: C.green },
-  numText: { fontSize: 17, fontWeight: "500", color: C.textSecondary, fontVariant: ["tabular-nums"] },
-  numTextToday: { color: "#10251A", fontWeight: "800" },
+  numText: { fontFamily: KF.title, fontSize: 18, color: C.textPrimary, fontVariant: ["tabular-nums"] },
+  numTextToday: { color: C.onMint },
   numOff: { textDecorationLine: "line-through", color: C.textMuted },
   body: { flexDirection: "row", paddingLeft: 12, paddingRight: 6 },
-  hour: { position: "absolute", right: 4, fontSize: 10, fontWeight: "600", color: C.textSecondary, fontVariant: ["tabular-nums"] },
+  hour: { position: "absolute", right: 4, fontFamily: KF.mono, fontSize: 8.5, color: C.textMuted },
   col: { flex: 1, borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.05)" },
   line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.07)" },
-  now: { position: "absolute", left: -1, right: 0, height: 2, backgroundColor: C.red, zIndex: 20 },
-  nowDot: { position: "absolute", left: -5, top: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: C.red },
+  now: { position: "absolute", left: -1, right: 0, height: 2, backgroundColor: C.green, zIndex: 20 },
+  nowDot: { position: "absolute", left: -5, top: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: C.green },
+  seats: { flexDirection: "row", gap: 3, marginTop: 2, marginBottom: 1 },
+  seat: { width: 6, height: 6, borderRadius: 3, borderWidth: 1 },
+  tag: { position: "absolute", top: 2, right: 2, backgroundColor: C.green, borderRadius: 6, paddingHorizontal: 3, paddingVertical: 1 },
+  tagText: { fontFamily: KF.mono, fontSize: 8.5, color: C.onMint },
   block: { position: "absolute", left: 1, right: 2, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 3, overflow: "hidden" },
   handle: { position: "absolute", left: 1, right: 1, height: HANDLE, alignItems: "center", justifyContent: "center" },
   grip: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.textMuted },
   dragging: { opacity: 0.9, borderWidth: 2, borderColor: C.green, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  blockTitle: { fontWeight: "800" },
-  blockText: { fontWeight: "600" },
+  blockTitle: { fontFamily: KF.bold },
+  blockText: { fontFamily: KF.body },
   blockNote: { opacity: 0.75, fontStyle: "italic" },
 })

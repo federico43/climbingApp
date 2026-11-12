@@ -1,18 +1,18 @@
-import { ScreenGradient } from "@/components/ScreenGradient"
+
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
 import { FeatureIntro, IntroButton } from "@/components/schedule/FeatureIntro"
 import { GridBlock, HOUR_HEIGHT, WeekGrid } from "@/components/schedule/WeekGrid"
 import { SettingsButton } from "@/components/SettingsButton"
-import { DetailRow, Legend, OpenSpot, PersonRow, WeekSwitch, longDay, monthTitle } from "@/components/schedule/CalendarBits"
+import { CalendarHeader, DetailRow, Legend, OpenSpot, PersonRow, longDay, monthName } from "@/components/schedule/CalendarBits"
 import {
   BlockedTime, CAPACITY, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  dateOf, formatTime, startFromOffset, weekDates, weekdayOf, ymd,
+  dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
   addAthletePackage, addNextClass, setClassRoster, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
-import { C } from "@/utils/theme"
+import { K as C, KF } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -112,13 +112,16 @@ export default function ClassesScreen() {
           <GridBlock
             key={c.id}
             start={c.start}
-            tone={joining(c).length || leaving(c).length ? "pick" : c.roster.length >= CAPACITY ? "full" : "open"}
+            tone={c.roster.length >= CAPACITY ? "full" : "open"}
+            seats={{ booked: c.roster.length, cap: CAPACITY }}
+            tag={joining(c).length + leaving(c).length ? `${joining(c).length + leaving(c).length} req` : undefined}
+            label={`${dayName(c.day)}, ${formatTime(c.start)} to ${formatTime(c.start + CLASS_HOURS)}, ${c.roster.length} of ${CAPACITY} booked${joining(c).length + leaving(c).length ? `, ${joining(c).length + leaving(c).length} requests` : ""}`}
             text={[
               formatTime(c.start),
+              // Sessions left next to each name: the coach's at-a-glance check.
               ...c.roster.map((n, i) => (c.ids?.[i] && st.left[c.ids[i]] ? `${n} ${st.left[c.ids[i]].left}` : n)),
               ...joining(c).map((r) => `·+${r.who}`),
               ...leaving(c).map((r) => `·−${r.who}`),
-              ...(c.roster.length < CAPACITY ? [`·${CAPACITY - c.roster.length} free`] : []),
             ].join("\n")}
             onPress={() => setSheet({ kind: "class", id: c.id })}
             onDrop={live ? undefined : (days, hours) => {
@@ -169,7 +172,7 @@ export default function ClassesScreen() {
   )
 
   return (
-    <ScreenGradient>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         <FeatureIntro
           id="coach-classes-v2"
@@ -177,24 +180,24 @@ export default function ClassesScreen() {
             { icon: "person-add", title: "Put athletes in classes", text: "Tap a class to see who's in it. Tap Add athlete on a free spot, or the × next to a name to take them out. They get a notification. Athletes can also join a class with a free spot themselves." },
             { icon: "calendar", title: "Plan next week", text: `Tap a free time to add a 2h 30m class. Hold a class and drag it to move it. Up to ${CLASSES_PER_DAY} classes a day, or ${MAX_CLASSES_PER_DAY} on ${MAX_BIG_DAYS} days of the week. Every Saturday we remind you to do it.` },
             { icon: "ban", title: "Block what you can't teach", text: "Tap a time to block it, or tap a day at the top to block all of it. Hold a blocked time to drag it, or pull its top or bottom edge to make it longer. Athletes can't propose times there." },
-            { icon: "chatbubbles", title: "Answer requests", text: "Athletes' requests show in yellow on the week: +name on the class they want, −name on the one they leave, and a yellow block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
+            { icon: "chatbubbles", title: "Answer requests", text: "Classes with requests get a mint req tag: +name on the class they want, −name on the one they leave, and a dashed block for a new time. Tap to accept or decline. Requests you don't answer before the class are declined." },
             { icon: "send", title: "Publish the week", text: "When it looks right, publish it and your athletes get a notification to confirm their classes." },
           ]}
         />
-        <View style={s.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.title}>{monthTitle(dates)}</Text>
-            <Text style={s.subtitle}>
-              {week === "this" && !st.thisWeek.published
-                ? "Not published yet · plan it now"
-                : "Tap a class to add athletes · tap a free time to add a class"}
-            </Text>
-          </View>
-          <IntroButton id="coach-classes-v2" />
-          <SettingsButton />
-        </View>
+        <CalendarHeader
+          title={monthName(dates)}
+          week={week}
+          canNext
+          onWeek={(w) => { setWeek(w); setSheet(null) }}
+          right={<><IntroButton id="coach-classes-v2" /><SettingsButton /></>}
+          summary={[
+            `${classes.length} classes`,
+            `${classes.reduce((n, c) => n + c.roster.length, 0)}/${classes.length * CAPACITY} spots`,
+            `${classes.filter((c) => c.roster.length >= CAPACITY).length} full`,
+            `${gridRequests.length} requests`,
+          ].join(" · ")}
+        />
         <View style={s.top}>
-          <WeekSwitch value={week} onChange={(w) => { setWeek(w); setSheet(null) }} />
           <Pressable style={s.pkgRow} onPress={() => { setPkgQuery(""); setSheet({ kind: "packages" }) }}>
             <Ionicons name="ticket-outline" size={18} color={C.textSecondary} />
             <Text style={[s.pkgRowText, { flex: 1 }]}>Sessions left</Text>
@@ -209,7 +212,6 @@ export default function ClassesScreen() {
               <Ionicons name="chevron-forward" size={16} color={C.yellow} />
             </Pressable>
           )}
-          <Legend keys={["open", "full", "request"]} />
         </View>
         <WeekGrid
           dates={dates}
@@ -224,8 +226,15 @@ export default function ClassesScreen() {
           onRefresh={refreshClassSchedule}
           renderDay={renderDay}
         />
+        <Legend keys={["open", "full", "request", "blocked"]} />
         {!live && (
           <View style={s.footer}>
+            {/* Draft until published: athletes see nothing of it. */}
+            <View style={[s.draftTag, st.published && s.draftTagOn]}>
+              <Text style={[s.draftText, st.published && { color: C.green }]}>
+                {st.published ? "Published" : (week === "this" ? st.thisWeek.published : !!st.nextWeek) ? "Changes not published" : "Draft · athletes can't see it"}
+              </Text>
+            </View>
             <SheetButton
               label={st.published ? "Published · athletes notified" : st.busy ? "Saving…" : week === "this" ? (st.thisWeek.published ? "Publish changes" : "Publish this week") : "Publish week"}
               disabled={st.published || st.busy || st.status !== "ready"}
@@ -292,6 +301,7 @@ export default function ClassesScreen() {
             <View>
               {cls.roster.map((n, i) => {
                 const id = cls.ids?.[i]
+                const fixed = !!id && !!st.athletes.find((a) => a.id === id)?.defaultClasses.includes(slotKey(cls))
                 const canEdit = !!id && !classStarted(cls)
                 return (
                   <PersonRow
@@ -299,6 +309,7 @@ export default function ClassesScreen() {
                     name={n}
                     sub={id ? leftText(id) : undefined}
                     subLow={leftLow(id)}
+                    tag={id ? (fixed ? "FIXED" : "DROP-IN") : undefined}
                     right={canEdit ? (
                       <Pressable
                         hitSlop={10}
@@ -509,7 +520,7 @@ export default function ClassesScreen() {
           }}
         />
       </Sheet>
-    </ScreenGradient>
+    </View>
   )
 }
 
@@ -531,7 +542,7 @@ const s = StyleSheet.create({
   top: { paddingHorizontal: 16, gap: 8, marginBottom: 10 },
   requests: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: "rgba(254,215,102,0.10)", borderWidth: 1, borderColor: "rgba(254,215,102,0.35)",
+    backgroundColor: "rgba(138,214,162,0.10)", borderWidth: 1, borderColor: "rgba(138,214,162,0.35)",
     borderRadius: 12, padding: 12,
   },
   requestsText: { color: C.yellow, fontSize: 14, fontWeight: "700" },
@@ -549,6 +560,9 @@ const s = StyleSheet.create({
   step: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 14 },
   stepValue: { minWidth: 70, textAlign: "center", fontSize: 15, fontWeight: "800", color: C.textPrimary },
   athlete: { borderTopWidth: 1, borderTopColor: C.border },
+  draftTag: { alignSelf: "center", borderWidth: 1, borderStyle: "dashed", borderColor: C.textMuted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
+  draftTagOn: { borderStyle: "solid", borderColor: C.green },
+  draftText: { fontFamily: KF.mono, fontSize: 10, color: C.label },
   footer: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
   names: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
   hint: { fontSize: 12, color: C.textSecondary, marginTop: -4 },
@@ -560,5 +574,5 @@ const s = StyleSheet.create({
   reqNo: { borderWidth: 1, borderColor: C.border },
   reqYes: { backgroundColor: C.green },
   reqNoText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
-  reqYesText: { fontSize: 13, fontWeight: "800", color: "#10251A" },
+  reqYesText: { fontSize: 13, fontWeight: "800", color: C.onMint },
 })

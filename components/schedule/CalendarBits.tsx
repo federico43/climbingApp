@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { K as C, KF } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import React from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
@@ -16,6 +16,61 @@ export function monthTitle(dates: Date[]): string {
   const b = dates[dates.length - 1]
   if (a.getMonth() === b.getMonth()) return `${MONTHS_LONG[a.getMonth()]} ${a.getFullYear()}`
   return `${MONTHS[a.getMonth()]} – ${MONTHS[b.getMonth()]} ${b.getFullYear()}`
+}
+
+// "NOVEMBER" (or "NOV – DEC") for the poster title.
+export function monthName(dates: Date[]): string {
+  const a = dates[0]
+  const b = dates[dates.length - 1]
+  return (a.getMonth() === b.getMonth() ? MONTHS_LONG[a.getMonth()] : `${MONTHS[a.getMonth()]} – ${MONTHS[b.getMonth()]}`).toUpperCase()
+}
+
+// Google-Calendar-style header: back, poster month, Today, ‹ › weeks, extras.
+// Only this week and next week exist (the coach plans one week ahead).
+export function CalendarHeader({
+  title, week, canNext, onWeek, onBack, right, summary,
+}: {
+  title: string
+  week: "this" | "next"
+  canNext: boolean
+  onWeek: (w: "this" | "next") => void
+  onBack?: () => void
+  right?: React.ReactNode
+  summary?: string
+}) {
+  return (
+    <View style={s.head}>
+      <View style={s.headRow}>
+        {onBack && (
+          <Pressable onPress={onBack} hitSlop={10} accessibilityLabel="Back">
+            <Ionicons name="chevron-back" size={22} color={C.textSecondary} />
+          </Pressable>
+        )}
+        <View style={{ flex: 1 }}>
+          {/* Chromatic offset copies behind the poster title (design system). */}
+          <View>
+            <Text style={[s.poster, s.posterA]} numberOfLines={1}>{title}</Text>
+            <Text style={[s.poster, s.posterB]} numberOfLines={1}>{title}</Text>
+            <Text style={s.poster} numberOfLines={1}>{title}</Text>
+          </View>
+        </View>
+        {right}
+      </View>
+      <View style={s.headRow}>
+        <Pressable style={[s.todayBtn, week === "this" && { opacity: 0.5 }]} disabled={week === "this"} onPress={() => onWeek("this")}>
+          <Text style={s.todayText}>Today</Text>
+        </Pressable>
+        <Pressable hitSlop={8} disabled={week === "this"} onPress={() => onWeek("this")} accessibilityLabel="This week">
+          <Ionicons name="chevron-back" size={20} color={week === "this" ? C.textMuted : C.textPrimary} />
+        </Pressable>
+        <Pressable hitSlop={8} disabled={week === "next" || !canNext} onPress={() => onWeek("next")} accessibilityLabel="Next week">
+          <Ionicons name="chevron-forward" size={20} color={week === "next" || !canNext ? C.textMuted : C.textPrimary} />
+        </Pressable>
+        <Text style={s.weekWord}>{week === "this" ? "This week" : "Next week"}{!canNext && week === "this" ? " · next not out yet" : ""}</Text>
+      </View>
+      {summary ? <Text style={s.summary}>{summary}</Text> : null}
+    </View>
+  )
 }
 
 // "Tuesday, Nov 12"
@@ -52,13 +107,14 @@ export function WeekSwitch({
   )
 }
 
-export type LegendKey = "mine" | "open" | "full" | "pending" | "request"
+export type LegendKey = "mine" | "open" | "full" | "pending" | "request" | "blocked"
 const LEGEND: Record<LegendKey, { label: string; swatch: object }> = {
-  mine: { label: "Your class", swatch: { backgroundColor: C.green } },
-  open: { label: "Free spot", swatch: { backgroundColor: "rgba(111,207,151,0.14)", borderLeftWidth: 3, borderLeftColor: C.green } },
-  full: { label: "Full", swatch: { backgroundColor: "#26282A", borderWidth: 1, borderColor: C.border } },
-  pending: { label: "Waiting for coach", swatch: { backgroundColor: C.yellow } },
-  request: { label: "Has a request", swatch: { backgroundColor: "#2F3A35", borderWidth: 2, borderColor: C.yellow } },
+  mine: { label: "Yours", swatch: { backgroundColor: C.green } },
+  open: { label: "Open", swatch: { backgroundColor: C.openBg, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" } },
+  full: { label: "Full", swatch: { backgroundColor: "#1B1821", borderWidth: 1, borderColor: C.border } },
+  pending: { label: "Pending", swatch: { borderWidth: 1.5, borderColor: C.green, borderStyle: "dashed" } },
+  request: { label: "Has a request", swatch: { backgroundColor: C.green, width: 10, height: 10, borderRadius: 3 } },
+  blocked: { label: "Coach away", swatch: { backgroundColor: "#141118", borderWidth: 1, borderColor: C.border } },
 }
 
 // What the colors mean, always on screen (new athletes don't read pop-ups).
@@ -90,15 +146,18 @@ export function DetailRow({ icon, text, sub, color }: { icon: keyof typeof Ionic
 
 // One person in a class, with an optional action on the right (the coach's ×).
 export function PersonRow({
-  name, you, sub, subLow, right,
-}: { name: string; you?: boolean; sub?: string; subLow?: boolean; right?: React.ReactNode }) {
+  name, you, sub, subLow, tag, right,
+}: { name: string; you?: boolean; sub?: string; subLow?: boolean; tag?: string; right?: React.ReactNode }) {
   return (
     <View style={s.person}>
       <View style={[s.avatar, you && { backgroundColor: C.green }]}>
-        <Text style={[s.avatarText, you && { color: "#10251A" }]}>{name[0]?.toUpperCase()}</Text>
+        <Text style={[s.avatarText, you && { color: C.onMint }]}>{name[0]?.toUpperCase()}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={s.personName} numberOfLines={1}>{you ? `${name} (you)` : name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={[s.personName, { flex: 0, flexShrink: 1 }]} numberOfLines={1}>{you ? `${name} (you)` : name}</Text>
+          {tag ? <Text style={s.personTag}>{tag}</Text> : null}
+        </View>
         {sub ? <Text style={[s.rowSub, subLow && { color: C.red }]}>{sub}</Text> : null}
       </View>
       {right}
@@ -148,15 +207,24 @@ export function RepeatChoice({
 }
 
 const s = StyleSheet.create({
+  head: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, gap: 8 },
+  headRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  poster: { fontFamily: KF.poster, fontSize: 44, lineHeight: 44, color: C.textPrimary, letterSpacing: -0.8 },
+  posterA: { position: "absolute", left: -2, top: 1, color: "rgba(138,214,162,0.8)" },
+  posterB: { position: "absolute", left: 2, top: -1, color: "rgba(80,96,255,0.85)" },
+  todayBtn: { borderWidth: 1, borderColor: C.border, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 6 },
+  todayText: { fontFamily: KF.bold, fontSize: 13, color: C.textPrimary },
+  weekWord: { flex: 1, fontFamily: KF.bold, fontSize: 14, color: C.textPrimary },
+  summary: { fontFamily: KF.mono, fontSize: 11, color: C.label },
   switch: { flexDirection: "row", backgroundColor: C.surface, borderRadius: 12, padding: 3, gap: 3 },
   switchBtn: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: "center" },
   switchOn: { backgroundColor: C.surfaceHigh },
   switchText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
   switchTextOn: { color: C.textPrimary },
-  legend: { flexDirection: "row", flexWrap: "wrap", columnGap: 14, rowGap: 6 },
+  legend: { flexDirection: "row", flexWrap: "wrap", columnGap: 14, rowGap: 6, paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   swatch: { width: 16, height: 12, borderRadius: 3 },
-  legendText: { fontSize: 12, color: C.textSecondary, fontWeight: "600" },
+  legendText: { fontFamily: KF.mono, fontSize: 11, color: C.label },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   rowText: { fontSize: 15, color: C.textPrimary, fontWeight: "600" },
   rowSub: { fontSize: 12.5, color: C.textSecondary, marginTop: 2 },
@@ -164,6 +232,7 @@ const s = StyleSheet.create({
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center" },
   avatarOpen: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border, borderStyle: "dashed" },
   avatarText: { fontSize: 13, fontWeight: "800", color: C.textSecondary },
+  personTag: { fontFamily: KF.mono, fontSize: 9.5, color: C.label, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 },
   personName: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
   radioBox: { backgroundColor: C.surfaceHigh, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 4 },
   radio: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10 },

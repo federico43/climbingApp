@@ -1,5 +1,5 @@
 import { CLASS_STARTS, GymClass, WEEK_DAYS, formatTime, parseSlot, slotKey, usualDayOk } from "@/utils/classSchedule"
-import { C } from "@/utils/theme"
+import { K as C } from "@/components/schedule/calTheme"
 import { Ionicons } from "@expo/vector-icons"
 import { useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -53,7 +53,7 @@ export function UsualSetup({
         <Text style={s.title}>Your class schedule</Text>
         <Text style={s.lead}>Do you go to class on the same days and times every week?</Text>
         <Pressable style={({ pressed }) => [s.choice, s.choiceYes, pressed && { opacity: 0.85 }]} onPress={() => setStep("pick")}>
-          <Text style={[s.choiceTitle, { color: "#10251A" }]}>Yes, I have a fixed schedule</Text>
+          <Text style={[s.choiceTitle, { color: C.onMint }]}>Yes, I have a fixed schedule</Text>
           <Text style={[s.choiceText, { color: "#1E4430" }]}>Pick your days and times once. You&apos;re signed up every week.</Text>
         </Pressable>
         <Pressable style={({ pressed }) => [s.choice, pressed && { opacity: 0.85 }]} onPress={onNo}>
@@ -111,7 +111,7 @@ export function UsualSetup({
         onPress={() => onSave(days.map((d) => slotKey({ day: d, start: picked[d]! })))}
         style={({ pressed }) => [s.save, (!ready || busy) && { opacity: 0.35 }, pressed && { opacity: 0.85 }]}
       >
-        {busy ? <ActivityIndicator color="#10251A" /> : <Text style={s.saveText}>Save my schedule</Text>}
+        {busy ? <ActivityIndicator color={C.onMint} /> : <Text style={s.saveText}>Save my schedule</Text>}
       </Pressable>
       {askFirst ? (
         <Pressable style={s.back} onPress={() => setStep("ask")}><Text style={s.backText}>Back</Text></Pressable>
@@ -126,7 +126,7 @@ const s = StyleSheet.create({
   wrap: { padding: 20, gap: 14 },
   icon: {
     width: 80, height: 80, borderRadius: 40, alignSelf: "center", alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(111,207,151,0.12)", marginTop: 12,
+    backgroundColor: "rgba(138,214,162,0.12)", marginTop: 12,
   },
   title: { fontSize: 26, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.4 },
   lead: { fontSize: 16, fontWeight: "600", color: C.textPrimary, lineHeight: 22 },
@@ -141,7 +141,7 @@ const s = StyleSheet.create({
   },
   dayOn: { backgroundColor: C.green, borderColor: C.green },
   dayText: { fontSize: 13, fontWeight: "800", color: C.textPrimary },
-  dayTextOn: { color: "#10251A" },
+  dayTextOn: { color: C.onMint },
   dayBox: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 14, gap: 10 },
   dayName: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
   times: { gap: 8 },
@@ -149,13 +149,13 @@ const s = StyleSheet.create({
     minWidth: 64, alignItems: "center", paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12,
     backgroundColor: C.surfaceHigh, borderWidth: 1, borderColor: C.border,
   },
-  timeClass: { borderColor: "rgba(111,207,151,0.6)" },
+  timeClass: { borderColor: "rgba(138,214,162,0.6)" },
   timeOn: { backgroundColor: C.green, borderColor: C.green },
   timeText: { fontSize: 15, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   timeTag: { fontSize: 10, fontWeight: "700", color: C.green, marginTop: 1 },
   note: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   save: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center", marginTop: 6 },
-  saveText: { fontSize: 16, fontWeight: "800", color: "#10251A" },
+  saveText: { fontSize: 16, fontWeight: "800", color: C.onMint },
   back: { alignItems: "center", paddingVertical: 10 },
   backText: { fontSize: 15, fontWeight: "700", color: C.textSecondary },
 })
