@@ -1,5 +1,5 @@
 import { ConsumeAuth } from "@/components/auth-context"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import { useState } from "react"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
@@ -10,6 +10,8 @@ import { SafeAreaView } from "react-native-safe-area-context"
 // check again after talking to the coach, or sign out to log in with — or
 // create — another account.
 export function InactiveAccount() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { userName, refreshUser, signOut } = ConsumeAuth()
   const [checking, setChecking] = useState(false)
 
@@ -39,7 +41,7 @@ export function InactiveAccount() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   body: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, paddingHorizontal: 32 },
   title: { fontSize: 22, fontWeight: "800", color: C.textPrimary, textAlign: "center" },
@@ -51,4 +53,4 @@ const styles = StyleSheet.create({
   primaryText: { fontSize: 15, fontWeight: "800", color: C.bg },
   secondary: { paddingVertical: 10 },
   secondaryText: { fontSize: 14, fontWeight: "700", color: C.green },
-})
+}))

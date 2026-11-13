@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { Ionicons } from "@expo/vector-icons"
 import { ExerciseForm } from "@/components/ExerciseForm"
@@ -369,6 +369,8 @@ export function BlockPickerModal({
   /** Passed through to the "New block" form's save-to-library toggle. */
   allowSaveToLibrary?: boolean
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [tab, setTab] = useState<"library" | "new">(initialTab)
   const [libraryBlocks, setLibraryBlocks] = useState<BlockRow[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(true)
@@ -740,6 +742,8 @@ function NewBlockForm({ type, onBack, onSave, allowSaveToLibrary = true }: {
   // coach-facing library with it.
   allowSaveToLibrary?: boolean
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [block, setBlock] = useState<Block>(makeDefaultBlock(type))
   const [saveToLibrary, setSaveToLibrary] = useState(allowSaveToLibrary)
   const [saving, setSaving] = useState(false)
@@ -838,6 +842,8 @@ export function BlockEditorRow({ block, isExpanded, isActive, onToggleExpand, on
   // Both collapse via onToggleExpand.
   card?: boolean
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   if (card) {
     return (
       <BlockEditorCard
@@ -952,6 +958,8 @@ function BlockEditorCard({ block, isExpanded, isActive, inGrid, onToggleExpand, 
   onToggleExpand: () => void; onDrag: () => void; onUpdate: (b: Block) => void; onDelete: () => void
   onSaveAsTemplate?: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   return (
     <View style={[styles.blockCard, !inGrid && styles.blockCardListItem, isActive && styles.blockRowActive]}>
       {inGrid ? (
@@ -1038,6 +1046,8 @@ function StandaloneHeader({ block, onSaveAsTemplate, onDelete, expanded = true, 
   block: Block; onSaveAsTemplate?: () => void; onDelete: () => void
   expanded?: boolean; onToggleExpand?: () => void; onRename?: (name: string) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [menuOpen, setMenuOpen] = useState(false)
   const color = ADAPTATION_COLOR[resolveAdaptation(block)]
   const dense = !!onRename
@@ -1125,6 +1135,7 @@ function StandaloneHeader({ block, onSaveAsTemplate, onDelete, expanded = true, 
 }
 
 function StandaloneBlockFields({ block, onUpdate, hideName }: { block: Block; onUpdate: (b: Block) => void; hideName?: boolean }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   if (compact) {
     // Name lives in the card header; time limit rides along with the numerics.
@@ -1190,6 +1201,7 @@ function AdaptationPicker({
   value: Adaptation
   onChange: (v: Adaptation) => void
 }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   const [open, setOpen] = useState(false)
   if (compact) {
@@ -1248,6 +1260,8 @@ function GradePicker({
   value: string
   onChange: (v: string) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   const [open, setOpen] = useState(false)
   if (compact) {
@@ -1314,6 +1328,7 @@ function GradePicker({
 
 // A 2×3 dot grid reads as "drag me" more clearly than a "☰" glyph.
 function DragGripIcon() {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.dragGrip}>
       {[0, 1, 2, 3, 4, 5].map((i) => <View key={i} style={styles.dragGripDot} />)}
@@ -1322,6 +1337,7 @@ function DragGripIcon() {
 }
 
 function FieldLabel({ label }: { label: string }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   return <Text style={[styles.fieldLabel, compact && styles.fieldLabelCompact]}>{label}</Text>
 }
@@ -1333,6 +1349,8 @@ const FIELD_PREVIEW_TEXT_HEIGHT = FIELD_PREVIEW_LINE_HEIGHT * 3
 function FieldInput({ value, onChange, placeholder, numeric, multiline }: {
   value: string; onChange: (v: string) => void; placeholder?: string; numeric?: boolean; multiline?: boolean
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   // Compact: long text shows as a short preview until tapped, fading out
   // at the bottom when it runs past the preview's height.
@@ -1375,6 +1393,7 @@ function FieldInput({ value, onChange, placeholder, numeric, multiline }: {
 function NumField({ label, value, onChange }: {
   label: string; value: number; onChange: (n: number) => void
 }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.numField}>
       <FieldLabel label={label} />
@@ -1405,6 +1424,7 @@ function parseDuration(text: string): number {
 function RestField({ label, value, onChange }: {
   label: string; value: number; onChange: (n: number) => void
 }) {
+  const styles = useSheet(stylesSheet)
   const [text, setText] = useState(formatDuration(value))
   useEffect(() => { setText(formatDuration(value)) }, [value])
   return (
@@ -1429,6 +1449,7 @@ function RestField({ label, value, onChange }: {
 function StepperField({ label, value, onChange, min = 0, step = 1 }: {
   label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
 }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   if (compact) return <CompactStepper label={label} display={String(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
@@ -1451,6 +1472,7 @@ function StepperField({ label, value, onChange, min = 0, step = 1 }: {
 function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
   label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
 }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   if (compact) return <CompactStepper label={label} display={formatDuration(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
@@ -1473,6 +1495,7 @@ function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
 function CompactStepper({ label, display, onMinus, onPlus }: {
   label: string; display: string; onMinus: () => void; onPlus: () => void
 }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.compactStepper}>
       <Text style={styles.compactStepperLabel} numberOfLines={1}>{label}</Text>
@@ -1490,6 +1513,8 @@ function CompactStepper({ label, display, onMinus, onPlus }: {
 // Grid cards' time limit: a chip when off, a ⏱ stepper when on (stepping
 // below 1 minute turns it back off).
 function TimeLimitChip({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const mins = block.timeLimit ?? 0
   if (mins <= 0) {
     return (
@@ -1511,6 +1536,7 @@ function TimeLimitChip({ block, onUpdate }: { block: Block; onUpdate: (b: Block)
 // The short numeric fields for a block, rendered as a compact row so they can
 // sit beside the Block name input. Returns null for types with no numerics.
 function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate: (b: Block) => void; standalone?: boolean }) {
+  const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   function update(fields: any) { onUpdate({ ...block, ...fields } as Block) }
   const Field = standalone ? StepperField : NumField
@@ -1578,6 +1604,7 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
 
 // Universal time-constraint field — every block can optionally cap its duration.
 function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const styles = useSheet(stylesSheet)
   if (block.type === "project_bouldering") return null  // always timed — set in BlockNumerics
   return (
     <View style={styles.timeLimitRow}>
@@ -1595,6 +1622,8 @@ function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block
 // Standalone editor's Time limit row: an Off/On switch, with a minutes
 // stepper that only appears once it's on.
 function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   if (block.type === "project_bouldering") return null  // always timed — set in BlockNumerics
   const enabled = (block.timeLimit ?? 0) > 0
   return (
@@ -1624,6 +1653,8 @@ function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Bloc
 }
 
 function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBoulderingBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<ProjectBoulderingBlock>) { onUpdate({ ...block, ...fields }) }
   const pb = normalizeProjectBlock(block)
   return (
@@ -1661,6 +1692,8 @@ function BoulderSlots({ grades, selected, onSelect }: {
   selected?: number
   onSelect?: (i: number) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.boulderSlotRow}>
       {grades.map((g, i) => {
@@ -1685,6 +1718,7 @@ function BoulderSlots({ grades, selected, onSelect }: {
 }
 
 function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdate: (b: Block) => void }) {
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<FourByFourBlock>) { onUpdate({ ...block, ...fields }) }
   const n = block.bouldersPerSet ?? 4
   const grades = authoredGrades(block)
@@ -1752,6 +1786,8 @@ function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdat
 }
 
 function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<IntervalsBlock>) { onUpdate({ ...block, ...fields }) }
 
   // When authoring for a specific athlete, show what the progression rule
@@ -1826,6 +1862,8 @@ function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate:
 }
 
 function ConstraintWarmupFields({ block, onUpdate }: { block: ConstraintWarmupBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<ConstraintWarmupBlock>) { onUpdate({ ...block, ...fields }) }
   const rotation = rotationFor(block)
   const isDefault = !block.rotation
@@ -1952,6 +1990,8 @@ export function ExerciseLibraryPane({ onAdd, wide = false, variant = "inline", o
   variant?: "inline" | "overlay"
   onClose?: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [exercises, setExercises] = useState<ExerciseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [createType, setCreateType] = useState<"reps" | "both_sides" | "7/3s" | null>(null)
@@ -2142,6 +2182,7 @@ export function ReorderableCardGrid<T extends { id: string }>({ items: exercises
   // host to make room; short of that, the content truncates.
   fitWithin?: { available: number; onWidth: (w: number) => void; onNeed: (w: number) => void }
 }) {
+  const styles = useSheet(stylesSheet)
   const [measuredWidth, setMeasuredWidth] = useState(0)
   // Width each card asked for to fit content that shouldn't wrap.
   const [fits, setFits] = useState<Record<string, number>>({})
@@ -2259,6 +2300,7 @@ function ExerciseGridCell({ index, width, onFit, isDragging, animateLayout, resi
   onDragEnd: () => void
   children: React.ReactNode
 }) {
+  const styles = useSheet(stylesSheet)
   const translateX = useSharedValue(0)
   const translateY = useSharedValue(0)
 
@@ -2332,6 +2374,8 @@ function ExerciseGridCell({ index, width, onFit, isDragging, animateLayout, resi
 }
 
 function StrengthConditioningFields({ block, onUpdate }: { block: StrengthConditioningBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   // If a builder hosts the library as an overlay, just trigger it; otherwise
   // fall back to an inline library beside the cards.
   const lib = useContext(SCLibraryContext)
@@ -2501,6 +2545,8 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
   exercise: Exercise; athleteProgress?: AthleteProgress | null
   onUpdate: (e: Exercise) => void; onDelete: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<Exercise>) { onUpdate({ ...exercise, ...fields }) }
   const typeLabel = exercise.type === "reps" ? "Reps" : exercise.type === "both_sides" ? "Both sides" : "7/3s"
 
@@ -2693,6 +2739,8 @@ function ExerciseEditorRow({ exercise, athleteProgress, onUpdate, onDelete }: {
 const ROUTE_FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
 
 function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<SequenceBlock>) { onUpdate({ ...block, ...fields }) }
   const [showRoutePicker, setShowRoutePicker] = useState(false)
   // Which variations the selected route actually has — drives the "Starting
@@ -2943,6 +2991,8 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
 // a Sequence block, but with no attempts/rest/variation fields — the route is
 // just shown to the athlete for reference while they climb freely.
 function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpdate: (b: Block) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   function update(fields: Partial<FreeSessionBlock>) { onUpdate({ ...block, ...fields } as FreeSessionBlock) }
   const [showRoutePicker, setShowRoutePicker] = useState(false)
 
@@ -3023,6 +3073,7 @@ function RoutePickerSheet({ visible, onClose, onSelect }: {
   onClose: () => void
   onSelect: (route: SprayRouteRow, wall: SprayWallRow | null) => void
 }) {
+  const styles = useSheet(stylesSheet)
   const [creating, setCreating] = useState<{ wall: SprayWallRow | null } | null>(null)
   const [savingRoute, setSavingRoute] = useState(false)
   // Saving closes two nested native <Modal>s (the builder, then — via
@@ -3096,6 +3147,8 @@ export function RoutePickerModal({ onSelect, onClose, onCreateNew }: {
   onClose: () => void
   onCreateNew: (wall?: SprayWallRow) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [routes, setRoutes] = useState<SprayRouteRow[]>([])
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -3344,7 +3397,7 @@ const EXERCISE_TYPE_LABEL: Record<"reps" | "both_sides" | "7/3s", string> = {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   progressionFlag: {
     backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
     borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 4, marginBottom: 12,
@@ -3925,4 +3978,4 @@ const styles = StyleSheet.create({
   listHeaderActions: { flexDirection: "row", gap: 8, alignItems: "center" },
   exercisesButton: { borderWidth: 1, borderColor: C.green, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },
   exercisesButtonText: { color: C.green, fontWeight: "600", fontSize: 13 },
-})
+}))

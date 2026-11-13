@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AdaptationDonut, AdaptationDonutLegend, DonutSlice } from "@/components/AdaptationDonut"
 import { deleteSession, getSprayRoute, getSprayWall, SessionRow, updateSession } from "@/services/BoulderGraphService"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
@@ -138,6 +138,8 @@ interface Props {
 // reasons and clip (docs/project-bouldering-v2.md §9). v1 project blocks
 // (no pbv marker) keep the generic send/fall list.
 function ProjectBlockView({ attempts, canGiveFeedback }: { attempts: any[]; canGiveFeedback?: boolean }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [video, setVideo] = useState<VideoRow | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
@@ -190,6 +192,8 @@ function ProjectBlockView({ attempts, canGiveFeedback }: { attempts: any[]; canG
 // Part 1: goes and sent / tried per colour, each route with its wall and go.
 // Part 2: what they realised they did wrong in part 1, and their note.
 function ExplorationBlockView({ attempts }: { attempts: any[] }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const sum = summarizeExploration(attempts)
   const goLabel = (r: { sent: boolean; tries: number }) => (r.sent ? (r.tries === 1 ? "Flash" : `Go ${r.tries}`) : "Not sent")
   return (
@@ -223,6 +227,8 @@ function ExplorationBlockView({ attempts }: { attempts: any[] }) {
 // Spray blocks (utils/sprayBlocks.ts) show the same list: the sequences the
 // athlete added or chose, with their sends.
 function CoachedBlockView({ blockType, attempts, spray }: { blockType: string; attempts: any[]; spray?: boolean }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const routes = useMemo(() => {
     const order: string[] = []
     const by = new Map<string, { tries: number; sends: number }>()
@@ -290,6 +296,8 @@ function isProgression(sc: any, prescribed: any | null): boolean {
 }
 
 function ScBlockView({ block, attempts, onOpenExercise }: { block: any; attempts: any[]; onOpenExercise?: (name: string) => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const exercises: any[] = block.exercises ?? []
 
   // Group scData entries by round number (1-indexed, as logged by StrengthConditioningBlock)
@@ -430,6 +438,7 @@ function ScBlockView({ block, attempts, onOpenExercise }: { block: any; attempts
 // ─── Free session block view ───────────────────────────────────────────────────
 
 function FreeSessionBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+  const styles = useSheet(stylesSheet)
   const notedAttempts = attempts.filter((a) => !!a.notes)
   if (notedAttempts.length === 0) {
     return <Text style={styles.blockStats}>No note added</Text>
@@ -449,6 +458,7 @@ function FreeSessionBlockView({ block, attempts }: { block: any; attempts: any[]
 // ─── Sequence block view ──────────────────────────────────────────────────────
 
 function SequenceBlockView({ block, attempts }: { block: any; attempts: any[] }) {
+  const styles = useSheet(stylesSheet)
   const [variations, setVariations] = useState<RouteVariations>(() => {
     try { return { original: JSON.parse(block.routeHolds ?? "[]") } } catch { return { original: [] } }
   })
@@ -512,6 +522,8 @@ function AttemptStatusRow({
   editable: boolean
   onToggle?: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const isProjectBouldering = blockType === "project_bouldering"
   const isSequence = blockType === "sequence"
   const isConstraintWarmup = blockType === "constraint_warmup"
@@ -582,6 +594,8 @@ function AttemptStatusRow({
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdated, canGiveFeedback, onOpenExercise }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [editingId, setEditingId]                   = useState<string | null>(null)
   const [editedBlocks, setEditedBlocks]             = useState<EditableBlock[]>([])
   const [attemptsByKey, setAttemptsByKey]           = useState<Record<string, any[]>>({})
@@ -1055,7 +1069,7 @@ export function SessionDetailModal({ date, sessions, onClose, onDeleted, onUpdat
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   coachedPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: C.green + "22" },
   coachedPillText: { fontSize: 11, fontWeight: "800", color: C.green },
   coachedSeqRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1213,4 +1227,4 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: C.border,
   },
   addAttemptText: { fontSize: 13, fontWeight: "600", color: C.green },
-})
+}))

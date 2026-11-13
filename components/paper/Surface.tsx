@@ -135,15 +135,17 @@ export function PaperScreen({ children, header, footer, scrollProps, bottomPad =
 }
 
 /**
- * Status bar text that reads on this screen's paper while it's focused;
- * back to light text (the old dark screens) when it loses focus.
+ * Status bar text that reads on this screen's paper while it's focused.
+ * `dark` = the screen is dark whatever the theme (the class calendar).
+ * On blur it goes back to the app's paper, which every other screen uses.
  */
-export function usePaperStatusBar() {
+export function usePaperStatusBar(opts?: { dark?: boolean }) {
   const t = usePaper()
+  const dark = opts?.dark
   useFocusEffect(
     useCallback(() => {
-      setStatusBarStyle(t.mode === "dark" ? "light" : "dark", true)
-      return () => setStatusBarStyle("light", true)
-    }, [t.mode])
+      setStatusBarStyle(dark || t.mode === "dark" ? "light" : "dark", true)
+      return () => setStatusBarStyle(t.mode === "dark" ? "light" : "dark", true)
+    }, [t.mode, dark])
   )
 }

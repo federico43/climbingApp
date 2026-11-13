@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { useUpdateHeld } from "@/utils/updateHold"
 import Constants from "expo-constants"
 import * as Updates from "expo-updates"
@@ -20,6 +20,8 @@ const RESTART_NOTICE_MS = 1500
 // which case it's applied the moment that finishes. No-ops in dev / Expo Go
 // (Updates.isEnabled === false).
 export function UpdateBanner() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { isUpdatePending } = useUpdates()
   const held = useUpdateHeld()
   const [restarting, setRestarting] = useState(false)
@@ -82,7 +84,7 @@ export function UpdateBanner() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   wrap: { position: "absolute", left: 12, right: 12, zIndex: 2000, alignItems: "center" },
   banner: {
     flexDirection: "row", alignItems: "center", gap: 10,
@@ -92,4 +94,4 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   title: { fontSize: 14, fontWeight: "800", color: C.bg },
-})
+}))

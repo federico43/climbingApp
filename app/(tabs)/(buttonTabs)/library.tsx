@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -12,7 +13,6 @@ import { QueuedUpload, retryUpload, UploadStatus, useUploadQueue } from "@/servi
 import { groupByDate } from "@/utils/dateGroups"
 import { deleteVideoFile, listSavedVideos, saveVideoLocally } from "@/utils/saveVideo"
 import { useFocusEffect } from "@react-navigation/native"
-import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import * as ImagePicker from "expo-image-picker"
 import * as VideoThumbnails from "expo-video-thumbnails"
@@ -108,8 +108,9 @@ const UPLOAD_BADGE: Record<UploadStatus, { icon: keyof typeof Ionicons.glyphMap;
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LibraryScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
-  const router = useRouter()
   const [videos, setVideos] = useState<VideoItem[]>(videoListCache)
   const [loading, setLoading] = useState(videoListCache.length === 0)
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null)
@@ -299,18 +300,15 @@ export default function LibraryScreen() {
     <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Videos</Text>
-          <Text style={styles.subtitle}>Saved attempt videos</Text>
-        </View>
-        <Pressable style={styles.addButton} onPress={handlePickVideo} hitSlop={8}>
-          <Ionicons name="add" size={22} color={C.bg} />
-        </Pressable>
-      </View>
+      <SubScreenHeader
+        title="Videos"
+        subtitle="Saved attempt videos"
+        right={
+          <Pressable style={styles.addButton} onPress={handlePickVideo} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a video">
+            <Ionicons name="add" size={22} color={C.onAccent} />
+          </Pressable>
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={C.green} />
@@ -473,7 +471,7 @@ export default function LibraryScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
 
   header: {
@@ -587,4 +585,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyAddButtonText: { fontSize: 14, fontWeight: "700", color: C.bg },
-})
+}))

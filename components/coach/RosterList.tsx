@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import {
   INACTIVE_STEPS, lastSessionLabel, planStatusLabel,
   type AthleteSummary, type RosterFilter,
@@ -40,6 +40,8 @@ export function RosterList({
   refreshing: boolean
   onRefresh: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const listRef = useRef<FlatList<AthleteSummary>>(null)
   // Bring the remembered / selected athlete into view.
   const selectedIndex = list.findIndex((a) => a.id === selectedId)
@@ -134,7 +136,7 @@ export function RosterList({
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   content: { paddingHorizontal: 12, paddingBottom: 24 },
   head: { gap: 10, paddingTop: 4, paddingBottom: 10 },
   search: {
@@ -167,4 +169,4 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: C.textSecondary, marginTop: 1 },
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   badgeText: { fontSize: 12, fontWeight: "800", color: C.bg },
-})
+}))

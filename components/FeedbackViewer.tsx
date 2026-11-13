@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { PaperDark, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { DebugLogOverlay } from "@/components/DebugLogOverlay"
 import { DrawingCanvas } from "@/components/DrawingCanvas"
 import { useFeedbackReplay } from "@/hooks/useFeedbackReplay"
@@ -31,7 +31,18 @@ interface Props {
 // played alongside the original clip and the strokes they drew — all driven
 // off the bubble's own clock (see hooks/useFeedbackReplay.ts). Marks itself
 // viewed as soon as it's opened.
-export function FeedbackViewer({ feedback, video, title, onClose }: Props) {
+// Media screen: always dark Paper (photos and video read best on a dark frame).
+export function FeedbackViewer(props: Props) {
+  return (
+    <PaperDark>
+      <FeedbackViewerBody {...props} />
+    </PaperDark>
+  )
+}
+
+function FeedbackViewerBody({ feedback, video, title, onClose }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const bubblePlayer = useVideoPlayer({ uri: feedback.bubbleVideoUrl }, (p) => {
     p.timeUpdateEventInterval = 0.1
   })
@@ -200,7 +211,7 @@ export function FeedbackViewer({ feedback, video, title, onClose }: Props) {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   root: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000", zIndex: 100 },
   safe: { flex: 1 },
   header: {
@@ -237,4 +248,4 @@ const styles = StyleSheet.create({
   progressTrack: { flex: 1, height: 28, justifyContent: "center" },
   progressBg: { position: "absolute", left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.3)" },
   progressFilled: { position: "absolute", left: 0, height: 3, borderRadius: 2, backgroundColor: "white" },
-})
+}))

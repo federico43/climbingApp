@@ -1,7 +1,7 @@
-import { C } from "@/utils/theme";
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { StyleSheet, Text, View, TextInput, TextInputProps } from "react-native";
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: {
     marginBottom: 16,
   },
@@ -20,7 +20,7 @@ const styles = StyleSheet.create({
     color: C.textPrimary,
     backgroundColor: C.surfaceHigh,
   },
-});
+}));
 
 type InputProp = TextInputProps & {
   label?: string
@@ -28,6 +28,8 @@ type InputProp = TextInputProps & {
 }
 
 export default function CustomTextInput({ label, placeHolder, ...props }: InputProp) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}

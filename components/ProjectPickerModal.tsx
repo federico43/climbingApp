@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import ImageCapture from "@/components/ImageCapture"
 import {
   createProject,
@@ -231,6 +231,8 @@ interface ProjectPickerContentProps {
 }
 
 function ProjectPickerContent(props: ProjectPickerContentProps) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const {
     mode, setMode, initialMode, onClose, titleMap,
     loadingProjects, projects, openChoose, onSelect,
@@ -414,7 +416,7 @@ function ProjectPickerContent(props: ProjectPickerContentProps) {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row",
@@ -532,4 +534,4 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   createBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
-})
+}))
