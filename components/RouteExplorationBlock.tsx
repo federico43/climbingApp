@@ -1,5 +1,6 @@
 import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
+import { ExplorationFocusSlides, useExplorationFocusFirstTime } from "@/components/ExplorationFocusSlides"
 import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions, getUsers } from "@/services/BoulderGraphService"
@@ -8,15 +9,17 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
-  EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
+  BREATH_IN_MS, BREATH_OUT_MS, breathAt, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
+  EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePopupTurn } from "@/utils/popupTurn"
 import React, { useEffect, useRef, useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
 // Route exploration (utils/routeExploration.ts), laid out like the Density
 // test (ExplorationSessionBlock). Part 1 Flash: pick wall, colour and go,
@@ -24,9 +27,12 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 // part 2. Part 2 Project: a timer on the routes that didn't go, then "what
 // did you realise you did wrong". Routes live in the logged attempts, so a
 // resumed workout picks up where it was.
+// Before part 1 (coach 2026-11-12): a timed warm-up on easy routes, then
+// guided breathing, then a "ready" screen that starts part 1's timer. The
+// first time, slides explain why (components/ExplorationFocusSlides.tsx).
 
 // review = part 1's points vs last time, before part 2 (coach 2026-11-05).
-type Phase = "intro" | "flash" | "review" | "projectIntro" | "project" | "question" | "done"
+type Phase = "intro" | "warmup" | "breathingIntro" | "breathing" | "flashIntro" | "flash" | "review" | "projectIntro" | "project" | "question" | "done"
 
 const RESULTS = [
   { label: "Flash", tries: 1, sent: true },
@@ -89,6 +95,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   const { User } = ConsumeAuth()
   const flashMin = block?.timeLimit || EXPLORATION_PART_MIN
   const projectMin = block?.projectTime || EXPLORATION_PART_MIN
+  const warmupMin = block?.warmupTime || EXPLORATION_WARMUP_MIN
+  const breathingMin = block?.breathingTime || EXPLORATION_BREATHING_MIN
   const title = block?.blockName || "Route exploration"
 
   const summary = summarizeExploration(attempts)
@@ -132,6 +140,30 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The "why" slides: by themselves the first time (waiting their turn if
+  // another pop-up is up), and again from "Why breathe?".
+  const firstTime = useExplorationFocusFirstTime()
+  const [slidesSeen, setSlidesSeen] = useState(false)
+  const [slidesOpen, setSlidesOpen] = useState(false)
+  const autoSlides = usePopupTurn(firstTime && !slidesSeen && phase === "intro")
+  const closeSlides = () => { setSlidesSeen(true); setSlidesOpen(false) }
+  const slides = (
+    <ExplorationFocusSlides
+      visible={autoSlides || slidesOpen}
+      minutes={{ warmup: warmupMin, breathing: breathingMin, flash: flashMin, project: projectMin }}
+      onClose={closeSlides}
+    />
+  )
+
+  const warmupLeft = useCountdown(warmupMin, phase === "warmup", `${title} · warm-up`, () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+    setPhase("breathingIntro")
+  })
+  const breathingLeft = useCountdown(breathingMin, phase === "breathing", `${title} · breathing`, () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+    setPhase("flashIntro")
+  })
 
   const flashLeft = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
@@ -219,12 +251,98 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         <TopBar title={title} onBack={goToPreviousBlock} poster />
         <ScrollView contentContainerStyle={shared_styles.introContent}>
           <BlockNotes text={text} title="Coach notes" />
-          <View style={styles.timeLimitPill}>
-            <Text style={styles.timeLimitText}>⏱ {flashMin} min + {projectMin} min</Text>
+          <View style={styles.stepsCard}>
+            {[
+              ["Warm-up", `${warmupMin} min`],
+              ["Breathing", `${breathingMin} min`],
+              ["Part 1 · Flash", `${flashMin} min`],
+              ["Part 2 · Project", `${projectMin} min`],
+            ].map(([label, mins], n) => (
+              <View key={label} style={styles.stepRow}>
+                <Text style={styles.stepNum}>{n + 1}</Text>
+                <Text style={styles.stepLabel}>{label}</Text>
+                <Text style={styles.stepMins}>{mins}</Text>
+              </View>
+            ))}
           </View>
+          <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
+            <Text style={styles.whyLink}>Why breathe? See the 5 slides</Text>
+          </Pressable>
         </ScrollView>
         <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={() => setPhase("flash")} />
+          <CustomButton title={`Start warm-up · ${warmupMin} min`} onPress={() => setPhase("warmup")} />
+        </View>
+        {slides}
+      </View>
+    )
+  }
+
+  // ── Warm-up ────────────────────────────────────────────────────────────────
+  if (phase === "warmup") {
+    return (
+      <View style={shared_styles.screen}>
+        <TopBar title="Warm-up" onBack={() => setPhase("intro")} />
+        <BlockNotes text={EXPLORATION_WARMUP_NOTES} compact />
+        <View style={styles.centerContent}>
+          <Text style={styles.bigTimerLabel}>warm-up</Text>
+          <Text style={styles.bigTimer}>{formatTime(warmupLeft)}</Text>
+          <Pressable style={styles.nextBtn} onPress={() => setPhase("breathingIntro")}>
+            <Text style={styles.nextBtnText}>I&apos;m warm</Text>
+          </Pressable>
+        </View>
+      </View>
+    )
+  }
+
+  // ── Breathing ──────────────────────────────────────────────────────────────
+  if (phase === "breathingIntro") {
+    return (
+      <View style={shared_styles.screen}>
+        <TopBar title="Breathing" onBack={() => setPhase("intro")} />
+        <ScrollView contentContainerStyle={shared_styles.introContent}>
+          <BlockNotes text={EXPLORATION_BREATHING_NOTES} title="Before part 1" />
+          <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
+            <Text style={styles.whyLink}>Why breathe?</Text>
+          </Pressable>
+        </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title={`Start breathing · ${breathingMin} min`} onPress={() => setPhase("breathing")} />
+          <Pressable onPress={() => setPhase("flashIntro")} hitSlop={10} style={styles.skipLink}>
+            <Text style={styles.skipLinkText}>Skip breathing</Text>
+          </Pressable>
+        </View>
+        {slides}
+      </View>
+    )
+  }
+
+  if (phase === "breathing") {
+    return (
+      <View style={shared_styles.screen}>
+        <TopBar title="Breathing" onBack={() => setPhase("breathingIntro")} />
+        <View style={styles.centerContent}>
+          <BreathingCircle />
+          <Text style={styles.breathTimer}>{formatTime(breathingLeft)}</Text>
+          <Pressable style={styles.nextBtn} onPress={() => setPhase("flashIntro")}>
+            <Text style={styles.nextBtnText}>I&apos;m ready</Text>
+          </Pressable>
+        </View>
+      </View>
+    )
+  }
+
+  // ── Ready for part 1 ───────────────────────────────────────────────────────
+  if (phase === "flashIntro") {
+    const text = explorationNotes(explorationDescription(block?.description), startColour)
+    return (
+      <View style={shared_styles.screen}>
+        <TopBar title="Part 1 · Flash" onBack={() => setPhase("breathingIntro")} />
+        <ScrollView contentContainerStyle={shared_styles.introContent}>
+          <Text style={styles.readyLine}>Head on the wall. One move at a time.</Text>
+          <BlockNotes text={text} title="Coach notes" />
+        </ScrollView>
+        <View style={shared_styles.footer}>
+          <CustomButton title={`Start part 1 · ${flashMin} min`} onPress={() => setPhase("flash")} />
         </View>
       </View>
     )
@@ -234,7 +352,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "flash") {
     return (
       <View style={shared_styles.screen}>
-        {activeBar("Part 1 · Flash", flashLeft, () => setPhase("intro"))}
+        {activeBar("Part 1 · Flash", flashLeft, () => setPhase("flashIntro"))}
         <View style={styles.container}>
           {notice && <Text style={styles.notice}>{notice}</Text>}
 
@@ -452,6 +570,31 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   )
 }
 
+// The breathing guide: a circle that grows while breathing in (4 s) and
+// shrinks while breathing out (6 s), with the cue under it.
+function BreathingCircle() {
+  const styles = useSheet(sheet)
+  const scale = useRef(new Animated.Value(0.55)).current
+  const [cue, setCue] = useState<"in" | "out">("in")
+  useEffect(() => {
+    const start = Date.now()
+    const ease = Easing.inOut(Easing.sin)
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(scale, { toValue: 1, duration: BREATH_IN_MS, easing: ease, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 0.55, duration: BREATH_OUT_MS, easing: ease, useNativeDriver: true }),
+    ]))
+    loop.start()
+    const id = setInterval(() => setCue(breathAt(Date.now() - start).phase), 200)
+    return () => { loop.stop(); clearInterval(id) }
+  }, [scale])
+  return (
+    <View style={styles.breathWrap}>
+      <Animated.View style={[styles.breathCircle, { transform: [{ scale }] }]} />
+      <Text style={styles.breathCue}>{cue === "in" ? "Breathe in" : "Breathe out"}</Text>
+    </View>
+  )
+}
+
 function shortDate(iso: string): string {
   const d = new Date(iso)
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -507,8 +650,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
   finishPillText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   startButton: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
   startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
-  timeLimitPill: { alignSelf: "flex-start", backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
   // Part 2's countdown — same as FreeSessionBlock.
   centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
@@ -516,6 +657,22 @@ const sheet = paperSheet((C) => StyleSheet.create({
   bigTimer: { fontSize: 72, fontWeight: "700", color: C.textPrimary, fontVariant: ["tabular-nums"], letterSpacing: -2, lineHeight: 80 },
   stopBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.red, marginTop: 8 },
   stopBtnText: { fontSize: 18, fontWeight: "700", color: C.red, letterSpacing: 0.3 },
+
+  stepsCard: { backgroundColor: C.surface, borderRadius: 14, padding: 14, gap: 10 },
+  stepRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  stepNum: { width: 22, height: 22, borderRadius: 11, overflow: "hidden", textAlign: "center", lineHeight: 22, fontSize: 12, fontWeight: "800", color: C.onAccent, backgroundColor: C.green },
+  stepLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
+  stepMins: { fontSize: 14, fontWeight: "700", color: C.textSecondary, fontVariant: ["tabular-nums"] },
+  whyLink: { fontSize: 15, fontWeight: "700", color: C.green, textDecorationLine: "underline" },
+  skipLink: { alignSelf: "center", paddingTop: 12 },
+  skipLinkText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
+  readyLine: { fontSize: 20, fontWeight: "800", color: C.textPrimary, lineHeight: 26 },
+  nextBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.green, marginTop: 8 },
+  nextBtnText: { fontSize: 18, fontWeight: "700", color: C.green, letterSpacing: 0.3 },
+  breathWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
+  breathCircle: { position: "absolute", width: 240, height: 240, borderRadius: 120, backgroundColor: C.green, opacity: 0.22 },
+  breathCue: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  breathTimer: { fontSize: 32, fontWeight: "700", color: C.textSecondary, fontVariant: ["tabular-nums"] },
 
   questionContent: { padding: 20, gap: 14 },
   question: { fontSize: 18, fontWeight: "700", color: C.textPrimary, lineHeight: 24 },
