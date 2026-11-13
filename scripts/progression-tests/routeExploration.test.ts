@@ -6,6 +6,7 @@ import assert from "node:assert/strict"
 import {
   EXPLORATION_DEFAULT_DESCRIPTION, explorationDescription, explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
   nextExplorationColour, summarizeExploration, routePoints, explorationPoints, formatPoints, lastExploration,
+  breathAt, explorationFocusSlides,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
 import { buildPlanWorkout } from "@/utils/planWorkout"
@@ -46,6 +47,24 @@ const oldDefault = "Warm up first with *4 orange routes* before you start.\nPart
 assert.equal(explorationDescription(oldDefault), EXPLORATION_DEFAULT_DESCRIPTION)
 assert.equal(explorationDescription(""), EXPLORATION_DEFAULT_DESCRIPTION)
 assert.equal(explorationDescription(" Coach text "), "Coach text")
+// the #65 default (before warm-up + breathing) → current default
+const default65 = "Warm up first with *4 routes below your flash level*.\n*Don't read the routes before the timer starts.*\nPart 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.\n*3 goes max* per route. Sent or not, move on to the next one.\n*No trying single moves*: every go starts from the start holds.\nSent every {colour}? Go up one colour and try every route of that colour until time runs out.\nTried every {colour} and there's still time left? Go on to part 2."
+assert.equal(explorationDescription(default65), EXPLORATION_DEFAULT_DESCRIPTION)
+assert.ok(EXPLORATION_DEFAULT_DESCRIPTION.includes("2 min of breathing"))
+
+// ── breathing: 4 s in, 6 s out ──
+assert.deepEqual(breathAt(0), { phase: "in", progress: 0 })
+assert.deepEqual(breathAt(2000), { phase: "in", progress: 0.5 })
+assert.deepEqual(breathAt(4000), { phase: "out", progress: 0 })
+assert.deepEqual(breathAt(7000), { phase: "out", progress: 0.5 })
+assert.deepEqual(breathAt(10000), { phase: "in", progress: 0 })
+assert.deepEqual(breathAt(-50), { phase: "in", progress: 0 })
+
+// ── first-time slides carry the block's minutes ──
+const slides = explorationFocusSlides({ warmup: 5, breathing: 2, flash: 25, project: 25 })
+assert.equal(slides.length, 5)
+assert.ok(slides[1].text.startsWith("2 minutes"))
+assert.ok(slides[4].text.includes("Warm-up 5 min") && slides[4].text.includes("Part 1 Flash 25 min"))
 
 // ── dates ──
 assert.equal(isMonday("2026-11-02"), true)
