@@ -9,7 +9,7 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
-  BREATH_IN_MS, BREATH_OUT_MS, breathAt, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
+  BREATH_IN_MS, BREATH_OUT_MS, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
   EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
@@ -577,15 +577,22 @@ function BreathingCircle() {
   const scale = useRef(new Animated.Value(0.55)).current
   const [cue, setCue] = useState<"in" | "out">("in")
   useEffect(() => {
-    const start = Date.now()
+    // Each half starts the next one, so the words always match the circle
+    // (also after the app was in the background, where animations pause).
+    let alive = true
     const ease = Easing.inOut(Easing.sin)
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(scale, { toValue: 1, duration: BREATH_IN_MS, easing: ease, useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 0.55, duration: BREATH_OUT_MS, easing: ease, useNativeDriver: true }),
-    ]))
-    loop.start()
-    const id = setInterval(() => setCue(breathAt(Date.now() - start).phase), 200)
-    return () => { loop.stop(); clearInterval(id) }
+    const run = (half: "in" | "out") => {
+      if (!alive) return
+      setCue(half)
+      Animated.timing(scale, {
+        toValue: half === "in" ? 1 : 0.55,
+        duration: half === "in" ? BREATH_IN_MS : BREATH_OUT_MS,
+        easing: ease,
+        useNativeDriver: true,
+      }).start(({ finished }) => { if (finished) run(half === "in" ? "out" : "in") })
+    }
+    run("in")
+    return () => { alive = false; scale.stopAnimation() }
   }, [scale])
   return (
     <View style={styles.breathWrap}>
