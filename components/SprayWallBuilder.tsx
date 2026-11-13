@@ -2,7 +2,7 @@ import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { sequenceLevelColour } from "@/utils/sprayBlocks"
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperDark, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getDisplayRadius, pixelsToFractionRadius } from "@/utils/holdRadius"
 import { useImageSize } from "@/utils/useImageSize"
 import {
@@ -143,7 +143,16 @@ interface Props {
   onSave?: (name: string, data: { variations: RouteVariations; level: number; type: string }) => void
 }
 
-export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, originalOnly = false, onBack, onSave }: Props) {
+// Media screen: always dark Paper (photos and video read best on a dark frame).
+export function SprayWallBuilder(props: Props) {
+  return (
+    <PaperDark>
+      <SprayWallBuilderBody {...props} />
+    </PaperDark>
+  )
+}
+
+function SprayWallBuilderBody({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, originalOnly = false, onBack, onSave }: Props) {
   const C = useC()
   const styles = useSheet(stylesSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.

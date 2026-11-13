@@ -1,4 +1,4 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperDark, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { CoachFeedbackRecorder } from "@/components/CoachFeedbackRecorder"
 import { VideoRow } from "@/services/videoStorage"
 import * as FileSystem from "expo-file-system/legacy"
@@ -52,7 +52,16 @@ const CONTROLS_HIDE_DELAY = 3000
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, startInFeedbackMode, onFeedbackSent }: Props) {
+// Media screen: always dark Paper (photos and video read best on a dark frame).
+export function VideoPlayerModal(props: Props) {
+  return (
+    <PaperDark>
+      <VideoPlayerModalBody {...props} />
+    </PaperDark>
+  )
+}
+
+function VideoPlayerModalBody({ uri, title, onClose, video, canGiveFeedback, startInFeedbackMode, onFeedbackSent }: Props) {
   const C = useC()
   const styles = useSheet(stylesSheet)
   const fb = useSheet(fbSheet)

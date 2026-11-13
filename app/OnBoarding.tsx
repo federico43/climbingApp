@@ -1,4 +1,4 @@
-import { LinearGradient } from "expo-linear-gradient"
+import { Melt, PaperBackground, PosterHeadline } from "@/components/paper"
 import { Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -16,7 +16,7 @@ export default function Onboarding() {
   }
 
   return (
-    <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
+    <PaperBackground>
       <SafeAreaView style={{ flex: 1 }}>
         <View
           style={{
@@ -27,16 +27,10 @@ export default function Onboarding() {
             gap: 24,
           }}
         >
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: "700",
-              color: C.textPrimary,
-              textAlign: "center",
-            }}
-          >
-            Hi there!
-          </Text>
+          <View style={{ alignItems: "center" }}>
+            <Melt top={0} height={260} />
+            <PosterHeadline size={72}>Hi there!</PosterHeadline>
+          </View>
 
           <Text
             style={{
@@ -79,6 +73,6 @@ export default function Onboarding() {
           </View>
         </View>
       </SafeAreaView>
-    </LinearGradient>
+    </PaperBackground>
   )
 }

@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperDark, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { DebugLogOverlay } from "@/components/DebugLogOverlay"
 import { DrawingCanvas } from "@/components/DrawingCanvas"
 import { useFeedbackReplay } from "@/hooks/useFeedbackReplay"
@@ -81,7 +81,16 @@ interface Props {
 // TimelineEvent log, which — together with the bubble recording — is all the
 // athlete's replay needs to reconstruct the session (see
 // hooks/useFeedbackReplay.ts). No flattened video is ever produced.
-export function CoachFeedbackRecorder({ player, video, positionMs, durationMs, onClose, onSent }: Props) {
+// Media screen: always dark Paper (photos and video read best on a dark frame).
+export function CoachFeedbackRecorder(props: Props) {
+  return (
+    <PaperDark>
+      <CoachFeedbackRecorderBody {...props} />
+    </PaperDark>
+  )
+}
+
+function CoachFeedbackRecorderBody({ player, video, positionMs, durationMs, onClose, onSent }: Props) {
   const C = useC()
   const styles = useSheet(stylesSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.

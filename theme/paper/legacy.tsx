@@ -1,7 +1,7 @@
 import { C as LEGACY } from "@/utils/theme"
 import React, { createContext, useContext } from "react"
 import { TextStyle } from "react-native"
-import { usePaper } from "./PaperThemeProvider"
+import { PaperThemeOverride, usePaper } from "./PaperThemeProvider"
 import { font, PaperMode, PaperTheme, paperThemes } from "./tokens"
 
 // Paper Mint for screens written against the old dark palette (utils/theme `C`).
@@ -189,4 +189,17 @@ function typeFor(s: TextStyle): TextStyle {
     out.fontFamily = w >= 800 ? font.bold : w >= 700 ? font.bodyBold : font.body
   }
   return out
+}
+
+/**
+ * Dark Paper Mint whatever the theme: for media screens (video player, coach
+ * feedback recorder, spray wall photo editor) where photos and video read
+ * best on a dark frame.
+ */
+export function PaperDark({ children }: { children: React.ReactNode }) {
+  return (
+    <PaperThemeOverride mode="dark">
+      <PaperScope>{children}</PaperScope>
+    </PaperThemeOverride>
+  )
 }

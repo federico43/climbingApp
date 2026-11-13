@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { APPWRITE_ENDPOINT } from '@/components/AppWrite'
 import { canReachServer, OFFLINE_MESSAGE } from '@/utils/network'
 import CustomTextInput from '@/components/customTextInput'
-import { colors, MainStyles } from '@/theme/colors'
+import { Melt, PaperBackground, PosterHeadline } from '@/components/paper'
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from '@/components/auth-context'
 import { useRouter } from 'expo-router'
@@ -96,8 +96,9 @@ export default function AuthScreen() {
   // ── Forgot password screens ────────────────────────────────────────────────
   if (mode === "forgot") {
     return (
+      <PaperBackground>
       <View style={styles.container}>
-        <Text style={MainStyles.ScreenTitle}>Reset password</Text>
+        <Title>Reset password</Title>
 
         {recoverySent ? (
           <>
@@ -119,15 +120,15 @@ export default function AuthScreen() {
           </>
         )}
       </View>
+      </PaperBackground>
     )
   }
 
   // ── Sign in / Sign up ──────────────────────────────────────────────────────
   return (
+    <PaperBackground>
     <View style={styles.container}>
-      <Text style={MainStyles.ScreenTitle}>
-        {mode === "signin" ? "Welcome Back" : "Create Account"}
-      </Text>
+      <Title>{mode === "signin" ? "Welcome Back" : "Create Account"}</Title>
 
       {offlineBanner}
 
@@ -157,6 +158,17 @@ export default function AuthScreen() {
         mode="text"
       />
     </View>
+    </PaperBackground>
+  )
+}
+
+// The screen's poster headline (one per screen) with the melt behind it.
+function Title({ children }: { children: string }) {
+  return (
+    <View style={{ marginBottom: 24 }}>
+      <Melt top={10} height={260} />
+      <PosterHeadline size={64}>{children}</PosterHeadline>
+    </View>
   )
 }
 
@@ -166,7 +178,6 @@ const stylesSheet = paperSheet((C) => StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 20,
     gap: 4,
-    backgroundColor: C.bg,
   },
   offline: {
     flexDirection: 'row',
@@ -199,7 +210,7 @@ const stylesSheet = paperSheet((C) => StyleSheet.create({
     color: C.bg,
   },
   errorText: {
-    color: colors.text,
+    color: C.textPrimary,
     textAlign: 'center',
   },
   hint: {
