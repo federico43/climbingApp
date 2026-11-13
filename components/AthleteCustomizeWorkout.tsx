@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import { ExerciseRow, ProtocolRow, createProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import {
   AuthoringAthleteContext,
@@ -51,6 +51,7 @@ export function AthleteCustomizeWorkout({
   onClose: () => void
   onSaved?: () => void
 }) {
+  const s = useSheet(sSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const editing = !!protocol
@@ -233,7 +234,7 @@ export function AthleteCustomizeWorkout({
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   // Solid dark gray — same tone as the library pane, so the whole screen
   // reads as one dedicated surface instead of a scrim over Design.
   root: { flex: 1, backgroundColor: C.surface },
@@ -280,4 +281,4 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: C.green, borderStyle: "dashed",
   },
   addBlockBtnText: { fontSize: 15, fontWeight: "800", color: C.green },
-})
+}))

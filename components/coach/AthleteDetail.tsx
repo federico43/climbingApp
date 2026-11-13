@@ -1,8 +1,7 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
-import { PaperThemeOverride } from "@/components/paper"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { AthleteCard, useFlashLevel } from "@/components/coach/AthleteCard"
 import { HomeworkCard } from "@/components/coach/HomeworkCard"
@@ -14,7 +13,7 @@ import { StatsCard } from "@/components/coach/StatsCard"
 import { useAthleteStats } from "@/hooks/useAthleteStats"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
 import { CardioCard } from "./CardioCard"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import {
   AppUser,
   getActiveTrainingPlan,
@@ -50,6 +49,9 @@ export function AthleteDetail({
   // Homework / plan / sessions changed — the roster's summary is stale.
   onChanged: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loadingSessions, setLoadingSessions] = useState(true)
@@ -142,11 +144,8 @@ export function AthleteDetail({
       onHomeworkChanged={() => { reloadHomework(); onChanged(); setTemplatesKey((k) => k + 1) }}
     />
   )
-  // Coach screens aren't redesigned yet: keep the timeline dark here.
   const timelineCard = plan && (
-    <PaperThemeOverride mode="dark">
-      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
-    </PaperThemeOverride>
+    <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
   )
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
@@ -241,7 +240,7 @@ export function AthleteDetail({
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingVertical: 12,
@@ -256,4 +255,4 @@ const styles = StyleSheet.create({
   columns: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   mainCol: { flex: 1, gap: 14, minWidth: 0 },
   sideCol: { width: 360, gap: 14 },
-})
+}))

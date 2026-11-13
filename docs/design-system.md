@@ -213,3 +213,12 @@ The old screens are written against the dark palette `C` (utils/theme.ts) and st
 - Text/icons on a filled colour use `C.onAccent` (never `C.bg`); homework uses `C.homework`.
 
 First area done this way: the athlete workout flow (workout overlay, every block, rest timers, the summary, the jump rope cardio session).
+
+Since 2026-11-13 the whole app runs inside one `<PaperScope>` (app/_layout.tsx), so every screen follows the Paper light/dark theme:
+
+- Screens opened from Settings or the coach tools use `SubScreenHeader`: a 40px outlined back button, the mono subtitle as eyebrow and the screen title as the poster headline with the melt behind it. Screen roots use `ScreenGradient`, which is `PaperBackground` (paper, dark glow, grain) inside the scope.
+- Home (athletes without a plan) is a `PaperScreen` like Plan: greeting row, "Your next workout" + the workout's name as poster, cards, pinned Primary CTA.
+- Coach tab: outlined icon tools, "Your athletes · N" + COACH poster. The athlete detail, its timeline and the block review follow the theme (no more forced dark).
+- Always dark (`PaperDark`): the class calendar (calTheme) and the media screens: video player, coach feedback recorder, feedback viewer, spray wall photo editor.
+- Tab bar and the minimised workout bar follow the theme on every screen except the class calendar.
+

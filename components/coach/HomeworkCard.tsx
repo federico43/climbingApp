@@ -1,6 +1,6 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
 import { HomeworkCoachSheet } from "@/components/HomeworkCoachSheet"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import { ProtocolRow, SessionRow } from "@/services/BoulderGraphService"
 import { HOMEWORK_STATE_LABEL, dueByOf, homeworkStatus, leftByAthlete, shortDay, type HomeworkState } from "@/utils/homework"
 import { extraSessionOf, weekdaysLabel } from "@/utils/extraSession"
@@ -12,6 +12,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native"
 // "Left by athlete on Wed 5 Nov · 1 of 3 rounds done" — homework the
 // athlete left mid-workout themselves (utils/homework.ts leftByAthlete).
 function LeftByAthlete({ hw }: { hw: ProtocolRow }) {
+  const styles = useSheet(stylesSheet)
   const left = leftByAthlete(hw)
   if (!left) return null
   return (
@@ -24,19 +25,20 @@ function LeftByAthlete({ hw }: { hw: ProtocolRow }) {
 
 // "Extra session on their own · Sat or Sun" (utils/extraSession.ts).
 function ExtraSessionLine({ hw }: { hw: ProtocolRow }) {
+  const styles = useSheet(stylesSheet)
   const extra = extraSessionOf(hw)
   if (!extra) return null
   return <Text style={styles.left}>Extra session on their own · {weekdaysLabel(extra.days)}</Text>
 }
 
-const STATE_COLOR: Record<HomeworkState, string> = {
+const STATE_COLOR = (C: Palette): Record<HomeworkState, string> => ({
   not_scheduled: C.textMuted,
   scheduled: C.textPrimary,
   missed: C.yellow,
   cant_attend: C.red,
   overdue: C.red,
   done: C.green,
-}
+})
 
 // The athlete's homework: pending first, then the last 3 weeks' done ones.
 // Tap a pending one to move its deadline (HomeworkCoachSheet).
@@ -45,6 +47,9 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
   sessions: SessionRow[]
   onChanged: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const [managing, setManaging] = useState<ProtocolRow | null>(null)
   const today = localDateStr(new Date())
   const cutoff = addDays(today, -21)
@@ -82,7 +87,7 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
               <Text style={styles.note}>“{hw.homeworkNote}”</Text>
             )}
           </View>
-          <Text style={[styles.state, { color: STATE_COLOR[status.state] }]}>
+          <Text style={[styles.state, { color: STATE_COLOR(C)[status.state] }]}>
             {HOMEWORK_STATE_LABEL[status.state]}{status.date ? ` ${shortDay(status.date)}` : ""}
           </Text>
           <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
@@ -109,7 +114,7 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   count: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   countText: { fontSize: 11, fontWeight: "800", color: C.bg },
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
@@ -121,4 +126,4 @@ const styles = StyleSheet.create({
   divider: { fontSize: 11, fontWeight: "700", color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4 },
   doneRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   doneName: { flex: 1, color: C.textSecondary, fontWeight: "500" },
-})
+}))

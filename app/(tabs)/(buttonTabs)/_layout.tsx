@@ -10,7 +10,7 @@ import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
 import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
-import { LinearGradient } from "expo-linear-gradient"
+import { font } from "@/theme/paper/tokens"
 import { Tabs } from "expo-router"
 import { useEffect } from "react"
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
@@ -23,7 +23,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated"
-import { C } from "@/utils/theme"
 
 export default function TabsLayout() {
   const { isLoadingUser } = useAuth()
@@ -41,6 +40,7 @@ function TabsWithPlan() {
   // Inset folded into the bar's own height/padding so icons sit just above the
   // home indicator / nav bar — no dead space below them.
   const insets = useSafeAreaInsets()
+  const paper = usePaperTheme()
 
   // Wait for the plan so Home doesn't flash before redirecting to Plan.
   if (loadingPlan) return null
@@ -52,6 +52,10 @@ function TabsWithPlan() {
 
   return (
     <WorkoutProvider>
+      {/* Paper Mint everywhere (theme/paper/legacy.tsx): every old screen,
+          sheet and modal under the tabs follows the Paper light/dark theme. */}
+      <PaperScope>
+      <TabsStatusBar />
       <Tabs
         tabBar={(props) => <CustomTabBar tabBarProps={props} hideBar={hideBar} />}
         // Hidden screens (Settings, Videos, …) are pushed like a stack, so
@@ -59,17 +63,17 @@ function TabsWithPlan() {
         backBehavior="history"
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: C.bg },
+          sceneStyle: { backgroundColor: paper.paper },
           tabBarStyle: {
-            backgroundColor: C.bg,
-            borderTopColor: C.border,
+            backgroundColor: paper.paper,
+            borderTopColor: paper.hairline,
             borderTopWidth: 1,
             height: 60 + insets.bottom,
             paddingBottom: insets.bottom,
             paddingTop: 8,
           },
-          tabBarActiveTintColor: C.green,
-          tabBarInactiveTintColor: "#4F5C56",
+          tabBarActiveTintColor: paper.mintText,
+          tabBarInactiveTintColor: paper.label,
         }}
       >
         {/* ── Visible tabs ───────────────────────────────────────────── */}
@@ -138,24 +142,32 @@ function TabsWithPlan() {
       {/* Class pushes: reload the calendar, and open it when tapped */}
       <ClassNotificationRouter role={role} />
       <PackageLock />
+      </PaperScope>
     </WorkoutProvider>
   )
 }
 
 // ─── Custom tab bar — adds MinimizedWorkoutBar above the default ──────────────
 
-// Screens already in Paper Mint: the bar follows the phone's light/dark
-// there, and stays dark under the screens that aren't redesigned yet.
-const PAPER_ROUTES = new Set(["plan"])
+// Every screen is Paper Mint now, so the bar follows the Paper light/dark
+// everywhere — except the class calendar, which is dark-only (calTheme).
+const DARK_ROUTES = new Set(["classes", "schedule"])
 
 function CustomTabBar({ tabBarProps, hideBar }: { tabBarProps: BottomTabBarProps; hideBar: boolean }) {
   const route = tabBarProps.state.routes[tabBarProps.state.index]?.name
-  if (PAPER_ROUTES.has(route)) return <TabBarBody tabBarProps={tabBarProps} hideBar={hideBar} />
+  if (!DARK_ROUTES.has(route)) return <TabBarBody tabBarProps={tabBarProps} hideBar={hideBar} />
   return (
     <PaperThemeOverride mode="dark">
       <TabBarBody tabBarProps={tabBarProps} hideBar={hideBar} />
     </PaperThemeOverride>
   )
+}
+
+// Status bar text that reads on the paper (screens that need another style,
+// like the dark class calendar or the workout, set their own on top).
+function TabsStatusBar() {
+  const t = usePaperTheme()
+  return <StatusBar style={t.mode === "dark" ? "light" : "dark"} />
 }
 
 function TabBarBody({ tabBarProps, hideBar }: { tabBarProps: BottomTabBarProps; hideBar: boolean }) {
@@ -252,61 +264,56 @@ function MinimizedWorkoutBar({
   onExpand: () => void
   onEnd: () => void
 }) {
+  const t = usePaperTheme()
+  const dark = t.mode === "dark"
   const pulse = useSharedValue(1)
-  const barPulse = useSharedValue(1)
 
   useEffect(() => {
-    // Dot — sharper pulse
+    // Live dot: mint, breathing while the workout runs in the background.
     pulse.value = withRepeat(
-      withTiming(0.4, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+      withTiming(0.35, { duration: 900, easing: Easing.inOut(Easing.quad) }),
       -1,
       true
     )
-    // Whole-bar — strong breathing of the gradient bloom
-    barPulse.value = withRepeat(
-      withTiming(0.05, { duration: 1600, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true
-    )
-  }, [pulse, barPulse])
+  }, [pulse])
 
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }))
-  const barOverlayStyle = useAnimatedStyle(() => ({ opacity: barPulse.value }))
 
   return (
-    <Pressable onPress={onExpand}>
-      <View>
-        <LinearGradient
-          colors={["#1B2420", "#2E5C4A", "#62C99A"]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={miniBarStyles.bar}
+    <Pressable onPress={onExpand} accessibilityRole="button" accessibilityLabel={`Back to ${protocolName}`}>
+      <View style={[miniBarStyles.bar, { backgroundColor: t.tabBar, borderTopColor: t.hairline, borderBottomColor: t.hairline }]}>
+        <Animated.View
+          style={[
+            miniBarStyles.liveDot,
+            { backgroundColor: t.mint, borderColor: dark ? t.mint : t.ink },
+            dark && { shadowColor: t.mint, shadowOpacity: 0.8, shadowRadius: 6 },
+            pulseStyle,
+          ]}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={[miniBarStyles.title, { color: t.ink }]} numberOfLines={1}>{protocolName}</Text>
+          <Text style={[miniBarStyles.sub, { color: t.mintText }]}>
+            {`IN PROGRESS · BLOCK ${currentIndex + 1} OF ${totalBlocks}`}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onExpand}
+          style={[miniBarStyles.iconBtn, { backgroundColor: t.mint, borderColor: dark ? t.mint : t.ink }]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Open workout"
         >
-          {/* Live dot */}
-          <Animated.View style={[miniBarStyles.liveDot, pulseStyle]} />
-          <View style={{ flex: 1 }}>
-            <Text style={miniBarStyles.title} numberOfLines={1}>{protocolName}</Text>
-            <Text style={miniBarStyles.sub}>
-              Block {currentIndex + 1} of {totalBlocks}
-            </Text>
-          </View>
-          <Pressable onPress={onExpand} style={miniBarStyles.iconBtn} hitSlop={6}>
-            <Ionicons name="chevron-up" size={18} color="#fff" />
-          </Pressable>
-          <Pressable onPress={onEnd} style={miniBarStyles.iconBtn} hitSlop={6}>
-            <Ionicons name="close" size={18} color="#fff" />
-          </Pressable>
-        </LinearGradient>
-
-        {/* Whole-bar breathing overlay — strong bright bloom fading in/out */}
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, barOverlayStyle]}>
-          <LinearGradient
-            colors={["transparent", "rgba(125,255,184,0.95)", "transparent"]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={{ flex: 1 }}
-          />
-        </Animated.View>
+          <Ionicons name="chevron-up" size={18} color={t.onMint} />
+        </Pressable>
+        <Pressable
+          onPress={onEnd}
+          style={[miniBarStyles.iconBtn, { borderColor: t.ink }]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Exit workout"
+        >
+          <Ionicons name="close" size={18} color={t.ink} />
+        </Pressable>
       </View>
     </Pressable>
   )
@@ -315,19 +322,14 @@ function MinimizedWorkoutBar({
 const miniBarStyles = StyleSheet.create({
   bar: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingVertical: 12, gap: 12,
+    paddingHorizontal: 16, paddingVertical: 10, gap: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  liveDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: "#fff",
-    shadowColor: "#fff", shadowOpacity: 0.9, shadowRadius: 4,
-  },
-  title: { fontSize: 15, fontWeight: "700", color: "#fff" },
-  sub: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2 },
+  liveDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5 },
+  title: { fontSize: 15, fontFamily: font.bold },
+  sub: { fontSize: 10, fontFamily: font.mono, letterSpacing: 1.1, marginTop: 3 },
   iconBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: "rgba(0,0,0,0.25)",
+    width: 34, height: 34, borderRadius: 17, borderWidth: 1.5,
     alignItems: "center", justifyContent: "center",
   },
-  iconText: { color: "#fff", fontSize: 18, fontWeight: "700", lineHeight: 20 },
 })

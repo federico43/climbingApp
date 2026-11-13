@@ -1,6 +1,6 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import { EdgeLiftMaxSection } from "@/components/coach/EdgeLiftMaxSection"
 import { HangMaxSection } from "@/components/coach/HangMaxSection"
 import { AppUser, CheckinRow, getCheckinForToday, getSessionsByUserId, getUsers, setFlashLevel } from "@/services/BoulderGraphService"
@@ -18,6 +18,8 @@ export function AthleteCard({ athlete, flashLevel, onPickFlashLevel, onHomeworkC
   onPickFlashLevel: (value: string) => void
   onHomeworkChanged?: () => void
 }) {
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const [todayCheckin, setTodayCheckin] = useState<CheckinRow | null>(null)
 
   useEffect(() => {
@@ -71,6 +73,8 @@ function DensityFlashSuggestion({ athleteId, flashLevel, onApply }: {
   flashLevel: string | null
   onApply: (value: string) => void
 }) {
+  const styles = useSheet(stylesSheet)
+  const card = useSheet(cardSheet)
   const [test, setTest] = useState<{ at: string; climbs: DensityClimb[] } | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -133,7 +137,7 @@ export function useFlashLevel(athlete: AppUser): [string | null, (value: string)
   return [level, pick]
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   checkinRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   checkinLabel: { fontSize: 12, fontWeight: "700", color: C.green },
   checkinStat: { fontSize: 13.5, fontWeight: "600", color: C.textSecondary },
@@ -152,4 +156,4 @@ const styles = StyleSheet.create({
   densityTitle: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   applyBtn: { backgroundColor: C.green, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
   applyText: { fontSize: 13, fontWeight: "700", color: C.bg },
-})
+}))

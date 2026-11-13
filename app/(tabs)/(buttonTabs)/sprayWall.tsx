@@ -1,4 +1,6 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
 import {
@@ -67,6 +69,8 @@ async function makeAndUploadPreview(localUri: string): Promise<string | undefine
 }
 
 export default function SprayWallScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null) // null = All
@@ -307,14 +311,9 @@ export default function SprayWallScreen() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Spray Wall</Text>
-        <View style={{ width: 32 }} />
-      </View>
+    <ScreenGradient>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <SubScreenHeader title="Spray Wall" onBack={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} />
 
       {/* Wall chip strip */}
       <ScrollView
@@ -543,11 +542,14 @@ export default function SprayWallScreen() {
         </Pressable>
       </Modal>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
 
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -664,4 +666,4 @@ const styles = StyleSheet.create({
   modalBtnPrimary: { backgroundColor: C.green },
   modalBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   modalBtnTextPrimary: { color: C.bg },
-})
+}))

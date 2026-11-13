@@ -1,12 +1,14 @@
-import { C } from '@/utils/theme'
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import { account } from '@/components/AppWrite'
 import CustomButton from '@/components/customButton'
 import CustomTextInput from '@/components/customTextInput'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import { Melt, PaperBackground, PosterHeadline } from '@/components/paper'
 
 export default function ResetPasswordScreen() {
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { userId, secret } = useLocalSearchParams<{ userId?: string; secret?: string }>()
 
@@ -36,17 +38,20 @@ export default function ResetPasswordScreen() {
 
   if (done) {
     return (
+      <PaperBackground>
       <View style={styles.container}>
-        <Text style={styles.title}>Password updated</Text>
+        <Title>Password updated</Title>
         <Text style={styles.subtitle}>Your password has been changed. You can now sign in with your new password.</Text>
         <CustomButton title="Sign in" onPress={() => router.replace('/auth')} />
       </View>
+      </PaperBackground>
     )
   }
 
   return (
+    <PaperBackground>
     <View style={styles.container}>
-      <Text style={styles.title}>New password</Text>
+      <Title>New password</Title>
       <Text style={styles.subtitle}>Choose a strong password for your account.</Text>
 
       <CustomTextInput placeHolder="New password" onChangeText={setPassword} secureTextEntry />
@@ -60,16 +65,26 @@ export default function ResetPasswordScreen() {
         disabled={loading}
       />
     </View>
+    </PaperBackground>
   )
 }
 
-const styles = StyleSheet.create({
+// The screen's poster headline (one per screen) with the melt behind it.
+function Title({ children }: { children: string }) {
+  return (
+    <View style={{ marginBottom: 8 }}>
+      <Melt top={10} height={240} />
+      <PosterHeadline size={64}>{children}</PosterHeadline>
+    </View>
+  )
+}
+
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
     gap: 10,
-    backgroundColor: C.bg,
   },
   title: {
     fontSize: 28,
@@ -88,4 +103,4 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     textAlign: 'center',
   },
-})
+}))

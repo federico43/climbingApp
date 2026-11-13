@@ -1,7 +1,6 @@
-import { C } from "@/utils/theme"
-import { card } from "@/components/coach/styles"
+import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
+import { cardSheet } from "@/components/coach/styles"
 import { BlockReviewView } from "@/components/BlockReviewView"
-import { PaperThemeOverride } from "@/components/paper"
 import type { useAthleteStats } from "@/hooks/useAthleteStats"
 import type { TrainingPlanRow } from "@/services/BoulderGraphService"
 import {
@@ -26,6 +25,9 @@ type Tab = StatsPeriod | "review"
 // block start → end. With nothing logged yet, the sample data can be
 // previewed.
 export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<typeof useAthleteStats> }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const { blockStats, allStats, reviewPlans, statsForPlan, loadPlans, loadingPlans, plansLoaded } = data
   // null = not picked yet: This block when there is one.
   const [tab, setTab] = useState<Tab | null>(null)
@@ -83,10 +85,7 @@ export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<
                     })}
                   </ScrollView>
                 )}
-                {/* Coach screens aren't redesigned yet: keep the review dark here. */}
-                <PaperThemeOverride mode="dark">
-                  <BlockReviewView stats={statsForPlan(reviewPlan)} title={planTitle(reviewPlan)} subtitle={planStatus(reviewPlan)} />
-                </PaperThemeOverride>
+                <BlockReviewView stats={statsForPlan(reviewPlan)} title={planTitle(reviewPlan)} subtitle={planStatus(reviewPlan)} />
               </>
             )
       ) : (
@@ -130,6 +129,9 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
   periodKey: string
   onSample: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const [selectedId, setSelectedId] = useState("edge_lift_max")
   if (loading) return <ActivityIndicator color={C.green} />
   if (!stats || isEmptyPeriod(stats)) {
@@ -194,6 +196,7 @@ function PeriodView({ stats, loading, wide, width, periodKey, onSample }: {
 }
 
 function PeriodPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const styles = useSheet(stylesSheet)
   return (
     <Pressable
       onPress={onPress}
@@ -208,14 +211,16 @@ function PeriodPill({ label, active, onPress }: { label: string; active: boolean
   )
 }
 
-const PILL: Record<StatTrend, { bg: string; fg: string }> = {
-  up: { bg: "rgba(111,207,151,0.14)", fg: C.green },
-  down: { bg: "rgba(219,80,74,0.16)", fg: "#F07A74" },
+const PILL = (C: Palette): Record<StatTrend, { bg: string; fg: string }> => ({
+  up: { bg: C.tint("rgba(111,207,151,0.14)"), fg: C.green },
+  down: { bg: C.tint("rgba(219,80,74,0.16)"), fg: C.red },
   same: { bg: C.surfaceHigh, fg: C.textSecondary },
-}
+})
 
 function ChangePill({ trend, text }: { trend: StatTrend; text: string }) {
-  const pill = PILL[trend]
+  const C = useC()
+  const styles = useSheet(stylesSheet)
+  const pill = PILL(C)[trend]
   return (
     <View style={[styles.pill, { backgroundColor: pill.bg }]}>
       <Text style={[styles.pillText, { color: pill.fg }]}>{text}</Text>
@@ -229,6 +234,7 @@ function Tile({ metric, width, selected, onPress }: {
   selected: boolean
   onPress: () => void
 }) {
+  const styles = useSheet(stylesSheet)
   const change = statChange(metric)
   return (
     <Pressable
@@ -252,6 +258,8 @@ function Tile({ metric, width, selected, onPress }: {
 const EDGE = 18
 
 function TrendChart({ metric, width }: { metric: StatMetric; width: number }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const values = metric.points.map((p) => p.value)
   const max = Math.max(...values, 1)
   const min = Math.min(...values)
@@ -352,6 +360,8 @@ function labelBox(slot: number) {
 // (many exercises scroll sideways), then one row per focus the exercise was
 // done at: its own line, now vs then.
 function PatternPanel({ stats, outer, width, startOpen }: { stats: ScPatternStats; outer: number; width: number; startOpen: boolean }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [open, setOpen] = useState(startOpen)
   const [exerciseId, setExerciseId] = useState(stats.exercises[0].id)
   const exercise = stats.exercises.find((e) => e.id === exerciseId) ?? stats.exercises[0]
@@ -421,6 +431,8 @@ function PatternPanel({ stats, outer, width, startOpen }: { stats: ScPatternStat
 }
 
 function Sparkline({ metric, color, width }: { metric: StatMetric; color: string; width: number }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const values = metric.points.map((p) => p.value)
   const max = Math.max(...values)
   const min = Math.min(...values)
@@ -476,6 +488,8 @@ function barsScroll(n: number, width: number): boolean {
 // One bar per session: height = minutes on the project, colour = the grade
 // worked, a check above it when the project went down.
 function ProjectPanel({ sessions, outer, width }: { sessions: ProjectSessionStat[]; outer: number; width: number }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const max = Math.max(...sessions.map((s) => s.minutes))
   const sends = sessions.filter((s) => s.sent).length
   return (
@@ -527,6 +541,8 @@ function ProjectPanel({ sessions, outer, width }: { sessions: ProjectSessionStat
 }
 
 function WarmupPanel({ sessions, outer, width }: { sessions: WarmupSessionStat[]; outer: number; width: number }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const max = Math.max(...sessions.map((s) => s.minutes))
   const first = sessions[0].minutes
   const last = sessions[sessions.length - 1].minutes
@@ -573,6 +589,8 @@ function WarmupPanel({ sessions, outer, width }: { sessions: WarmupSessionStat[]
 // One bar per Density test: height = score (sum of the grades sent), the
 // score on top, the boulders logged under it in the legend.
 function DensityPanel({ sessions, outer, width }: { sessions: DensitySessionStat[]; outer: number; width: number }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const max = Math.max(1, ...sessions.map((s) => s.score))
   const first = sessions[0].score
   const last = sessions[sessions.length - 1].score
@@ -618,7 +636,7 @@ function DensityPanel({ sessions, outer, width }: { sessions: DensitySessionStat
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   sample: { fontSize: 11, fontWeight: "700", color: C.yellow, textTransform: "uppercase", letterSpacing: 0.6 },
   periods: { flexDirection: "row", gap: 8 },
   period: {
@@ -674,4 +692,4 @@ const styles = StyleSheet.create({
   legend: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendText: { fontSize: 11, color: C.textSecondary },
   hint: { marginTop: -4, fontSize: 11, color: C.textMuted },
-})
+}))

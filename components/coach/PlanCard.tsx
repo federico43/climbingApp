@@ -1,10 +1,10 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
 import { ExtraSessionRow } from "@/components/coach/ExtraSessionRow"
 import { PlanPauses } from "@/components/coach/PlanPauses"
 import { Block, injectLocalIds } from "@/components/workoutBlocks"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import { ADAPTATION_COLOR } from "@/utils/adaptations"
 import { MOVEMENT_TYPE_LABEL } from "@/utils/movementTypes"
 import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
@@ -85,6 +85,9 @@ export function PlanCard({
   onPlanWorkouts: (rows: ProtocolRow[]) => void
   onHomeworkChanged: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   // Which of Edit details / Create is generating or saving the next workout.
   const [busy, setBusy] = useState<"edit" | "create" | null>(null)
   // The plan workout Create just saved, for the "sent" line.
@@ -421,6 +424,7 @@ export function PlanCard({
 }
 
 function Stat({ value, label }: { value: string; label: string }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.stat}>
       <Text style={styles.statNum}>{value}</Text>
@@ -430,6 +434,8 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 function PickRow({ color, text, onSwap }: { color: string; text: string; onSwap?: () => void }) {
+  const styles = useSheet(stylesSheet)
+  const card = useSheet(cardSheet)
   return (
     <View style={styles.pickRow}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -445,6 +451,7 @@ function PickRow({ color, text, onSwap }: { color: string; text: string; onSwap?
 
 // One block's exercises, together, under its line.
 function ExerciseChips({ names }: { names: string[] }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={styles.exerciseWrap}>
       {names.map((name, i) => (
@@ -456,7 +463,7 @@ function ExerciseChips({ names }: { names: string[] }) {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   planName: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
   planWindow: { fontSize: 13, color: C.textSecondary, fontVariant: ["tabular-nums"] },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -482,4 +489,4 @@ const styles = StyleSheet.create({
   exerciseWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginLeft: 18, marginTop: -2 },
   exerciseChip: { backgroundColor: C.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   pickText: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
-})
+}))

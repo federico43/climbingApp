@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AppUser } from "@/services/BoulderGraphService"
 import { VideoRow, deleteVideo, getFeedbackForAthlete, getVideosByUserId } from "@/services/videoStorage"
 import { VideoPlayerModal } from "@/components/VideoPlayerModal"
@@ -40,6 +40,8 @@ async function makeThumb(id: string, url: string): Promise<string | null> {
 // training). Tap to play. Silently hidden when there are no clips (or the
 // videos backend isn't configured yet).
 export function AthleteVideos({ athlete }: { athlete: AppUser }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [videos, setVideos] = useState<VideoRow[]>([])
   const [loading, setLoading] = useState(true)
   // Tapping a card opens it to just watch; tapping the pencil badge opens the
@@ -178,7 +180,7 @@ export function AthleteVideos({ athlete }: { athlete: AppUser }) {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   section: { gap: 8 },
   label: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.6 },
   hint: { fontSize: 11, color: C.textMuted, marginTop: -4 },
@@ -207,4 +209,4 @@ const styles = StyleSheet.create({
   cardBody: { padding: 10, gap: 2 },
   cardLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   cardMeta: { fontSize: 11, color: C.textSecondary },
-})
+}))

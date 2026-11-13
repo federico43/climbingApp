@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { CreateSequenceModal } from "@/components/AthleteSequenceCreator"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
@@ -24,6 +24,8 @@ import { SafeAreaView } from "react-native-safe-area-context"
 // Settings › My sequences — the athlete's own spray-wall routes: try,
 // edit, delete, or build a new one. (Home has a "New sequence" shortcut.)
 export default function MySequencesScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
   const workoutCtx = useWorkoutContext()
   const [sequences, setSequences] = useState<SprayRouteRow[]>([])
@@ -167,7 +169,7 @@ export default function MySequencesScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   scroll: { paddingHorizontal: 16, paddingBottom: 40, gap: 12 },
   linkText: { fontSize: 13, fontWeight: "600", color: C.green },
@@ -184,4 +186,4 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 13, color: C.textSecondary },
   empty: { backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 16, alignItems: "center" },
   emptyText: { fontSize: 14, color: C.textMuted },
-})
+}))

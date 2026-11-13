@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import {
   ADAPTATION_COLOR,
   ADAPTATION_LABEL,
@@ -67,6 +67,8 @@ export function AdaptationDonut({
   centerSubLabel,
   onSlicePress,
 }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const total = useMemo(
     () => slices.reduce((s, x) => s + Math.max(0, x.value), 0),
     [slices]
@@ -151,6 +153,7 @@ export function AdaptationDonutLegend({
   formatValue: (v: number) => string
   onPress?: (slice: DonutSlice) => void
 }) {
+  const legendStyles = useSheet(legendStylesSheet)
   return (
     <View style={legendStyles.list}>
       {slices.map((s) => {
@@ -175,16 +178,16 @@ export function AdaptationDonutLegend({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   centerLabelWrap: { alignItems: "center", justifyContent: "center" },
   centerLabel: {
     fontSize: 26, fontWeight: "800", color: C.textPrimary,
     fontVariant: ["tabular-nums"],
   },
   centerSubLabel: { fontSize: 11, color: C.textMuted, marginTop: 2 },
-})
+}))
 
-const legendStyles = StyleSheet.create({
+const legendStylesSheet = paperSheet((C) => StyleSheet.create({
   list: { gap: 6, width: "100%", paddingHorizontal: 16, marginTop: 14 },
   row: {
     flexDirection: "row", alignItems: "center", gap: 10,
@@ -194,4 +197,4 @@ const legendStyles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   label: { flex: 1, fontSize: 13, color: C.textPrimary, fontWeight: "600" },
   value: { fontSize: 12, color: C.textSecondary, fontVariant: ["tabular-nums"] },
-})
+}))

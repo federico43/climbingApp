@@ -1,10 +1,10 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { useAuth } from "@/components/auth-context"
 import { DailyCheckInModal } from "@/components/DailyCheckInModal"
 import { VersionFooter } from "@/components/VersionFooter"
-import { Ionicons } from "@expo/vector-icons"
 import { CheckinRow, getCheckinForToday } from "@/services/BoulderGraphService"
 import { usePaperPreference, type PaperPreference } from "@/theme/paper/PaperThemeProvider"
 import { useRouter } from "expo-router"
@@ -28,6 +28,7 @@ const TRAINING_ROWS = [
 ]
 
 export default function SettingsScreen() {
+  const styles = useSheet(stylesSheet)
   const { User, signOut, role } = useAuth()
   const router = useRouter()
   const { preference, setPreference } = usePaperPreference()
@@ -44,15 +45,7 @@ export default function SettingsScreen() {
     <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-        </Pressable>
-        <View>
-          <Text style={styles.title}>Settings</Text>
-          <Text style={styles.subtitle}>Account & preferences</Text>
-        </View>
-      </View>
+      <SubScreenHeader title="Settings" subtitle="Account & preferences" />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Profile section */}
@@ -207,7 +200,7 @@ export default function SettingsScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   segments: { flexDirection: "row", gap: 6 },
   segment: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surfaceHigh },
@@ -301,4 +294,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: C.red,
   },
-})
+}))

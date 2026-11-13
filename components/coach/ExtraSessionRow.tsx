@@ -1,5 +1,5 @@
-import { C } from "@/utils/theme"
-import { card } from "@/components/coach/styles"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
+import { cardSheet } from "@/components/coach/styles"
 import {
   createProtocol, getSessionsByUserId, listBlocks, listExercises, listPlanWorkouts,
   type AppUser, type ProtocolRow, type SessionRow, type TrainingPlanRow,
@@ -30,6 +30,8 @@ export function ExtraSessionRow({ athlete, plan, sessions, homework, flashLevel,
   flashLevel: string | null
   onSent: () => void
 }) {
+  const styles = useSheet(stylesSheet)
+  const card = useSheet(cardSheet)
   const [busy, setBusy] = useState(false)
   const today = localDateStr(new Date())
   const gymDays = trainingDays(athlete.defaultClasses, sessions, today)
@@ -101,7 +103,7 @@ export function ExtraSessionRow({ athlete, plan, sessions, homework, flashLevel,
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   box: { backgroundColor: C.surfaceHigh, borderRadius: 12, padding: 12, gap: 6 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },
@@ -109,4 +111,4 @@ const styles = StyleSheet.create({
   text: { fontSize: 12.5, color: C.textSecondary, marginLeft: 18 },
   sent: { fontSize: 12.5, fontWeight: "600", color: C.green, marginLeft: 18 },
   btn: { alignSelf: "flex-end", marginTop: 2 },
-})
+}))

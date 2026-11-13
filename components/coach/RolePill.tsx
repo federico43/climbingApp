@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getUsers, setUserRole, type AppUser, type UserRole } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
@@ -9,6 +9,8 @@ import { Alert, Pressable, StyleSheet, Text } from "react-native"
 // "coach" receive those pushes. Sign-up never set it, so this pill (next to
 // the athlete's name on the coach dashboard) lets the coach assign it.
 export function RolePill({ athlete, onChanged }: { athlete: AppUser; onChanged?: () => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [role, setRole] = useState<UserRole | null>(athlete.role ?? null)
   const [saving, setSaving] = useState(false)
 
@@ -66,7 +68,7 @@ export function RolePill({ athlete, onChanged }: { athlete: AppUser; onChanged?:
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   pill: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
@@ -75,4 +77,4 @@ const styles = StyleSheet.create({
   pillMissing: { borderColor: C.yellow },
   text: { fontSize: 12, fontWeight: "700", color: C.textSecondary, textTransform: "capitalize" },
   textMissing: { color: C.yellow, textTransform: "none" },
-})
+}))

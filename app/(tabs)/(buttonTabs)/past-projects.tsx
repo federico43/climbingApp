@@ -1,4 +1,6 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { ProjectPickerModal } from "@/components/ProjectPickerModal"
 import DateTimePicker from "@react-native-community/datetimepicker"
@@ -13,7 +15,6 @@ import {
   SessionRow,
   updateProject,
 } from "@/services/BoulderGraphService"
-import { useRouter } from "expo-router"
 import { Image as CachedImage } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
@@ -122,7 +123,8 @@ function extractSequenceRoutes(sessions: SessionRow[]): SequenceRoute[] {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PastProjects() {
-  const router = useRouter()
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [tab, setTab] = useState<Tab>("boulders")
   const [loading, setLoading] = useState(true)
   const [projects, setProjects] = useState<ProjectRow[]>([])
@@ -155,15 +157,9 @@ export default function PastProjects() {
   useEffect(() => { load() }, [load])
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Text style={styles.backArrow}>‹</Text>
-        </Pressable>
-        <Text style={styles.title}>Projects</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <ScreenGradient>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <SubScreenHeader title="Projects" />
 
       {/* Tabs */}
       <View style={styles.tabRow}>
@@ -237,6 +233,7 @@ export default function PastProjects() {
         }}
       />
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
@@ -249,6 +246,8 @@ function BouldersTab({
   projects: ProjectRow[]
   onTap: (p: ProjectRow) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   if (projects.length === 0) {
     return (
       <View style={styles.empty}>
@@ -310,6 +309,7 @@ function SequencesTab({
   routes: SequenceRoute[]
   onTap: (r: SequenceRoute) => void
 }) {
+  const styles = useSheet(stylesSheet)
   if (routes.length === 0) {
     return (
       <View style={styles.empty}>
@@ -349,6 +349,8 @@ function ProjectEditModal({
   onSaved: (p: ProjectRow) => void
   onDeleted: (id: string) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [name, setName] = useState("")
   const [grade, setGrade] = useState("")
   const [status, setStatus] = useState<"active" | "sent" | "failed">("sent")
@@ -479,6 +481,7 @@ function ProjectEditModal({
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -517,6 +520,8 @@ function SequenceRouteContent({
 }: {
   route: SequenceRoute; holds: any[]; onClose: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const insets = useSafeAreaInsets()
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
   const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(null)
@@ -590,8 +595,10 @@ function SequenceRouteContent({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 16, paddingVertical: 14,
@@ -698,4 +705,4 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
   fabText: { fontSize: 28, color: C.bg, lineHeight: 32 },
-})
+}))

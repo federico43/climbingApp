@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { adaptationColor } from "@/utils/adaptations"
 import { getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { colourLabel } from "@/utils/boulderColours"
@@ -170,6 +170,8 @@ export function groupByDay(sessions: SessionRow[], dayCount: number): DaySummary
 }
 
 export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: string; wide?: boolean }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const [days, setDays] = useState<DaySummary[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
@@ -269,7 +271,7 @@ export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: s
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   wrap: { marginHorizontal: 14, marginBottom: 8, backgroundColor: C.surfaceHigh, borderRadius: 12, overflow: "hidden" },
   toggle: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -315,4 +317,4 @@ const s = StyleSheet.create({
   pillText: { fontSize: 10, fontWeight: "700" },
   blockName: { fontSize: 12, fontWeight: "700", color: C.textPrimary, flex: 1 },
   line: { fontSize: 12, color: C.textSecondary, lineHeight: 17 },
-})
+}))

@@ -1,5 +1,5 @@
-import { C } from "@/utils/theme"
-import { card } from "@/components/coach/styles"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { cardSheet } from "@/components/coach/styles"
 import { AppUser, createProtocol, getUsers, setHangMax } from "@/services/BoulderGraphService"
 import { notifyHomeworkAssigned } from "@/services/homework"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
@@ -19,6 +19,9 @@ export function HangMaxSection({ athlete, onHomeworkChanged }: {
   athlete: AppUser
   onHomeworkChanged?: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
+  const card = useSheet(cardSheet)
   const [log, setLog] = useState<HangMaxEntry[]>(parseHangLog(athlete.hangMaxLog))
   const [edge, setEdge] = useState<string>(DEFAULT_HANG_EDGE)
   const [draft, setDraft] = useState("")
@@ -142,7 +145,7 @@ export function HangMaxSection({ athlete, onHomeworkChanged }: {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   headRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   label: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
   needsTest: {
@@ -162,4 +165,4 @@ const styles = StyleSheet.create({
   logRow: { flexDirection: "row", justifyContent: "space-between" },
   logWhen: { fontSize: 13, color: C.textSecondary },
   logKg: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
-})
+}))

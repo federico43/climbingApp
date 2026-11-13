@@ -1,6 +1,4 @@
-import { C } from "@/utils/theme"
 import { ConsumeAuth } from "@/components/auth-context"
-import { ScalePressable } from "@/components/ScalePressable"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { introAlreadyPlayed, LaunchExtras } from "@/components/LaunchExtras"
 import { LatestWorkoutCard, pickLatestWorkout, startWorkout } from "@/components/LatestWorkoutCard"
@@ -8,24 +6,20 @@ import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { SettingsButton } from "@/components/SettingsButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
-import { PaperThemeOverride } from "@/components/paper"
+import { Body, Card, CardTitle, GhostButton, Melt, Mono, PaperScreen, PosterHeadline, posterSize, PrimaryCTA, StickyFooter, usePaper } from "@/components/paper"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { getUsers, listAthleteTemplates, ProtocolRow } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
 import { Redirect, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
-import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
-  Text,
+  useWindowDimensions,
   View,
 } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 // Home = the most recently built workout, full screen, ready to start.
 // Only for athletes without a training plan — with one, the Plan tab is
@@ -37,6 +31,8 @@ export default function HomeScreen() {
 }
 
 function HomeContent() {
+  const t = usePaper()
+  const { width } = useWindowDimensions()
   const { User, userName } = ConsumeAuth()
   const router = useRouter()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
@@ -82,80 +78,93 @@ function HomeContent() {
   const homework = templates.filter((t) => t.planPart === "homework")
   const ready = introDone && !loading
 
+  // Poster: the workout on screen (Paper Mint §1), its name melting into the card.
+  const eyebrow = workout ? "Your next workout" : "Welcome"
+  const headline = workout?.name?.trim() || "Training"
+
   return (
     <>
-      <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <View style={styles.header}>
-          <Text style={styles.greeting} numberOfLines={1}>Hi, {userName}</Text>
-          <View style={styles.headerActions}>
-            <NewSequenceButton />
-            <SettingsButton />
+      <PaperScreen
+        bottomPad={workout ? START_AREA + 24 : 48}
+        header={
+          <View style={styles.header}>
+            <Body weight={800} size={24} numberOfLines={1} style={{ flex: 1 }}>
+              {userName ? `Hi, ${userName}` : "Home"}
+            </Body>
+            <View style={styles.headerActions}>
+              <NewSequenceButton paper />
+              <SettingsButton paper />
+            </View>
           </View>
-        </View>
-
+        }
+        scrollProps={{
+          contentContainerStyle: { flexGrow: 1 },
+          refreshControl: (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true)
+                try { await load() }
+                finally { setRefreshing(false) }
+              }}
+              tintColor={t.mintDeep}
+              colors={[t.mintDeep]}
+            />
+          ),
+        }}
+        footer={
+          ready && workout ? (
+            <StickyFooter>
+              <PrimaryCTA label="Start workout" onPress={() => startWorkout(workoutCtx, workout)} />
+            </StickyFooter>
+          ) : undefined
+        }
+      >
         {!ready ? (
-          introDone ? <ActivityIndicator style={{ marginTop: 60 }} color={C.green} /> : null
+          introDone ? <ActivityIndicator style={{ marginTop: 60 }} color={t.mintDeep} /> : null
         ) : (
-          // Home isn't redesigned yet: its Paper Mint cards stay dark.
-          <PaperThemeOverride mode="dark">
-          <View style={{ flex: 1 }}>
-            <ScrollView
-              contentContainerStyle={styles.scroll}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={async () => {
-                    setRefreshing(true)
-                    try { await load() }
-                    finally { setRefreshing(false) }
-                  }}
-                  tintColor={C.green}
-                  colors={[C.green]}
-                />
-              }
-            >
-              {homework.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <HomeworkSection homework={homework} onStart={(hw) => startWorkout(workoutCtx, hw)} onChanged={load} />
-                </View>
-              )}
-              {workout ? (
-                <LatestWorkoutCard workout={workout} scPart={scPart} fill />
+          <>
+            <View style={{ marginTop: 20, marginBottom: 40 }}>
+              <Melt top={40} />
+              <Mono>{eyebrow}</Mono>
+              {/* One or two words: the full poster, one word per line. A longer
+                  workout name wraps at a smaller size (three lines at most)
+                  so it doesn't push the workout off the screen. */}
+              {headline.split(/\s+/).length <= 2 ? (
+                <PosterHeadline style={{ marginTop: 8 }}>{headline}</PosterHeadline>
               ) : (
-                <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
-                  <Ionicons name="barbell-outline" size={36} color={C.textMuted} />
-                  <Text style={styles.emptyTitle}>No workout yet</Text>
-                  <Text style={styles.emptyText}>Your coach hasn&apos;t built a workout for you yet.</Text>
-                  <Pressable
-                    onPress={() => router.push("/(tabs)/(buttonTabs)/workout-library" as any)}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.emptyLink}>Browse the workout library ›</Text>
-                  </Pressable>
-                </Animated.View>
+                <PosterHeadline size={Math.max(40, posterSize(headline, 60, width))} wordPerLine={false} numberOfLines={3} style={{ marginTop: 8 }}>
+                  {headline}
+                </PosterHeadline>
               )}
-            </ScrollView>
-
-            {workout && (
-              <View style={styles.startWrap} pointerEvents="box-none">
-                <LinearGradient
-                  colors={["rgba(36,35,37,0)", "#242325"]}
-                  style={styles.startFade}
-                  pointerEvents="none"
-                />
-                <ScalePressable style={styles.startBtn} onPress={() => startWorkout(workoutCtx, workout)}>
-                  <Ionicons name="play" size={20} color={C.bg} />
-                  <Text style={styles.startBtnText}>Start workout</Text>
-                </ScalePressable>
+            </View>
+            {homework.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <HomeworkSection homework={homework} onStart={(hw) => startWorkout(workoutCtx, hw)} onChanged={load} />
               </View>
             )}
-          </View>
-          </PaperThemeOverride>
+            {workout ? (
+              <LatestWorkoutCard workout={workout} scPart={scPart} />
+            ) : (
+              <Animated.View entering={FadeInDown.duration(420)}>
+                <Card style={{ alignItems: "center", paddingVertical: 36, gap: 10 }}>
+                  <Ionicons name="barbell-outline" size={34} color={t.label} />
+                  <CardTitle size={26} style={{ textAlign: "center" }}>No workout yet</CardTitle>
+                  <Body muted size={14} style={{ textAlign: "center" }}>
+                    Your coach hasn&apos;t built a workout for you yet.
+                  </Body>
+                  <GhostButton
+                    label="Browse the workout library"
+                    compact
+                    style={{ marginTop: 6 }}
+                    onPress={() => router.push("/(tabs)/(buttonTabs)/workout-library" as any)}
+                  />
+                </Card>
+              </Animated.View>
+            )}
+          </>
         )}
-      </SafeAreaView>
-      </LinearGradient>
+      </PaperScreen>
 
       <LaunchExtras onIntroDone={() => setIntroDone(true)} />
     </>
@@ -167,57 +176,13 @@ function HomeContent() {
 const START_AREA = 96
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "transparent" },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     gap: 12,
   },
-  greeting: { flexShrink: 1, fontSize: 22, fontWeight: "700", color: C.textPrimary },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
-
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: START_AREA,
-  },
-
-  emptyCard: {
-    flexGrow: 1,
-    backgroundColor: C.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: C.textPrimary },
-  emptyText: { fontSize: 14, color: C.textSecondary, textAlign: "center" },
-  emptyLink: { marginTop: 6, fontSize: 14, fontWeight: "600", color: C.green },
-
-  // Start button pinned above the tab bar, over a fade so the list scrolls under it.
-  startWrap: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingBottom: 16 },
-  startFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: START_AREA + 16 },
-  startBtn: {
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: C.green,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  startBtnText: { fontSize: 17, fontWeight: "800", color: C.bg },
 })

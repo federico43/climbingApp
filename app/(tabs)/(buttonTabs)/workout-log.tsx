@@ -1,5 +1,7 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Block, BlockEditorRow, BlockPickerModal, stripLocalIds } from "@/components/workoutBlocks"
 import { saveSession } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
@@ -18,7 +20,6 @@ import {
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { LinearGradient } from "expo-linear-gradient"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,8 @@ function totalMinutes(blocks: Block[]): number {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LogPastSessionScreen() {
+  const C = useC()
+  const s = useSheet(sSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const router = useRouter()
@@ -139,17 +142,12 @@ export default function LogPastSessionScreen() {
   }
 
   return (
-    <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
+    <ScreenGradient>
       <SafeAreaView style={s.safe} edges={["top"]}>
-        <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
-            <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-          </Pressable>
-          <Text style={s.title} numberOfLines={1}>
-            {athleteId ? `Log a session for ${athleteName ?? "athlete"}` : "Log a past session"}
-          </Text>
-          <View style={s.backBtn} />
-        </View>
+        <SubScreenHeader
+          title={athleteId ? "Log a session" : "Log a past session"}
+          subtitle={athleteId ? `For ${athleteName ?? "athlete"}` : undefined}
+        />
 
         <View style={s.body}>
           {/* ── Date card ────────────────────────────────────────────────────── */}
@@ -237,13 +235,13 @@ export default function LogPastSessionScreen() {
           allowSaveToLibrary={false}
         />
       </Modal>
-    </LinearGradient>
+    </ScreenGradient>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row",
@@ -309,4 +307,4 @@ const s = StyleSheet.create({
     marginHorizontal: 16, marginTop: 12, marginBottom: 16,
   },
   saveBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
-})
+}))
