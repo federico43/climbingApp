@@ -302,7 +302,12 @@ export function WorkOutState({
           <IconButton icon="close" label="Close summary" size={36} onPress={() => closeSummaryRef.current()} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.summaryScroll}
+          showsVerticalScrollIndicator={false}
+          // Reading the summary: don't close it under the athlete's finger.
+          onScrollBeginDrag={() => setHoldSummary(true)}
+        >
           {/* Melt kept short and soft, behind the headline only, so the
               mint "Back to home" button sits on plain paper and stands out. */}
           <View pointerEvents="none" style={styles.summaryMelt}>
@@ -323,6 +328,9 @@ export function WorkOutState({
               <Mono>Block{doneCount !== 1 ? "s" : ""} done</Mono>
             </View>
           </Card>
+
+          {/* Above the blocks, so it's on screen before the summary closes itself. */}
+          <NextTimeCard list={tasks} onOpen={() => { setHoldSummary(true); setEditorOpen(true) }} />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>
@@ -374,8 +382,6 @@ export function WorkOutState({
               {"What's left is on your Plan page as homework — pick a day to finish it in the next 5 days."}
             </Body>
           )}
-
-          <NextTimeCard list={tasks} onOpen={() => { setHoldSummary(true); setEditorOpen(true) }} />
 
           <PrimaryCTA
             label="Back to home"

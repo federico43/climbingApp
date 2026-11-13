@@ -222,7 +222,8 @@ export function NextTimeEditor({ list, update, onClose, insets }: {
       <NavBar
         title="For next time"
         status={n === 0 ? "No tasks yet" : `${n} task${n === 1 ? "" : "s"} · saved`}
-        onSave={onClose}
+        // A task typed but not added yet is kept, not lost.
+        onSave={() => { add(); onClose() }}
         saveLabel="Done"
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -310,7 +311,8 @@ function makeStyles(t: PaperTheme) {
       justifyContent: "flex-end",
     },
     sheet: { paddingHorizontal: space.gutter },
-    sheetCard: { backgroundColor: t.paper, paddingTop: space.cardPad, paddingBottom: 6 },
+    // flexShrink: a long list scrolls inside the card and "Got it" stays on screen.
+    sheetCard: { backgroundColor: t.paper, paddingTop: space.cardPad, paddingBottom: 6, flexShrink: 1 },
     sheetHead: { paddingHorizontal: space.cardPad, paddingBottom: 6 },
     row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
     rowDivider: { borderTopWidth: 1, borderTopColor: t.hairline },
