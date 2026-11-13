@@ -154,7 +154,7 @@ export default function ExercisesScreen() {
 
   return (
     <ScreenGradient>
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.screen}>
       <SubScreenHeader
         title="Exercise Library"
         onBack={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)}
@@ -289,7 +289,9 @@ export default function ExercisesScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1 },
+  safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

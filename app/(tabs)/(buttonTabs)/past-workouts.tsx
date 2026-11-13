@@ -1,4 +1,5 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { font } from "@/theme/paper/tokens"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
@@ -23,6 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 // day for its sessions) and weekly / monthly counts. Moved here from Home.
 export default function PastWorkoutsScreen() {
   const C = useC()
+  const P = usePaperScope()
   const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
   const workoutCtx = useWorkoutContext()
@@ -101,7 +103,7 @@ export default function PastWorkoutsScreen() {
           >
             <View style={styles.section}>
               <View style={styles.calendarWrap}>
-                <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={StyleSheet.absoluteFill} />
+                {!P && <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={StyleSheet.absoluteFill} />}
                 <Calendar
                   markedDates={trainedDays}
                   maxDate={today.toISOString().slice(0, 10)}
@@ -122,6 +124,8 @@ export default function PastWorkoutsScreen() {
                     textDayFontWeight: "500",
                     textMonthFontWeight: "700",
                     textDayHeaderFontWeight: "600",
+                    // Paper Mint: Archivo, mono weekday letters.
+                    ...(P && { textDayFontFamily: font.body, textMonthFontFamily: font.title, textDayHeaderFontFamily: font.mono, textSectionTitleColor: C.textMuted }),
                   }}
                   style={styles.calendar}
                 />

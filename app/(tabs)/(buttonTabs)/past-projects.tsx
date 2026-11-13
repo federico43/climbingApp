@@ -158,7 +158,7 @@ export default function PastProjects() {
 
   return (
     <ScreenGradient>
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
       <SubScreenHeader title="Projects" />
 
       {/* Tabs */}
@@ -596,7 +596,9 @@ function SequenceRouteContent({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1 },
+  safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 16, paddingVertical: 14,
