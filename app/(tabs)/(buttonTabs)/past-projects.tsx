@@ -1,4 +1,6 @@
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { ProjectPickerModal } from "@/components/ProjectPickerModal"
 import DateTimePicker from "@react-native-community/datetimepicker"
@@ -13,7 +15,6 @@ import {
   SessionRow,
   updateProject,
 } from "@/services/BoulderGraphService"
-import { useRouter } from "expo-router"
 import { Image as CachedImage } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
@@ -124,7 +125,6 @@ function extractSequenceRoutes(sessions: SessionRow[]): SequenceRoute[] {
 export default function PastProjects() {
   const C = useC()
   const styles = useSheet(stylesSheet)
-  const router = useRouter()
   const [tab, setTab] = useState<Tab>("boulders")
   const [loading, setLoading] = useState(true)
   const [projects, setProjects] = useState<ProjectRow[]>([])
@@ -157,15 +157,9 @@ export default function PastProjects() {
   useEffect(() => { load() }, [load])
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Text style={styles.backArrow}>‹</Text>
-        </Pressable>
-        <Text style={styles.title}>Projects</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <SubScreenHeader title="Projects" />
 
       {/* Tabs */}
       <View style={styles.tabRow}>
@@ -239,6 +233,7 @@ export default function PastProjects() {
         }}
       />
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
@@ -601,7 +596,7 @@ function SequenceRouteContent({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 16, paddingVertical: 14,

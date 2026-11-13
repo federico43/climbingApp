@@ -2,7 +2,6 @@ import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
-import { PaperThemeOverride } from "@/components/paper"
 import { SessionDetailModal } from "@/components/SessionDetailModal"
 import { AthleteCard, useFlashLevel } from "@/components/coach/AthleteCard"
 import { HomeworkCard } from "@/components/coach/HomeworkCard"
@@ -145,11 +144,8 @@ export function AthleteDetail({
       onHomeworkChanged={() => { reloadHomework(); onChanged(); setTemplatesKey((k) => k + 1) }}
     />
   )
-  // Coach screens aren't redesigned yet: keep the timeline dark here.
   const timelineCard = plan && (
-    <PaperThemeOverride mode="dark">
-      <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
-    </PaperThemeOverride>
+    <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
   )
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>

@@ -1,4 +1,6 @@
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
 import {
@@ -309,14 +311,9 @@ export default function SprayWallScreen() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Spray Wall</Text>
-        <View style={{ width: 32 }} />
-      </View>
+      <SubScreenHeader title="Spray Wall" onBack={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} />
 
       {/* Wall chip strip */}
       <ScrollView
@@ -545,11 +542,12 @@ export default function SprayWallScreen() {
         </Pressable>
       </Modal>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1 },
 
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

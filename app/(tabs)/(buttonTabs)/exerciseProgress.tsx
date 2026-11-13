@@ -1,10 +1,11 @@
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { getSessions, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -246,17 +247,13 @@ export default function ExerciseProgressScreen() {
   const latest = dataPoints[dataPoints.length - 1]
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
-          style={styles.backBtn}
-        >
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>{name}</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <SubScreenHeader
+        title={name ?? "Exercise"}
+        subtitle="Progress"
+        onBack={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
@@ -329,13 +326,14 @@ export default function ExerciseProgressScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

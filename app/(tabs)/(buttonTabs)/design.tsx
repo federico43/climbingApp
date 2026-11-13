@@ -1,4 +1,5 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { Melt, Mono, PosterHeadline } from "@/components/paper"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -31,6 +32,7 @@ const TOOLS: Tool[] = [
 
 export default function DesignScreen() {
   const C = useC()
+  const P = usePaperScope()
   const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { width } = useWindowDimensions()
@@ -135,22 +137,38 @@ export default function DesignScreen() {
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <ScreenEntry>
           {!phoneDetail && (
-            <View style={styles.topBar}>
-              <Text style={styles.title}>Coach</Text>
-              <View style={styles.tools}>
-                {TOOLS.map((t) => (
-                  <ScalePressable key={t.key} style={styles.toolBtn} onPress={() => router.push(t.route as any)}>
-                    <Ionicons name={t.icon} size={18} color={C.green} />
-                    {isWide && <Text style={styles.toolLabel}>{t.label}</Text>}
-                  </ScalePressable>
-                ))}
-                {isWide && (
-                  <Pressable style={styles.toolBtn} onPress={pullRefresh} accessibilityLabel="Refresh">
-                    {refreshing ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={18} color={C.green} />}
-                  </Pressable>
-                )}
-                <SettingsButton />
+            <View style={styles.topWrap}>
+              {P && <Melt top={52} height={220} />}
+              <View style={styles.topBar}>
+                {!P && <Text style={styles.title}>Coach</Text>}
+                {P && <View style={{ flex: 1 }} />}
+                <View style={styles.tools}>
+                  {TOOLS.map((t) => (
+                    <ScalePressable
+                      key={t.key}
+                      style={styles.toolBtn}
+                      onPress={() => router.push(t.route as any)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t.label}
+                    >
+                      <Ionicons name={t.icon} size={18} color={P ? P.ink : C.green} />
+                      {isWide && <Text style={styles.toolLabel}>{t.label}</Text>}
+                    </ScalePressable>
+                  ))}
+                  {isWide && (
+                    <Pressable style={styles.toolBtn} onPress={pullRefresh} accessibilityLabel="Refresh">
+                      {refreshing ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={18} color={P ? P.ink : C.green} />}
+                    </Pressable>
+                  )}
+                  <SettingsButton paper={!!P} />
+                </View>
               </View>
+              {P && (
+                <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+                  <Mono>{`Your athletes · ${roster.summaries.length}`}</Mono>
+                  <PosterHeadline size={64} style={{ marginTop: 6 }}>Coach</PosterHeadline>
+                </View>
+              )}
             </View>
           )}
 
@@ -184,18 +202,23 @@ export default function DesignScreen() {
   )
 }
 
-const stylesSheet = paperSheet((C) => StyleSheet.create({
+const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
+  topWrap: {
+    paddingBottom: P ? 16 : 0,
+    borderBottomWidth: P ? 0 : 1, borderBottomColor: C.border,
+  },
   topBar: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: C.border,
   },
   title: { flex: 1, fontSize: 26, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
   tools: { flexDirection: "row", alignItems: "center", gap: 8 },
   toolBtn: {
     flexDirection: "row", alignItems: "center", gap: 6, minWidth: 38, height: 38, justifyContent: "center",
     backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 10,
+    // Paper: the 40px outlined icon button.
+    ...(P && { minWidth: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: P.ink, backgroundColor: "transparent" }),
   },
   toolLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   wide: { flex: 1, flexDirection: "row" },

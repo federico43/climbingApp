@@ -1,4 +1,6 @@
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ExerciseForm } from "@/components/ExerciseForm"
@@ -151,20 +153,19 @@ export default function ExercisesScreen() {
   }
 
   return (
+    <ScreenGradient>
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Exercise Library</Text>
-        {isCoach ? (
-          <Pressable style={styles.newBtn} onPress={() => setShowCreate(true)}>
-            <Text style={styles.newBtnText}>+ New</Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 60 }} />
-        )}
-      </View>
+      <SubScreenHeader
+        title="Exercise Library"
+        onBack={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)}
+        right={
+          isCoach ? (
+            <Pressable style={styles.newBtn} onPress={() => setShowCreate(true)} accessibilityRole="button">
+              <Text style={styles.newBtnText}>+ New</Text>
+            </Pressable>
+          ) : null
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
@@ -280,6 +281,7 @@ export default function ExercisesScreen() {
         )}
       </Modal>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
@@ -287,7 +289,7 @@ export default function ExercisesScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stylesSheet = paperSheet((C) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

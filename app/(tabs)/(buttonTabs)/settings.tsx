@@ -1,10 +1,10 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { useAuth } from "@/components/auth-context"
 import { DailyCheckInModal } from "@/components/DailyCheckInModal"
 import { VersionFooter } from "@/components/VersionFooter"
-import { Ionicons } from "@expo/vector-icons"
 import { CheckinRow, getCheckinForToday } from "@/services/BoulderGraphService"
 import { usePaperPreference, type PaperPreference } from "@/theme/paper/PaperThemeProvider"
 import { useRouter } from "expo-router"
@@ -28,7 +28,6 @@ const TRAINING_ROWS = [
 ]
 
 export default function SettingsScreen() {
-  const C = useC()
   const styles = useSheet(stylesSheet)
   const { User, signOut, role } = useAuth()
   const router = useRouter()
@@ -46,15 +45,7 @@ export default function SettingsScreen() {
     <ScreenGradient>
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScreenEntry>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-        </Pressable>
-        <View>
-          <Text style={styles.title}>Settings</Text>
-          <Text style={styles.subtitle}>Account & preferences</Text>
-        </View>
-      </View>
+      <SubScreenHeader title="Settings" subtitle="Account & preferences" />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Profile section */}

@@ -1,7 +1,6 @@
 import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
 import { cardSheet } from "@/components/coach/styles"
 import { BlockReviewView } from "@/components/BlockReviewView"
-import { PaperThemeOverride } from "@/components/paper"
 import type { useAthleteStats } from "@/hooks/useAthleteStats"
 import type { TrainingPlanRow } from "@/services/BoulderGraphService"
 import {
@@ -86,10 +85,7 @@ export function StatsCard({ columns, data }: { columns: 2 | 3; data: ReturnType<
                     })}
                   </ScrollView>
                 )}
-                {/* Coach screens aren't redesigned yet: keep the review dark here. */}
-                <PaperThemeOverride mode="dark">
-                  <BlockReviewView stats={statsForPlan(reviewPlan)} title={planTitle(reviewPlan)} subtitle={planStatus(reviewPlan)} />
-                </PaperThemeOverride>
+                <BlockReviewView stats={statsForPlan(reviewPlan)} title={planTitle(reviewPlan)} subtitle={planStatus(reviewPlan)} />
               </>
             )
       ) : (
