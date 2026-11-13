@@ -6,7 +6,7 @@ import { NewSequenceButton } from "@/components/NewSequenceButton"
 import { HomeworkSection } from "@/components/HomeworkSection"
 import { SettingsButton } from "@/components/SettingsButton"
 import { useActivePlan } from "@/contexts/ActivePlanContext"
-import { Body, Card, CardTitle, GhostButton, Melt, Mono, PaperScreen, PosterHeadline, PrimaryCTA, StickyFooter, usePaper } from "@/components/paper"
+import { Body, Card, CardTitle, GhostButton, Melt, Mono, PaperScreen, PosterHeadline, posterSize, PrimaryCTA, StickyFooter, usePaper } from "@/components/paper"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { getUsers, listAthleteTemplates, ProtocolRow } from "@/services/BoulderGraphService"
 import { useFocusEffect } from "@react-navigation/native"
@@ -17,6 +17,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native"
 
@@ -31,6 +32,7 @@ export default function HomeScreen() {
 
 function HomeContent() {
   const t = usePaper()
+  const { width } = useWindowDimensions()
   const { User, userName } = ConsumeAuth()
   const router = useRouter()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
@@ -125,7 +127,16 @@ function HomeContent() {
             <View style={{ marginTop: 20, marginBottom: 40 }}>
               <Melt top={40} />
               <Mono>{eyebrow}</Mono>
-              <PosterHeadline style={{ marginTop: 8 }}>{headline}</PosterHeadline>
+              {/* One or two words: the full poster, one word per line. A longer
+                  workout name wraps at a smaller size (three lines at most)
+                  so it doesn't push the workout off the screen. */}
+              {headline.split(/\s+/).length <= 2 ? (
+                <PosterHeadline style={{ marginTop: 8 }}>{headline}</PosterHeadline>
+              ) : (
+                <PosterHeadline size={Math.max(40, posterSize(headline, 60, width))} wordPerLine={false} numberOfLines={3} style={{ marginTop: 8 }}>
+                  {headline}
+                </PosterHeadline>
+              )}
             </View>
             {homework.length > 0 && (
               <View style={{ marginBottom: 12 }}>
