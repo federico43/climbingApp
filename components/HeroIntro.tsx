@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import { LinearGradient } from "expo-linear-gradient"
 import { useEffect } from "react"
 import { StyleSheet, useWindowDimensions } from "react-native"
@@ -19,6 +19,7 @@ const HOLD = 650
 const EXIT = 600
 
 export function HeroIntro({ name, onDone }: { name: string; onDone: () => void }) {
+  const styles = useSheet(stylesSheet)
   const { height } = useWindowDimensions()
   const opacity = useSharedValue(0)
   const scale = useSharedValue(0.8)
@@ -61,7 +62,7 @@ export function HeroIntro({ name, onDone }: { name: string; onDone: () => void }
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 100,
@@ -75,4 +76,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 50,
   },
-})
+}))

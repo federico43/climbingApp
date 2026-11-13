@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, RouteFilters } from "@/components/RouteFilterBar"
 import {
@@ -67,6 +67,8 @@ async function makeAndUploadPreview(localUri: string): Promise<string | undefine
 }
 
 export default function SprayWallScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null) // null = All
@@ -546,7 +548,7 @@ export default function SprayWallScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
 
   header: {
@@ -664,4 +666,4 @@ const styles = StyleSheet.create({
   modalBtnPrimary: { backgroundColor: C.green },
   modalBtnText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   modalBtnTextPrimary: { color: C.bg },
-})
+}))

@@ -1,5 +1,5 @@
 import { usePopupTurn } from "@/utils/popupTurn"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useEffect, useState } from "react"
@@ -46,6 +46,7 @@ export function markIntroSeen(id: string) {
 
 // Small "i" button that opens the screen's pop-ups again.
 export function IntroButton({ id }: { id: string }) {
+  const C = useC()
   return (
     <Pressable hitSlop={10} onPress={() => replay.forEach((l) => l(id))} accessibilityLabel="How this screen works">
       <Ionicons name="information-circle-outline" size={24} color={C.textSecondary} />
@@ -58,6 +59,8 @@ export function IntroButton({ id }: { id: string }) {
 // Several pages step through with "Next". Once closed it never shows again on
 // this device, unless its IntroButton is tapped.
 export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const [show, setShow] = useState(false)
   const [i, setI] = useState(0)
 
@@ -115,7 +118,7 @@ export function FeatureIntro({ id, pages }: { id: string; pages: IntroPage[] }) 
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: 28 },
   card: { width: "100%", maxWidth: 380, backgroundColor: C.surface, borderRadius: 20, overflow: "hidden" },
   art: { height: 190, backgroundColor: "#1B2A22", alignItems: "center", justifyContent: "center" },
@@ -132,4 +135,4 @@ const s = StyleSheet.create({
   dotOn: { backgroundColor: C.green, width: 18 },
   btn: { marginTop: 8, backgroundColor: C.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 40 },
   btnText: { fontSize: 15, fontWeight: "800", color: "#10251A", letterSpacing: 0.3 },
-})
+}))

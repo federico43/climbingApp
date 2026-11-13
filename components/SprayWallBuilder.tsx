@@ -2,7 +2,7 @@ import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { sequenceLevelColour } from "@/utils/sprayBlocks"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getDisplayRadius, pixelsToFractionRadius } from "@/utils/holdRadius"
 import { useImageSize } from "@/utils/useImageSize"
 import {
@@ -33,6 +33,7 @@ const RADIUS_MIN = 5
 const RADIUS_MAX = 60
 
 function ResizeSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const sliderStyles = useSheet(sliderStylesSheet)
   const [trackW, setTrackW] = useState(1)
   const fraction = (value - RADIUS_MIN) / (RADIUS_MAX - RADIUS_MIN)
 
@@ -53,7 +54,7 @@ function ResizeSlider({ value, onChange }: { value: number; onChange: (v: number
   )
 }
 
-const sliderStyles = StyleSheet.create({
+const sliderStylesSheet = paperSheet((C) => StyleSheet.create({
   track: { flex: 1, height: 4, backgroundColor: "#333", borderRadius: 2, justifyContent: "center" },
   fill:  { height: 4, backgroundColor: C.green, borderRadius: 2 },
   thumb: {
@@ -61,7 +62,7 @@ const sliderStyles = StyleSheet.create({
     backgroundColor: "#fff", marginLeft: -11, top: -9,
     shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 4, elevation: 4,
   },
-})
+}))
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,8 @@ interface Props {
 }
 
 export function SprayWallBuilder({ imageSource, initialHolds = [], initialName = "", initialVariations, initialLevel, initialType, saving = false, originalOnly = false, onBack, onSave }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const insets = useSafeAreaInsets()
@@ -961,6 +964,7 @@ function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack,
   onBack: () => void
   onSave: () => void
 }) {
+  const styles = useSheet(stylesSheet)
   const levels = Array.from({ length: MAX_LEVEL - MIN_LEVEL + 1 }, (_, i) => MIN_LEVEL + i)
   const canSave = level != null && !saving
   return (
@@ -1009,7 +1013,7 @@ function LevelStep({ name, level, saving, topInset, bottomInset, onPick, onBack,
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#000" },
 
   topBar: {
@@ -1133,4 +1137,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 12, alignItems: "center",
   },
   removeBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-})
+}))

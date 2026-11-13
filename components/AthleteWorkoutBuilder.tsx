@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AppUser, ExerciseRow, ProtocolRow, clearHomeWorkout, createProtocol, deleteProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import { AthleteRecentSessionsSummary } from "@/components/AthleteRecentSessionsSummary"
 import { SuggestedWarmupCard } from "@/components/SuggestedWarmupCard"
@@ -84,6 +84,8 @@ export function AthleteWorkoutBuilder({
   onClose: () => void
   onSaved?: () => void
 }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const editing = !!protocol
@@ -698,7 +700,7 @@ const PANE_DIVIDER_W = 14
 const RIGHT_PANE_MIN = 280
 const BLOCK_GRID_PAD = 18
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   // Solid dark gray — same tone as the library pane, so the whole screen
   // reads as one dedicated surface instead of a scrim over Design.
   root: { flex: 1, backgroundColor: C.surface },
@@ -798,4 +800,4 @@ const s = StyleSheet.create({
   copyPillTextSel: { color: C.bg },
   copyConfirm: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
   copyConfirmText: { fontSize: 15, fontWeight: "800", color: C.bg },
-})
+}))

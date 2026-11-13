@@ -6,13 +6,15 @@ import { APPWRITE_ENDPOINT } from '@/components/AppWrite'
 import { canReachServer, OFFLINE_MESSAGE } from '@/utils/network'
 import CustomTextInput from '@/components/customTextInput'
 import { colors, MainStyles } from '@/theme/colors'
-import { C } from '@/utils/theme'
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from '@/components/auth-context'
 import { useRouter } from 'expo-router'
 
 type Mode = "signin" | "signup" | "forgot"
 
 export default function AuthScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { signIn, signUp, sendRecovery, error, errorKind, refreshUser } = ConsumeAuth()
 
@@ -158,7 +160,7 @@ export default function AuthScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
@@ -222,4 +224,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.textSecondary,
   },
-})
+}))

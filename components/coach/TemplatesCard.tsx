@@ -1,7 +1,7 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { pickLatestWorkout } from "@/components/LatestWorkoutCard"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import {
   AppUser,
@@ -50,6 +50,9 @@ const TEMPLATES_SHOWN = 6
 export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
   athlete: AppUser; roster: AppUser[]; wide: boolean; onHomeworkChanged?: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const workoutCtx = useWorkoutContext()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
   const [homeWorkoutId, setHomeWorkoutId] = useState<string | null>(athlete.homeWorkoutId ?? null)
@@ -268,7 +271,7 @@ export function TemplatesCard({ athlete, roster, wide, onHomeworkChanged }: {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   showAll: { alignSelf: "center", paddingVertical: 8 },
   showAllText: { fontSize: 13, fontWeight: "700", color: C.green },
   row: { gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
@@ -302,4 +305,4 @@ const styles = StyleSheet.create({
   copyPillTextSel: { color: C.bg },
   copyConfirm: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
   copyConfirmText: { fontSize: 15, fontWeight: "800", color: C.bg },
-})
+}))

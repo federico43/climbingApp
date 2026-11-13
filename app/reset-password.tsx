@@ -1,4 +1,4 @@
-import { C } from '@/utils/theme'
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import { account } from '@/components/AppWrite'
 import CustomButton from '@/components/customButton'
 import CustomTextInput from '@/components/customTextInput'
@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 export default function ResetPasswordScreen() {
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { userId, secret } = useLocalSearchParams<{ userId?: string; secret?: string }>()
 
@@ -63,7 +64,7 @@ export default function ResetPasswordScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
@@ -88,4 +89,4 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     textAlign: 'center',
   },
-})
+}))

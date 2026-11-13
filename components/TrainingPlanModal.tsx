@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { MOVEMENT_TYPES, MOVEMENT_TYPE_COLOR, MOVEMENT_TYPE_LABEL, MovementType, isJointPattern } from "@/utils/movementTypes"
 import {
   DEFAULT_START_TYPE, EXERCISES_PER_PATTERN, MAIN_CYCLE, PLAN_FOCUSES, PLAN_FOCUS_LABEL, SC_PATTERN_MAX, SC_PATTERN_MIN, scPatternMax,
@@ -49,6 +49,8 @@ interface Props {
 }
 
 export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, onSaved, onDeleted }: Props) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const [name, setName] = useState("")
   const [windowStart, setWindowStart] = useState(localDateStr(new Date()))
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -457,7 +459,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 24 },
   card: { backgroundColor: C.surface, borderRadius: 18, padding: 20, width: "100%", maxWidth: 420, maxHeight: "85%", gap: 4 },
   closeBtn: {
@@ -491,4 +493,4 @@ const s = StyleSheet.create({
   submitBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
   deleteBtn: { marginTop: 10, padding: 10, alignItems: "center" },
   deleteBtnText: { fontSize: 13, fontWeight: "600", color: "#E0837A" },
-})
+}))

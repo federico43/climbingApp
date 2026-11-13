@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallBuilder } from "@/components/SprayWallBuilder"
 import {
   getSprayWall,
@@ -34,6 +34,8 @@ interface Props {
 // entry point with no wall-management UI of its own — walls stay coach-owned,
 // athletes just pick one and place holds.
 export function CreateSequenceModal({ visible, athleteId, editing = null, onClose, onSaved }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [step, setStep] = useState<Step>("loading")
   const [walls, setWalls] = useState<SprayWallRow[]>([])
   const [wall, setWall] = useState<SprayWallRow | null>(null)
@@ -144,7 +146,7 @@ export function CreateSequenceModal({ visible, athleteId, editing = null, onClos
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   centerSafe: { flex: 1, backgroundColor: C.bg, alignItems: "center", justifyContent: "center" },
   builderSafe: { flex: 1, backgroundColor: C.bg },
   pickerSafe: { flex: 1, backgroundColor: C.bg, padding: 20 },
@@ -157,4 +159,4 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
   },
   pickerRowText: { fontSize: 15, fontWeight: "600", color: C.textPrimary, flex: 1 },
-})
+}))

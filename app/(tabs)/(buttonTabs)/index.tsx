@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
 import Animated, { FadeInDown } from "react-native-reanimated"
@@ -37,6 +37,8 @@ export default function HomeScreen() {
 }
 
 function HomeContent() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User, userName } = ConsumeAuth()
   const router = useRouter()
   const [templates, setTemplates] = useState<ProtocolRow[]>([])
@@ -166,7 +168,7 @@ function HomeContent() {
 
 const START_AREA = 96
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     paddingHorizontal: 20,
@@ -220,4 +222,4 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   startBtnText: { fontSize: 17, fontWeight: "800", color: C.bg },
-})
+}))

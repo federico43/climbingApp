@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -108,6 +108,8 @@ const UPLOAD_BADGE: Record<UploadStatus, { icon: keyof typeof Ionicons.glyphMap;
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LibraryScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
   const router = useRouter()
   const [videos, setVideos] = useState<VideoItem[]>(videoListCache)
@@ -473,7 +475,7 @@ export default function LibraryScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
 
   header: {
@@ -587,4 +589,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyAddButtonText: { fontSize: 14, fontWeight: "700", color: C.bg },
-})
+}))

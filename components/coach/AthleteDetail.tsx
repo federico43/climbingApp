@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
@@ -14,7 +14,7 @@ import { StatsCard } from "@/components/coach/StatsCard"
 import { useAthleteStats } from "@/hooks/useAthleteStats"
 import { TemplatesCard } from "@/components/coach/TemplatesCard"
 import { CardioCard } from "./CardioCard"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import {
   AppUser,
   getActiveTrainingPlan,
@@ -50,6 +50,9 @@ export function AthleteDetail({
   // Homework / plan / sessions changed — the roster's summary is stale.
   onChanged: () => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loadingSessions, setLoadingSessions] = useState(true)
@@ -241,7 +244,7 @@ export function AthleteDetail({
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingVertical: 12,
@@ -256,4 +259,4 @@ const styles = StyleSheet.create({
   columns: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   mainCol: { flex: 1, gap: 14, minWidth: 0 },
   sideCol: { width: 360, gap: 14 },
-})
+}))

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { BLOCK_ICONS, BLOCK_LABELS, BlockType, blockFromLibraryRow } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { BlockRow, listBlocks } from "@/services/BoulderGraphService"
@@ -13,6 +13,8 @@ import { SafeAreaView } from "react-native-safe-area-context"
 // Distinct from the video "Library" tab — this one lists every block the
 // coach has saved, runnable individually as a one-block workout.
 export default function WorkoutLibraryScreen() {
+  const C = useC()
+  const s = useSheet(sSheet)
   const router = useRouter()
   const workoutCtx = useWorkoutContext()
   const [blocks, setBlocks] = useState<BlockRow[]>([])
@@ -118,7 +120,7 @@ export default function WorkoutLibraryScreen() {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -168,4 +170,4 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   blockRowName: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
-})
+}))

@@ -5,7 +5,7 @@ import { resolveAdaptation } from "@/utils/adaptations"
 import { constraintWarmupDrafts } from "@/utils/planWorkout"
 import { suggestWarmup, WARMUP_PILLAR_LABEL, warmupCandidates, warmupPillarFor, warmupUsage } from "@/utils/progression/constraintWarmup"
 import type { WarmupPillar } from "@/utils/progression/profiles"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import React, { useEffect, useMemo, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -42,6 +42,8 @@ export function SuggestedWarmupCard({ athleteId, blocks, onApply }: {
   blocks: Block[]
   onApply: (next: Block[]) => void
 }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [library, setLibrary] = useState<BlockRow[]>([])
   const [flash, setFlash] = useState<string | null>(null)
@@ -122,7 +124,7 @@ export function SuggestedWarmupCard({ athleteId, blocks, onApply }: {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   card: {
     backgroundColor: "rgba(111,207,151,0.12)", borderWidth: 1, borderColor: C.green,
     borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 6, marginHorizontal: 12, marginBottom: 8,
@@ -141,4 +143,4 @@ const s = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   pickMeta: { fontSize: 12.5, color: C.textSecondary },
   action: { fontSize: 13, fontWeight: "700", color: C.green, textDecorationLine: "underline", marginTop: 2 },
-})
+}))

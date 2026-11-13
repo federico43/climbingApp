@@ -1,5 +1,5 @@
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { ExerciseLibraryCard } from "@/components/ExerciseLibraryCard"
@@ -51,6 +51,8 @@ function estimateHeight(ex: ExerciseRow, width: number): number {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExercisesScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { role } = ConsumeAuth()
   const isCoach = role === "coach"
@@ -284,7 +286,7 @@ export default function ExercisesScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row",
@@ -382,4 +384,4 @@ const styles = StyleSheet.create({
   typeChipActive: { backgroundColor: C.green },
   typeChipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
   typeChipTextActive: { color: C.bg },
-})
+}))

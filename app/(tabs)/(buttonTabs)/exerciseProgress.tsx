@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getSessions, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
@@ -152,6 +152,8 @@ function MetricChart({
   chartWidth: number
   maxValue?: number
 }) {
+  const C = useC()
+  const chartStyles = useSheet(chartStylesSheet)
   if (points.length < 2) return null
 
   const max = maxValue ?? Math.ceil(Math.max(...points.map((p) => p.value)) * 1.3)
@@ -199,6 +201,8 @@ function MetricChart({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExerciseProgressScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { name, athleteId } = useLocalSearchParams<{ name: string; athleteId?: string }>()
   const router = useRouter()
   const { width } = useWindowDimensions()
@@ -330,7 +334,7 @@ export default function ExerciseProgressScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row",
@@ -366,9 +370,9 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 32, fontWeight: "800", color: C.yellow },
   summaryLabel: { fontSize: 12, color: C.textSecondary },
   summaryHint: { fontSize: 12, color: C.textMuted, textAlign: "center" },
-})
+}))
 
-const chartStyles = StyleSheet.create({
+const chartStylesSheet = paperSheet((C) => StyleSheet.create({
   card: {
     backgroundColor: C.surface,
     borderRadius: 16,
@@ -384,4 +388,4 @@ const chartStyles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 12,
   },
-})
+}))

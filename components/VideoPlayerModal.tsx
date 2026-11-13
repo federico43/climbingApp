@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { CoachFeedbackRecorder } from "@/components/CoachFeedbackRecorder"
 import { VideoRow } from "@/services/videoStorage"
 import * as FileSystem from "expo-file-system/legacy"
@@ -53,6 +53,9 @@ const CONTROLS_HIDE_DELAY = 3000
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, startInFeedbackMode, onFeedbackSent }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
+  const fb = useSheet(fbSheet)
   const insets = useSafeAreaInsets()
 
   const [phase, setPhase] = useState<Phase>(startInFeedbackMode && video ? "coach-recording" : "watch")
@@ -506,7 +509,7 @@ export function VideoPlayerModal({ uri, title, onClose, video, canGiveFeedback, 
 
 // ─── Styles (watch phase) ──────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#000",
@@ -657,14 +660,14 @@ const styles = StyleSheet.create({
     top: 4,
     marginLeft: -10,
   },
-})
+}))
 
 // ─── Styles (feedback flow phases) ─────────────────────────────────────────────
 
 // Only used by the "Downloading…" screen above — the rest of the old
 // feedback-flow styles moved to CoachFeedbackRecorder.tsx along with the JSX
 // that used them.
-const fb = StyleSheet.create({
+const fbSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -678,4 +681,4 @@ const fb = StyleSheet.create({
   headerTitle: { color: "#fff", fontSize: 15, fontWeight: "700" },
   centerFill: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   recordHint: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600" },
-})
+}))

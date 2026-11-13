@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Block, BlockEditorRow, BlockPickerModal, stripLocalIds } from "@/components/workoutBlocks"
 import { saveSession } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
@@ -77,6 +77,8 @@ function totalMinutes(blocks: Block[]): number {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LogPastSessionScreen() {
+  const C = useC()
+  const s = useSheet(sSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const router = useRouter()
@@ -243,7 +245,7 @@ export default function LogPastSessionScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row",
@@ -309,4 +311,4 @@ const s = StyleSheet.create({
     marginHorizontal: 16, marginTop: 12, marginBottom: 16,
   },
   saveBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
-})
+}))

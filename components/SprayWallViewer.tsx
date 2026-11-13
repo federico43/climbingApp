@@ -1,6 +1,6 @@
 import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { BOUNCE_COLOR, PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getDisplayRadius } from "@/utils/holdRadius"
 import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
@@ -64,6 +64,8 @@ interface Props {
 }
 
 export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true, previewWidth = 1200, naturalSize }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [containerW, setContainerW] = useState(0)
   const [containerH, setContainerH] = useState(0)
   // Resize remote wall photos to a server-side preview (small, WebP). Bundled
@@ -320,7 +322,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   return <GestureDetector gesture={gesture}>{inner}</GestureDetector>
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "transparent", overflow: "hidden" },
 
   revealCircle: { overflow: "hidden", borderColor: "rgba(255,255,255,0.5)", borderWidth: 2 },
@@ -338,4 +340,4 @@ const styles = StyleSheet.create({
   bounceHintText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "600", lineHeight: 16 },
   bounceHintClose: { color: "#fff", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
   bounceChip: { position: "absolute", left: 10, bottom: 10, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
-})
+}))

@@ -3,10 +3,11 @@ import { Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { setSeenOnboarding } from "../hooks/onBoardingHook"
-import { C } from "@/utils/theme"
+import { useC } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 
 export default function Onboarding() {
+  const C = useC()
   const router = useRouter()
 
   async function handleContinue() {

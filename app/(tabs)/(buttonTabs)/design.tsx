@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -30,6 +30,8 @@ const TOOLS: Tool[] = [
 ]
 
 export default function DesignScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { width } = useWindowDimensions()
   const isWide = width >= WIDE
@@ -182,7 +184,7 @@ export default function DesignScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   topBar: {
     flexDirection: "row", alignItems: "center", gap: 12,
@@ -201,4 +203,4 @@ const styles = StyleSheet.create({
   detailPane: { flex: 1, minWidth: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   centerText: { fontSize: 14, color: C.textMuted, textAlign: "center" },
-})
+}))

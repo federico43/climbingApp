@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
 import { useAuth } from "@/components/auth-context"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { SubScreenHeader } from "@/components/SubScreenHeader"
@@ -11,13 +11,15 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 // Settings › Notifications sent (coach only): every push the server sent, to
 // whom, when, and whether it went out — to spot notification bugs.
-const STATUS: Record<PushStatus, { label: string; color: string }> = {
+const STATUS = (C: Palette): Record<PushStatus, { label: string; color: string }> => ({
   sent: { label: "Sent", color: C.green },
   failed: { label: "Failed", color: C.red },
   no_token: { label: "No device", color: C.textMuted },
-}
+})
 
 export default function PushLogScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { role } = useAuth()
   const [entries, setEntries] = useState<PushLogEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -98,7 +100,9 @@ export default function PushLogScreen() {
 }
 
 function Row({ entry: e, last, onPerson }: { entry: PushLogEntry; last: boolean; onPerson: () => void }) {
-  const st = STATUS[e.status] ?? STATUS.failed
+  const C = useC()
+  const styles = useSheet(stylesSheet)
+  const st = STATUS(C)[e.status] ?? STATUS(C).failed
   const meta = [humanize(e.type), humanize(e.source)].filter(Boolean).join(" · ")
   return (
     <View style={[styles.row, last && styles.rowLast]}>
@@ -120,6 +124,7 @@ function Row({ entry: e, last, onPerson }: { entry: PushLogEntry; last: boolean;
 }
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const styles = useSheet(stylesSheet)
   return (
     <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
@@ -127,7 +132,7 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 12, flexWrap: "wrap" },
   chip: {
@@ -156,4 +161,4 @@ const styles = StyleSheet.create({
   body: { fontSize: 13, color: C.textSecondary, marginLeft: 52 },
   meta: { fontSize: 12, color: C.textMuted, marginLeft: 52 },
   error: { fontSize: 12, color: C.red, marginLeft: 52 },
-})
+}))

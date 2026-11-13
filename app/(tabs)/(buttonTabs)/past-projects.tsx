@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { ProjectPickerModal } from "@/components/ProjectPickerModal"
 import DateTimePicker from "@react-native-community/datetimepicker"
@@ -122,6 +122,8 @@ function extractSequenceRoutes(sessions: SessionRow[]): SequenceRoute[] {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PastProjects() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("boulders")
   const [loading, setLoading] = useState(true)
@@ -249,6 +251,8 @@ function BouldersTab({
   projects: ProjectRow[]
   onTap: (p: ProjectRow) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   if (projects.length === 0) {
     return (
       <View style={styles.empty}>
@@ -310,6 +314,7 @@ function SequencesTab({
   routes: SequenceRoute[]
   onTap: (r: SequenceRoute) => void
 }) {
+  const styles = useSheet(stylesSheet)
   if (routes.length === 0) {
     return (
       <View style={styles.empty}>
@@ -349,6 +354,8 @@ function ProjectEditModal({
   onSaved: (p: ProjectRow) => void
   onDeleted: (id: string) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [name, setName] = useState("")
   const [grade, setGrade] = useState("")
   const [status, setStatus] = useState<"active" | "sent" | "failed">("sent")
@@ -479,6 +486,7 @@ function ProjectEditModal({
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const styles = useSheet(stylesSheet)
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -517,6 +525,8 @@ function SequenceRouteContent({
 }: {
   route: SequenceRoute; holds: any[]; onClose: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const insets = useSafeAreaInsets()
   const [wallImageSource, setWallImageSource] = useState<any>(WALL_IMAGE)
   const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(null)
@@ -590,7 +600,7 @@ function SequenceRouteContent({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row", alignItems: "center",
@@ -698,4 +708,4 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
   fabText: { fontSize: 28, color: C.bg, lineHeight: 32 },
-})
+}))

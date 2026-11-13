@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import React from "react"
@@ -14,6 +14,8 @@ export function SubScreenHeader({
   subtitle?: string
   right?: React.ReactNode
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   return (
     <View style={styles.header}>
@@ -29,7 +31,7 @@ export function SubScreenHeader({
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -44,4 +46,4 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
   subtitle: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
-})
+}))

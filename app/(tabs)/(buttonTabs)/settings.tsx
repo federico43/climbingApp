@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
 import { useAuth } from "@/components/auth-context"
@@ -28,6 +28,8 @@ const TRAINING_ROWS = [
 ]
 
 export default function SettingsScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User, signOut, role } = useAuth()
   const router = useRouter()
   const { preference, setPreference } = usePaperPreference()
@@ -207,7 +209,7 @@ export default function SettingsScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   segments: { flexDirection: "row", gap: 6 },
   segment: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surfaceHigh },
@@ -301,4 +303,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: C.red,
   },
-})
+}))
