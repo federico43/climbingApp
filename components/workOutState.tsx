@@ -24,6 +24,10 @@ import { router } from "expo-router"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { useAuth } from "@/components/auth-context"
+import { dropDone, shouldAutoOpen, toggleTask } from "@/utils/nextTasks"
+import { localDateStr } from "@/utils/planRotation"
+import { ForTodayChip, ForTodaySheet, NextTimeCard, NextTimeEditor, useNextTasks } from "./NextTasks"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -135,6 +139,32 @@ export function WorkOutState({
 
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
+
+  // "For next time" tasks (utils/nextTasks.ts): written on the summary,
+  // shown as a checklist when the next workout starts (and from the chip
+  // mid-workout). Ticked ones go when the workout ends.
+  const userId = useAuth().User?.$id ?? null
+  const { list: tasks, update: updateTasks } = useNextTasks(userId, workoutStartTime)
+  const [forTodayOpen, setForTodayOpen] = useState(false)
+  const autoOpenedFor = useRef<number | null>(null)
+  useEffect(() => {
+    if (status !== "running" || workoutStartTime == null || autoOpenedFor.current === workoutStartTime) return
+    if (!shouldAutoOpen(tasks, workoutStartTime, Date.now())) return
+    autoOpenedFor.current = workoutStartTime
+    setForTodayOpen(true)
+  }, [status, workoutStartTime, tasks])
+  const [editorOpen, setEditorOpen] = useState(false)
+  // Once the athlete opens the editor the summary stays until they leave.
+  const [holdSummary, setHoldSummary] = useState(false)
+  useEffect(() => {
+    if (status === "completed") {
+      setForTodayOpen(false)
+      updateTasks((l) => dropDone(l, Date.now()))
+    } else {
+      setEditorOpen(false)
+      setHoldSummary(false)
+    }
+  }, [status, updateTasks])
   const [workoutElapsed, setWorkoutElapsed] = useState(0)
 
   // Time-constraint countdown arms when the block signals it started (Start
@@ -162,7 +192,7 @@ export function WorkOutState({
   const closeSummaryRef = useRef(() => {})
   closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
   useEffect(() => {
-    if (status !== "completed") return
+    if (status !== "completed" || holdSummary) return
     setAutoCloseIn(AUTO_CLOSE_SECS)
     const end = Date.now() + AUTO_CLOSE_SECS * 1000
     const id = setInterval(() => {
@@ -174,7 +204,7 @@ export function WorkOutState({
       }
     }, 250)
     return () => clearInterval(id)
-  }, [status])
+  }, [status, holdSummary])
 
   function handleStartWorkout() {
     onWorkoutStart()
@@ -272,7 +302,12 @@ export function WorkOutState({
           <IconButton icon="close" label="Close summary" size={36} onPress={() => closeSummaryRef.current()} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.summaryScroll}
+          showsVerticalScrollIndicator={false}
+          // Reading the summary: don't close it under the athlete's finger.
+          onScrollBeginDrag={() => setHoldSummary(true)}
+        >
           {/* Melt kept short and soft, behind the headline only, so the
               mint "Back to home" button sits on plain paper and stands out. */}
           <View pointerEvents="none" style={styles.summaryMelt}>
@@ -293,6 +328,9 @@ export function WorkOutState({
               <Mono>Block{doneCount !== 1 ? "s" : ""} done</Mono>
             </View>
           </Card>
+
+          {/* Above the blocks, so it's on screen before the summary closes itself. */}
+          <NextTimeCard list={tasks} onOpen={() => { setHoldSummary(true); setEditorOpen(true) }} />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>
@@ -357,9 +395,12 @@ export function WorkOutState({
           <Mono style={styles.summaryAutoClose}>
             {sync.pending > 0 && sync.offline
               ? "No connection — saved on this phone, it uploads once you're back online"
-              : "Workout saved"} · closing in {autoCloseIn}s
+              : "Workout saved"}{holdSummary ? "" : ` · closing in ${autoCloseIn}s`}
           </Mono>
         </ScrollView>
+        {editorOpen && (
+          <NextTimeEditor list={tasks} update={updateTasks} onClose={() => setEditorOpen(false)} insets={insets} />
+        )}
       </SafeAreaView>
     )
   }
@@ -421,6 +462,7 @@ export function WorkOutState({
             </Text>
           </Pressable>
         )}
+        <ForTodayChip list={tasks} onPress={() => setForTodayOpen(true)} />
         {mainSwap && (
           <Pressable style={styles.coachSwitch} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
             <Ionicons name="swap-horizontal" size={13} color={t.ink} />
@@ -453,6 +495,14 @@ export function WorkOutState({
         </BlockTimerContext.Provider>
       </BlockEntry>
       {blockMenuNode}
+      {forTodayOpen && tasks.tasks.length > 0 && (
+        <ForTodaySheet
+          list={tasks}
+          onToggle={(id) => updateTasks((l) => toggleTask(l, id, localDateStr(new Date()), Date.now()))}
+          onClose={() => setForTodayOpen(false)}
+          insets={insets}
+        />
+      )}
     </SafeAreaView>
   )
 }
