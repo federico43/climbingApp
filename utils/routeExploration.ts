@@ -2,6 +2,10 @@ import { BoulderLevelOptions, colourIndex, colourLabel } from "@/utils/boulderCo
 
 // Route exploration (coach 2026-11-05): the week's new routes, set every
 // Monday, in two timed parts.
+//   Before them (coach 2026-11-12): a 5 min warm-up on easy routes, then
+//   2 min of slow breathing to switch on the focus part 1 needs. The first
+//   time an athlete gets this version, slides explain why
+//   (components/ExplorationFocusSlides.tsx).
 //   Part 1, Flash (25 min): new routes from the athlete's flash colour (blue
 //   at least), at most 3 goes each. Each route is logged with the go it went
 //   on, or "not sent". All sent at a colour → the next colour; any not sent
@@ -17,6 +21,8 @@ export const EXPLORATION_BLOCK_TYPE = "route_exploration"
 export const EXPLORATION_PART_MIN = 25
 export const EXPLORATION_MAX_TRIES = 3
 export const EXPLORATION_MIN_COLOUR = "blue"
+export const EXPLORATION_WARMUP_MIN = 5
+export const EXPLORATION_BREATHING_MIN = 2
 
 export const WALLS = [
   { key: "placa1", label: "Placa 1", hint: "The one with the cave" },
@@ -32,7 +38,8 @@ export function wallLabel(key: string | null | undefined): string {
 
 // {colour} is replaced with the athlete's starting colour when shown.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Warm up first with *4 routes below your flash level*.",
+  "Warm-up (5 min): easy routes *below your flash level*.",
+  "Then *2 min of breathing* to get your head on the wall.",
   "*Don't read the routes before the timer starts.*",
   "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
@@ -51,6 +58,15 @@ const OLD_EXPLORATION_DESCRIPTIONS = [
     "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
     "Tried every {colour} and there's still time left? Go on to part 2.",
   ].join("\n"),
+  [
+    "Warm up first with *4 routes below your flash level*.",
+    "*Don't read the routes before the timer starts.*",
+    "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+    "*3 goes max* per route. Sent or not, move on to the next one.",
+    "*No trying single moves*: every go starts from the start holds.",
+    "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+    "Tried every {colour} and there's still time left? Go on to part 2.",
+  ].join("\n"),
 ]
 
 // The notes to show for a block: its own, unless empty or an old default.
@@ -59,6 +75,17 @@ export function explorationDescription(saved: string | null | undefined): string
   if (!d || OLD_EXPLORATION_DESCRIPTIONS.includes(d)) return EXPLORATION_DEFAULT_DESCRIPTION
   return d
 }
+
+export const EXPLORATION_WARMUP_NOTES = [
+  "Warm up on *easy routes below your flash level*, a little harder each time.",
+  "*Not the new routes*: save them for part 1.",
+].join("\n")
+
+export const EXPLORATION_BREATHING_NOTES = [
+  "Sit or stand still and follow the circle.",
+  "*In through the nose, slow out through the mouth.*",
+  "When a thought shows up, let it go and come back to the breath.",
+].join("\n")
 
 export const EXPLORATION_PROJECT_NOTES = [
   "Part 2 · Project: go back to the routes that didn't go.",
@@ -75,6 +102,68 @@ export function explorationStartColour(flash: string | null | undefined): string
   const min = colourIndex(EXPLORATION_MIN_COLOUR)
   const i = colourIndex(flash)
   return BoulderLevelOptions[Math.max(min, i)].value
+}
+
+// ─── Breathing ───────────────────────────────────────────────────────────────
+
+// One breath: 4 s in, 6 s out. A longer exhale calms the body down.
+export const BREATH_IN_MS = 4000
+export const BREATH_OUT_MS = 6000
+
+// Where in the breath `elapsedMs` (since breathing started) falls: in or
+// out, and how far through that half (0–1).
+export function breathAt(elapsedMs: number): { phase: "in" | "out"; progress: number } {
+  const cycle = BREATH_IN_MS + BREATH_OUT_MS
+  const t = ((Math.max(0, elapsedMs) % cycle) + cycle) % cycle
+  return t < BREATH_IN_MS
+    ? { phase: "in", progress: t / BREATH_IN_MS }
+    : { phase: "out", progress: (t - BREATH_IN_MS) / BREATH_OUT_MS }
+}
+
+// ─── Why it's done this way (first-time slides) ──────────────────────────────
+
+export interface ExplorationSlide {
+  poster: string
+  icon: string // Ionicons name
+  title: string
+  text: string
+}
+
+// The slides shown the first time an athlete does the exploration with the
+// warm-up and breathing (coach 2026-11-12), with the block's own minutes.
+export function explorationFocusSlides(min: { warmup: number; breathing: number; flash: number; project: number }): ExplorationSlide[] {
+  return [
+    {
+      poster: "Focus",
+      icon: "eye",
+      title: "Exploration needs focus",
+      text: "New routes, three goes each, no reading them first. You only get a few chances, so your head has to be on the wall, not somewhere else.",
+    },
+    {
+      poster: "Breathe",
+      icon: "leaf",
+      title: "Why breathe first",
+      text: `${min.breathing} minutes of slow breathing calm your body and quiet your thoughts. It's the switch from warming up to paying full attention.`,
+    },
+    {
+      poster: "One move",
+      icon: "footsteps",
+      title: "One move at a time",
+      text: "On the wall, focus on each movement: where your feet go, how you hold, where your weight is. Not on the thoughts that show up while you climb.",
+    },
+    {
+      poster: "Remember",
+      icon: "bulb",
+      title: "Remember your plan",
+      text: "A calm head remembers what you are working on. When a thought pulls you away, breathe out and come back to the next move.",
+    },
+    {
+      poster: "Today",
+      icon: "list",
+      title: "How the session goes",
+      text: `Warm-up ${min.warmup} min on easy routes · Breathing ${min.breathing} min · Part 1 Flash ${min.flash} min · Part 2 Project ${min.project} min.`,
+    },
+  ]
 }
 
 // ─── Part 1 ──────────────────────────────────────────────────────────────────
