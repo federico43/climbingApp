@@ -457,9 +457,9 @@ async function publish(ctx, userId, body) {
     const paused = await pausesByAthlete(ctx)
     // Only classes still ahead (published mid-week, the ones gone by are skipped).
     await fillFromDefaults(ctx, kept.filter((c) => classMs(c) > now.ms), users, undefined, paused)
-    // Athletes paused the whole week don't need to check it.
+    // Deactivated athletes, and those paused the whole week, don't need to check it.
     const offAllWeek = (u) => [0, 1, 2, 3, 4, 5, 6].every((d) => pauseOn(paused.get(u.$id), addDays(weekStart, d)))
-    const athletes = users.filter((u) => u.role !== "coach" && !offAllWeek(u))
+    const athletes = users.filter((u) => u.role !== "coach" && u.active !== false && !offAllWeek(u))
     await ctx.push(athletes, () => ({
       sound: "default",
       title: weekStart === mondayOfYmd(now.ymd) ? "This week's classes are up" : "Next week's classes are up",
