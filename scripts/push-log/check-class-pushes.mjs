@@ -25,7 +25,8 @@
 
 import { formatTime } from "../../functions/aiProtocol/src/classRules.js"
 
-const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID } = process.env
+const env = process.env
+const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID } = env
 for (const [name, value] of Object.entries({ APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID })) {
   if (!value) { console.error(`Missing env var: ${name}`); process.exit(1) }
 }
