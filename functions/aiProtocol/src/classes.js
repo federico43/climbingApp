@@ -243,27 +243,31 @@ async function roster(ctx, userId, body) {
   const cls = await ctx.db.get(CLASSES, String(body.classId ?? ""))
   if (!cls) return fail(404, "No such class.")
   if (classMs(cls) <= now.ms) return fail(409, "That class already started.")
-  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
-  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const athleteId = String(body.athleteId ?? "")
+  const athlete = await ctx.getUserRow(athleteId)
   const list = cls.roster ?? []
   const add = body.add === true
   if (add) {
+    // Only athletes can be put in a class.
+    if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
     if (athlete.active === false) return fail(409, `${name(athlete)} is deactivated.`)
     if (list.includes(athlete.$id)) return fail(409, `${name(athlete)} is already in that class.`)
     if (list.length >= CAPACITY) return fail(409, "That class is full.")
-  } else if (!list.includes(athlete.$id)) {
+  } else if (!list.includes(athleteId)) {
     return ok({ class: cls })
   }
-  const saved = await setRoster(ctx, cls, add ? [...list, athlete.$id] : list.filter((u) => u !== athlete.$id))
+  // Taking someone out works for anyone on the roster: a coach account that
+  // booked itself (shows up as a drop-in) or a user row that is gone.
+  const saved = await setRoster(ctx, cls, add ? [...list, athleteId] : list.filter((u) => u !== athleteId))
   if (!saved) return fail(502, "Could not save.")
   if (!add) {
     // Their pending changes from this class no longer make sense.
-    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athlete.$id), ctx.q.equal("weekStart", cls.weekStart)])) {
+    for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.equal("weekStart", cls.weekStart)])) {
       if (r.fromClassId === cls.$id && r.status === "pending") await ctx.db.remove(REQUESTS, r.$id)
     }
   }
-  if (cls.weekStart >= mondayOfYmd(now.ymd) && (await weekRow(ctx, cls.weekStart))?.published) {
-    await pushUser(ctx, athlete.$id,
+  if (athlete && cls.weekStart >= mondayOfYmd(now.ymd) && (await weekRow(ctx, cls.weekStart))?.published) {
+    await pushUser(ctx, athleteId,
       add ? "You're in a class" : "Class changed",
       add ? `Your coach added you to ${classLabel(cls)} (${dayLabel(classDate(cls))}).` : `Your coach took you out of ${classLabel(cls)} (${dayLabel(classDate(cls))}).`,
       { type: "class_roster", classId: cls.$id })
