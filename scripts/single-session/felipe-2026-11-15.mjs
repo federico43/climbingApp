@@ -1,4 +1,4 @@
-// One-off session for felilpegarciaovalle (coach 2026-11-15):
+// One-off session for felipegarciaovalle (coach 2026-11-15):
 //   1. Sync breathing       constraint, 3 orange, 5 min   (NEW library warm-up)
 //   2. One foot only        constraint, 2 blue,   5 min   (opposite foot)
 //   3. One foot only        constraint, 4 green          (normal → choose → opposite → same)
@@ -16,12 +16,12 @@
 //
 // Usage (dry run by default — prints what it would do):
 //   node --env-file=.env.local scripts/single-session/felipe-2026-11-15.mjs [--apply]
-// Options: --username=<name> (default felilpegarciaovalle), --no-assign
+// Options: --username=<name> (default felipegarciaovalle), --no-assign
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID } = process.env
 const APPLY = process.argv.includes("--apply")
 const ASSIGN = !process.argv.includes("--no-assign")
-const USERNAME = (process.argv.find((a) => a.startsWith("--username=")) ?? "--username=felilpegarciaovalle").slice(11)
+const USERNAME = (process.argv.find((a) => a.startsWith("--username=")) ?? "--username=felipegarciaovalle").slice(11)
 const WORKOUT_NAME = "Feet & breathing + projects"
 
 for (const [name, value] of Object.entries({ APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID })) {
