@@ -1,8 +1,8 @@
 // One-off session for felilpegarciaovalle (coach 2026-11-15):
-//   1. Sync breathing       constraint, 2 orange, 5 min   (NEW library warm-up)
+//   1. Sync breathing       constraint, 3 orange, 5 min   (NEW library warm-up)
 //   2. One foot only        constraint, 2 blue,   5 min   (opposite foot)
 //   3. One foot only        constraint, 4 green          (normal → choose → opposite → same)
-//   4. Jump rope            intervals, 10 × 5 s on / 15 s off
+//   4. Jump rope            intervals, 10 × 45 s on / 15 s off
 //   5. Coffee break         10 min (rest, eat, get ready)
 //   6. Project bouldering   ×2 (athlete picks the colour, 20 min each)
 //   7. Stretching           10 min
@@ -75,7 +75,7 @@ const { rows: library = [] } = await api("GET", `${db}/blocks/rows?${q({ method:
 const oneFoot = library.find((b) => b.type === "constraint_warmup" && same(b.name, "One foot only"))
 if (!oneFoot) console.log('Library: "One foot only" not found — blocks will be created without a library link.')
 let sync = library.find((b) => b.type === "constraint_warmup" && same(b.name, "Sync breathing"))
-const syncData = { type: "constraint_warmup", blockName: "Sync breathing", description: SYNC_BREATHING_DESC, level: "", targetAttempts: 2, adaptation: "technique" }
+const syncData = { type: "constraint_warmup", blockName: "Sync breathing", description: SYNC_BREATHING_DESC, level: "", targetAttempts: 3, adaptation: "technique" }
 if (sync) {
   console.log(`Library: "Sync breathing" already there (${sync.$id})`)
 } else if (!APPLY) {
@@ -90,10 +90,10 @@ const link = (row) => (row ? { libraryBlockId: row.$id } : {})
 
 // ── 3. The workout ──
 const blocks = [
-  { ...syncData, level: "orange", targetAttempts: 2, timeLimit: 5, ...link(sync) },
+  { ...syncData, level: "orange", targetAttempts: 3, timeLimit: 5, ...link(sync) },
   { type: "constraint_warmup", blockName: "One foot only", description: ONE_FOOT_OPPOSITE_DESC, level: "blue", targetAttempts: 2, timeLimit: 5, adaptation: "technique", ...link(oneFoot) },
   { type: "constraint_warmup", blockName: "One foot only", description: ONE_FOOT_PROGRESSION_DESC, level: "green", targetAttempts: 4, adaptation: "technique", ...link(oneFoot) },
-  { type: "intervals", blockName: "Jump rope", description: "Jump rope: 5 s fast, 15 s easy rest. 10 rounds.", series: 10, workTime: 5, restTime: 15 },
+  { type: "intervals", blockName: "Jump rope", description: "Jump rope: 45 s on, 15 s rest. 10 rounds.", series: 10, workTime: 45, restTime: 15 },
   { type: "free_session", blockName: "Coffee break", description: "Rest 10 minutes. Eat something, drink water, and get ready for the projects.", timeLimit: 10 },
   { type: "project_bouldering", blockName: "Project bouldering", description: "", grade: "", timeLimit: 20, restTime: 180, reviewPrompts: true },
   { type: "project_bouldering", blockName: "Project bouldering 2", description: "", grade: "", timeLimit: 20, restTime: 180, reviewPrompts: true },
