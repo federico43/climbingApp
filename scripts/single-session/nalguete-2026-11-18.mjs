@@ -5,7 +5,7 @@
 // force: Leticia 2's exercises again, harder where she topped the 3–6 range
 // on 13 Nov, with the jump rope warm-up of Leticia 1 and 3, and explosive
 // squats (her own swap for Box Step-Ups in Leticia 2) instead of step-ups.
-//   1. jump Rope  intervals, 10 × 30 s on / 30 s off (library block)
+//   1. jump Rope  intervals, 12 × 30 s on / 30 s off (library block)
 //   2. S&C 1      planch twist (max force) + explosive Squats (explosiveness)
 //   3. S&C 2      TRX Hamstring Curl, one leg (max force) + One-Arm Inverted Row (max force)
 //   4. S&C 3      TRX Triceps Extension (max force) + TRX Bulgarian Split Squat, with a weight (max force)
@@ -164,7 +164,7 @@ const blocks = [
   {
     ...(rope ? parseJson(rope.data) ?? {} : {}),
     type: "intervals", blockName: rope?.name ?? ROPE_BLOCK.name, description: ROPE_DESC,
-    series: 10, workTime: 30, restTime: 30,
+    series: 12, workTime: 30, restTime: 30,
     ...(rope ? { libraryBlockId: rope.$id } : {}),
   },
   sc("S&C 1", SC1_DESC, [draft(rows.planchTwist, "max_force"), draft(rows.jumpSquats, "explosiveness")]),
