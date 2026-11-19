@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# single-session read-outs (athlete data, stays local)
+scripts/single-session/out/
