@@ -2,13 +2,13 @@
 // the 4th of her "Leticia" series (workouts 9–11 of her conditioning plan,
 // which ended on 15 Nov, so it can't build a 12th). The series alternates
 // Hypertrophy (Leticia 1, 3) and Max force (Leticia 2🔥), so this one is Max
-// force: Leticia 2's exercises again, harder where she topped the 3–6 range
-// on 13 Nov, with the jump rope warm-up of Leticia 1 and 3, and explosive
+// force: Leticia 2's exercises again, each on a focus it already had in her
+// sessions, with the jump rope warm-up of Leticia 1 and 3, and explosive
 // squats (her own swap for Box Step-Ups in Leticia 2) instead of step-ups.
 //   1. jump Rope  intervals, 12 × 30 s on / 30 s off (library block)
 //   2. S&C 1      planch twist (max force) + explosive Squats (explosiveness)
-//   3. S&C 2      TRX Hamstring Curl, one leg (max force) + One-Arm Inverted Row (max force)
-//   4. S&C 3      TRX Triceps Extension (max force) + TRX Bulgarian Split Squat, with a weight (max force)
+//   3. S&C 2      TRX Hamstring Curl (max force) + One-Arm Inverted Row (max force)
+//   4. S&C 3      TRX Triceps Extension (max force) + TRX Bulgarian Split Squat (max force)
 //   S&C: 3 rounds, 180 s rest, 3–6 reps — as in Leticia 2.
 //
 // A standalone coach workout (not linked to the ended plan), saved like the
@@ -80,18 +80,13 @@ const REP_RANGE = { max_force: "3-6", hypertrophy: "8-12", explosiveness: "3-6" 
 const FOCUS_LABEL = { max_force: "Max force", hypertrophy: "Hypertrophy", explosiveness: "Explosiveness" }
 const REST_S = 180
 
-// ── Texts (what changed since Leticia 2, from her 13 Nov log) ──
-const ROPE_DESC = "Warm-up for the strength work: a steady pace, not a sprint."
-const SC1_DESC =
-  "Max force day, like Leticia 2: few reps, very hard, full rest. " +
-  "Planch twist: you did 4–6 per side last time, aim for 6 clean ones. " +
-  "Explosive squats: jump as high as you can on every rep, land softly and reset before the next one. Stop the set when the jumps get lower."
-const SC2_DESC =
-  "Hamstring curl: one leg at a time from the first round (with both legs it was easy last time), 3–6 reps per leg. " +
-  "One-arm inverted row: you did 6–7 per arm, so walk your feet further forward than last time."
-const SC3_DESC =
-  "Triceps extension: it felt easy last time, so walk your feet back and lean more. " +
-  "Bulgarian split squat: you did 6–8 per leg with no weight, so hold a dumbbell or kettlebell this time, heavy enough that 6 per leg is all you can do."
+// No block notes: the athlete knows how to make an exercise harder or easier
+// (coach 2026-11-18). What matters is that every exercise is on a focus it
+// can be trained at — the script stops if the library says otherwise.
+const ROPE_DESC = ""
+const SC1_DESC = ""
+const SC2_DESC = ""
+const SC3_DESC = ""
 
 // ── 1. Athlete ──
 let { rows: found = [] } = await api("GET", `${db}/users/rows?${q({ method: "equal", attribute: "username", values: [USERNAME] })}`)
@@ -126,7 +121,7 @@ if (!rope) console.log(`Library: "${ROPE_BLOCK.name}" not found, the rope block 
 const exercises = await all("exercises")
 const exById = new Map(exercises.map((e) => [e.$id, e]))
 const missing = []
-const warnings = []
+const mismatches = []
 const row = (ref) => {
   const r = exById.get(ref.id) ?? exercises.find((e) => norm(e.name) === norm(ref.name))
   if (!r) missing.push(ref.name)
@@ -145,7 +140,7 @@ function draft(ex, focus) {
   const repCounted = (ex.type === "reps" || ex.type === "both_sides") && unit !== "seconds"
   const focuses = parseJson(ex.focuses)
   if (Array.isArray(focuses) && focuses.length && !focuses.includes(focus)) {
-    warnings.push(`"${ex.name}" isn't marked for ${FOCUS_LABEL[focus]} in the library (it lists ${focuses.join(", ")}).`)
+    mismatches.push(`"${ex.name}" is set to ${FOCUS_LABEL[focus]}, but the library only allows ${focuses.map((f) => FOCUS_LABEL[f] ?? f).join(", ")}.`)
   }
   return {
     type: ex.type, name: ex.name, exerciseId: ex.$id, unit,
@@ -155,6 +150,7 @@ function draft(ex, focus) {
     settingHarder: ex.settingHarder || undefined, settingEasier: ex.settingEasier || undefined,
     reps: repCounted ? REP_RANGE[focus] : (ex.defaultReps ?? "20-30"),
     focus,
+    libraryFocuses: Array.isArray(focuses) && focuses.length ? focuses : null,
   }
 }
 const sc = (blockName, description, exs) => ({ type: "strength_conditioning", blockName, description, rounds: 3, restBetweenRounds: REST_S, exercises: exs })
@@ -171,20 +167,24 @@ const blocks = [
   sc("S&C 2", SC2_DESC, [draft(rows.hamstringCurl, "max_force"), draft(rows.oneArmRow, "max_force")]),
   sc("S&C 3", SC3_DESC, [draft(rows.tricepsExt, "max_force"), draft(rows.bulgarian, "max_force")]),
 ]
-for (const w of warnings) console.log(`Note: ${w}`)
+if (mismatches.length) {
+  console.error(`Wrong focus, nothing was written:\n  ${mismatches.join("\n  ")}`)
+  process.exit(1)
+}
+const shown = blocks.map((b) => (b.exercises ? { ...b, exercises: b.exercises.map((e) => ({ ...e })) } : b))
+for (const b of blocks) if (b.exercises) for (const e of b.exercises) delete e.libraryFocuses
 
 const data = { name: WORKOUT_NAME, blocks: JSON.stringify(blocks), athleteId: athlete.$id, source: "coach" }
 const home = athlete.homeWorkoutId ? theirs.find((p) => p.$id === athlete.homeWorkoutId) : null
 if (!APPLY) {
   console.log(`\nWould create "${WORKOUT_NAME}" with ${blocks.length} blocks:`)
-  for (const [i, b] of blocks.entries()) {
+  for (const [i, b] of shown.entries()) {
     if (b.type === "intervals") {
       console.log(`  ${i + 1}. ${b.blockName}: ${b.series} × ${b.workTime} s on / ${b.restTime} s off${b.libraryBlockId ? " (library block)" : ""}`)
     } else {
       console.log(`  ${i + 1}. ${b.blockName}: ${b.rounds} rounds, ${b.restBetweenRounds} s rest`)
-      for (const e of b.exercises) console.log(`       - ${e.name}: ${e.reps}${e.type === "both_sides" ? " per side" : ""}, ${FOCUS_LABEL[e.focus]}`)
+      for (const e of b.exercises) console.log(`       - ${e.name}: ${e.reps}${e.type === "both_sides" ? " per side" : ""}, ${FOCUS_LABEL[e.focus]} (library allows: ${e.libraryFocuses ? e.libraryFocuses.map((f) => FOCUS_LABEL[f] ?? f).join(", ") : "all focuses"})`)
     }
-    console.log(`       "${b.description}"`)
   }
   console.log(ASSIGN ? `Would assign it as ${athlete.username}'s active workout.` : "Would NOT assign it (--no-assign).")
   if (home) console.log(`Note: her Home is pinned to "${home.name}". To show the new one, pick it in the app (her workouts, ⋯ → Show on athlete's home).`)
