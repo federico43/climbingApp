@@ -16,8 +16,13 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID } = process.env
-for (const [name, value] of Object.entries({ APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_DATABASE_ID })) {
+const ENV = {
+  APPWRITE_ENDPOINT: process.env.APPWRITE_ENDPOINT,
+  APPWRITE_PROJECT_ID: process.env.APPWRITE_PROJECT_ID,
+  APPWRITE_API_KEY: process.env.APPWRITE_API_KEY,
+  APPWRITE_DATABASE_ID: process.env.APPWRITE_DATABASE_ID,
+}
+for (const [name, value] of Object.entries(ENV)) {
   if (!value) { console.error(`Missing env var: ${name}`); process.exit(1) }
 }
 
@@ -33,12 +38,12 @@ const LAST = Number(arg("last", "3")) || 3
 const SESSIONS = Number(arg("sessions", "12")) || 12
 
 async function api(path) {
-  const res = await fetch(`${APPWRITE_ENDPOINT}${path}`, { headers: { "X-Appwrite-Project": APPWRITE_PROJECT_ID, "X-Appwrite-Key": APPWRITE_API_KEY } })
+  const res = await fetch(`${ENV.APPWRITE_ENDPOINT}${path}`, { headers: { "X-Appwrite-Project": ENV.APPWRITE_PROJECT_ID, "X-Appwrite-Key": ENV.APPWRITE_API_KEY } })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(`GET ${path.split("?")[0]} → ${res.status} ${json.message ?? ""}`)
   return json
 }
-const db = `/tablesdb/${APPWRITE_DATABASE_ID}/tables`
+const db = `/tablesdb/${ENV.APPWRITE_DATABASE_ID}/tables`
 const q = (o) => `queries[]=${encodeURIComponent(JSON.stringify(o))}`
 const rowsOf = async (table, queries) => (await api(`${db}/${table}/rows?${queries.join("&")}`)).rows ?? []
 async function all(table, queries = []) {
