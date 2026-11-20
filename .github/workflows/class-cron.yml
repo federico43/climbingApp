@@ -3,7 +3,8 @@
 # reminder, low-package warnings). The main trigger is the function's own
 # Appwrite schedule (Settings › Executions › Schedule, every 60 minutes);
 # GitHub often starts this one hours late. Running both is safe: the
-# function's cron_marks table keeps a reminder from going out twice.
+# function's cron_marks table keeps a reminder from going out twice, and the
+# function skips a second run in the same hour before reading anything.
 # Needs repository secrets APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID and
 # APPWRITE_API_KEY (a key with the executions.write scope).
 name: Class reminders

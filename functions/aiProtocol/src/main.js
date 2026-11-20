@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
 import { handleClassAction, runClassCron } from "./classes.js"
+import { gymNow } from "./classRules.js"
 import { PUSH_LOG_KEEP_DAYS, PUSH_LOG_TABLE, pushLogRows, toPushLogEntry } from "./pushLog.js"
 import { videoPushMessage } from "./videoPush.js"
 
@@ -342,9 +343,19 @@ function classContext(log, error, source) {
 }
 
 async function classCronRun(log, error, via) {
+  // Once an hour: Appwrite's schedule and the GitHub backup both call this,
+  // and the second one in the same hour would only spend database reads.
+  const now = gymNow(new Date(), GYM_TZ)
+  if (!(await claimCronKey(`run:${now.ymd}:${Math.floor(now.hour)}`, log))) {
+    log(`Class cron (${via}): already ran this hour`)
+    return { ok: true, skipped: true }
+  }
   const report = await runClassCron(classContext(log, error, "classCron"))
-  report.pushLogPruned = await prunePushLog(log)
-  report.cronMarksPruned = await pruneCronMarks(log)
+  // Old push-log rows and cron marks: cleaned up once a day.
+  if (report.daily) {
+    report.pushLogPruned = await prunePushLog(log)
+    report.cronMarksPruned = await pruneCronMarks(log)
+  }
   log(`Class cron (${via}): ${JSON.stringify(report)}`)
   return { ok: true, ...report }
 }

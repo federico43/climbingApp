@@ -683,35 +683,54 @@ export async function handleClassAction(action, userId, body, ctx) {
 //   package low / used up  up to 24 h after the class ends
 export const LATE_PACKAGE_HOURS = 24
 
-export async function runClassCron(ctx, date = new Date()) {
+// Database reads are what the free plan runs out of (each row returned is
+// one read), so a run only reads what its reminders need: the pending
+// requests, the classes of the day before and today (to spot the ones that
+// just ended), and the rest only when it's due — tomorrow's classes from
+// 20:00, next week's row on Saturday, the full two weeks once a day for the
+// package lock-out. Each ended class is checked once (its own claim), not on
+// every run for a day.
+export async function runClassCron(baseCtx, date = new Date()) {
+  // Within one run the same list (an athlete's package, classes and skips)
+  // is read once, however many steps ask for it.
+  const lists = new Map()
+  const ctx = { ...baseCtx, db: { ...baseCtx.db, list: (table, queries) => {
+    const key = `${table}|${JSON.stringify(queries)}`
+    if (!lists.has(key)) lists.set(key, baseCtx.db.list(table, queries))
+    return lists.get(key)
+  } } }
   const now = gymNow(date, ctx.tz)
   const thisWeek = mondayOfYmd(now.ymd)
   const nextWeek = addDays(thisWeek, 7)
-  const classes = [...(await weekClasses(ctx, thisWeek)), ...(await weekClasses(ctx, nextWeek))]
-  const byId = new Map(classes.map((c) => [c.$id, c]))
-  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0 }
+  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0, daily: false }
   const claim = (key) => ctx.claim(key)
+  // This week's and next week's classes, read only when a step needs them.
+  let twoWeeks = null
+  const allClasses = async () => (twoWeeks ??= [...(await weekClasses(ctx, thisWeek)), ...(await weekClasses(ctx, nextWeek))])
 
   const pending = [
     ...(await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", thisWeek), ctx.q.equal("status", "pending")])),
     ...(await ctx.db.list(REQUESTS, [ctx.q.equal("weekStart", nextWeek), ctx.q.equal("status", "pending")])),
   ]
-  for (const r of pending) {
-    const from = byId.get(r.fromClassId)
-    const to = byId.get(r.toClassId) ?? (r.kind === "propose" ? { weekStart: r.weekStart, day: r.day, start: r.start } : null)
-    const starts = [from, to].filter(Boolean).map((c) => classMs(c))
-    if (!starts.length || Math.min(...starts) > now.ms) continue
-    if (!(await claim(`expired:${r.$id}`))) continue
-    await ctx.db.update(REQUESTS, r.$id, { status: "expired" })
-    report.expired++
-    await pushUser(ctx, r.athleteId, "No answer from your coach",
-      r.kind === "skip" && from ? `You're still in ${classLabel(from)}.` : from ? `${classLabel(from)} stays as it was.` : "Your extra class wasn't confirmed.", { type: "class_answer", requestId: r.$id })
+  if (pending.length) {
+    const byId = new Map((await allClasses()).map((c) => [c.$id, c]))
+    for (const r of pending) {
+      const from = byId.get(r.fromClassId)
+      const to = byId.get(r.toClassId) ?? (r.kind === "propose" ? { weekStart: r.weekStart, day: r.day, start: r.start } : null)
+      const starts = [from, to].filter(Boolean).map((c) => classMs(c))
+      if (!starts.length || Math.min(...starts) > now.ms) continue
+      if (!(await claim(`expired:${r.$id}`))) continue
+      await ctx.db.update(REQUESTS, r.$id, { status: "expired" })
+      report.expired++
+      await pushUser(ctx, r.athleteId, "No answer from your coach",
+        r.kind === "skip" && from ? `You're still in ${classLabel(from)}.` : from ? `${classLabel(from)} stays as it was.` : "Your extra class wasn't confirmed.", { type: "class_answer", requestId: r.$id })
+    }
   }
 
   // From 20:00 the night before (until midnight).
   if (now.hour >= 20) {
     const tomorrow = addDays(now.ymd, 1)
-    for (const c of classes.filter((x) => addDays(x.weekStart, x.day) === tomorrow)) {
+    for (const c of await dayClasses(ctx, tomorrow)) {
       if (!(await claim(`tomorrow:${c.$id}`))) continue
       const users = (await Promise.all((c.roster ?? []).map((id) => ctx.getUserRow(id)))).filter(Boolean)
       report.tomorrow += await ctx.push(users, () => ({
@@ -740,14 +759,20 @@ export async function runClassCron(ctx, date = new Date()) {
     report.reminded = true
   }
 
-  // Classes that ended since the last run (up to a day late; on Monday that
-  // includes last week's). Sessions left are counted as of the class's end,
-  // so a late run says what an on-time one would have.
-  const ended = [...(now.weekday === 0 ? await weekClasses(ctx, addDays(thisWeek, -7)) : []), ...classes]
+  // Classes that ended since the last run (up to a day late), each checked
+  // once. Sessions left are counted as of the class's end, so a late run
+  // says what an on-time one would have.
+  const ended = [...(await dayClasses(ctx, addDays(now.ymd, -1))), ...(await dayClasses(ctx, now.ymd))]
+    .filter((c) => {
+      const end = classMs(c, CLASS_HOURS)
+      return end <= now.ms && end > now.ms - LATE_PACKAGE_HOURS * 3600000
+    })
+  const justUsed = new Set()
   for (const c of ended) {
+    if (!(c.roster ?? []).length || !(await claim(`ended:${c.$id}`))) continue
     const end = classMs(c, CLASS_HOURS)
-    if (end > now.ms || end <= now.ms - LATE_PACKAGE_HOURS * 3600000) continue
-    for (const a of c.roster ?? []) {
+    for (const a of c.roster) {
+      justUsed.add(a)
       const { left } = await athletePackage(ctx, a, { ymd: classDate(c), ms: end })
       if (left !== LOW_SESSIONS && left !== 0) continue
       if (!(await claim(`package:${c.$id}:${a}`))) continue
@@ -760,13 +785,27 @@ export async function runClassCron(ctx, date = new Date()) {
     }
   }
   // Package used up or past its use-by date: out of the classes still ahead
-  // (the coach renews before it runs out; a renewal puts them back).
-  const booked = new Set(classes.filter((c) => classMs(c) > now.ms).flatMap((c) => c.roster ?? []))
+  // (the coach renews before it runs out; a renewal puts them back). A
+  // package only runs out when a class ends or a day passes, so: the
+  // athletes of a class that just ended, and everyone booked once a day.
+  const daily = await claim(`locks:${now.ymd}`)
+  const booked = daily
+    ? new Set((await allClasses()).filter((c) => classMs(c) > now.ms).flatMap((c) => c.roster ?? []))
+    : justUsed
   for (const a of booked) {
     if (!(await athletePackage(ctx, a, now)).locked) continue
     if (await dropFromClassesAhead(ctx, a, now)) report.dropped++
   }
+  report.daily = daily
   return report
+}
+
+// Classes on one day ("YYYY-MM-DD"): a handful of rows, not two weeks.
+async function dayClasses(ctx, ymd) {
+  const weekStart = mondayOfYmd(ymd)
+  const [y, m, d] = ymd.split("-").map(Number)
+  const day = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7
+  return ctx.db.list(CLASSES, [ctx.q.equal("weekStart", weekStart), ctx.q.equal("day", day)])
 }
 
 export { MAX_CARRY }
