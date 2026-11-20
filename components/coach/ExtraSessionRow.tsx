@@ -16,6 +16,7 @@ import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
 import { FOCUS_LABEL } from "@/utils/scProgression"
 import { useState } from "react"
 import { Alert, StyleSheet, Text, View, Pressable } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 // Coach, under the plan's next workout (utils/extraSession.ts): "Trains Tue &
 // Thu — an extra session on their own on Sat or Sun gets results faster",
@@ -44,7 +45,8 @@ export function ExtraSessionRow({ athlete, plan, sessions, homework, flashLevel,
     setBusy(true)
     try {
       // Fresh data, like the plan's Create: anything done or built since
-      // the page opened counts.
+      // the page opened counts (past the read cache too).
+      freshReads()
       const [fresh, built, exerciseRows, blockRows] = await Promise.all([
         getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
       ])

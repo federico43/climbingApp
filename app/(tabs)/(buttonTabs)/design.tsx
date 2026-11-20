@@ -13,6 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 // Coach dashboard (docs/coach-dashboard.md): roster + athlete detail.
 // ≥1200: roster · detail main · detail side; 900–1199: roster · detail;
@@ -97,6 +98,7 @@ export default function DesignScreen() {
 
   async function pullRefresh() {
     setRefreshing(true)
+    freshReads()
     try { await refresh() } finally { setRefreshing(false) }
   }
 

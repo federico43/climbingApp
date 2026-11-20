@@ -10,6 +10,7 @@ import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
 import { unknownColumn } from "@/utils/appwriteErrors"
+import { cachedRows } from "@/utils/readCache"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -32,7 +33,13 @@ export const CHECKIN_TABLE = "checkins"
 // through it — otherwise large libraries/histories get silently truncated.
 // `baseQueries` must include the sort order (needed for stable cursoring) and
 // any filters, but NOT a limit.
-export async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+// Reads within a few minutes share one fetch (utils/readCache.ts): every row
+// returned is a billed Appwrite database read.
+export function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+  return cachedRows<T>(tableId, baseQueries, () => fetchAllRows<T>(tableId, baseQueries))
+}
+
+async function fetchAllRows<T>(tableId: string, baseQueries: any[]): Promise<T[]> {
   const all: T[] = []
   let cursor: string | undefined
   for (;;) {

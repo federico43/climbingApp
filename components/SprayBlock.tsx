@@ -25,6 +25,7 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, S
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -120,7 +121,7 @@ export function SprayBlock({
   // Fetched again each time the selector opens, and on Reload / pull down.
   const [reloadKey, setReloadKey] = useState(0)
   const [reloading, setReloading] = useState(false)
-  const reload = () => { setReloading(true); setReloadKey((k) => k + 1) }
+  const reload = () => { freshReads(); setReloading(true); setReloadKey((k) => k + 1) }
   useEffect(() => {
     let cancelled = false
     if (athleteId) getUsers(athleteId).then((u: any) => { if (!cancelled) setFlash(u?.flashLevel ?? null) }).catch(() => {})
