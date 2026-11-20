@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Calendar } from "react-native-calendars"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 // Settings › Past workouts — training-consistency calendar (tap a trained
 // day for its sessions) and weekly / monthly counts. Moved here from Home.
@@ -89,6 +90,7 @@ export default function PastWorkoutsScreen() {
                 refreshing={refreshing}
                 onRefresh={async () => {
                   setRefreshing(true)
+                  freshReads()
                   try { await load() }
                   finally { setRefreshing(false) }
                 }}

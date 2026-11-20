@@ -1,4 +1,4 @@
-import { refreshClassSchedule } from "@/utils/classScheduleStore"
+import { reloadClassSchedule } from "@/utils/classScheduleStore"
 import * as Notifications from "expo-notifications"
 import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
@@ -28,7 +28,7 @@ function Router({ role }: { role?: string | null }) {
 
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((n) => {
-      if (isClass(n.request.content.data)) refreshClassSchedule()
+      if (isClass(n.request.content.data)) reloadClassSchedule()
     })
     return () => sub.remove()
   }, [])
@@ -38,7 +38,7 @@ function Router({ role }: { role?: string | null }) {
     const key = `${response.notification.request.identifier}|${response.notification.date}`
     if (handled.current === key) return
     handled.current = key
-    refreshClassSchedule()
+    reloadClassSchedule()
     router.navigate((role === "coach" ? "/(tabs)/(buttonTabs)/classes" : "/(tabs)/(buttonTabs)/schedule") as any)
   }, [response, role, router])
 
