@@ -141,6 +141,7 @@ async function request(ctx, userId, body) {
     if (!row) return fail(502, "Could not save.")
     await pushCoaches(ctx, userId, "A spot opened up", `${name(caller)} won't make ${classLabel(from)}.`,
       { type: "class_request", requestId: row.$id })
+    await dropIfLocked(ctx, userId, now)
     return ok({ request: row })
   }
 
@@ -321,6 +322,7 @@ async function answer(ctx, userId, body) {
       accept ? "Cancel accepted" : "Cancel declined",
       accept ? `You're out of ${what}.` : `Your coach kept you in ${what}.`,
       { type: "class_answer", requestId: r.$id })
+    if (accept) await dropIfLocked(ctx, r.athleteId, gymNow(new Date(), ctx.tz))
     return ok({ request: updated })
   }
 
@@ -608,6 +610,13 @@ async function addPackage(ctx, userId, body) {
   return ok({ package: row })
 }
 
+// After a skip: past the free ones (MAX_CARRY) a skip costs a session, so it
+// can use the package up. Out of the classes ahead right away, rather than
+// at the cron's once-a-day check.
+async function dropIfLocked(ctx, athleteId, now) {
+  if ((await athletePackage(ctx, athleteId, now)).locked) await dropFromClassesAhead(ctx, athleteId, now)
+}
+
 // Out of every class still ahead, pending requests dropped (a locked athlete
 // holds no spots). Returns how many classes they left.
 async function dropFromClassesAhead(ctx, athleteId, now) {
@@ -768,8 +777,10 @@ export async function runClassCron(baseCtx, date = new Date()) {
       return end <= now.ms && end > now.ms - LATE_PACKAGE_HOURS * 3600000
     })
   const justUsed = new Set()
+  const claimedEnded = []
   for (const c of ended) {
     if (!(c.roster ?? []).length || !(await claim(`ended:${c.$id}`))) continue
+    claimedEnded.push(`ended:${c.$id}`)
     const end = classMs(c, CLASS_HOURS)
     for (const a of c.roster) {
       justUsed.add(a)
@@ -795,6 +806,13 @@ export async function runClassCron(baseCtx, date = new Date()) {
   for (const a of booked) {
     if (!(await athletePackage(ctx, a, now)).locked) continue
     if (await dropFromClassesAhead(ctx, a, now)) report.dropped++
+  }
+  // A list Appwrite didn't answer reads as no rows (no package, no classes),
+  // so what this run checked once may be wrong: the next run checks it again
+  // (as every run used to). The package:… marks keep a push from going twice.
+  if (ctx.readFailed?.()) {
+    for (const key of [...claimedEnded, ...(daily ? [`locks:${now.ymd}`] : [])]) await ctx.unclaim?.(key)
+    report.retry = true
   }
   report.daily = daily
   return report
