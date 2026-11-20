@@ -253,9 +253,12 @@ async function pruneCronMarks(log) {
 // after this long, to catch tokens Apple/Google reject.
 const RECEIPT_WAIT_MS = 5000
 
-// Users whose row holds `token`. Filters a full listing in memory rather
-// than querying `pushToken`, which may not have an index — the roster is small.
+// Users whose row holds `token`: a query on `pushToken` (usually just the
+// caller's own row, one read, where a full listing read every user on every
+// app start). If that query fails, a full listing filtered in memory.
 async function listUsersWithToken(token, log) {
+  const matching = await listRowsOrNull(USERS_TABLE, [{ method: "equal", attribute: "pushToken", values: [token] }], log)
+  if (matching) return matching.filter((u) => u?.pushToken === token)
   const limit = encodeURIComponent(JSON.stringify({ method: "limit", values: [5000] }))
   const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows?queries[]=${limit}`, log)
   const rows = viaTables?.rows
@@ -425,8 +428,9 @@ export default async ({ req, res, log, error }) => {
     const queries = [{ method: "orderDesc", attribute: "$createdAt" }]
     if (typeof body.userId === "string" && body.userId) queries.push({ method: "equal", attribute: "userId", values: [body.userId] })
     if (body.problemsOnly === true) queries.push({ method: "notEqual", attribute: "status", values: ["sent"] })
-    const rows = await listRows(PUSH_LOG_TABLE, queries, log)
-    return res.json({ entries: rows.slice(0, 300).map(toPushLogEntry) }, 200)
+    // Only the 300 shown: each row read is a billed database read.
+    const rows = await listRows(PUSH_LOG_TABLE, queries, log, 300)
+    return res.json({ entries: rows.map(toPushLogEntry) }, 200)
   }
 
   // ── Action: notify the coach(es) that an athlete finished a workout ──────────
