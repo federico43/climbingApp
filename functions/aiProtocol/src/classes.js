@@ -711,7 +711,7 @@ export async function runClassCron(baseCtx, date = new Date()) {
   const now = gymNow(date, ctx.tz)
   const thisWeek = mondayOfYmd(now.ymd)
   const nextWeek = addDays(thisWeek, 7)
-  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0, daily: false }
+  const report = { expired: 0, tomorrow: 0, low: 0, reminded: false, resumed: 0, dropped: 0, daily: false, retry: false }
   const claim = (key) => ctx.claim(key)
   // This week's and next week's classes, read only when a step needs them.
   let twoWeeks = null

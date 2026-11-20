@@ -521,7 +521,7 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   const second = await runClassCron(flaky, new Date(Date.UTC(y6, m6 - 1, d6 + 1, 13, 0)))
   assert.equal(second.low, 1)
   assert.ok(pushes.some((p) => p.to === "fay" && p.title === "2 sessions left"))
-  assert.equal(second.retry, undefined)
+  assert.equal(second.retry, false)
   const third = await runClassCron(flaky, new Date(Date.UTC(y6, m6 - 1, d6 + 1, 14, 0)))
   assert.equal(third.low, 0)
 }
