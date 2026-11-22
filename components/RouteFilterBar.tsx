@@ -25,13 +25,16 @@ export interface FilterableWall {
 
 // Shared by the sequence route picker and the Spray Wall list — both browse
 // the same SprayRouteRow[] and should filter the same way.
+// Lower-case and drop accents, so "volcan" finds "Volcán" (2026-11-22).
+export const foldSearch = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+
 export function applyRouteFilters<T extends { name: string; type?: string; level?: number; wallId?: string }>(
   routes: T[],
   filters: RouteFilters
 ): T[] {
-  const q = filters.search.trim().toLowerCase()
+  const q = foldSearch(filters.search)
   return routes.filter((r) => {
-    if (q && !r.name.toLowerCase().includes(q)) return false
+    if (q && !foldSearch(r.name ?? "").includes(q)) return false
     if (filters.type && r.type !== filters.type) return false
     if (filters.level != null && r.level !== filters.level) return false
     if (filters.wallId && r.wallId !== filters.wallId) return false
