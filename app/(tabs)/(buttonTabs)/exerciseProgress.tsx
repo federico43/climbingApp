@@ -19,6 +19,7 @@ import { loadWeightUnit } from "@/utils/weightUnit"
 import { withoutRedoneRounds } from "@/utils/scRedo"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
 
 function parseRepsNum(s: string): number | null {
@@ -225,6 +226,7 @@ export default function ExerciseProgressScreen() {
   }, [athleteId, name])
 
   useEffect(() => { load() }, [load])
+  const pull = usePullRefresh(load)
 
 
   function toChartPoints(key: "avgReps" | "avgWeight" | "avgRpe") {
@@ -269,6 +271,7 @@ export default function ExerciseProgressScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
+          refreshControl={pull}
         >
           {progression && <ScProgressionCard view={progression} />}
 

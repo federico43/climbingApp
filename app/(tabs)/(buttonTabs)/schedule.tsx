@@ -13,7 +13,7 @@ import {
   classesToJoin, headcount, missingUsual, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, usualFits, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
-import { cancelExtra, changeClass, joinClass, refreshClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
+import { cancelExtra, changeClass, joinClass, refreshClassSchedule, reloadClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
 import { setFixedAnswer, useFixedAnswer } from "@/utils/fixedScheduleAnswer"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
@@ -339,7 +339,7 @@ export default function ScheduleScreen() {
           dimPast
           dimDays={proposingFrom ? [0, 1, 2, 3, 4, 5, 6].filter((d) => d >= today && !proposeDays.includes(d)) : []}
           onPressTime={proposingFrom ? proposeAt : undefined}
-          onRefresh={refreshClassSchedule}
+          onRefresh={reloadClassSchedule}
           renderDay={renderDay}
         />
         </TourSpot>

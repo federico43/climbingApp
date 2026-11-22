@@ -1,4 +1,5 @@
 import { intentFromResponse, setHomeworkIntent } from "@/services/homework"
+import { freshReads } from "@/utils/readCache"
 import * as Notifications from "expo-notifications"
 import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
@@ -25,6 +26,9 @@ function Router({ hasPlan }: { hasPlan: boolean }) {
     handled.current = key
     const intent = intentFromResponse(response)
     if (!intent) return
+    // The homework may be brand new: past the read cache, so the screen
+    // finds it even if it read the list a minute ago.
+    freshReads()
     setHomeworkIntent(intent)
     router.navigate((hasPlan ? "/(tabs)/(buttonTabs)/plan" : "/(tabs)/(buttonTabs)") as any)
   }, [response, hasPlan, router])

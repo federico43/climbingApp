@@ -9,6 +9,7 @@ import { useCallback, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // Athlete-facing browse screen for the coach-published block library.
 // Distinct from the video "Library" tab — this one lists every block the
 // coach has saved, runnable individually as a one-block workout.
@@ -28,6 +29,7 @@ export default function WorkoutLibraryScreen() {
   }, [])
 
   useFocusEffect(useCallback(() => { loadBlocks() }, [loadBlocks]))
+  const pull = usePullRefresh(loadBlocks)
 
   function startBlock(row: BlockRow) {
     try {
@@ -66,7 +68,7 @@ export default function WorkoutLibraryScreen() {
         {loadingBlocks ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={C.green} />
         ) : (
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={pull}>
             {blocks.length > 0 && (
               <View style={s.searchWrap}>
                 <Ionicons name="search" size={16} color={C.textMuted} />

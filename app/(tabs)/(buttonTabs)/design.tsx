@@ -13,6 +13,7 @@ import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 // Coach dashboard (docs/coach-dashboard.md): roster + athlete detail.
 // ≥1200: roster · detail main · detail side; 900–1199: roster · detail;
@@ -95,8 +96,12 @@ export default function DesignScreen() {
   )
   const selected = roster.athletes.find((a) => a.$id === selectedId) ?? null
 
+  // Pull-to-refresh on an athlete: their page loads again from the server.
+  const [detailReloads, setDetailReloads] = useState(0)
+
   async function pullRefresh() {
     setRefreshing(true)
+    freshReads()
     try { await refresh() } finally { setRefreshing(false) }
   }
 
@@ -118,13 +123,14 @@ export default function DesignScreen() {
   )
   const detail = selected && (
     <AthleteDetail
-      key={selected.$id}
+      key={`${selected.$id}:${detailReloads}`}
       athlete={selected}
       roster={roster.athletes}
       split={split}
       wide={isWide}
       onBack={isWide ? undefined : () => setDetailOpen(false)}
       onChanged={refresh}
+      onRefresh={() => { freshReads(); setDetailReloads((n) => n + 1); refresh() }}
     />
   )
 
