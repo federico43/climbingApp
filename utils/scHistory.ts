@@ -1,5 +1,6 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import { convertWeight, type Focus, type WeightUnit, type WorkingSet } from "@/utils/scProgression"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // "easier": the app offered it after the athlete missed the minimum with
 // nothing left to lower (RoundDrop.pickEasier) — the coach is told to add
@@ -68,6 +69,8 @@ function* sessionsWithMatches(sessions: SessionRow[], candidateIds: string[], ex
     let attempts: any[] = []
     let protocol: any[] = []
     try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
+    if (!Array.isArray(attempts)) continue
+    attempts = withoutRedoneRounds(attempts)
     try { protocol = JSON.parse(s.protocol || "[]") } catch { protocol = [] }
     if (!Array.isArray(protocol)) protocol = []
     const matches = attempts.filter(
