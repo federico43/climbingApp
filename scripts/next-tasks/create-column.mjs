@@ -39,6 +39,7 @@ const SIZE = 600
 const { columns = [] } = await api("GET", path)
 const strings = columns.filter((c) => c.type === "string")
 console.log(`users: ${columns.length} columns, ${strings.length} strings, ${strings.reduce((n, c) => n + (c.size ?? 0), 0)} characters of string columns in all`)
+for (const c of columns) console.log(`  ${c.key}: ${c.type}${c.size ? ` ${c.size}` : ""}${c.array ? " (array)" : ""}`)
 if (columns.some((c) => c.key === "nextTasks")) console.log("users.nextTasks: already there")
 else if (!APPLY) console.log(`users.nextTasks: would create (string ${SIZE}, optional). Re-run with --apply.`)
 else {
