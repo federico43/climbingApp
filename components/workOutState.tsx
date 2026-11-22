@@ -25,8 +25,7 @@ import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
 import { isTaskBlock } from "@/utils/sessionTasks"
-import { useSessionTasks } from "@/contexts/SessionTasksContext"
-import { NextSessionCard, TasksEditor } from "./SessionTasks"
+import { AddTaskSheet, NextSessionCard } from "./SessionTasks"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -142,7 +141,6 @@ export function WorkOutState({
 
   // Next-session tasks (docs/session-tasks.md): set on the summary. Opening
   // the editor, or scrolling the summary, stops it from closing itself.
-  const { list: tasks } = useSessionTasks()
   const [editorOpen, setEditorOpen] = useState(false)
   const [holdSummary, setHoldSummary] = useState(false)
   useEffect(() => {
@@ -314,7 +312,7 @@ export function WorkOutState({
           </Card>
 
           {/* Above the blocks, so it's on screen before the summary closes itself. */}
-          <NextSessionCard list={tasks} onOpen={() => { setHoldSummary(true); setEditorOpen(true) }} style={{ marginTop: 24 }} />
+          <NextSessionCard onAdd={() => { setHoldSummary(true); setEditorOpen(true) }} style={{ marginTop: 24 }} />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>
@@ -387,7 +385,7 @@ export function WorkOutState({
               : "Workout saved"}{holdSummary ? "" : ` · closing in ${autoCloseIn}s`}
           </Mono>
         </ScrollView>
-        {editorOpen && <TasksEditor onClose={() => setEditorOpen(false)} insets={insets} />}
+        {editorOpen && <AddTaskSheet onClose={() => setEditorOpen(false)} insets={insets} />}
       </SafeAreaView>
     )
   }

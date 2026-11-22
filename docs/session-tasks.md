@@ -9,10 +9,10 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 ## The design
 
 1. **Set on the review page.** At the end of a workout the summary has a "Next session" card. The athlete writes a task and picks **tries** (1 to 20) or a **time limit** (5 to 60 min). Two tasks at most. With two open, the editor asks them to remove one before adding another.
-2. **Next session, after the warm-up.** When a workout starts, each open task becomes its own block, placed right after the warm-up. It runs as a Project bouldering block: one big Attempt button, rest, "Sent it?" and why they came off. In tries mode the block ends after the last try. In time mode it ends when the clock runs out.
+2. **Next session, after the warm-up.** When a workout starts, each open task becomes its own block, placed right after the warm-up. It runs as a Project bouldering block: one big Attempt button, then "Sent it?" and why they came off. In tries mode there is a 3-minute rest between tries and the block ends after the last one. In time mode there is no rest countdown (they rest as they like inside the time limit and tap "Next attempt"), and the block ends when the clock runs out.
 3. **Keep or close.** At the end of the block the athlete picks **Keep it** (back next session) or **Close it**. If they sent it, Close is preselected. A task carries over until the athlete closes it.
 4. **Not today.** The task block's intro has "Not today". That skips the block for this session only, and the task stays.
-5. **Edit any time.** Open tasks are on a card on the Plan page (Home without a plan), which opens the same editor. The summary is not the only place to add or remove them.
+5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks with ✕ to remove one and "Add a task", which opens a short sheet (text, tries or time limit). There is no separate edit mode.
 
 ## Rules
 
