@@ -1,5 +1,6 @@
 import { Card, CardTitle, ListRow, MintButton, Mono, PrimaryCTA, usePaper } from "@/components/paper"
-import { tasksAllowedFor } from "@/utils/sessionTasks"
+import { isTaskBlock, tasksAllowedFor, withTaskBlocks } from "@/utils/sessionTasks"
+import { useSessionTasks } from "@/contexts/SessionTasksContext"
 import { Block, BLOCK_ICONS, BLOCK_LABELS } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { ProtocolRow, sessionLinkFor } from "@/services/BoulderGraphService"
@@ -23,6 +24,7 @@ export function parseBlocks(p: ProtocolRow): Block[] {
 }
 
 function blockTitle(b: Block): string {
+  if (isTaskBlock(b)) return `Your task · ${b.blockName}`
   if (b.type === "strength_conditioning" && b.exercises?.length) {
     return b.exercises.map((e) => e.name || "Unnamed").join(" · ")
   }
@@ -56,7 +58,9 @@ export function LatestWorkoutCard({
 }) {
   const t = usePaper()
   const workoutCtx = useWorkoutContext()
-  const blocks = parseBlocks(workout)
+  const { list: tasks } = useSessionTasks()
+  // The next-session tasks show where they'll run (after the warm-up).
+  const blocks: Block[] = tasksAllowedFor(workout) ? withTaskBlocks(parseBlocks(workout), tasks) : parseBlocks(workout)
   const tag = planTag(workout)
 
   return (
@@ -69,7 +73,7 @@ export function LatestWorkoutCard({
             <ListRow
               key={b.id ?? i}
               index={i + 1}
-              icon={BLOCK_ICONS[b.type] ?? "ellipse"}
+              icon={isTaskBlock(b) ? "flag" : BLOCK_ICONS[b.type] ?? "ellipse"}
               label={blockTitle(b)}
               last={i === blocks.length - 1 && !scPart}
             />
