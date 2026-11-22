@@ -1,5 +1,5 @@
 import { useAuth } from "@/components/auth-context"
-import { refreshClassSchedule, useClassSchedule } from "@/utils/classScheduleStore"
+import { refreshClassSchedule, reloadClassSchedule, useClassSchedule } from "@/utils/classScheduleStore"
 import { C } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
@@ -43,7 +43,7 @@ function Lock() {
         <Pressable
           style={s.button}
           disabled={checking}
-          onPress={() => { setChecking(true); refreshClassSchedule().finally(() => setChecking(false)) }}
+          onPress={() => { setChecking(true); reloadClassSchedule().finally(() => setChecking(false)) }}
         >
           {checking ? <ActivityIndicator color={C.bg} /> : <Text style={s.buttonText}>Check again</Text>}
         </Pressable>

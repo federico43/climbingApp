@@ -10,6 +10,7 @@ import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
 import { unknownColumn } from "@/utils/appwriteErrors"
+import { cachedRows, filtersOf, type Signature } from "@/utils/readCache"
 
 export const DATABASE_ID   = "68bd9dd7003c15f7147e"
 export const MEDIA_BUCKET_ID = "6a19e3a8002f3a83e640"
@@ -32,7 +33,27 @@ export const CHECKIN_TABLE = "checkins"
 // through it — otherwise large libraries/histories get silently truncated.
 // `baseQueries` must include the sort order (needed for stable cursoring) and
 // any filters, but NOT a limit.
-export async function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+// Reads within a few minutes share one fetch; after that one row says
+// whether the list changed, and only new or edited rows are read
+// (utils/readCache.ts): every row returned is a billed Appwrite database read.
+export function listAllRows<T>(tableId: string, baseQueries: any[] = []): Promise<T[]> {
+  return cachedRows<T>(tableId, baseQueries, () => fetchAllRows<T>(tableId, baseQueries), {
+    check: () => newestRow(tableId, baseQueries),
+    delta: (since) => fetchAllRows<T>(tableId, [...baseQueries, Query.greaterThan("$updatedAt", since)]),
+  })
+}
+
+// The same rows as `baseQueries`, in one: how many match and the newest
+// $updatedAt among them (readCache's check).
+async function newestRow(tableId: string, baseQueries: any[]): Promise<Signature> {
+  const response = await tablesDB.listRows({
+    databaseId: DATABASE_ID, tableId,
+    queries: [...filtersOf(baseQueries), Query.orderDesc("$updatedAt"), Query.limit(1)],
+  })
+  return { count: response.total, newest: (response.rows[0] as any)?.$updatedAt ?? "" }
+}
+
+async function fetchAllRows<T>(tableId: string, baseQueries: any[]): Promise<T[]> {
   const all: T[] = []
   let cursor: string | undefined
   for (;;) {
@@ -348,7 +369,8 @@ export async function listRecentSessions(sinceIso: string): Promise<SessionRow[]
   const base = [Query.greaterThanEqual("$createdAt", sinceIso), Query.orderDesc("$createdAt")]
   // userId is a relationship: selecting it needs "userId.$id" and comes back
   // as an object — flattened to the id like an unselected read returns it.
-  const columns = ["$id", "$createdAt", "userId.$id", "attempts", "protocolId", "planId", "planIndex"]
+  // $updatedAt lets the read cache check this list with one row.
+  const columns = ["$id", "$createdAt", "$updatedAt", "userId.$id", "attempts", "protocolId", "planId", "planIndex"]
   try {
     const rows = await listAllRows<any>(SESSION_TABLE, [...base, Query.select(columns)])
     return rows.map((r) => ({ ...r, userId: r.userId?.$id ?? r.userId, protocol: r.protocol ?? "" }))

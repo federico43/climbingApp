@@ -8,6 +8,7 @@ import {
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 // The class screens' state (athlete week, Plan card, coach planner), loaded
 // from Appwrite and shared so they stay in step. Changes go through the
@@ -280,6 +281,13 @@ async function load() {
 export function refreshClassSchedule(): Promise<void> {
   loading ??= load().finally(() => { loading = null })
   return loading
+}
+
+// Straight from the server, past the few-minute read cache (utils/readCache.ts):
+// pull-to-refresh, "Check again", and a class push (someone else changed something).
+export function reloadClassSchedule(): Promise<void> {
+  freshReads()
+  return refreshClassSchedule()
 }
 
 export function useClassSchedule(): State {

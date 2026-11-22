@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { UNIFIED_PACK, PLAN_TOOL } from "./knowledgePack.js"
 import { sendExpoPush } from "./expoPush.js"
 import { handleClassAction, runClassCron } from "./classes.js"
+import { gymNow } from "./classRules.js"
 import { PUSH_LOG_KEEP_DAYS, PUSH_LOG_TABLE, pushLogRows, toPushLogEntry } from "./pushLog.js"
 import { videoPushMessage } from "./videoPush.js"
 
@@ -101,14 +102,20 @@ async function listRowsEqual(table, attribute, value, log) {
 }
 
 // Rows matching Appwrite query objects ({ method, attribute, values }), one
-// page of up to 500.
-async function listRows(table, queries, log) {
-  const qs = [...queries, { method: "limit", values: [500] }]
+// page of up to `limit` (every row returned is a billed database read).
+// null when Appwrite didn't answer on either REST shape.
+async function listRowsOrNull(table, queries, log, limit = 500) {
+  const qs = [...queries, { method: "limit", values: [limit] }]
     .map((q) => `queries[]=${encodeURIComponent(JSON.stringify(q))}`).join("&")
   const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${table}/rows?${qs}`, log)
   if (viaTables) return viaTables.rows ?? []
   const viaDocs = await appwriteFetch(`/databases/${DATABASE_ID}/collections/${table}/documents?${qs}`, log)
-  return viaDocs?.documents ?? []
+  return viaDocs ? viaDocs.documents ?? [] : null
+}
+
+// Same, with no answer read as no rows.
+async function listRows(table, queries, log, limit) {
+  return (await listRowsOrNull(table, queries, log, limit)) ?? []
 }
 
 // A new row (`id` or a unique one) through the server key. Returns it, or null.
@@ -207,12 +214,14 @@ async function prunePushLog(log) {
 const CRON_MARKS_TABLE = process.env.CRON_MARKS_TABLE || "cron_marks"
 const CRON_MARKS_KEEP_DAYS = 14
 
+const cronMarkId = (key) => createHash("sha256").update(key).digest("hex").slice(0, 32)
+
 // True when this run is the first to ask for `key`. If the table is missing
 // or Appwrite errors, it says yes: a reminder twice beats none.
 async function claimCronKey(key, log) {
   const apiKey = process.env.APPWRITE_API_KEY
   if (!apiKey) return true
-  const rowId = createHash("sha256").update(key).digest("hex").slice(0, 32)
+  const rowId = cronMarkId(key)
   const headers = { "X-Appwrite-Project": PROJECT, "X-Appwrite-Key": apiKey, "Content-Type": "application/json" }
   try {
     const r = await fetch(`${ENDPOINT}/tablesdb/${DATABASE_ID}/tables/${CRON_MARKS_TABLE}/rows`, {
@@ -227,6 +236,12 @@ async function claimCronKey(key, log) {
   return true
 }
 
+// Takes a claim back, so the next run does that step again (it couldn't read
+// what it needed this time). Best-effort.
+async function releaseCronKey(key, log) {
+  if (!(await deleteRow(CRON_MARKS_TABLE, cronMarkId(key), log))) log?.(`Cron mark ${key}: couldn't take it back`)
+}
+
 async function pruneCronMarks(log) {
   const cutoff = new Date(Date.now() - CRON_MARKS_KEEP_DAYS * 86400000).toISOString()
   const old = await listRows(CRON_MARKS_TABLE, [{ method: "lessThan", attribute: "$createdAt", values: [cutoff] }], log)
@@ -238,9 +253,12 @@ async function pruneCronMarks(log) {
 // after this long, to catch tokens Apple/Google reject.
 const RECEIPT_WAIT_MS = 5000
 
-// Users whose row holds `token`. Filters a full listing in memory rather
-// than querying `pushToken`, which may not have an index — the roster is small.
+// Users whose row holds `token`: a query on `pushToken` (usually just the
+// caller's own row, one read, where a full listing read every user on every
+// app start). If that query fails, a full listing filtered in memory.
 async function listUsersWithToken(token, log) {
+  const matching = await listRowsOrNull(USERS_TABLE, [{ method: "equal", attribute: "pushToken", values: [token] }], log)
+  if (matching) return matching.filter((u) => u?.pushToken === token)
   const limit = encodeURIComponent(JSON.stringify({ method: "limit", values: [5000] }))
   const viaTables = await appwriteFetch(`/tablesdb/${DATABASE_ID}/tables/${USERS_TABLE}/rows?queries[]=${limit}`, log)
   const rows = viaTables?.rows
@@ -319,10 +337,17 @@ async function isCoach(userId, log) {
 
 // What classes.js needs from here. `source` labels its pushes in the push log.
 function classContext(log, error, source) {
+  // A list Appwrite didn't answer reads as no rows; the cron asks whether
+  // that happened, to do those checks again next hour (readFailed).
+  let readFailed = false
   return {
     db: {
       get: (table, id) => (id ? getRow(table, id, log) : null),
-      list: (table, queries) => listRows(table, queries, log),
+      list: async (table, queries) => {
+        const rows = await listRowsOrNull(table, queries, log)
+        if (!rows) readFailed = true
+        return rows ?? []
+      },
       create: (table, data, id) => createRow(table, data, id, log),
       update: (table, id, data) => updateRow(table, id, data, log),
       remove: (table, id) => deleteRow(table, id, log),
@@ -337,14 +362,26 @@ function classContext(log, error, source) {
     listUsers: () => listRows(USERS_TABLE, [], log),
     push: (users, build) => pushToUsers(users, build, log, error, { source }),
     claim: (key) => claimCronKey(key, log),
+    unclaim: (key) => releaseCronKey(key, log),
+    readFailed: () => readFailed,
     log, error, tz: GYM_TZ,
   }
 }
 
 async function classCronRun(log, error, via) {
+  // Once an hour: Appwrite's schedule and the GitHub backup both call this,
+  // and the second one in the same hour would only spend database reads.
+  const now = gymNow(new Date(), GYM_TZ)
+  if (!(await claimCronKey(`run:${now.ymd}:${Math.floor(now.hour)}`, log))) {
+    log(`Class cron (${via}): already ran this hour`)
+    return { ok: true, skipped: true }
+  }
   const report = await runClassCron(classContext(log, error, "classCron"))
-  report.pushLogPruned = await prunePushLog(log)
-  report.cronMarksPruned = await pruneCronMarks(log)
+  // Old push-log rows and cron marks: cleaned up once a day.
+  if (report.daily) {
+    report.pushLogPruned = await prunePushLog(log)
+    report.cronMarksPruned = await pruneCronMarks(log)
+  }
   log(`Class cron (${via}): ${JSON.stringify(report)}`)
   return { ok: true, ...report }
 }
@@ -391,8 +428,9 @@ export default async ({ req, res, log, error }) => {
     const queries = [{ method: "orderDesc", attribute: "$createdAt" }]
     if (typeof body.userId === "string" && body.userId) queries.push({ method: "equal", attribute: "userId", values: [body.userId] })
     if (body.problemsOnly === true) queries.push({ method: "notEqual", attribute: "status", values: ["sent"] })
-    const rows = await listRows(PUSH_LOG_TABLE, queries, log)
-    return res.json({ entries: rows.slice(0, 300).map(toPushLogEntry) }, 200)
+    // Only the 300 shown: each row read is a billed database read.
+    const rows = await listRows(PUSH_LOG_TABLE, queries, log, 300)
+    return res.json({ entries: rows.map(toPushLogEntry) }, 200)
   }
 
   // ── Action: notify the coach(es) that an athlete finished a workout ──────────
