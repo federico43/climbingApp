@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  addTask, amountLabel, canAdd, closedTaskIds, EMPTY_TASKS, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
+  addTask, amountLabel, COLUMN_SIZE, canAdd, closedTaskIds, EMPTY_TASKS, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
   removeTasks, serializeSessionTasks, taskBlock, taskInsertIndex, tasksAllowedFor, triesLeft, withTaskBlocks,
   type SessionTaskList,
 } from "@/utils/sessionTasks"
@@ -98,6 +98,11 @@ assert.deepEqual(closedTaskIds(run, new Set()), [])
 assert.equal(triesLeft(tb.focusTask, 0), null)                                     // time mode
 assert.equal(triesLeft(taskBlock(two.tasks[0]).focusTask, 3), 2)
 assert.equal(triesLeft(taskBlock(two.tasks[0]).focusTask, 7), 0)
+
+// the worst case fits the users.nextTasks column
+let worst = EMPTY_TASKS
+for (const id of ["lzz9x0abcde", "lzz9x0abcdf"]) worst = addTask(worst, { text: '"'.repeat(200), mode: "tries", amount: 20 }, id, day, 1795400000000)
+assert.ok(serializeSessionTasks(worst).length < COLUMN_SIZE, `${serializeSessionTasks(worst).length}`)
 
 const _typed: SessionTaskList = two
 void _typed

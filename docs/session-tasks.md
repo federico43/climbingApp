@@ -26,7 +26,7 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 
 ## Storage
 
-- `users.nextTasks` (string 4000, JSON `{ tasks, updatedAt }`), created by `scripts/next-tasks/create-column.mjs --apply`. **Run it before the EAS update**, or server saves fail and the list stays on that phone only.
+- `users.nextTasks` (string 600, the users table has no room for more; JSON `{ tasks, updatedAt }`), created by `scripts/next-tasks/create-column.mjs --apply`. **Run it before the EAS update**, or server saves fail and the list stays on that phone only.
 - A copy on the phone (AsyncStorage `nextTasks.<userId>`), written first, so it works offline. The newer copy wins on load. Saves run one after another, so an older list never overwrites a newer one.
 - One user-row read when the app opens (per sign-in). No list reads, and none per screen.
 - Logic: `utils/sessionTasks.ts` (pure, tested in `scripts/progression-tests/sessionTasks.test.ts`). State: `contexts/SessionTasksContext.tsx`. UI: `components/SessionTasks.tsx`. Runtime: `components/ProjectBoulderingBlock.tsx` (task mode).
