@@ -100,7 +100,7 @@ export function AthleteCustomizeWorkout({
   function addExerciseToBlock(blockId: string, ex: ExerciseRow) {
     setBlocks((p) => p.map((b) =>
       b.id === blockId && b.type === "strength_conditioning"
-        ? { ...b, exercises: [...b.exercises, exerciseFromLibrary(ex)] }
+        ? { ...b, exercises: [...b.exercises, exerciseFromLibrary(ex, b.exercises)] }
         : b))
   }
 
