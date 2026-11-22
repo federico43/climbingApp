@@ -1,4 +1,4 @@
-import { Body, Card, GhostButton, Mono, NavBar, SlidesBody, Stepper, TextButton, TextField, usePaper, usePaperStyles } from "@/components/paper"
+import { Body, Card, GhostButton, Mono, NavBar, SlidesBody, Stepper, TextField, usePaper, usePaperStyles } from "@/components/paper"
 import { useAuth } from "@/components/auth-context"
 import { openTasksIntro, TASKS_INTRO } from "@/components/SessionTasksIntro"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
@@ -25,28 +25,36 @@ import { useSafeAreaInsets, type EdgeInsets } from "react-native-safe-area-conte
 
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
-function TaskRow({ task, onPress, first }: { task: SessionTask; onPress: () => void; first?: boolean }) {
+// A task: tap it (or the pencil) to change it, the bin removes it.
+function TaskRow({ task, onEdit, onRemove, first }: { task: SessionTask; onEdit: () => void; onRemove: () => void; first?: boolean }) {
   const t = usePaper()
   const styles = usePaperStyles(makeStyles)
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Change ${task.text}`}
-      style={({ pressed }) => [styles.row, !first && styles.rowDivider, pressed && { opacity: 0.6 }]}
-    >
-      <Ionicons name={task.mode === "time" ? "time-outline" : "repeat"} size={20} color={t.mintText} />
-      <View style={{ flex: 1 }}>
-        <Body weight={700} size={16}>{task.text}</Body>
-        <Mono color={t.mintText} style={{ marginTop: 3 }}>{amountLabel(task)}</Mono>
-      </View>
-      <Ionicons name="create-outline" size={20} color={t.label} />
-    </Pressable>
+    <View style={[styles.row, !first && styles.rowDivider]}>
+      <Pressable
+        onPress={onEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`Change ${task.text}`}
+        style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.6 }]}
+      >
+        <Ionicons name={task.mode === "time" ? "time-outline" : "repeat"} size={20} color={t.mintText} />
+        <View style={{ flex: 1 }}>
+          <Body weight={700} size={16}>{task.text}</Body>
+          <Mono color={t.mintText} style={{ marginTop: 3 }}>{amountLabel(task)}</Mono>
+        </View>
+      </Pressable>
+      <Pressable onPress={onEdit} hitSlop={8} style={styles.rowIcon} accessibilityRole="button" accessibilityLabel={`Change ${task.text}`}>
+        <Ionicons name="create-outline" size={20} color={t.label} />
+      </Pressable>
+      <Pressable onPress={onRemove} hitSlop={8} style={styles.rowIcon} accessibilityRole="button" accessibilityLabel={`Remove ${task.text}`}>
+        <Ionicons name="trash-outline" size={20} color={t.label} />
+      </Pressable>
+    </View>
   )
 }
 
-// The open tasks. Tapping one opens it in the sheet (change it or remove it);
-// "Add a task" opens an empty one. No separate edit mode (Federico 2026-11-22:
+// The open tasks. Tapping one (or its pencil) opens it in the sheet, the bin
+// removes it; "Add a task" opens an empty sheet. No separate edit mode (Federico 2026-11-22:
 // "Edit" mixed too much). `onHelp` opens the intro slides again.
 export function NextSessionCard({ onOpen, onHelp, style }: {
   onOpen: (task: SessionTask | null) => void
@@ -55,7 +63,7 @@ export function NextSessionCard({ onOpen, onHelp, style }: {
 }) {
   const t = usePaper()
   const styles = usePaperStyles(makeStyles)
-  const { list } = useSessionTasks()
+  const { list, update, resetIntro } = useSessionTasks()
   const full = !canAdd(list)
   return (
     <View style={style}>
@@ -71,12 +79,26 @@ export function NextSessionCard({ onOpen, onHelp, style }: {
         {list.tasks.length === 0 ? (
           <Body muted size={14}>Your project, or a movement you haven&apos;t figured out. It comes right after the warm-up.</Body>
         ) : (
-          list.tasks.map((task, i) => <TaskRow key={task.id} task={task} first={i === 0} onPress={() => onOpen(task)} />)
+          list.tasks.map((task, i) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              first={i === 0}
+              onEdit={() => onOpen(task)}
+              onRemove={() => update((l) => removeTasks(l, [task.id], Date.now()))}
+            />
+          ))
         )}
         {full ? (
-          <Body muted size={13} style={{ marginTop: 8 }}>Tap a task to change or remove it.</Body>
+          <Body muted size={13} style={{ marginTop: 8 }}>Remove one to add another.</Body>
         ) : (
           <GhostButton label="Add a task" icon="add" onPress={() => onOpen(null)} style={{ marginTop: 14 }} />
+        )}
+        {/* Dev builds only (never in an EAS update): show the first-task intro again. */}
+        {__DEV__ && (
+          <Pressable onPress={resetIntro} hitSlop={8} style={{ marginTop: 12, alignSelf: "center" }}>
+            <Mono color={t.label}>Dev · show the intro in the next workout</Mono>
+          </Pressable>
         )}
       </Card>
     </View>
@@ -124,11 +146,6 @@ export function TaskSheet({ task, onClose, onSaved, cancelLabel, insets }: {
     const saved = current().tasks.find((x) => x.id === id)
     if (onSaved && saved) onSaved(saved)
     else onClose()
-  }
-  function remove() {
-    if (!task) return
-    update((l) => removeTasks(l, [task.id], Date.now()))
-    onClose()
   }
   function pickMode(m: (typeof MODES)[number]) {
     if (m.mode === mode) return
@@ -189,11 +206,6 @@ export function TaskSheet({ task, onClose, onSaved, cancelLabel, insets }: {
             format={(v) => amountLabel({ mode, amount: v })}
             style={{ marginTop: 12 }}
           />
-          {task && (
-            <View style={{ alignItems: "center", marginTop: 36 }}>
-              <TextButton label="Remove task" onPress={remove} />
-            </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -237,7 +249,9 @@ export function TasksCardWithEditor({ style }: { style?: StyleProp<ViewStyle> })
 function makeStyles(t: PaperTheme) {
   return StyleSheet.create({
     cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-    row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+    row: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 12 },
+    rowMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
+    rowIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     rowDivider: { borderTopWidth: 1, borderTopColor: t.hairline },
     editor: {
       ...StyleSheet.absoluteFillObject,

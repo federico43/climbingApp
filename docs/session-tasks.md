@@ -11,8 +11,8 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 1. **Set on the review page.** At the end of a workout the summary has a "Next session" card. The athlete writes a task and picks **tries** (1 to 20) or a **time limit** (5 to 60 min). Two tasks at most. With two open, the editor asks them to remove one before adding another.
 2. **Next session, after the warm-up.** When a workout starts, each open task becomes its own block, placed right after the warm-up. It runs as a Project bouldering block: one big Attempt button, then "Sent it?" and why they came off. In tries mode there is a 3-minute rest between tries and the block ends after the last one. In time mode there is no rest countdown (they rest as they like inside the time limit and tap "Next attempt"), and the block ends when the clock runs out.
 3. **Keep or close.** At the end of the block the athlete picks **Keep it** (back next session) or **Close it**. If they sent it, Close is preselected. A task carries over until the athlete closes it.
-4. **Not today.** The task block's intro has "Not today". That skips the block for this session only, and the task stays.
-5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks. Tapping one opens it in a short sheet (text, tries or time limit) to change it, with "Remove task" at the bottom. "Add a task" opens the same sheet empty. There is no separate edit mode. A changed task keeps its id, so a workout already running it still closes the right one.
+4. **Not today.** "Not today" in the block's ⋯ menu skips the block for this session only, and the task stays. (No link on the block's intro, Federico 2026-11-22.)
+5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks, each with a pencil (opens a short sheet: text, tries or time limit) and a bin that removes it. "Add a task" opens the same sheet empty. There is no separate edit mode. A changed task keeps its id, so a workout already running it still closes the right one. Dev builds show a "Dev · show the intro in the next workout" link on the card to test the intro again.
 
 ## The intro
 

@@ -19,6 +19,7 @@ interface SessionTasksValue {
   introSeen: boolean
   isIntroSeen: () => boolean
   markIntroSeen: () => void
+  resetIntro: () => void   // dev builds: show the intro block again
 }
 
 // feature-intro-seen:<id>, like the other intros (components/schedule/FeatureIntro.tsx).
@@ -77,9 +78,16 @@ export function SessionTasksProvider({ children }: { children: React.ReactNode }
     AsyncStorage.setItem(INTRO_SEEN_KEY, "1").catch(() => {})
   }, [])
 
+  const resetIntro = useCallback(() => {
+    marked.current = false
+    introRef.current = false
+    setIntroSeen(false)
+    AsyncStorage.removeItem(INTRO_SEEN_KEY).catch(() => {})
+  }, [])
+
   const value = useMemo(
-    () => ({ list, current, update, introSeen, isIntroSeen, markIntroSeen }),
-    [list, current, update, introSeen, isIntroSeen, markIntroSeen],
+    () => ({ list, current, update, introSeen, isIntroSeen, markIntroSeen, resetIntro }),
+    [list, current, update, introSeen, isIntroSeen, markIntroSeen, resetIntro],
   )
   return <SessionTasksContext.Provider value={value}>{children}</SessionTasksContext.Provider>
 }
@@ -88,7 +96,7 @@ export function SessionTasksProvider({ children }: { children: React.ReactNode }
 // read-only list.
 const NONE: SessionTasksValue = {
   list: EMPTY_TASKS, current: () => EMPTY_TASKS, update: () => {},
-  introSeen: true, isIntroSeen: () => true, markIntroSeen: () => {},
+  introSeen: true, isIntroSeen: () => true, markIntroSeen: () => {}, resetIntro: () => {},
 }
 
 export function useSessionTasks(): SessionTasksValue {

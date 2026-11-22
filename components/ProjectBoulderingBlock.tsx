@@ -293,13 +293,9 @@ function ProjectBoulderingRun({
             The task you set for this session. Tap the big button every time you come off (or top out).
           </Text>
         </ScrollView>
-        <View style={[shared_styles.footer, { gap: 14 }]}>
+        {/* Skipping is in the ⋯ menu ("Not today"), not here (Federico 2026-11-22). */}
+        <View style={shared_styles.footer}>
           <CustomButton title="Start" onPress={start} />
-          {taskActions && (
-            <Pressable onPress={taskActions.skip} hitSlop={8} style={{ alignItems: "center" }} accessibilityRole="button">
-              <Text style={s.linkMuted}>Not today · it stays for next session</Text>
-            </Pressable>
-          )}
         </View>
       </View>
     )
