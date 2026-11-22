@@ -110,6 +110,17 @@ export interface ScSessionEntry {
   exerciseName?: string      // what was actually done (a level's name)
   effort?: string            // the last round's Easy / Solid / Max, if logged
   summary: ScSetsSummary
+  // Every round of the session on this family, oldest first — the summary
+  // only judges the ones at the final load (coach's Progression card).
+  rounds: LoggedRound[]
+}
+
+export interface LoggedRound {
+  exerciseName?: string
+  weight?: number
+  amount?: number
+  effort?: string
+  hardest?: boolean
 }
 
 export function findScSessions(
@@ -131,6 +142,16 @@ export function findScSessions(
       exerciseName: final.scData?.exerciseName,
       effort: final.scData?.effort,
       summary,
+      rounds: [...matches].reverse().map((m) => {
+        const r = readRound(m.scData, opts.unit)
+        return {
+          exerciseName: m.scData?.exerciseName,
+          ...(r.weight != null ? { weight: r.weight } : {}),
+          ...(r.amount != null ? { amount: r.amount } : {}),
+          ...(m.scData?.effort ? { effort: m.scData.effort } : {}),
+          ...(r.hardest ? { hardest: true } : {}),
+        }
+      }),
     })
     if (opts.limit && out.length >= opts.limit) break
   }

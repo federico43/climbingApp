@@ -4,8 +4,8 @@
 // and the athlete's S&C list. Pure: sessions + library in, rows out.
 import type { SessionRow } from "@/services/BoulderGraphService"
 import { chainIds, findLibraryRow, resolveExerciseChain, type ChainMember, type ResolvedChain } from "@/utils/levelChain"
-import { EFFORT_LABEL, FOCUS_LABEL, type Effort, type Focus, type WeightUnit } from "@/utils/scProgression"
-import { findScSessions, findScSwaps, type ScSessionEntry, type ScSwap } from "@/utils/scHistory"
+import { EFFORT_LABEL, EFFORTS, FOCUS_LABEL, type Effort, type Focus, type WeightUnit } from "@/utils/scProgression"
+import { findScSessions, findScSwaps, type LoggedRound, type ScSessionEntry, type ScSwap } from "@/utils/scHistory"
 import { planNextForFocus, type NextFlags } from "@/utils/scNext"
 
 export interface CoachSessionRow {
@@ -30,13 +30,38 @@ const HISTORY_LIMIT = 5
 // look two back at the same focus, and the plan rotates three focuses.
 const LOOKBACK = HISTORY_LIMIT + 7
 
+// Every round, grouped by load in the order done: "Bodyweight · 8, 7 reps →
+// Bodyweight · hardest setup · 6 reps · Max". Only the last group is judged
+// (setsAtFinalLoad), so a change of load mid-session shows what was left out.
+// Effort: one word when every round had the same, else a count
+// ("1 Solid · 2 Max").
 function did(e: ScSessionEntry, unit: WeightUnit): string {
   const noun = e.unit === "seconds" ? "s" : " reps"
-  const load = e.summary.weight ? `${e.summary.weight} ${unit}` : "Bodyweight"
-  const amounts = e.summary.sets.map((s) => s.amount).join(", ")
-  const effort = e.effort && e.effort in EFFORT_LABEL ? ` · ${EFFORT_LABEL[e.effort as Effort]}` : ""
-  const hardest = e.summary.atHardest ? " · hardest setup" : ""
-  return `${load}${hardest} · ${amounts}${noun}${effort}`
+  const rounds = e.rounds.length ? e.rounds : e.summary.sets.map((s) => ({ amount: s.amount, weight: e.summary.weight, hardest: e.summary.atHardest, exerciseName: e.exerciseName }))
+  const loadOf = (r: LoggedRound) => [
+    ...(r.exerciseName && r.exerciseName !== e.exerciseName ? [r.exerciseName] : []),
+    r.weight ? `${r.weight} ${unit}` : "Bodyweight",
+    ...(r.hardest ? ["hardest setup"] : []),
+  ].join(" · ")
+  const groups: { load: string; amounts: number[] }[] = []
+  for (const r of rounds) {
+    if (r.amount == null) continue
+    const load = loadOf(r)
+    const last = groups[groups.length - 1]
+    if (last && last.load === load) last.amounts.push(r.amount)
+    else groups.push({ load, amounts: [r.amount] })
+  }
+  const sets = groups.map((g) => `${g.load} · ${g.amounts.join(", ")}${noun}`).join(" → ")
+  return [sets, effortText(rounds)].filter(Boolean).join(" · ")
+}
+
+function effortText(rounds: LoggedRound[]): string {
+  const counts = new Map<Effort, number>()
+  for (const r of rounds) if (r.effort && r.effort in EFFORT_LABEL) counts.set(r.effort as Effort, (counts.get(r.effort as Effort) ?? 0) + 1)
+  if (counts.size === 0) return ""
+  const [only] = [...counts.keys()]
+  if (counts.size === 1 && counts.get(only) === rounds.length) return EFFORT_LABEL[only]
+  return EFFORTS.filter((k) => counts.has(k)).map((k) => `${counts.get(k)} ${EFFORT_LABEL[k]}`).join(" · ")
 }
 
 function loadText(weight: number | undefined, levelName: string | undefined, unit: WeightUnit): string | undefined {
