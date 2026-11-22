@@ -16,7 +16,7 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 
 ## Rules
 
-- **Which workouts get the blocks:** plan workouts, the athlete's own workouts, and extra solo sessions. Only workouts with a climbing block get them (warm-up, project, 4x4, sequence, exploration, route exploration), so a strength-only or cardio-only session doesn't ask for a boulder. Never added to: the coach's homework workouts, "Leave as homework" leftovers, plan S&C split-offs, single library blocks, sequences, or coach tests.
+- **Which workouts get the blocks:** plan workouts, the athlete's own workouts, and extra solo sessions. Only workouts with a climbing block get them (warm-up, project, 4x4, sequence, exploration, route exploration), so a strength-only or cardio-only session doesn't ask for a boulder. Never added to: the coach's homework workouts, "Leave as homework" leftovers, plan S&C split-offs, the plan's Benchmark, single library blocks, sequences, or coach tests.
 - **Where:** right after the last warm-up block at the start of the workout. With no warm-up, before the first climbing block.
 - **Runtime only:** the blocks are added to this session's copy of the workout, never to the saved workout, so plans and the coach's builder don't change. A resumed workout (app closed mid-session) already has them, so they're never added twice.
 - **Record:** the task block is saved with the session like any project block (tries, sends, fall reasons), with the task on the block (`focusTask`), including whether it was closed. The coach sees it in the athlete's session history.
@@ -28,7 +28,7 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 
 - `users.nextTasks` (string 4000, JSON `{ tasks, updatedAt }`), created by `scripts/next-tasks/create-column.mjs --apply`. **Run it before the EAS update**, or server saves fail and the list stays on that phone only.
 - A copy on the phone (AsyncStorage `nextTasks.<userId>`), written first, so it works offline. The newer copy wins on load. Saves run one after another, so an older list never overwrites a newer one.
-- Read once when the app opens and when a workout ends, from the user row. No new list reads.
+- One user-row read when the app opens (per sign-in). No list reads, and none per screen.
 - Logic: `utils/sessionTasks.ts` (pure, tested in `scripts/progression-tests/sessionTasks.test.ts`). State: `contexts/SessionTasksContext.tsx`. UI: `components/SessionTasks.tsx`. Runtime: `components/ProjectBoulderingBlock.tsx` (task mode).
 
 No Appwrite function change.
