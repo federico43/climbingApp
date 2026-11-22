@@ -1,4 +1,4 @@
-import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet, onInk } from "@/theme/paper/legacy"
 import {
   INACTIVE_STEPS, lastSessionLabel, planStatusLabel,
   type AthleteSummary, type RosterFilter,
@@ -203,7 +203,7 @@ const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   chipOn: P ? { backgroundColor: P.ink, borderColor: P.ink } : { backgroundColor: C.green, borderColor: C.green },
   chipText: { fontSize: 12.5, fontWeight: "600", color: C.textSecondary },
   chipCount: { fontSize: 12, fontWeight: "800", color: C.textMuted },
-  chipTextOn: { color: P ? P.paper : C.bg },
+  chipTextOn: { color: P ? onInk(P) : C.bg },
   hint: { fontSize: 11.5, color: C.textMuted },
   empty: { fontSize: 13.5, color: C.textMuted, textAlign: "center", paddingVertical: 24 },
   row: {
@@ -214,7 +214,7 @@ const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center", ...(P && { backgroundColor: "transparent", borderWidth: 1.5, borderColor: P.ink }) },
   avatarSel: P ? { backgroundColor: P.ink } : { backgroundColor: C.green },
   avatarText: { fontSize: 16, fontWeight: "800", color: P ? P.ink : C.green },
-  avatarTextSel: { color: P ? P.paper : C.bg },
+  avatarTextSel: { color: P ? onInk(P) : C.bg },
   name: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   nameOff: { color: C.textMuted },
   meta: { fontSize: 12, color: C.textSecondary, marginTop: 1 },

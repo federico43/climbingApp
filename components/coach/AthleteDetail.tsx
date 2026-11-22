@@ -1,4 +1,4 @@
-import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet, onInk } from "@/theme/paper/legacy"
 import { IconButton, Melt, Mono, PosterHeadline, posterSize } from "@/components/paper"
 import { font } from "@/theme/paper/tokens"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
@@ -181,7 +181,7 @@ export function AthleteDetail({
     />
   )
   const timelineCard = plan && (
-    <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+    <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} squares={!!P} />
   )
   const activityCard = loadingSessions
     ? <View style={card.card}><ActivityIndicator color={C.green} /></View>
@@ -422,7 +422,7 @@ const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   pTab: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 999 },
   pTabOn: { backgroundColor: P?.ink },
   pTabText: { fontFamily: font.bold, fontSize: 14, color: P?.ink },
-  pTabTextOn: { color: P?.paper },
+  pTabTextOn: { color: P ? onInk(P) : C.textPrimary },
   pBody: { paddingHorizontal: 16, paddingTop: 4 },
   paneOn: {},
   paneOff: { display: "none" },

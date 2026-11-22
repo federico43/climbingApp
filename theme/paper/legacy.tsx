@@ -239,3 +239,12 @@ export function PaperAppTheme({ children }: { children: React.ReactNode }) {
     </PaperThemeOverride>
   )
 }
+
+/**
+ * Text on an ink fill (selected tab / chip). Not `P.paper`: in light mode
+ * that equals the old `C.bg`, which the old→Paper pass turns into
+ * `onAccent` (ink) — ink text on ink. A hair off paper / ink instead.
+ */
+export function onInk(t: PaperTheme): string {
+  return t.mode === "dark" ? "#141216" : "#F6F3ED"
+}
