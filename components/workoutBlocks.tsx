@@ -53,7 +53,7 @@ import { findLastScSession, findScSessions } from "@/utils/scHistory"
 import { planNextForFocus, type NextFlags } from "@/utils/scNext"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, type ChainMember } from "@/utils/levelChain"
-import { exerciseDraftFromLibrary } from "@/utils/scPlanBuilder"
+import { exerciseDraftFromLibrary, inheritFocus } from "@/utils/scPlanBuilder"
 import { findBlockRuns } from "@/utils/blockHistory"
 import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN } from "@/utils/routeExploration"
 import { routesVisibleTo, suggestNextSequence, type SequenceSuggestion } from "@/utils/progression/sequence"
@@ -1939,8 +1939,10 @@ export const SCLibraryContext = createContext<SCLibraryController | null>(null)
 export const AuthoringAthleteContext = createContext<string | null>(null)
 
 // Build a block Exercise from a library row, applying its defaults.
-export function exerciseFromLibrary(ex: ExerciseRow): Exercise {
-  return { id: generateId(), ...exerciseDraftFromLibrary(ex) }
+// `siblings`: the block's exercises — the new one takes the focus they share
+// (inheritFocus).
+export function exerciseFromLibrary(ex: ExerciseRow, siblings: Exercise[] = []): Exercise {
+  return { id: generateId(), ...inheritFocus(exerciseDraftFromLibrary(ex), siblings) }
 }
 
 // Exercise library: grouped by type, items as wrapping chips sized to their
@@ -2340,7 +2342,7 @@ function StrengthConditioningFields({ block, onUpdate }: { block: StrengthCondit
   const [paneW, setPaneW] = useState(0)
   const wide = paneW >= 560
   function update(fields: Partial<StrengthConditioningBlock>) { onUpdate({ ...block, ...fields }) }
-  function addFromLibrary(ex: ExerciseRow) { update({ exercises: [...block.exercises, exerciseFromLibrary(ex)] }) }
+  function addFromLibrary(ex: ExerciseRow) { update({ exercises: [...block.exercises, exerciseFromLibrary(ex, block.exercises)] }) }
 
   // When authoring for a specific athlete, fetch their history once so a
   // level-mode exercise can flag when they've already progressed past what's

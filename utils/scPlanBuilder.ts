@@ -4,7 +4,7 @@ import { MOVEMENT_TYPE_LABEL, skipsExplosiveness, type MovementType } from "@/ut
 import { noPowerFocusFor, type PlanShape, type ScPattern, type WorkoutSpec } from "@/utils/planRotation"
 import { needsWarmup } from "@/utils/edgeWarmup"
 import { DEFAULT_HANG_EDGE, isMaxHang, normalizeEdge } from "@/utils/maxHangs"
-import { FOCUS_LABEL, FOCUS_REP_RANGE, type Focus } from "@/utils/scProgression"
+import { FOCUS_LABEL, FOCUS_REP_RANGE, focusesFor, type Focus } from "@/utils/scProgression"
 import { startingLevelRow, testLevelRow } from "@/utils/scPrefill"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
 
@@ -70,10 +70,23 @@ export function fitsFocus(ex: ExerciseRow, focus: Focus): boolean {
 
 // The exercise programmed for a focus: rep-counted targets follow the
 // focus's rep range, as the block editor does when a focus is picked.
-function withFocus(ex: ExerciseDraft, focus: Focus): ExerciseDraft {
+export function withFocus<T extends ExerciseDraft>(ex: T, focus: Focus): T {
   const isRepCounted = (ex.type === "reps" || ex.type === "both_sides") && ex.unit !== "seconds"
   const range = FOCUS_REP_RANGE[focus]
-  return { ...ex, focus, ...(isRepCounted ? { reps: `${range.low}-${range.high}` } : {}) }
+  return { ...ex, focus, ...(isRepCounted ? { reps: `${range.low}-${range.high}` } : {}) } as T
+}
+
+// An exercise added to a block in a builder takes the focus its block's
+// other exercises share (mobility aside), when its pattern allows that focus —
+// so it counts toward that focus's progression instead of none (coach
+// 2026-11-22: a swapped-in Pull Ups logged with no focus). No shared focus,
+// or mobility: left as it is.
+export function inheritFocus<T extends ExerciseDraft>(ex: T, siblings: { focus?: Focus; movementType?: string }[]): T {
+  if (ex.movementType === "mobility" || ex.type === "7/3s" || ex.focus) return ex
+  const shared = new Set(siblings.filter((s) => s.movementType !== "mobility").map((s) => s.focus))
+  if (shared.size !== 1) return ex
+  const f = [...shared][0]
+  return f && focusesFor(ex.movementType).includes(f) ? withFocus(ex, f) : ex
 }
 
 // Squat and hinge can't share a block: blocks take patterns in pairs
