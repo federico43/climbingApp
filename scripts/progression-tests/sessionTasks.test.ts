@@ -73,6 +73,8 @@ assert.equal(tasksAllowedFor(rows([{ ...proj, extraSession: { to: "sat" } }], "h
 assert.equal(tasksAllowedFor(rows([{ ...sc, extraSession: { to: "sat" } }], "homework")), false)
 assert.equal(tasksAllowedFor(rows([{ ...proj, leftAsHomework: { on: true } }])), false)
 assert.equal(tasksAllowedFor({ blocks: "{bad" }), false)
+assert.equal(tasksAllowedFor(rows([{ type: "sequence", blockName: "Benchmark" }])), false)  // the plan's Benchmark
+assert.equal(tasksAllowedFor(rows([warm, { type: "sequence", blockName: "Benchmark" }])), true)
 
 // where: after the warm-up run, else before the first climbing block, else the end
 assert.equal(taskInsertIndex([sc, warm, warm, proj, proj]), 3)

@@ -7,6 +7,8 @@
 // Stored as JSON on users.nextTasks, with a copy on the phone
 // (services/sessionTasks.ts). Pure — no React, no Appwrite.
 
+import { isBenchmark } from "@/utils/benchmark"
+
 export type TaskMode = "tries" | "time"
 
 export interface SessionTask {
@@ -149,7 +151,8 @@ const CLIMBING_TYPES = new Set([
 
 // Does a workout started from this row get the task blocks? Plan workouts,
 // the athlete's own and extra solo sessions — with climbing in them. Not the
-// coach's homework, "Leave as homework" leftovers or plan S&C split-offs.
+// coach's homework, "Leave as homework" leftovers, plan S&C split-offs or
+// the plan's Benchmark (an extra block would stop it counting as one).
 export function tasksAllowedFor(row: { planPart?: string | null; blocks?: string | null }): boolean {
   if (row.planPart === "sc") return false
   let blocks: any[] = []
@@ -157,7 +160,7 @@ export function tasksAllowedFor(row: { planPart?: string | null; blocks?: string
     const parsed = JSON.parse(row.blocks ?? "[]")
     if (Array.isArray(parsed)) blocks = parsed
   } catch { return false }
-  if (blocks.some((b) => b?.leftAsHomework?.on)) return false
+  if (blocks.some((b) => b?.leftAsHomework?.on) || isBenchmark(blocks)) return false
   if (row.planPart === "homework" && !blocks.some((b) => b?.extraSession?.to)) return false
   return blocks.some((b) => CLIMBING_TYPES.has(b?.type) && !isTaskBlock(b))
 }
