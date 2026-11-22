@@ -29,7 +29,7 @@ export const MAX_TEXT = 80
 export const TRIES_RANGE = { min: 1, max: 20, start: 5 }
 export const TIME_RANGE = { min: 5, max: 60, start: 10 }
 export const TASK_REST_S = 180
-// users.nextTasks' size (scripts/next-tasks/create-column.mjs). Two tasks at
+// What a list may take (users.nextTasks is a text column, scripts/next-tasks/create-column.mjs). Two tasks at
 // MAX_TEXT, even all quotes, stay under it (tested).
 export const COLUMN_SIZE = 600
 

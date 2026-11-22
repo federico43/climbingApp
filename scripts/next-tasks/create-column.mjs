@@ -1,6 +1,7 @@
-// One-off script: the `users.nextTasks` column (string, optional, 600 — two
-// tasks fit in well under that, see COLUMN_SIZE in utils/sessionTasks.ts; the
-// users table has no room left for a 4000 one). The
+// One-off script: the `users.nextTasks` column (text, optional). A text column
+// is stored outside the row, so it fits although the users table has no room
+// left for another string one (hangMaxLog alone reserves 10000 characters).
+// Two tasks stay under 600 characters (COLUMN_SIZE in utils/sessionTasks.ts). The
 // athlete's next-session tasks as JSON (utils/sessionTasks.ts, docs/session-tasks.md),
 // set on the workout summary and run as blocks in the next workouts. Unset = no
 // tasks, so existing rows need no backfill. Until it exists the app keeps the
@@ -35,14 +36,13 @@ async function api(method, path, body) {
 }
 
 const path = `/tablesdb/${APPWRITE_DATABASE_ID}/tables/users/columns`
-const SIZE = 600
 const { columns = [] } = await api("GET", path)
 const strings = columns.filter((c) => c.type === "string")
 console.log(`users: ${columns.length} columns, ${strings.length} strings, ${strings.reduce((n, c) => n + (c.size ?? 0), 0)} characters of string columns in all`)
 for (const c of columns) console.log(`  ${c.key}: ${c.type}${c.size ? ` ${c.size}` : ""}${c.array ? " (array)" : ""}`)
 if (columns.some((c) => c.key === "nextTasks")) console.log("users.nextTasks: already there")
-else if (!APPLY) console.log(`users.nextTasks: would create (string ${SIZE}, optional). Re-run with --apply.`)
+else if (!APPLY) console.log("users.nextTasks: would create (text, optional). Re-run with --apply.")
 else {
-  await api("POST", `${path}/string`, { key: "nextTasks", size: SIZE, required: false })
+  await api("POST", `${path}/text`, { key: "nextTasks", required: false })
   console.log("users.nextTasks: created")
 }
