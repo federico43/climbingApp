@@ -29,7 +29,7 @@ import { pauseOn } from "@/utils/planPauses"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
 
 // One athlete on the coach dashboard (docs/coach-dashboard.md §4.4–4.10).
 // `split`: two columns (main + side) on the widest layout, else one.
@@ -40,6 +40,7 @@ export function AthleteDetail({
   wide,
   onBack,
   onChanged,
+  onRefresh,
 }: {
   athlete: AppUser
   roster: AppUser[]
@@ -48,6 +49,8 @@ export function AthleteDetail({
   onBack?: () => void
   // Homework / plan / sessions changed — the roster's summary is stale.
   onChanged: () => void
+  // Pull-to-refresh: the parent reloads this page from the server.
+  onRefresh?: () => void
 }) {
   const C = useC()
   const card = useSheet(cardSheet)
@@ -181,7 +184,11 @@ export function AthleteDetail({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={C.green} colors={[C.green]} /> : undefined}
+      >
         {split ? (
           <View style={styles.columns}>
             <View style={styles.mainCol}>

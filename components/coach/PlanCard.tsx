@@ -38,6 +38,7 @@ import {
 import { notifyHomeworkAssigned } from "@/services/homework"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 // What the coach can ⇄ Swap on the next workout, and which workout it's for.
 type GeneratedWorkout = PlanWorkout & { name: string; slot: { planId: string; planIndex: number } }
@@ -150,6 +151,7 @@ export function PlanCard({
   // exercise re-tagged with a different movement pattern).
   async function generateNext() {
     if (!plan || !planShape || !nextSpec) return null
+    freshReads() // past the read cache: the athlete may have just trained
     const [fresh, built, exerciseRows, blockRows, me] = await Promise.all([
       getSessionsByUserId(athlete.$id), listPlanWorkouts(plan.$id), listExercises(), listBlocks(),
       // A pull-up test done since this page opened counts too.

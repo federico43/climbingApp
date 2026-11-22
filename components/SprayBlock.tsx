@@ -1,4 +1,5 @@
 import { BlockNotes } from "@/components/BlockNotes"
+import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, type RouteFilters } from "@/components/RouteFilterBar"
 import { StepList } from "@/components/cardio/CardioVisuals"
 import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -25,6 +26,7 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, S
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -120,7 +122,7 @@ export function SprayBlock({
   // Fetched again each time the selector opens, and on Reload / pull down.
   const [reloadKey, setReloadKey] = useState(0)
   const [reloading, setReloading] = useState(false)
-  const reload = () => { setReloading(true); setReloadKey((k) => k + 1) }
+  const reload = () => { freshReads(); setReloading(true); setReloadKey((k) => k + 1) }
   useEffect(() => {
     let cancelled = false
     if (athleteId) getUsers(athleteId).then((u: any) => { if (!cancelled) setFlash(u?.flashLevel ?? null) }).catch(() => {})
@@ -188,6 +190,17 @@ export function SprayBlock({
     if (!routes || !routeType) return []
     return newSprayRoutes(routes.values(), records, routeType, [...suggestions.map((r) => r.routeId), ...(routeId ? [routeId] : [])])
   }, [routes, records, routeType, suggestions, routeId])
+
+  // Every sequence on the wall, searchable (coach 2026-11-22: an athlete
+  // couldn't find one that wasn't among the suggested / new ones). Starts on
+  // this block's tag; the type chips open it to the rest (untagged too).
+  const [filters, setFilters] = useState<RouteFilters>(() => ({ ...EMPTY_ROUTE_FILTERS, type: routeType ?? null }))
+  const allRoutes = useMemo(() => {
+    if (!routes) return []
+    const rows = [...routes.values()].filter((r) => r.$id !== routeId)
+      .sort((a, b) => (b.$createdAt ?? "").localeCompare(a.$createdAt ?? ""))
+    return applyRouteFilters(rows, filters)
+  }, [routes, routeId, filters])
 
   function openChooser() {
     reload()
@@ -525,6 +538,34 @@ export function SprayBlock({
               </Pressable>
             )
           })}
+          {routes && routes.size > 0 && (
+            <>
+              <Text style={[s.sectionLabel, { marginTop: 8 }]}>All sequences</Text>
+              <View style={{ marginHorizontal: -16 }}>
+                <RouteFilterBar filters={filters} onChange={setFilters} walls={walls ?? undefined} />
+              </View>
+              {allRoutes.length === 0 && <Text style={s.empty}>No sequences match.</Text>}
+              {allRoutes.map((row) => {
+                const rec = records.get(row.$id)
+                return (
+                  <Pressable key={row.$id} style={s.row} onPress={() => setPreview(row.$id)}>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={s.rowName} numberOfLines={1}>{row.name || "Sequence"}</Text>
+                      <View style={s.rowMeta}>
+                        <LevelColour level={row.level} />
+                      </View>
+                    </View>
+                    {!rec ? <Text style={s.rowRecord}>Not tried yet</Text> : (
+                      <Text style={s.rowRecord}>
+                        <Text style={rec.sends > 0 && { color: C.green }}>{rec.sends} top{rec.sends !== 1 ? "s" : ""}</Text> · {rec.tries} tr{rec.tries !== 1 ? "ies" : "y"}
+                      </Text>
+                    )}
+                    <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+                  </Pressable>
+                )
+              })}
+            </>
+          )}
         </ScrollView>
         {modals}
       </View>

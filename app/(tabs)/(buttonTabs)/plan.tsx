@@ -81,6 +81,7 @@ import {
   Text,
   View,
 } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 function shortDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number)
@@ -184,6 +185,7 @@ export default function PlanScreen() {
   const t = usePaper()
   const refresh = async () => {
     setRefreshing(true)
+    freshReads()
     // The This week card reads the class store, not this screen's state.
     try { await Promise.all([load(), refreshClassSchedule()]) }
     finally { setRefreshing(false) }

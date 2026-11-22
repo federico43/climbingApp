@@ -27,6 +27,7 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExerciseType = "reps" | "both_sides" | "7/3s"
@@ -74,6 +75,7 @@ export default function ExercisesScreen() {
       loadExercises()
     }, [])
   )
+  const pull = usePullRefresh(() => loadExercises())
 
   async function loadExercises() {
     setLoading(true)
@@ -206,7 +208,7 @@ export default function ExercisesScreen() {
               </Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" refreshControl={pull}>
               <View style={styles.sections} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
                 {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
                   const list = grouped[type]

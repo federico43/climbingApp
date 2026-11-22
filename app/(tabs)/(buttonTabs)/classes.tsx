@@ -12,7 +12,7 @@ import {
   dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, reloadClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
@@ -311,7 +311,7 @@ function ClassesScreenBody() {
             if (dayBlocked(day)) return setSheet({ kind: "day", day })
             setSheet({ kind: "slot", day, start: startFromOffset(y, HOUR_HEIGHT) })
           }}
-          onRefresh={refreshClassSchedule}
+          onRefresh={reloadClassSchedule}
           renderDay={renderDay}
         />
         </TourSpot>

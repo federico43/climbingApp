@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // Collapsible "what did they do last time" panel for the workout builder —
 // so a coach can see the athlete's last two training days (S&C average
@@ -19,7 +20,7 @@ export function formatBlockType(type: string): string {
 }
 
 function parseAttempts(session: SessionRow): any[] {
-  try { return JSON.parse(session.attempts) } catch { return [] }
+  try { const a = JSON.parse(session.attempts); return Array.isArray(a) ? withoutRedoneRounds(a) : [] } catch { return [] }
 }
 
 function sessionTimestamp(session: SessionRow, attempts: any[]): number {

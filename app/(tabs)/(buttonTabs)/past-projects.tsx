@@ -22,6 +22,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  type RefreshControlProps,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,6 +31,7 @@ import {
 } from "react-native"
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ export default function PastProjects() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  const pull = usePullRefresh(load)
 
   return (
     <ScreenGradient>
@@ -186,11 +189,13 @@ export default function PastProjects() {
       ) : tab === "boulders" ? (
         <BouldersTab
           projects={projects}
+          refreshControl={pull}
           onTap={(p) => setEditingProject(p)}
         />
       ) : (
         <SequencesTab
           routes={sequences}
+          refreshControl={pull}
           onTap={(r) => setViewingRoute(r)}
         />
       )}
@@ -241,9 +246,11 @@ export default function PastProjects() {
 
 function BouldersTab({
   projects,
+  refreshControl,
   onTap,
 }: {
   projects: ProjectRow[]
+  refreshControl: React.ReactElement<RefreshControlProps>
   onTap: (p: ProjectRow) => void
 }) {
   const C = useC()
@@ -256,7 +263,7 @@ function BouldersTab({
     )
   }
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={styles.scroll} refreshControl={refreshControl}>
       {projects.map((p) => (
         <Pressable key={p.$id} style={styles.card} onPress={() => onTap(p)}>
           {p.imageUri ? (
@@ -304,9 +311,11 @@ function BouldersTab({
 
 function SequencesTab({
   routes,
+  refreshControl,
   onTap,
 }: {
   routes: SequenceRoute[]
+  refreshControl: React.ReactElement<RefreshControlProps>
   onTap: (r: SequenceRoute) => void
 }) {
   const styles = useSheet(stylesSheet)
@@ -318,7 +327,7 @@ function SequencesTab({
     )
   }
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={styles.scroll} refreshControl={refreshControl}>
       {routes.map((r) => (
         <Pressable key={r.key} style={styles.seqCard} onPress={() => onTap(r)}>
           <View style={{ flex: 1 }}>

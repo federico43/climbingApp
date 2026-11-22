@@ -43,6 +43,7 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 const FALLBACK_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // Matches the size route-picker/list cards actually render at (see
@@ -114,6 +115,7 @@ export default function SprayWallScreen() {
 
   useFocusEffect(useCallback(() => { loadWalls() }, [loadWalls]))
   useFocusEffect(useCallback(() => { loadRoutes() }, [loadRoutes]))
+  const pull = usePullRefresh(() => Promise.all([loadWalls(), loadRoutes()]))
 
   // ─── Wall actions ──────────────────────────────────────────────────────────
 
@@ -374,7 +376,7 @@ export default function SprayWallScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={C.green} />
       ) : routes.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={pull}>
           <Text style={styles.empty}>
             {selectedWallId
               ? "No routes on this wall yet. Tap + to create one."
@@ -382,7 +384,7 @@ export default function SprayWallScreen() {
           </Text>
         </ScrollView>
       ) : filteredRoutes.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={pull}>
           <Text style={styles.empty}>No routes match your filters.</Text>
         </ScrollView>
       ) : (
@@ -391,6 +393,7 @@ export default function SprayWallScreen() {
         // `sections` comment above for why that matters on device.
         <SectionList
           sections={sections}
+          refreshControl={pull}
           keyExtractor={(row) => row[0].$id}
           contentContainerStyle={styles.list}
           // SectionList's default initialNumToRender (10) still front-loads

@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 // Settings › My sequences — the athlete's own spray-wall routes: try,
 // edit, delete, or build a new one. (Home has a "New sequence" shortcut.)
@@ -120,6 +121,7 @@ export default function MySequencesScreen() {
                 refreshing={refreshing}
                 onRefresh={async () => {
                   setRefreshing(true)
+                  freshReads()
                   try { await load() }
                   finally { setRefreshing(false) }
                 }}

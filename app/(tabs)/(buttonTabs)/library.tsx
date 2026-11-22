@@ -31,6 +31,7 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface VideoItem {
@@ -174,6 +175,7 @@ export default function LibraryScreen() {
   }, [User])
 
   useFocusEffect(loadSubmitted)
+  const pull = usePullRefresh(() => { loadSubmitted(); return loadVideos() })
 
   // A queued clip just reached the coach — show it under "Submitted clips".
   useEffect(() => {
@@ -328,6 +330,7 @@ export default function LibraryScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
+          refreshControl={pull}
         >
           {unsent.length > 0 && (
             <View style={styles.uploadBanner}>

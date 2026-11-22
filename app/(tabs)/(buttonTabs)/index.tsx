@@ -20,6 +20,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 // Home = the most recently built workout, full screen, ready to start.
 // Only for athletes without a training plan — with one, the Plan tab is
@@ -104,6 +105,7 @@ function HomeContent() {
               refreshing={refreshing}
               onRefresh={async () => {
                 setRefreshing(true)
+                freshReads()
                 try { await load() }
                 finally { setRefreshing(false) }
               }}

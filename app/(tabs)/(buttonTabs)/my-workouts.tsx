@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 function blockCount(p: ProtocolRow): { blocks: any[]; label: string } {
   let blocks: any[] = []
@@ -119,6 +120,7 @@ export default function MyWorkoutsScreen() {
                 refreshing={refreshing}
                 onRefresh={async () => {
                   setRefreshing(true)
+                  freshReads()
                   try { await load() }
                   finally { setRefreshing(false) }
                 }}
