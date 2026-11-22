@@ -35,7 +35,11 @@ export function SubScreenHeader({
     const size = Math.max(40, posterSize(title, 60, width))
     return (
       <View style={styles.paperWrap}>
-        <Melt top={44} height={240} />
+        {/* Melt behind the headline only, clipped to the header: lists below
+            sit on plain paper (design system §4). */}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+          <Melt top={40} height={220} />
+        </View>
         <View style={styles.paperBar}>
           <IconButton icon="chevron-back" label="Back" onPress={back} />
           <View style={styles.paperRight}>{right}</View>

@@ -1,4 +1,4 @@
-import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet, type Palette } from "@/theme/paper/legacy"
 import { HomeworkCoachSheet } from "@/components/HomeworkCoachSheet"
 import { cardSheet } from "@/components/coach/styles"
 import { ProtocolRow, SessionRow } from "@/services/BoulderGraphService"
@@ -48,6 +48,7 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
   onChanged: () => void
 }) {
   const C = useC()
+  const P = usePaperScope()
   const card = useSheet(cardSheet)
   const styles = useSheet(stylesSheet)
   const [managing, setManaging] = useState<ProtocolRow | null>(null)
@@ -64,10 +65,20 @@ export function HomeworkCard({ homework, sessions, onChanged }: {
       <View style={card.headerRow}>
         <Text style={card.title}>Homework</Text>
         {pending.length > 0 && (
-          <View style={[styles.count, { backgroundColor: urgent ? C.red : C.yellow }]}>
-            {urgent && <Ionicons name="alert" size={11} color={C.bg} />}
-            <Text style={styles.countText}>{pending.length} pending</Text>
-          </View>
+          P ? (
+            // Paper Mint: pink = homework. Urgent = filled, otherwise outline.
+            <View style={[styles.count, urgent ? { backgroundColor: C.homework } : { borderWidth: 1.5, borderColor: C.homework }]}>
+              {urgent && <Ionicons name="alert" size={11} color={P.mode === "dark" ? P.onMint : "#FFFFFF"} />}
+              <Text style={[styles.countText, { color: urgent ? (P.mode === "dark" ? P.onMint : "#FFFFFF") : C.homework }]}>
+                {pending.length} pending
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.count, { backgroundColor: urgent ? C.red : C.yellow }]}>
+              {urgent && <Ionicons name="alert" size={11} color={C.bg} />}
+              <Text style={styles.countText}>{pending.length} pending</Text>
+            </View>
+          )
         )}
       </View>
 

@@ -1,4 +1,4 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
 import {
   INACTIVE_STEPS, lastSessionLabel, planStatusLabel,
   type AthleteSummary, type RosterFilter,
@@ -41,6 +41,7 @@ export function RosterList({
   onRefresh: () => void
 }) {
   const C = useC()
+  const P = usePaperScope()
   const styles = useSheet(stylesSheet)
   const listRef = useRef<FlatList<AthleteSummary>>(null)
   // Bring the remembered / selected athlete into view.
@@ -124,9 +125,27 @@ export function RosterList({
               </Text>
             </View>
             {a.pendingHomework > 0 && (
-              <View style={[styles.badge, { backgroundColor: a.urgentHomework > 0 ? C.red : C.yellow }]}>
-                <Text style={styles.badgeText}>{a.pendingHomework}</Text>
-              </View>
+              P ? (
+                // Paper Mint: pink = homework only. Urgent (overdue / missed) =
+                // filled, the rest = outline, so it differs by fill, not hue.
+                <View
+                  style={[
+                    styles.badge,
+                    a.urgentHomework > 0
+                      ? { backgroundColor: C.homework }
+                      : { borderWidth: 1.5, borderColor: C.homework },
+                  ]}
+                  accessibilityLabel={`${a.pendingHomework} homework${a.urgentHomework > 0 ? ", overdue" : ""}`}
+                >
+                  <Text style={[styles.badgeText, { color: a.urgentHomework > 0 ? (P.mode === "dark" ? P.onMint : "#FFFFFF") : C.homework }]}>
+                    {a.pendingHomework}
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.badge, { backgroundColor: a.urgentHomework > 0 ? C.red : C.yellow }]}>
+                  <Text style={styles.badgeText}>{a.pendingHomework}</Text>
+                </View>
+              )
             )}
             {showChevron && <Ionicons name="chevron-forward" size={16} color={C.textMuted} />}
           </Pressable>

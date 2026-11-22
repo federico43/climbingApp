@@ -144,7 +144,13 @@ export default function DesignScreen() {
         <ScreenEntry>
           {!phoneDetail && (
             <View style={styles.topWrap}>
-              {P && <Melt top={52} height={220} />}
+              {/* Melt behind the headline only: clipped to the header so the
+                  athlete list below sits on plain paper (design system §4). */}
+              {P && (
+                <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+                  <Melt top={40} height={200} />
+                </View>
+              )}
               <View style={styles.topBar}>
                 {!P && <Text style={styles.title}>Coach</Text>}
                 {P && <View style={{ flex: 1 }} />}
