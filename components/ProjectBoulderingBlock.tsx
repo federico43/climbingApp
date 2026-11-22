@@ -72,6 +72,9 @@ export function ProjectBoulderingBlock({
   const timed = !task || task.mode === "time"
   const blockTitle: string = task ? "Your task" : block.blockName || "Project bouldering"
   const limitSecs = timed ? settings.timeLimit * 60 : 0
+  // Time-limit tasks have no rest countdown: the athlete rests as they like
+  // inside the task's own clock and taps "Next attempt".
+  const restSecs = task?.mode === "time" ? 0 : settings.restTime
   const blockTimer = useBlockTimer()
   const { User } = useAuth()
 
@@ -141,8 +144,8 @@ export function ProjectBoulderingBlock({
 
   // End of rest → back to the button.
   useEffect(() => {
-    if (phase === "rest" && restTimeRemaining === 0) setPhase("ready")
-  }, [phase, restTimeRemaining])
+    if (restSecs > 0 && phase === "rest" && restTimeRemaining === 0) setPhase("ready")
+  }, [restSecs, phase, restTimeRemaining])
 
   const last = attempts[attempts.length - 1]
   const summary = summarizeProjectAttempts(attempts)
@@ -162,7 +165,7 @@ export function ProjectBoulderingBlock({
       clipsThisWorkout: allAttempts.filter((a) => a.reviewClip).length + (extra.reviewClip ? 1 : 0),
       ...reviewPromptHistory(attempts),
       secondsLeft: startedAt == null ? null : secondsLeft,
-      restTime: settings.restTime,
+      restTime: restSecs,
       // The review clip being logged right now settles the pending one.
       pendingRecord: recordNext && !extra.reviewClip,
     }, Math.random)
@@ -172,7 +175,7 @@ export function ProjectBoulderingBlock({
     })
     if (overtime) setOvertime(false)   // the one extra attempt is spent
     setPromptVisible(ask)
-    startRestTimer(settings.restTime)
+    startRestTimer(restSecs)
     setPhase("rest")
   }
 
@@ -275,7 +278,7 @@ export function ProjectBoulderingBlock({
           <Text style={s.taskText}>{task.text}</Text>
           <View style={s.introPills}>
             <View style={s.infoPill}><Text style={s.infoPillText}>{task.mode === "time" ? `⏱ ${amountLabel(task)}` : amountLabel(task)}</Text></View>
-            <View style={s.infoPill}><Text style={s.infoPillText}>{clock(settings.restTime)} rest</Text></View>
+            {restSecs > 0 && <View style={s.infoPill}><Text style={s.infoPillText}>{clock(restSecs)} rest</Text></View>}
           </View>
           <Text style={s.hint}>
             The task you set for this session. Tap the big button every time you come off (or top out).
@@ -413,7 +416,8 @@ export function ProjectBoulderingBlock({
 
   if (phase === "rest") {
     const t = restTimeRemaining ?? 0
-    const fill = settings.restTime ? (t / settings.restTime) * 100 : 0
+    const fill = restSecs ? (t / restSecs) * 100 : 0
+    const clockLeft = Math.max(0, secondsLeft)
     const sent = !!last?.success
     const reasons = last?.fallReasons ?? []
     return (
@@ -421,14 +425,16 @@ export function ProjectBoulderingBlock({
         <View style={s.restHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.restTitle}>Attempt {attempts.length}</Text>
-            <Text style={s.restSub}>Rest{last?.videoId ? " · clip saved 🎥" : ""}</Text>
+            <Text style={s.restSub}>
+              {restSecs > 0 ? "Rest" : `${clock(clockLeft)} left on the task`}{last?.videoId ? " · clip saved 🎥" : ""}
+            </Text>
           </View>
-          <AnimatedCircularProgress
+          {restSecs > 0 && <AnimatedCircularProgress
             size={92} width={6} fill={fill} rotation={0}
             tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
           >
             {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
-          </AnimatedCircularProgress>
+          </AnimatedCircularProgress>}
         </View>
 
         <ScrollView contentContainerStyle={s.restContent}>
@@ -465,7 +471,7 @@ export function ProjectBoulderingBlock({
             <Text style={s.linkMuted}>Undo attempt</Text>
           </Pressable>
           <Pressable style={s.pillBtn} onPress={() => setPhase("ready")}>
-            <Text style={s.pillBtnText}>Skip rest</Text>
+            <Text style={s.pillBtnText}>{restSecs > 0 ? "Skip rest" : "Next attempt"}</Text>
           </Pressable>
         </View>
         {promptOverlay}
