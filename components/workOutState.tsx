@@ -24,7 +24,7 @@ import { router } from "expo-router"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
-import { isTaskBlock, type SessionTask } from "@/utils/sessionTasks"
+import { isTaskBlock, isTaskIntroBlock, isTaskSlot, type SessionTask } from "@/utils/sessionTasks"
 import { NextSessionCard, TaskSheet } from "./SessionTasks"
 import { openTasksIntro } from "./SessionTasksIntro"
 
@@ -138,7 +138,7 @@ export function WorkOutState({
 
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
-  const taskBlock = isTaskBlock(currentBlock)
+  const taskBlock = isTaskSlot(currentBlock)
 
   // Next-session tasks (docs/session-tasks.md): set on the summary. Opening
   // the task sheet, or scrolling the summary, stops it from closing itself.
@@ -229,7 +229,11 @@ export function WorkOutState({
             </View>
             <View style={{ flex: 1 }}>
               <Body weight={800} size={16} style={{ color: C.red }}>{taskBlock ? "Not today" : "Skip block"}</Body>
-              <Body muted size={13} style={{ marginTop: 2 }}>{taskBlock ? "The task stays for next session" : "It won't be saved"}</Body>
+              <Body muted size={13} style={{ marginTop: 2 }}>
+                {isTaskIntroBlock(currentBlock)
+                  ? "You can set a task at the end of the workout"
+                  : taskBlock ? "The task stays for next session" : "It won't be saved"}
+              </Body>
             </View>
           </Pressable>
           <GhostButton label="Cancel" onPress={() => setBlockMenu(false)} style={{ marginTop: 6 }} />

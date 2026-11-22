@@ -1,5 +1,6 @@
 import { Card, CardTitle, ListRow, MintButton, Mono, PrimaryCTA, usePaper } from "@/components/paper"
-import { isTaskBlock, tasksAllowedFor, withTaskBlocks } from "@/utils/sessionTasks"
+import { useAuth } from "@/components/auth-context"
+import { isTaskBlock, isTaskSlot, tasksAllowedFor, withTaskBlocks } from "@/utils/sessionTasks"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
 import { Block, BLOCK_ICONS, BLOCK_LABELS } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
@@ -58,9 +59,13 @@ export function LatestWorkoutCard({
 }) {
   const t = usePaper()
   const workoutCtx = useWorkoutContext()
-  const { list: tasks } = useSessionTasks()
-  // The next-session tasks show where they'll run (after the warm-up).
-  const blocks: Block[] = tasksAllowedFor(workout) ? withTaskBlocks(parseBlocks(workout), tasks) : parseBlocks(workout)
+  const { list: tasks, introSeen } = useSessionTasks()
+  const { role } = useAuth()
+  // The next-session tasks show where they'll run (after the warm-up), or the
+  // first-task intro block when it's due (WorkoutContext.openWorkout).
+  const blocks: Block[] = tasksAllowedFor(workout)
+    ? withTaskBlocks(parseBlocks(workout), tasks, { intro: role === "athlete" && !introSeen })
+    : parseBlocks(workout)
   const tag = planTag(workout)
 
   return (
@@ -73,7 +78,7 @@ export function LatestWorkoutCard({
             <ListRow
               key={b.id ?? i}
               index={i + 1}
-              icon={isTaskBlock(b) ? "flag" : BLOCK_ICONS[b.type] ?? "ellipse"}
+              icon={isTaskSlot(b) ? "flag" : BLOCK_ICONS[b.type] ?? "ellipse"}
               label={blockTitle(b)}
               last={i === blocks.length - 1 && !scPart}
             />

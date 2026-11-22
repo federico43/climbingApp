@@ -1,7 +1,8 @@
-import { Body, Card, GhostButton, Mono, NavBar, Stepper, TextButton, TextField, usePaper, usePaperStyles } from "@/components/paper"
+import { Body, Card, GhostButton, Mono, NavBar, SlidesBody, Stepper, TextButton, TextField, usePaper, usePaperStyles } from "@/components/paper"
 import { useAuth } from "@/components/auth-context"
-import { openTasksIntro, useTasksIntroFirstTime } from "@/components/SessionTasksIntro"
+import { openTasksIntro, TASKS_INTRO } from "@/components/SessionTasksIntro"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
+import { useTaskBlockActions } from "@/contexts/WorkoutContext"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { localDateStr } from "@/utils/planRotation"
 import {
@@ -18,6 +19,7 @@ import { useSafeAreaInsets, type EdgeInsets } from "react-native-safe-area-conte
 //     Tap one to change or remove it; "Add a task" for a new one.
 //   • TaskSheet — full screen: one task (text, tries or time limit), new or edited.
 //   • TasksCardWithEditor — the card + sheet in a Modal, for Plan / Home.
+//   • TaskIntroStep — the workout's first-task block: intro slides, then the sheet.
 // Inside the workout the sheet is an overlay, not a <Modal>: iOS can't stack
 // Modals (utils/popupTurn.ts).
 
@@ -88,10 +90,17 @@ const MODES: { mode: TaskMode; label: string; start: number }[] = [
 
 // One task: what, then tries or a time limit. `task` = change that one (same
 // id, so a block already running it still matches), null = a new one.
-export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null; onClose: () => void; insets: EdgeInsets }) {
+// `onSaved`: called with the saved task instead of closing.
+export function TaskSheet({ task, onClose, onSaved, cancelLabel, insets }: {
+  task: SessionTask | null
+  onClose: () => void
+  onSaved?: (task: SessionTask) => void
+  cancelLabel?: string
+  insets: EdgeInsets
+}) {
   const t = usePaper()
   const styles = usePaperStyles(makeStyles)
-  const { list, update } = useSessionTasks()
+  const { list, update, current } = useSessionTasks()
   const [text, setText] = useState(task?.text ?? "")
   const [mode, setMode] = useState<TaskMode>(task?.mode ?? "tries")
   const [amount, setAmount] = useState(task?.amount ?? TRIES_RANGE.start)
@@ -108,10 +117,13 @@ export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null;
   function save() {
     if (!ready) return
     const now = Date.now()
+    const id = task?.id ?? newId()
     update((l) => (task
-      ? editTask(l, task.id, { text, mode, amount }, now)
-      : addTask(l, { text, mode, amount }, newId(), localDateStr(new Date()), now)))
-    onClose()
+      ? editTask(l, id, { text, mode, amount }, now)
+      : addTask(l, { text, mode, amount }, id, localDateStr(new Date()), now)))
+    const saved = current().tasks.find((x) => x.id === id)
+    if (onSaved && saved) onSaved(saved)
+    else onClose()
   }
   function remove() {
     if (!task) return
@@ -131,6 +143,7 @@ export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null;
       <NavBar
         title={task ? "Edit task" : "New task"}
         onCancel={onClose}
+        cancelLabel={cancelLabel}
         onSave={save}
         saveLabel={task ? "Save" : "Add"}
         saveDisabled={!ready}
@@ -187,12 +200,26 @@ export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null;
   )
 }
 
-// Plan / Home: the card, and the sheet in a Modal. Athletes only. The first
-// time it's on screen it shows the intro slides (components/SessionTasksIntro.tsx);
-// `introReady` holds them back while another pop-up on the page needs the screen.
-export function TasksCardWithEditor({ style, introReady = true }: { style?: StyleProp<ViewStyle>; introReady?: boolean }) {
+// The workout's first-task block (utils/sessionTasks.ts introTaskBlock): the
+// intro slides, then the sheet to write the task, which then runs right here
+// as the task's block. "Not now" / ✕ skips the block. Seen once it's shown.
+export function TaskIntroStep() {
+  const actions = useTaskBlockActions()
+  const { markIntroSeen } = useSessionTasks()
+  const insets = useSafeAreaInsets()
+  const [writing, setWriting] = useState(false)
+  useEffect(() => { markIntroSeen() }, [markIntroSeen])
+  const notNow = () => actions?.skip()
+
+  if (writing) {
+    return <TaskSheet task={null} cancelLabel="Not now" onClose={notNow} onSaved={(task) => actions?.fillIntro(task)} insets={insets} />
+  }
+  return <SlidesBody label="Next-session tasks" slides={TASKS_INTRO} finishLabel="Write my task" onFinish={() => setWriting(true)} onClose={notNow} />
+}
+
+// Plan / Home: the card, and the sheet in a Modal. Athletes only.
+export function TasksCardWithEditor({ style }: { style?: StyleProp<ViewStyle> }) {
   const { role } = useAuth()
-  useTasksIntroFirstTime(introReady && role === "athlete")
   const insets = useSafeAreaInsets()
   // The sheet: which task (null = a new one), or closed.
   const [sheet, setSheet] = useState<{ task: SessionTask | null } | null>(null)

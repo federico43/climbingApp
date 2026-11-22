@@ -127,7 +127,7 @@ function HomeContent() {
               {workout ? (
                 <>
                   <LatestWorkoutCard workout={workout} scPart={scPart} fill />
-                  <TasksCardWithEditor style={{ marginTop: 16 }} introReady={!homework.some((h) => !h.scheduledFor)} />
+                  <TasksCardWithEditor style={{ marginTop: 16 }} />
                 </>
               ) : (
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>

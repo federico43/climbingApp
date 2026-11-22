@@ -22,7 +22,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useTaskBlockActions } from "@/contexts/WorkoutContext"
-import { amountLabel, isTaskBlock, triesLeft, type FocusTaskNote } from "@/utils/sessionTasks"
+import { amountLabel, isTaskBlock, isTaskIntroBlock, triesLeft, type FocusTaskNote } from "@/utils/sessionTasks"
+import { TaskIntroStep } from "@/components/SessionTasks"
 
 // Project bouldering v2 (docs/project-bouldering-v2.md): work boulders of one
 // grade against the block's clock. One big button logs an attempt and starts
@@ -57,7 +58,15 @@ function clock(secs: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
-export function ProjectBoulderingBlock({
+// The first-task intro block (docs/session-tasks.md) has its own screen until
+// the athlete writes the task; then the block runs as that task (a new
+// component, so the run starts fresh).
+export function ProjectBoulderingBlock(props: Props) {
+  if (isTaskIntroBlock(props.block)) return <TaskIntroStep />
+  return <ProjectBoulderingRun {...props} />
+}
+
+function ProjectBoulderingRun({
   block, logAttempt, updateLastAttempt, undoLastAttempt, restTimeRemaining, startRestTimer,
   attempts, allAttempts, goToNextBlock, goToPreviousBlock,
 }: Props) {

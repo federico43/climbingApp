@@ -16,7 +16,7 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 
 ## The intro
 
-Four full-screen slides (`components/SessionTasksIntro.tsx`, the same look as Conditioning basics, `components/paper/Slides.tsx`): one thing every session, set it at the end, next session after the warm-up, it stays until you close it. Shown once per phone, the first time the "Next session" card is on Plan or Home, athletes only, never over a running workout, and after the homework prompt on that page. It waits its turn behind other pop-ups (`utils/popupTurn.ts`). "How it works" on the card (summary, Plan, Home) opens it again.
+Federico 2026-11-22: the intro comes the first time the athlete meets a task, inside the workout. An athlete with **no tasks** who hasn't seen it gets a "Your first task" block where the task blocks go (after the warm-up). It shows four full-screen slides (`TASKS_INTRO` in `components/SessionTasksIntro.tsx`, the Conditioning basics look, `components/paper/Slides.tsx`): one thing every session, write it down, next session after the warm-up, it stays until you close it. "Write my task" opens the task sheet; once added, the block becomes that task's block and runs right away. "Not now" or ✕ skips the block. It counts as seen once the block is on screen (once per phone, `feature-intro-seen:session-tasks-v2`); athletes only; the workout overview lists it too. "How it works" on the Next session card (summary, Plan, Home) opens the slides again as a pop-up.
 
 ## Rules
 
@@ -26,7 +26,7 @@ Four full-screen slides (`components/SessionTasksIntro.tsx`, the same look as Co
 - **Record:** the task block is saved with the session like any project block (tries, sends, fall reasons), with the task on the block (`focusTask`), including whether it was closed. The coach sees it in the athlete's session history.
 - **Close happens when the workout is saved.** A closed task leaves the list only when the workout completes. A cancelled workout changes nothing.
 - **Not called "homework"**, which already means the coach's homework workouts.
-- Task blocks have no "Coach is here?" switch, no main-block switch, no "Leave as homework" and no video-review prompt. Project time stats leave them out (a tries-mode block has no time limit to count).
+- Task blocks (and the intro block) have no "Coach is here?" switch, no main-block switch, no "Leave as homework" and no video-review prompt. Project time stats leave them out (a tries-mode block has no time limit to count).
 
 ## Storage
 

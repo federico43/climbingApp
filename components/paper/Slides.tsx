@@ -7,7 +7,7 @@ import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { space } from "@/theme/paper/tokens"
 import { usePopupTurn } from "@/utils/popupTurn"
 import { Ionicons } from "@expo/vector-icons"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Modal, View } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 
@@ -25,71 +25,83 @@ export interface Slide {
   text: string
 }
 
-export function Slides({ visible, label, slides, finishLabel, onClose }: {
-  visible: boolean
+// The slides themselves, for a screen that is already full screen (the
+// workout's first-task intro). `onFinish`: the last slide's button; `onClose`: ✕.
+export function SlidesBody({ label, slides, finishLabel, onFinish, onClose }: {
   label: string       // top left, before "01 / 04"
   slides: Slide[]
   finishLabel: string // the last slide's button
+  onFinish: () => void
   onClose: () => void
 }) {
   const t = usePaper()
-  const shown = usePopupTurn(visible && slides.length > 0)
   const [i, setI] = useState(0)
-  // Every showing starts on the first slide.
-  useEffect(() => { if (shown) setI(0) }, [shown])
-
   const slide = slides[Math.min(i, slides.length - 1)]
   const last = i >= slides.length - 1
   const num = (n: number) => String(n).padStart(2, "0")
   if (!slide) return null
 
   return (
+    <SafeAreaView style={{ flex: 1, paddingHorizontal: space.gutter }} edges={["top", "bottom"]}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 8 }}>
+        <Mono>{label} · {num(i + 1)} / {num(slides.length)}</Mono>
+        <IconButton icon="close" label="Close" onPress={onClose} />
+      </View>
+
+      <View style={{ marginTop: 28 }}>
+        <Melt top={20} height={380} />
+        <PosterHeadline>{slide.poster}</PosterHeadline>
+      </View>
+
+      <View style={{ flex: 1, justifyContent: "flex-end", paddingBottom: 20 }}>
+        <Card>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <IconCircle icon={slide.icon} size={40} />
+            <CardTitle size={26} style={{ flex: 1 }}>{slide.title}</CardTitle>
+          </View>
+          <Body size={17} weight={600} muted style={{ lineHeight: 24 }}>{slide.text}</Body>
+        </Card>
+
+        <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 20 }}>
+          {slides.map((_, n) => (
+            <View
+              key={n}
+              style={{
+                height: 6, borderRadius: 3, width: n === i ? 22 : 6,
+                backgroundColor: n <= i ? t.mintDeep : t.ringIdle,
+              }}
+            />
+          ))}
+        </View>
+      </View>
+
+      <PrimaryCTA
+        label={last ? finishLabel : "Next"}
+        icon={last ? "checkmark" : "arrow-forward"}
+        onPress={() => (last ? onFinish() : setI(i + 1))}
+      />
+      <View style={{ alignItems: "center", paddingVertical: 12, minHeight: 44 }}>
+        {i > 0 && <TextButton label="Back" onPress={() => setI(i - 1)} />}
+      </View>
+    </SafeAreaView>
+  )
+}
+
+// The slides as a full-screen pop-up. Every showing starts on the first slide.
+export function Slides({ visible, label, slides, finishLabel, onClose }: {
+  visible: boolean
+  label: string
+  slides: Slide[]
+  finishLabel: string
+  onClose: () => void
+}) {
+  const shown = usePopupTurn(visible && slides.length > 0)
+  return (
     <Modal visible={shown} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       {/* A modal is its own native window: it needs its own safe-area provider. */}
       <SafeAreaProvider>
         <PaperBackground>
-          <SafeAreaView style={{ flex: 1, paddingHorizontal: space.gutter }} edges={["top", "bottom"]}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 8 }}>
-              <Mono>{label} · {num(i + 1)} / {num(slides.length)}</Mono>
-              <IconButton icon="close" label="Close" onPress={onClose} />
-            </View>
-
-            <View style={{ marginTop: 28 }}>
-              <Melt top={20} height={380} />
-              <PosterHeadline>{slide.poster}</PosterHeadline>
-            </View>
-
-            <View style={{ flex: 1, justifyContent: "flex-end", paddingBottom: 20 }}>
-              <Card>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <IconCircle icon={slide.icon} size={40} />
-                  <CardTitle size={26} style={{ flex: 1 }}>{slide.title}</CardTitle>
-                </View>
-                <Body size={17} weight={600} muted style={{ lineHeight: 24 }}>{slide.text}</Body>
-              </Card>
-
-              <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 20 }}>
-                {slides.map((_, n) => (
-                  <View
-                    key={n}
-                    style={{
-                      height: 6, borderRadius: 3, width: n === i ? 22 : 6,
-                      backgroundColor: n <= i ? t.mintDeep : t.ringIdle,
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <PrimaryCTA
-              label={last ? finishLabel : "Next"}
-              icon={last ? "checkmark" : "arrow-forward"}
-              onPress={() => (last ? onClose() : setI(i + 1))}
-            />
-            <View style={{ alignItems: "center", paddingVertical: 12, minHeight: 44 }}>
-              {i > 0 && <TextButton label="Back" onPress={() => setI(i - 1)} />}
-            </View>
-          </SafeAreaView>
+          {shown && <SlidesBody label={label} slides={slides} finishLabel={finishLabel} onFinish={onClose} onClose={onClose} />}
         </PaperBackground>
       </SafeAreaProvider>
     </Modal>
