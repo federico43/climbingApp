@@ -2378,7 +2378,11 @@ function StrengthConditioningFields({ block, onUpdate }: { block: StrengthCondit
     const out: AthleteProgress = { ...(plan.note ? { next: plan.note } : {}), flags: plan.flags }
 
     if (resolved) {
-      const session = findLastScSession(athleteSessions, ids, ex.name)
+      // At this exercise's focus only: the plan generator places each focus
+      // on the ladder from that focus's own history, so a newer session at
+      // another focus (explosive Pull Ups) says nothing about where this one
+      // (hypertrophy on negatives) is (coach 2026-11-22).
+      const session = findLastScSession(athleteSessions, ids, ex.name, ex.focus)
       const finalIdx = session ? chainIndexOf(resolved, session.finalExerciseId) : -1
       if (session && finalIdx >= 0 && finalIdx !== resolved.prescribedIdx) {
         out.level = resolved.chain[finalIdx].name
