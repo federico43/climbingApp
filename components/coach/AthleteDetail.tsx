@@ -1,4 +1,7 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { IconButton, Melt, Mono, PosterHeadline, posterSize } from "@/components/paper"
+import { font } from "@/theme/paper/tokens"
+import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { AthleteVideos } from "@/components/AthleteVideos"
 import { PlanTimelineCard } from "@/components/PlanTimelineCard"
@@ -24,12 +27,28 @@ import {
   SessionRow,
   TrainingPlanRow,
 } from "@/services/BoulderGraphService"
-import { localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
+import { addDays, localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { pauseOn } from "@/utils/planPauses"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
+
+type Tab = "overview" | "stats" | "templates" | "videos"
+const TABS: { key: Tab; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "stats", label: "Stats" },
+  { key: "templates", label: "Templates" },
+  { key: "videos", label: "Videos" },
+]
+
+const shortDate = (d: string) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
+const todayLabel = () => new Date().toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+function daysBetween(from: string, to: string): number {
+  let n = 0
+  for (let d = from; d < to && n < 400; d = addDays(d, 1)) n++
+  return n
+}
 
 // One athlete on the coach dashboard (docs/coach-dashboard.md §4.4–4.10).
 // `split`: two columns (main + side) on the widest layout, else one.
@@ -41,6 +60,7 @@ export function AthleteDetail({
   onBack,
   onChanged,
   onRefresh,
+  toolbar,
 }: {
   athlete: AppUser
   roster: AppUser[]
@@ -51,8 +71,12 @@ export function AthleteDetail({
   onChanged: () => void
   // Pull-to-refresh: the parent reloads this page from the server.
   onRefresh?: () => void
+  // Paper: the coach's tool buttons, in the header's top row.
+  toolbar?: React.ReactNode
 }) {
   const C = useC()
+  const P = usePaperScope()
+  const { width } = useWindowDimensions()
   const card = useSheet(cardSheet)
   const styles = useSheet(stylesSheet)
   const router = useRouter()
@@ -68,6 +92,15 @@ export function AthleteDetail({
   // the key reloads the Templates card so the new one shows up.
   const [building, setBuilding] = useState(false)
   const [templatesKey, setTemplatesKey] = useState(0)
+  // Paper: the page's sections (design chat 2026-11-22). A section mounts
+  // the first time it's opened, so Templates and Videos only read Appwrite
+  // when the coach looks at them, then stay mounted.
+  const [tab, setTab] = useState<Tab>("overview")
+  const [seen, setSeen] = useState<Set<Tab>>(() => new Set<Tab>(["overview"]))
+  function openTab(t: Tab) {
+    setTab(t)
+    setSeen((prev) => (prev.has(t) ? prev : new Set(prev).add(t)))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -159,6 +192,144 @@ export function AthleteDetail({
   const videos = <AthleteVideos athlete={athlete} />
   const cardioCard = <CardioCard key={`cardio-${athlete.$id}`} athlete={athlete} />
 
+  const modals = (
+    <>
+        <Modal visible={building} transparent animationType="fade" onRequestClose={() => setBuilding(false)}>
+          <AthleteWorkoutBuilder
+            athlete={athlete}
+            roster={roster}
+            onClose={() => setBuilding(false)}
+            onSaved={() => setTemplatesKey((k) => k + 1)}
+          />
+        </Modal>
+
+        <SessionDetailModal
+          date={openDay}
+          sessions={sessions}
+          onClose={() => setOpenDay(null)}
+          onDeleted={(id) => { setSessions((prev) => prev.filter((s) => s.$id !== id)); onChanged() }}
+          onUpdated={(updated) => setSessions((prev) => prev.map((s) => (s.$id === updated.$id ? updated : s)))}
+          canGiveFeedback
+          onOpenExercise={(name) => {
+            setOpenDay(null)
+            router.push({ pathname: "/(tabs)/(buttonTabs)/exerciseProgress", params: { name, athleteId: athlete.$id } })
+          }}
+        />
+    </>
+  )
+
+  const refreshControl = onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={C.green} colors={[C.green]} /> : undefined
+
+  // Paper Mint page (design chat 2026-11-22): poster header, sticky section
+  // tabs, Overview in two columns on the widest layout.
+  if (P) {
+    const name = (athlete.username || athlete.$id).trim()
+    const first = name.split(/\s+/)[0]
+    const daysLeft = plan && today >= plan.windowStart && today <= plan.windowEnd ? daysBetween(today, plan.windowEnd) : null
+    const flash = BoulderLevelOptions.find((g) => g.value === flashLevel)
+    const posterBase = wide ? 132 : 82
+    const chips = [
+      plan ? `${shortDate(plan.windowStart)} – ${shortDate(plan.windowEnd)}` : null,
+      daysLeft !== null ? `${daysLeft} day${daysLeft === 1 ? "" : "s"} left` : null,
+      flash ? `Flash · ${flash.label}` : null,
+    ].filter(Boolean) as string[]
+    const pane = (t: Tab, node: React.ReactNode) => seen.has(t) && (
+      <View key={t} style={tab === t ? styles.paneOn : styles.paneOff}>{node}</View>
+    )
+    return (
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={styles.pScroll}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[1]}
+          refreshControl={refreshControl}
+        >
+          <View style={styles.pHeader}>
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+              <Melt top={wide ? 70 : 60} height={wide ? 260 : 210} />
+            </View>
+            <View style={styles.pTopRow}>
+              {onBack && <IconButton icon="chevron-back" onPress={onBack} label="Back to athletes" />}
+              <Mono style={{ flex: 1 }} numberOfLines={1}>{`Coach · ${todayLabel()}`}</Mono>
+              {toolbar}
+            </View>
+            <Mono color={P.ink} size={11.5} style={{ marginTop: wide ? 26 : 18 }} numberOfLines={1}>{subtitle.trim() || " "}</Mono>
+            <PosterHeadline size={Math.max(48, posterSize(first, posterBase, wide ? 390 : width))} wordPerLine={false} numberOfLines={1} style={{ marginTop: 8 }}>
+              {first}
+            </PosterHeadline>
+            {name !== first && <Text style={styles.pFullName} numberOfLines={1}>{name}</Text>}
+            {chips.length > 0 && (
+              <View style={styles.pChips}>
+                {chips.map((c) => <View key={c} style={styles.pChip}><Text style={styles.pChipText}>{c}</Text></View>)}
+              </View>
+            )}
+            <View style={styles.pActions}>
+              <RolePill athlete={athlete} onChanged={onChanged} />
+              <ActivePill athlete={athlete} onChanged={onChanged} />
+              <View style={{ flex: 1 }} />
+              <Pressable style={card.primaryBtn} accessibilityLabel="New workout" onPress={() => setBuilding(true)}>
+                <Ionicons name="add" size={17} color={P.onMint} />
+                <Text style={card.primaryBtnText}>New workout</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Sticky section tabs. */}
+          <View style={styles.pTabsWrap}>
+            <View style={styles.pTabs}>
+              {TABS.map((t) => {
+                const on = tab === t.key
+                return (
+                  <Pressable
+                    key={t.key}
+                    onPress={() => openTab(t.key)}
+                    style={[styles.pTab, on && styles.pTabOn]}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                  >
+                    <Text style={[styles.pTabText, on && styles.pTabTextOn]}>{t.label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </View>
+
+          <View style={styles.pBody}>
+            {pane("overview", split ? (
+              <View style={styles.columns}>
+                <View style={styles.mainCol}>
+                  {planCard}
+                  {timelineCard}
+                  {activityCard}
+                </View>
+                <View style={styles.sideCol}>
+                  {athleteCard}
+                  {homeworkCard}
+                  {cardioCard}
+                </View>
+              </View>
+            ) : (
+              // One column: homework first — it's the reason to open the screen.
+              <View style={styles.stack}>
+                {homeworkCard}
+                {planCard}
+                {timelineCard}
+                {athleteCard}
+                {cardioCard}
+                {activityCard}
+              </View>
+            ))}
+            {pane("stats", statsCard)}
+            {pane("templates", templatesCard)}
+            {pane("videos", videos)}
+          </View>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+        {modals}
+      </View>
+    )
+  }
+
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -187,7 +358,7 @@ export function AthleteDetail({
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={onRefresh ? <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={C.green} colors={[C.green]} /> : undefined}
+        refreshControl={refreshControl}
       >
         {split ? (
           <View style={styles.columns}>
@@ -222,32 +393,40 @@ export function AthleteDetail({
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      <Modal visible={building} transparent animationType="fade" onRequestClose={() => setBuilding(false)}>
-        <AthleteWorkoutBuilder
-          athlete={athlete}
-          roster={roster}
-          onClose={() => setBuilding(false)}
-          onSaved={() => setTemplatesKey((k) => k + 1)}
-        />
-      </Modal>
 
-      <SessionDetailModal
-        date={openDay}
-        sessions={sessions}
-        onClose={() => setOpenDay(null)}
-        onDeleted={(id) => { setSessions((prev) => prev.filter((s) => s.$id !== id)); onChanged() }}
-        onUpdated={(updated) => setSessions((prev) => prev.map((s) => (s.$id === updated.$id ? updated : s)))}
-        canGiveFeedback
-        onOpenExercise={(name) => {
-          setOpenDay(null)
-          router.push({ pathname: "/(tabs)/(buttonTabs)/exerciseProgress", params: { name, athleteId: athlete.$id } })
-        }}
-      />
+      {modals}
     </View>
   )
 }
 
-const stylesSheet = paperSheet((C) => StyleSheet.create({
+const stylesSheet = paperSheet((C, P) => StyleSheet.create({
+  // Paper Mint page.
+  pScroll: { paddingBottom: 24 },
+  pHeader: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 18 },
+  pTopRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
+  pFullName: { fontSize: 18, fontWeight: "800", color: C.textPrimary, marginTop: 6, paddingLeft: 2 },
+  pChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  pChip: {
+    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5,
+    backgroundColor: P?.card, borderWidth: 1, borderColor: P?.cardBorder,
+  },
+  pChipText: { fontFamily: font.mono, fontSize: 11, letterSpacing: 0.5, color: P?.ink },
+  pActions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 16 },
+  pTabsWrap: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 },
+  pTabs: {
+    flexDirection: "row", alignSelf: "flex-start", gap: 2, padding: 5, borderRadius: 999,
+    backgroundColor: P?.mode === "dark" ? "rgba(20,17,26,0.92)" : "rgba(251,249,245,0.94)",
+    borderWidth: 1, borderColor: P?.cardBorder,
+    shadowColor: "#121014", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3,
+  },
+  pTab: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 999 },
+  pTabOn: { backgroundColor: P?.ink },
+  pTabText: { fontFamily: font.bold, fontSize: 14, color: P?.ink },
+  pTabTextOn: { color: P?.paper },
+  pBody: { paddingHorizontal: 16, paddingTop: 4 },
+  paneOn: {},
+  paneOff: { display: "none" },
+  stack: { gap: 14 },
   header: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingVertical: 12,

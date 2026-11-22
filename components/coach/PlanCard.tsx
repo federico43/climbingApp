@@ -1,4 +1,5 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperDark, paperSheet, useC, usePaperScope, useSheet, type Palette } from "@/theme/paper/legacy"
+import { font, type PaperTheme } from "@/theme/paper/tokens"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
 import { ExtraSessionRow } from "@/components/coach/ExtraSessionRow"
@@ -11,7 +12,7 @@ import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
 import { pauseOn } from "@/utils/planPauses"
 import {
   alternateMainBlock, canRotate, isConditioningOnly, localDateStr, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, mainTypeLabel, nextPlanIndex, planIsOver, planWeek, workoutSpec,
-  PLAN_FOCUS_LABEL, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
+  PLAN_FOCUS_LABEL, PLAN_WEEKS, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
   type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
@@ -87,8 +88,10 @@ export function PlanCard({
   onHomeworkChanged: () => void
 }) {
   const C = useC()
+  const P = usePaperScope()
   const card = useSheet(cardSheet)
   const styles = useSheet(stylesSheet)
+  const look: Look = { C, P, card, styles }
   // Which of Edit details / Create is generating or saving the next workout.
   const [busy, setBusy] = useState<"edit" | "create" | null>(null)
   // The plan workout Create just saved, for the "sent" line.
@@ -252,148 +255,179 @@ export function PlanCard({
     }
   }
 
-  return (
-    <View style={card.card}>
-      <View style={card.headerRow}>
-        <Text style={card.title}>Training plan</Text>
-        {plan && !planEnded && (
-          <Pressable onPress={() => setPlanModal("edit")} hitSlop={8}>
-            <Text style={card.link}>Edit</Text>
-          </Pressable>
+  // Paper Mint (design chat 2026-11-22): the plan is an ink card and the
+  // next workout a card of its own, outlined in ink. Legacy: one card.
+  const weekNow = plan ? Math.min(Math.max(planWeek(plan.windowStart, today, plan.pauses), 1), PLAN_WEEKS) : 1
+
+  const planInfo = (t: Look) => loading ? (
+    <ActivityIndicator color={t.C.green} />
+  ) : !plan ? (
+    <>
+      <Text style={t.card.sub}>No training plan yet — 6 weeks, 2 workouts a week.</Text>
+      <Pressable style={t.card.primaryBtn} onPress={() => setPlanModal("new")}>
+        <Text style={t.card.primaryBtnText}>Start a plan</Text>
+      </Pressable>
+    </>
+  ) : (
+    <>
+      <View style={{ gap: 2 }}>
+        {P && (
+          <Text style={t.styles.planEyebrow}>
+            {inWindow || pausedNow ? `Week ${weekNow} of ${PLAN_WEEKS} · ` : ""}{formatPlanDate(plan.windowStart)} – {formatPlanDate(plan.windowEnd)}
+          </Text>
         )}
+        <Text style={t.styles.planName}>{plan.name}</Text>
+        <Text style={t.styles.planWindow}>
+          {!P && `${formatPlanDate(plan.windowStart)} – ${formatPlanDate(plan.windowEnd)}`}
+          {!P && (plan.focus || conditioning) ? " · " : ""}
+          {conditioning
+            ? <Text style={{ color: P ? undefined : ADAPTATION_COLOR.conditioning }}>Conditioning only</Text>
+            : plan.focus && <Text style={{ color: P ? undefined : ADAPTATION_COLOR[plan.focus] }}>{PLAN_FOCUS_LABEL[plan.focus]} focus</Text>}
+        </Text>
       </View>
-
-      {loading ? (
-        <ActivityIndicator color={C.green} />
-      ) : !plan ? (
-        <>
-          <Text style={card.sub}>No training plan yet — 6 weeks, 2 workouts a week.</Text>
-          <Pressable style={card.primaryBtn} onPress={() => setPlanModal("new")}>
-            <Text style={card.primaryBtnText}>Start a plan</Text>
-          </Pressable>
-        </>
-      ) : (
-        <>
-          <View style={{ gap: 2 }}>
-            <Text style={styles.planName}>{plan.name}</Text>
-            <Text style={styles.planWindow}>
-              {formatPlanDate(plan.windowStart)} – {formatPlanDate(plan.windowEnd)}
-              {plan.focus || conditioning ? " · " : ""}
-              {conditioning
-                ? <Text style={{ color: ADAPTATION_COLOR.conditioning }}>Conditioning only</Text>
-                : plan.focus && <Text style={{ color: ADAPTATION_COLOR[plan.focus] }}>{PLAN_FOCUS_LABEL[plan.focus]} focus</Text>}
-            </Text>
-          </View>
-          {plan.hasSc && (
-            <View style={styles.chipWrap}>
-              {plan.scPatterns.map((p) => (
-                <View key={p.movementType} style={styles.chip}>
-                  <Text style={styles.chipText}>{MOVEMENT_TYPE_LABEL[p.movementType]}</Text>
-                </View>
-              ))}
-              {plan.hasMobility && (
-                <View style={styles.chip}>
-                  <Text style={styles.chipText}>+ mobility{plan.mobilityIds.length > 0 ? ` · ${plan.mobilityIds.length} picked` : ""}</Text>
-                </View>
-              )}
+      {plan.hasSc && (
+        <View style={t.styles.chipWrap}>
+          {plan.scPatterns.map((p) => (
+            <View key={p.movementType} style={t.styles.chip}>
+              <Text style={t.styles.chipText}>{P ? `S&C · ${MOVEMENT_TYPE_LABEL[p.movementType]}` : MOVEMENT_TYPE_LABEL[p.movementType]}</Text>
+            </View>
+          ))}
+          {plan.hasMobility && (
+            <View style={t.styles.chip}>
+              <Text style={t.styles.chipText}>{P ? "Mobility" : "+ mobility"}{plan.mobilityIds.length > 0 ? ` · ${plan.mobilityIds.length} picked` : ""}</Text>
             </View>
           )}
-          <View style={styles.statsRow}>
-            <Stat value={`${done.size}/${PLAN_WORKOUTS}`} label="done" />
-            <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
-            {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
-          </View>
-          {benchmark && (
-            <View style={styles.benchRow}>
-              <Text style={styles.benchLabel}>Benchmark</Text>
-              <Text style={styles.benchText}>
-                {formatPlanDate(benchmark.first.date)}: {benchmarkTryLabel(benchmark.first)}
-                {benchmark.last ? `  →  ${formatPlanDate(benchmark.last.date)}: ${benchmarkTryLabel(benchmark.last)}` : "  ·  retry in the last week"}
-              </Text>
-            </View>
-          )}
-          {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
-
-          {planEnded ? (
-            <View style={styles.box}>
-              <Text style={styles.boxText}>This plan has ended.</Text>
-              <Pressable style={card.primaryBtn} onPress={() => setPlanModal("new")}>
-                <Text style={card.primaryBtnText}>Start a new plan</Text>
-              </Pressable>
-            </View>
-          ) : !planShape ? (
-            // Plans made before v2 have no focus — the rotation needs one.
-            <View style={styles.box}>
-              <Text style={styles.boxText}>This plan was made before the new plan structure. Edit it to set a focus.</Text>
-            </View>
-          ) : nextSpec && (
-            <View style={styles.box}>
-              {created === nextSpec.index - 1 && (
-                <Text style={styles.sent}>✓ Workout {created} created — {athlete.username} can see it now.</Text>
-              )}
-              {pausedNow && (
-                <Text style={styles.pausedLine}>Paused until {formatPlanDate(pausedNow.end)}. You can still build ahead.</Text>
-              )}
-              <Text style={styles.nextTitle}>
-                Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan.windowStart, today, plan.pauses))}
-              </Text>
-              {nextSpec.scFocus && (plan.scPatterns.length === 0 && plan.hasMobility
-                ? <PickRow color={ADAPTATION_COLOR.conditioning} text="S&C · Mobility only" />
-                : (
-                  <PickRow
-                    color={ADAPTATION_COLOR.conditioning}
-                    text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
-                    onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!, plan.scFocuses) })}
-                  />
-                ))}
-              {nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
-              {!conditioning && plan.focus && (<>
-                <PickRow
-                  color={C.textMuted}
-                  text={nextSpec.warmup === "constraints"
-                    ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
-                    : nextSpec.warmup === "exploration"
-                      ? "First · Route exploration (new routes)"
-                      : "Warm-up · 1 on 1 off"}
-                  onSwap={() => swap({
-                    warmup: nextSpec.warmup !== "one_on_one_off"
-                      ? "one_on_one_off"
-                      : plan.focus === "fear_management" ? "exploration" : "constraints",
-                  })}
-                />
-                {nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
-                {nextSpec.mainBlock && (
-                  <PickRow
-                    color={ADAPTATION_COLOR[nextSpec.mainType]}
-                    text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${mainBlockRun(nextSpec.mainBlock).timeLimit ? `${mainBlockRun(nextSpec.mainBlock).copies} × ${mainBlockRun(nextSpec.mainBlock).timeLimit} min` : `× ${mainBlockRun(nextSpec.mainBlock).copies}`}${MAIN_COMPANION_BLOCK[nextSpec.mainType] ? ` + ${MAIN_COMPANION_BLOCK[nextSpec.mainType]!.name} ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit ? `${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).copies} × ${mainBlockRun(MAIN_COMPANION_BLOCK[nextSpec.mainType]!).timeLimit} min` : `× ${MAIN_BLOCK_COPIES}`}` : ""}`}
-                    onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
-                  />
-                )}
-              </>)}
-              {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text={nextSpec.index === 1 || !benchmark ? "+ Tests as homework: Density test + Benchmark (new sequence)" : "+ Tests as homework: Density test + Benchmark (same sequence again)"} />}
-              <View style={styles.actions}>
-                <Pressable style={card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
-                  <Text style={card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
-                </Pressable>
-                <Pressable style={[card.primaryBtn, { alignSelf: "auto" }]} onPress={handleCreate} disabled={busy !== null}>
-                  <Text style={card.primaryBtnText}>{busy === "create" ? "Creating…" : "Create"}</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-          {planShape && !planEnded && (
-            <ExtraSessionRow
-              athlete={athlete}
-              plan={plan}
-              sessions={sessions}
-              homework={homework}
-              flashLevel={flashLevel}
-              onSent={onHomeworkChanged}
-            />
-          )}
-        </>
+        </View>
       )}
+      {P ? (
+        <View style={t.styles.bigStats}>
+          <BigStat label="Workouts done" value={done.size} of={PLAN_WORKOUTS} />
+          <BigStat label="Workouts built" value={Math.min(nextIndex - 1, PLAN_WORKOUTS)} of={PLAN_WORKOUTS} />
+          {inWindow && <BigStat label="This week" value={thisWeek} of={WORKOUTS_PER_WEEK} />}
+        </View>
+      ) : (
+        <View style={t.styles.statsRow}>
+          <Stat value={`${done.size}/${PLAN_WORKOUTS}`} label="done" />
+          <Stat value={`${Math.min(nextIndex - 1, PLAN_WORKOUTS)}/${PLAN_WORKOUTS}`} label="built" />
+          {inWindow && <Stat value={`${thisWeek}/${WORKOUTS_PER_WEEK}`} label="this week" />}
+        </View>
+      )}
+      {benchmark && (
+        <View style={t.styles.benchRow}>
+          <Text style={t.styles.benchLabel}>Benchmark</Text>
+          <Text style={t.styles.benchText}>
+            {formatPlanDate(benchmark.first.date)}: {benchmarkTryLabel(benchmark.first)}
+            {benchmark.last ? `  →  ${formatPlanDate(benchmark.last.date)}: ${benchmarkTryLabel(benchmark.last)}` : "  ·  retry in the last week"}
+          </Text>
+        </View>
+      )}
+      {!planEnded && <PlanPauses plan={plan} onPlanChanged={onPlanChanged} onHomeworkChanged={onHomeworkChanged} />}
+    </>
+  )
 
+  // Ended / pre-v2 plans: a line in the plan card instead of a next workout.
+  const planNotice = (t: Look) => !plan || loading ? null : planEnded ? (
+    <View style={t.styles.box}>
+      <Text style={t.styles.boxText}>This plan has ended.</Text>
+      <Pressable style={t.card.primaryBtn} onPress={() => setPlanModal("new")}>
+        <Text style={t.card.primaryBtnText}>Start a new plan</Text>
+      </Pressable>
+    </View>
+  ) : !planShape ? (
+    // Plans made before v2 have no focus — the rotation needs one.
+    <View style={t.styles.box}>
+      <Text style={t.styles.boxText}>This plan was made before the new plan structure. Edit it to set a focus.</Text>
+    </View>
+  ) : null
+
+  const extraSession = plan && !loading && planShape && !planEnded && (
+    <ExtraSessionRow
+      athlete={athlete}
+      plan={plan}
+      sessions={sessions}
+      homework={homework}
+      flashLevel={flashLevel}
+      onSent={onHomeworkChanged}
+    />
+  )
+
+  const runLabel = (b: Parameters<typeof mainBlockRun>[0], copies?: number) => {
+    const run = mainBlockRun(b)
+    return run.timeLimit ? `${run.copies} × ${run.timeLimit} min` : `× ${copies ?? run.copies}`
+  }
+  const companion = nextSpec ? MAIN_COMPANION_BLOCK[nextSpec.mainType] : undefined
+
+  const nextRows = (t: Look) => plan && nextSpec && (
+    <>
+      {nextSpec.scFocus && (plan.scPatterns.length === 0 && plan.hasMobility
+        ? <PickRow color={ADAPTATION_COLOR.conditioning} text="S&C · Mobility only" />
+        : (
+          <PickRow
+            color={ADAPTATION_COLOR.conditioning}
+            text={`S&C · ${FOCUS_LABEL[nextSpec.scFocus]}`}
+            detail={P ? preview?.sc.flat().join(" · ") : undefined}
+            onSwap={() => swap({ scFocus: nextFocus(nextSpec.scFocus!, plan.scFocuses) })}
+          />
+        ))}
+      {!P && nextSpec.scFocus && preview?.sc.map((names, i) => <ExerciseChips key={i} names={names} />)}
+      {!conditioning && plan.focus && (<>
+        <PickRow
+          color={t.C.textMuted}
+          text={nextSpec.warmup === "constraints"
+            ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
+            : nextSpec.warmup === "exploration"
+              ? "First · Route exploration (new routes)"
+              : "Warm-up · 1 on 1 off"}
+          detail={P && nextSpec.warmup === "constraints" ? preview?.warmup.join(" · ") : undefined}
+          onSwap={() => swap({
+            warmup: nextSpec.warmup !== "one_on_one_off"
+              ? "one_on_one_off"
+              : plan.focus === "fear_management" ? "exploration" : "constraints",
+          })}
+        />
+        {!P && nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
+        {nextSpec.mainBlock && (
+          <PickRow
+            color={ADAPTATION_COLOR[nextSpec.mainType]}
+            text={`${mainTypeLabel(nextSpec.mainType)} · ${nextSpec.mainBlock.name} ${runLabel(nextSpec.mainBlock)}${companion ? ` + ${companion.name} ${runLabel(companion, MAIN_BLOCK_COPIES)}` : ""}`}
+            onSwap={swapTo ? () => swap({ mainBlock: swapTo }) : undefined}
+          />
+        )}
+      </>)}
+      {nextSpec.withTest && <PickRow color={ADAPTATION_COLOR.test} text={nextSpec.index === 1 || !benchmark ? "+ Tests as homework: Density test + Benchmark (new sequence)" : "+ Tests as homework: Density test + Benchmark (same sequence again)"} />}
+    </>
+  )
+
+  const showNext = !!plan && !loading && !planEnded && !!planShape && !!nextSpec
+  const nextActions = (t: Look) => (
+    <View style={t.styles.actions}>
+      <Pressable style={t.card.outlineBtn} onPress={handleEditDetails} disabled={busy !== null}>
+        <Text style={t.card.outlineBtnText}>{busy === "edit" ? "…" : "Edit details"}</Text>
+      </Pressable>
+      <Pressable style={[t.card.primaryBtn, { alignSelf: "auto" }]} onPress={handleCreate} disabled={busy !== null}>
+        <Text style={t.card.primaryBtnText}>{busy === "create" ? "Creating…" : P && nextSpec ? `Create workout ${nextSpec.index}` : "Create"}</Text>
+      </Pressable>
+    </View>
+  )
+  const nextStatus = (t: Look) => nextSpec && (
+    <>
+      {created === nextSpec.index - 1 && (
+        <Text style={t.styles.sent}>✓ Workout {created} created — {athlete.username} can see it now.</Text>
+      )}
+      {pausedNow && (
+        <Text style={t.styles.pausedLine}>Paused until {formatPlanDate(pausedNow.end)}. You can still build ahead.</Text>
+      )}
+    </>
+  )
+
+  const editLink = (t: Look) => plan && !planEnded && (
+    <Pressable onPress={() => setPlanModal("edit")} hitSlop={8}>
+      <Text style={t.styles.editLink}>Edit</Text>
+    </Pressable>
+  )
+
+  const modals = (
+    <>
       {draftWorkout && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setDraftWorkout(null)}>
           <AthleteWorkoutBuilder
@@ -421,6 +455,94 @@ export function PlanCard({
         onSaved={onPlanChanged}
         onDeleted={() => onPlanChanged(null)}
       />
+    </>
+  )
+
+  if (P) {
+    return (
+      <>
+        {/* The ink card: dark theme inside, whatever the app's mode. */}
+        <PaperDark>
+          <Themed>
+            {(t) => (
+              <View style={[t.card.card, t.styles.inkCard]}>
+                <View style={t.card.headerRow}>
+                  <Text style={[t.card.title, { color: t.P?.mint }]}>Training plan</Text>
+                  {editLink(t)}
+                </View>
+                {planInfo(t)}
+                {planNotice(t)}
+                {extraSession}
+              </View>
+            )}
+          </Themed>
+        </PaperDark>
+
+        {showNext && nextSpec && (
+          <View style={[card.card, styles.nextCard]}>
+            <View style={{ gap: 4 }}>
+              <Text style={[card.title, { color: P.mintText }]}>Next workout</Text>
+              <Text style={styles.nextHeadline}>
+                Workout {nextSpec.index} · {conditioning && nextSpec.scFocus ? FOCUS_LABEL[nextSpec.scFocus] : mainTypeLabel(nextSpec.mainType)}
+              </Text>
+              <Text style={styles.planEyebrow}>Week {Math.max(1, planWeek(plan!.windowStart, today, plan!.pauses))} of {PLAN_WEEKS}</Text>
+            </View>
+            {nextStatus(look)}
+            <View style={styles.nextRows}>{nextRows(look)}</View>
+            <Text style={card.sub}>Swap only changes this workout. Create sends it to {athlete.username || "the athlete"} as it is.</Text>
+            {nextActions(look)}
+          </View>
+        )}
+        {modals}
+      </>
+    )
+  }
+
+  return (
+    <View style={card.card}>
+      <View style={card.headerRow}>
+        <Text style={card.title}>Training plan</Text>
+        {editLink(look)}
+      </View>
+      {planInfo(look)}
+      {planNotice(look)}
+      {showNext && nextSpec && (
+        <View style={styles.box}>
+          {nextStatus(look)}
+          <Text style={styles.nextTitle}>
+            Next: workout {nextSpec.index} · week {Math.max(1, planWeek(plan!.windowStart, today, plan!.pauses))}
+          </Text>
+          {nextRows(look)}
+          {nextActions(look)}
+        </View>
+      )}
+      {extraSession}
+      {modals}
+    </View>
+  )
+}
+
+// The styles a piece of the card is drawn with — from the scope it sits in
+// (the ink plan card is dark inside, whatever the app's mode).
+type Look = { C: Palette; P: PaperTheme | null; card: ReturnType<typeof cardSheet.get>; styles: ReturnType<typeof stylesSheet.get> }
+function Themed({ children }: { children: (t: Look) => React.ReactNode }) {
+  const C = useC()
+  const P = usePaperScope()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
+  return <>{children({ C, P, card, styles })}</>
+}
+
+// "Workouts done 5/12" with a bar under it (Paper plan card).
+function BigStat({ label, value, of }: { label: string; value: number; of: number }) {
+  const styles = useSheet(stylesSheet)
+  return (
+    <View style={styles.bigStat}>
+      <Text style={styles.bigStatLabel}>{label}</Text>
+      <Text style={styles.bigStatNum}>{value}/{of}</Text>
+      <View style={styles.bar}>
+        <View style={[styles.barFill, { width: `${Math.min(100, Math.round((value / Math.max(1, of)) * 100))}%` }]} />
+      </View>
     </View>
   )
 }
@@ -435,9 +557,30 @@ function Stat({ value, label }: { value: string; label: string }) {
   )
 }
 
-function PickRow({ color, text, onSwap }: { color: string; text: string; onSwap?: () => void }) {
+function PickRow({ color, text, detail, onSwap }: { color: string; text: string; detail?: string; onSwap?: () => void }) {
   const styles = useSheet(stylesSheet)
   const card = useSheet(cardSheet)
+  const P = usePaperScope()
+  if (P) {
+    // Paper: mono category, the block on its own line, a Swap pill.
+    const cut = text.indexOf(" · ")
+    const label = cut > 0 ? text.slice(0, cut) : ""
+    const title = cut > 0 ? text.slice(cut + 3) : text
+    return (
+      <View style={styles.nextRow}>
+        <View style={{ flex: 1, gap: 3 }}>
+          {!!label && <Text style={styles.nextRowLabel}>{label}</Text>}
+          <Text style={styles.nextRowTitle}>{title}</Text>
+          {!!detail && <Text style={card.sub}>{detail}</Text>}
+        </View>
+        {onSwap && (
+          <Pressable onPress={onSwap} hitSlop={6} style={styles.swapBtn} accessibilityLabel={`Swap ${title}`}>
+            <Text style={styles.swapText}>⇄ Swap</Text>
+          </Pressable>
+        )}
+      </View>
+    )
+  }
   return (
     <View style={styles.pickRow}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -465,7 +608,25 @@ function ExerciseChips({ names }: { names: string[] }) {
   )
 }
 
-const stylesSheet = paperSheet((C) => StyleSheet.create({
+const stylesSheet = paperSheet((C, P) => StyleSheet.create({
+  // Paper: the ink plan card (dark scope inside) and the outlined next workout.
+  inkCard: { backgroundColor: P?.mode === "dark" ? "#121014" : C.surface, borderColor: "rgba(255,255,255,0.08)" },
+  nextCard: P ? { borderWidth: 2, borderColor: P.ink, backgroundColor: P.mode === "light" ? "#FBF9F5" : P.card } : {},
+  planEyebrow: { fontSize: 11, fontWeight: "600", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1.2 },
+  editLink: P ? { fontSize: 13, fontWeight: "800", color: P.ink, textDecorationLine: "underline" } : { fontSize: 13, fontWeight: "700", color: C.green },
+  nextHeadline: P ? { fontFamily: font.title, fontSize: 30, letterSpacing: -0.3, color: P.ink } : {},
+  nextRows: { borderTopWidth: 1, borderTopColor: C.border },
+  nextRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  nextRowLabel: { fontSize: 10.5, fontWeight: "600", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1.3 },
+  nextRowTitle: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
+  swapBtn: P ? { borderWidth: 1.5, borderColor: P.ink, borderRadius: 999, paddingHorizontal: 12, minHeight: 34, justifyContent: "center" } : {},
+  swapText: { fontSize: 13, fontWeight: "800", color: C.textPrimary },
+  bigStats: { flexDirection: "row", gap: 16, flexWrap: "wrap" },
+  bigStat: { flex: 1, minWidth: 110, gap: 4 },
+  bigStatLabel: { fontSize: 10.5, fontWeight: "600", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1.3 },
+  bigStatNum: P ? { fontFamily: font.title, fontSize: 44, lineHeight: 48, color: P.ink, fontVariant: ["tabular-nums"] } : {},
+  bar: { height: 6, borderRadius: 3, backgroundColor: C.surfaceHigh, overflow: "hidden" },
+  barFill: { height: 6, borderRadius: 3, backgroundColor: C.green },
   planName: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
   planWindow: { fontSize: 13, color: C.textSecondary, fontVariant: ["tabular-nums"] },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
