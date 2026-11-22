@@ -1,4 +1,5 @@
 import { C } from "@/utils/theme"
+import { TasksCardWithEditor } from "@/components/SessionTasks"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
 import Animated, { FadeInDown } from "react-native-reanimated"
@@ -124,7 +125,10 @@ function HomeContent() {
                 </View>
               )}
               {workout ? (
-                <LatestWorkoutCard workout={workout} scPart={scPart} fill />
+                <>
+                  <LatestWorkoutCard workout={workout} scPart={scPart} fill />
+                  <TasksCardWithEditor style={{ marginTop: 16 }} />
+                </>
               ) : (
                 <Animated.View style={styles.emptyCard} entering={FadeInDown.duration(420)}>
                   <Ionicons name="barbell-outline" size={36} color={C.textMuted} />
