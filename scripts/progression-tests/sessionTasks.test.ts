@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  addTask, amountLabel, COLUMN_SIZE, canAdd, closedTaskIds, editTask, EMPTY_TASKS, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
+  addTask, amountLabel, COLUMN_SIZE, canAdd, closedTaskIds, editTask, EMPTY_TASKS, fillIntroBlock, isTaskIntroBlock, isTaskSlot, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
   removeTasks, serializeSessionTasks, taskBlock, taskInsertIndex, tasksAllowedFor, triesLeft, withTaskBlocks,
   type SessionTaskList,
 } from "@/utils/sessionTasks"
@@ -96,6 +96,21 @@ assert.deepEqual(run.map((b) => b.blockName), ["S&C", "Warm", "Blue crux", "Drop
 assert.equal(withTaskBlocks(run, two), run)
 const plain = [warm, proj]
 assert.equal(withTaskBlocks(plain, EMPTY_TASKS), plain)
+
+// the first-time intro: only with no tasks and `intro`, once, then filled with the task
+assert.equal(withTaskBlocks(plain, EMPTY_TASKS, { intro: true }).length, 3)
+const introRun = withTaskBlocks([sc, warm, proj], EMPTY_TASKS, { intro: true })
+assert.deepEqual(introRun.map((b) => b.blockName), ["S&C", "Warm", "Your first task", "Project"])
+assert.equal(isTaskIntroBlock(introRun[2]), true)
+assert.equal(withTaskBlocks(introRun, two), introRun)                                // never twice
+assert.equal(withTaskBlocks([sc, warm, proj], two, { intro: true }).length, 5)        // tasks win over the intro
+assert.equal(tasksAllowedFor(rows([introRun[2]])), false)
+const filled = fillIntroBlock(introRun[2], two.tasks[0])
+assert.equal(isTaskIntroBlock(filled), false)
+assert.equal(isTaskSlot(filled), true)
+assert.equal(filled.focusTask.id, "a")
+assert.equal(fillIntroBlock(warm, two.tasks[0]), warm)
+assert.deepEqual(closedTaskIds([{ ...filled, focusTask: { ...filled.focusTask, closed: true } }], new Set()), ["a"])
 
 // closed: marked closed and not skipped
 const done = run.map((b, i) => (i === 2 || i === 3 ? { ...b, focusTask: { ...b.focusTask, closed: true } } : b))

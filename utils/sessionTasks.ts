@@ -148,6 +148,38 @@ export function isTaskBlock(b: any): boolean {
   return typeof b?.focusTask?.id === "string"
 }
 
+// The first-time intro (Federico 2026-11-22): an athlete with no tasks who
+// hasn't seen the intro gets this block after the warm-up instead. It shows
+// the intro slides and lets them write their first task, which then runs
+// right there (fillIntroBlock).
+export function introTaskBlock(): any {
+  return {
+    id: "task-intro",
+    type: "project_bouldering",
+    blockName: "Your first task",
+    description: "",
+    grade: "",
+    restTime: TASK_REST_S,
+    reviewPrompts: false,
+    taskIntro: true,
+  }
+}
+
+// The intro block still waiting for its task.
+export function isTaskIntroBlock(b: any): boolean {
+  return b?.taskIntro === true && !isTaskBlock(b)
+}
+
+// A task block or the intro block (no coach switch, "Not today" to skip…).
+export function isTaskSlot(b: any): boolean {
+  return isTaskBlock(b) || isTaskIntroBlock(b)
+}
+
+// The intro block once the athlete wrote the task: that task's block.
+export function fillIntroBlock(block: any, task: SessionTask): any {
+  return isTaskIntroBlock(block) ? { ...taskBlock(task), taskIntro: true } : block
+}
+
 // A task as a Project bouldering block (components/ProjectBoulderingBlock.tsx
 // runs it in task mode): no grade (the athlete may be working a movement), no
 // review-clip prompt, the time limit only in time mode.
@@ -185,7 +217,7 @@ export function tasksAllowedFor(row: { planPart?: string | null; blocks?: string
   } catch { return false }
   if (blocks.some((b) => b?.leftAsHomework?.on) || isBenchmark(blocks)) return false
   if (row.planPart === "homework" && !blocks.some((b) => b?.extraSession?.to)) return false
-  return blocks.some((b) => CLIMBING_TYPES.has(b?.type) && !isTaskBlock(b))
+  return blocks.some((b) => CLIMBING_TYPES.has(b?.type) && !isTaskSlot(b))
 }
 
 // Where the task blocks go: right after the warm-up run at the start (the
@@ -201,12 +233,15 @@ export function taskInsertIndex(blocks: any[]): number {
   return afterWarmup >= 0 ? afterWarmup : blocks.length
 }
 
-// The workout with a block per open task. Unchanged when there are none, or
-// when it already has task blocks (never added twice).
-export function withTaskBlocks(blocks: any[], list: SessionTaskList): any[] {
-  if (list.tasks.length === 0 || blocks.some(isTaskBlock)) return blocks
+// The workout with a block per open task, or with the intro block when there
+// are none and `intro` is set. Unchanged otherwise, or when it already has
+// them (never added twice).
+export function withTaskBlocks(blocks: any[], list: SessionTaskList, opts?: { intro?: boolean }): any[] {
+  if (blocks.some(isTaskSlot)) return blocks
+  const add = list.tasks.length > 0 ? list.tasks.map(taskBlock) : opts?.intro ? [introTaskBlock()] : []
+  if (add.length === 0) return blocks
   const at = taskInsertIndex(blocks)
-  return [...blocks.slice(0, at), ...list.tasks.map(taskBlock), ...blocks.slice(at)]
+  return [...blocks.slice(0, at), ...add, ...blocks.slice(at)]
 }
 
 // The tasks closed in a saved workout: task blocks marked closed that weren't

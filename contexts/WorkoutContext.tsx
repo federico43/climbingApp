@@ -1,6 +1,6 @@
 import { useAuth } from "@/components/auth-context"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
-import { closedTaskIds, removeTasks, withTaskBlocks } from "@/utils/sessionTasks"
+import { closedTaskIds, fillIntroBlock, removeTasks, withTaskBlocks, type SessionTask } from "@/utils/sessionTasks"
 import { useHoldUpdates } from "@/utils/updateHold"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { listBlocks, SessionLink } from "@/services/BoulderGraphService"
@@ -47,6 +47,7 @@ interface WorkoutContextValue {
   // A task block's "Keep it" / "Close it" (docs/session-tasks.md) — this
   // session's copy; the task leaves the list once the workout is saved.
   setTaskClosed: (index: number, closed: boolean) => void
+  setIntroTask: (index: number, task: SessionTask) => void
   // The athlete's ⇄ switch of a plan workout's main block to the other one
   // of its type (utils/mainSwap.ts) — this session only. Throws when the
   // library block can't be fetched (e.g. no connection).
@@ -82,7 +83,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
   // Hook lives here so state survives modal close/reopen during minimize.
   const workout = useWorkout(protocol)
-  const { current: currentTasks, update: updateTasks } = useSessionTasks()
+  const { current: currentTasks, update: updateTasks, isIntroSeen } = useSessionTasks()
+  const role = useAuth().role
 
   // Keep the screen awake for the entire duration of an active workout —
   // including when it's minimized (rest timers, etc. keep running) and the
@@ -238,12 +240,13 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   }, [workout.status])
 
   const openWorkout = useCallback((p: any[], name: string, l?: SessionLink, opts?: { tasks?: boolean }) => {
-    setProtocol(opts?.tasks ? withTaskBlocks(p, currentTasks()) : p)
+    // Athletes with no tasks who haven't seen the intro get the intro block.
+    setProtocol(opts?.tasks ? withTaskBlocks(p, currentTasks(), { intro: role === "athlete" && !isIntroSeen() }) : p)
     setProtocolName(name)
     setLink(l ?? null)
     setModalVisible(true)
     setWorkoutMinimized(false)
-  }, [currentTasks])
+  }, [currentTasks, isIntroSeen, role])
 
   const setBlockCoached = useCallback((index: number, coached: boolean) => {
     setProtocol((p) => p.map((b, i) => (i === index ? { ...b, coached: coached || undefined } : b)))
@@ -251,6 +254,11 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
   const setTaskClosed = useCallback((index: number, closed: boolean) => {
     setProtocol((p) => p.map((b, i) => (i === index && b?.focusTask ? { ...b, focusTask: { ...b.focusTask, closed: closed || undefined } } : b)))
+  }, [])
+
+  // The intro block's task, just written: the block becomes that task's block.
+  const setIntroTask = useCallback((index: number, task: SessionTask) => {
+    setProtocol((p) => p.map((b, i) => (i === index ? fillIntroBlock(b, task) : b)))
   }, [])
 
   const swapMainBlock = useCallback(async (index: number) => {
@@ -290,6 +298,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     openWorkout,
     setBlockCoached,
     setTaskClosed,
+    setIntroTask,
     swapMainBlock,
     closeModal,
     endWorkout,
@@ -328,7 +337,12 @@ export function useWorkoutContext(): WorkoutContextValue {
 
 // For the running task block (docs/session-tasks.md): "Not today" skips it,
 // "Keep it" / "Close it" marks this session's copy. Null outside a workout.
-export function useTaskBlockActions(): { skip: () => void; closed: boolean; setClosed: (closed: boolean) => void } | null {
+export function useTaskBlockActions(): {
+  skip: () => void
+  closed: boolean
+  setClosed: (closed: boolean) => void
+  fillIntro: (task: SessionTask) => void
+} | null {
   const ctx = useContext(WorkoutContext)
   if (!ctx) return null
   const index = ctx.workout.currentBlockIndex
@@ -336,5 +350,6 @@ export function useTaskBlockActions(): { skip: () => void; closed: boolean; setC
     skip: ctx.workout.skipBlock,
     closed: !!ctx.protocol[index]?.focusTask?.closed,
     setClosed: (closed) => ctx.setTaskClosed(index, closed),
+    fillIntro: (task) => ctx.setIntroTask(index, task),
   }
 }
