@@ -1,5 +1,6 @@
 import { Body, Card, GhostButton, Mono, NavBar, Stepper, TextButton, TextField, usePaper, usePaperStyles } from "@/components/paper"
 import { useAuth } from "@/components/auth-context"
+import { openTasksIntro, useTasksIntroFirstTime } from "@/components/SessionTasksIntro"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { localDateStr } from "@/utils/planRotation"
@@ -186,16 +187,19 @@ export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null;
   )
 }
 
-// Plan / Home: the card, and the editor in a Modal. Athletes only.
-export function TasksCardWithEditor({ style }: { style?: StyleProp<ViewStyle> }) {
+// Plan / Home: the card, and the sheet in a Modal. Athletes only. The first
+// time it's on screen it shows the intro slides (components/SessionTasksIntro.tsx);
+// `introReady` holds them back while another pop-up on the page needs the screen.
+export function TasksCardWithEditor({ style, introReady = true }: { style?: StyleProp<ViewStyle>; introReady?: boolean }) {
   const { role } = useAuth()
+  useTasksIntroFirstTime(introReady && role === "athlete")
   const insets = useSafeAreaInsets()
   // The sheet: which task (null = a new one), or closed.
   const [sheet, setSheet] = useState<{ task: SessionTask | null } | null>(null)
   if (role === "coach") return null
   return (
     <>
-      <NextSessionCard onOpen={(task) => setSheet({ task })} style={style} />
+      <NextSessionCard onOpen={(task) => setSheet({ task })} onHelp={openTasksIntro} style={style} />
       <Modal visible={!!sheet} animationType="slide" onRequestClose={() => setSheet(null)}>
         {sheet && <TaskSheet task={sheet.task} onClose={() => setSheet(null)} insets={insets} />}
       </Modal>

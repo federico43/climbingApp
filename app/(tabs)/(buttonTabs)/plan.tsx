@@ -392,7 +392,7 @@ function PlanBody({
             <LatestWorkoutCard workout={latest} scPart={scPart} />
           </RailAnchor>
         )}
-        <TasksCardWithEditor />
+        <TasksCardWithEditor introReady={!homeworkPrompt} />
         <ThisWeekCard />
         <CardioSection />
         {plan.hasSc && <ConditioningBasicsCard />}

@@ -26,6 +26,7 @@ import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
 import { isTaskBlock, type SessionTask } from "@/utils/sessionTasks"
 import { NextSessionCard, TaskSheet } from "./SessionTasks"
+import { openTasksIntro } from "./SessionTasksIntro"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -312,7 +313,11 @@ export function WorkOutState({
           </Card>
 
           {/* Above the blocks, so it's on screen before the summary closes itself. */}
-          <NextSessionCard onOpen={(task) => { setHoldSummary(true); setSheet({ task }) }} style={{ marginTop: 24 }} />
+          <NextSessionCard
+            onOpen={(task) => { setHoldSummary(true); setSheet({ task }) }}
+            onHelp={() => { setHoldSummary(true); openTasksIntro() }}
+            style={{ marginTop: 24 }}
+          />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>

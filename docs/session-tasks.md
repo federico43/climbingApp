@@ -14,6 +14,10 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 4. **Not today.** The task block's intro has "Not today". That skips the block for this session only, and the task stays.
 5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks. Tapping one opens it in a short sheet (text, tries or time limit) to change it, with "Remove task" at the bottom. "Add a task" opens the same sheet empty. There is no separate edit mode. A changed task keeps its id, so a workout already running it still closes the right one.
 
+## The intro
+
+Four full-screen slides (`components/SessionTasksIntro.tsx`, the same look as Conditioning basics, `components/paper/Slides.tsx`): one thing every session, set it at the end, next session after the warm-up, it stays until you close it. Shown once per phone, the first time the "Next session" card is on Plan or Home, athletes only, never over a running workout, and after the homework prompt on that page. It waits its turn behind other pop-ups (`utils/popupTurn.ts`). "How it works" on the card (summary, Plan, Home) opens it again.
+
 ## Rules
 
 - **Which workouts get the blocks:** plan workouts, the athlete's own workouts, and extra solo sessions. Only workouts with a climbing block get them (warm-up, project, 4x4, sequence, exploration, route exploration), so a strength-only or cardio-only session doesn't ask for a boulder. Never added to: the coach's homework workouts, "Leave as homework" leftovers, plan S&C split-offs, the plan's Benchmark, single library blocks, sequences, or coach tests.
