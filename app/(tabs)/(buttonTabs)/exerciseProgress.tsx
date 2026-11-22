@@ -18,6 +18,7 @@ import { coachExerciseView, type CoachExerciseView } from "@/utils/scCoach"
 import { loadWeightUnit } from "@/utils/weightUnit"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
 
 function parseRepsNum(s: string): number | null {
@@ -224,6 +225,7 @@ export default function ExerciseProgressScreen() {
   }, [athleteId, name])
 
   useEffect(() => { load() }, [load])
+  const pull = usePullRefresh(load)
 
 
   function toChartPoints(key: "avgReps" | "avgWeight" | "avgRpe") {
@@ -268,6 +270,7 @@ export default function ExerciseProgressScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
+          refreshControl={pull}
         >
           {progression && <ScProgressionCard view={progression} />}
 

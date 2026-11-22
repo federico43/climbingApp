@@ -96,6 +96,9 @@ export default function DesignScreen() {
   )
   const selected = roster.athletes.find((a) => a.$id === selectedId) ?? null
 
+  // Pull-to-refresh on an athlete: their page loads again from the server.
+  const [detailReloads, setDetailReloads] = useState(0)
+
   async function pullRefresh() {
     setRefreshing(true)
     freshReads()
@@ -120,13 +123,14 @@ export default function DesignScreen() {
   )
   const detail = selected && (
     <AthleteDetail
-      key={selected.$id}
+      key={`${selected.$id}:${detailReloads}`}
       athlete={selected}
       roster={roster.athletes}
       split={split}
       wide={isWide}
       onBack={isWide ? undefined : () => setDetailOpen(false)}
       onChanged={refresh}
+      onRefresh={() => { freshReads(); setDetailReloads((n) => n + 1); refresh() }}
     />
   )
 
