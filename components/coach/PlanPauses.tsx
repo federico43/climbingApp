@@ -1,4 +1,4 @@
-import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperAppTheme, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { cardSheet } from "@/components/coach/styles"
 import { getActiveTrainingPlan, TrainingPlanRow } from "@/services/BoulderGraphService"
 import { savePlanPauses } from "@/services/classSchedule"
@@ -87,16 +87,18 @@ export function PlanPauses({ plan, onPlanChanged, onHomeworkChanged }: {
       <Pressable onPress={() => setAdding(true)} hitSlop={8} style={{ alignSelf: "flex-start" }} disabled={saving}>
         <Text style={card.link}>{saving ? "Saving…" : "+ Add pause"}</Text>
       </Pressable>
-      <AddPauseModal
-        visible={adding}
-        plan={plan}
-        saving={saving}
-        onClose={() => setAdding(false)}
-        onSave={async (pause) => {
-          const ok = await save([...plan.pauses, pause].sort((a, b) => (a.start < b.start ? -1 : 1)))
-          if (ok) setAdding(false)
-        }}
-      />
+      <PaperAppTheme>
+        <AddPauseModal
+          visible={adding}
+          plan={plan}
+          saving={saving}
+          onClose={() => setAdding(false)}
+          onSave={async (pause) => {
+            const ok = await save([...plan.pauses, pause].sort((a, b) => (a.start < b.start ? -1 : 1)))
+            if (ok) setAdding(false)
+          }}
+        />
+      </PaperAppTheme>
     </View>
   )
 }

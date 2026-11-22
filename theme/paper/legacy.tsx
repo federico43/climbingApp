@@ -1,7 +1,7 @@
 import { C as LEGACY } from "@/utils/theme"
 import React, { createContext, useContext } from "react"
-import { TextStyle } from "react-native"
-import { PaperThemeOverride, usePaper } from "./PaperThemeProvider"
+import { TextStyle, useColorScheme } from "react-native"
+import { PaperThemeOverride, usePaper, usePaperPreference } from "./PaperThemeProvider"
 import { font, PaperMode, PaperTheme, paperThemes } from "./tokens"
 
 // Paper Mint for screens written against the old dark palette (utils/theme `C`).
@@ -217,6 +217,24 @@ function typeFor(s: TextStyle): TextStyle {
 export function PaperDark({ children }: { children: React.ReactNode }) {
   return (
     <PaperThemeOverride mode="dark">
+      <PaperScope>{children}</PaperScope>
+    </PaperThemeOverride>
+  )
+}
+
+/**
+ * Back to the app's own theme (the user's light / dark / system choice)
+ * inside a forced one — e.g. a sheet opened from the coach's ink plan card,
+ * which is dark inside whatever the app's mode.
+ */
+export function PaperAppTheme({ children }: { children: React.ReactNode }) {
+  const { preference } = usePaperPreference()
+  const system = useColorScheme()
+  const inPaper = usePaperScope() !== null
+  const mode: PaperMode = preference === "system" ? (system === "light" ? "light" : "dark") : preference
+  if (!inPaper) return <>{children}</>
+  return (
+    <PaperThemeOverride mode={mode}>
       <PaperScope>{children}</PaperScope>
     </PaperThemeOverride>
   )

@@ -224,3 +224,15 @@ Since 2026-11-13 the whole app runs inside one `<PaperScope>` (app/_layout.tsx),
 - **No red or yellow anywhere** (2026-11-22, Federico): inside the scope the old `C.red` reads as ink and `C.yellow` as the muted label colour (big yellow numbers as ink). Old red/yellow fills (time's up, fell, stop) become the neutral alert chip `C.alertFill` (#CFC7DA, ink outline, dark text). Homework counts are pink: filled = overdue, outline = pending. Only exception: the spray wall's own hold colours (start / finish).
 - The melt sits behind the headline only; on list screens it is clipped to the header so lists sit on plain paper.
 
+
+### Coach athlete page and workout builder (design chat, 2026-11-22)
+
+Built from the design chat's "Coach desk · Athlete page" and "Workout builder" mock-ups, adapted to what the app has.
+
+- **Athlete page** (`components/coach/AthleteDetail.tsx`): the melt and a poster of the athlete's first name (full name under it when it has a space), mono eyebrow "{plan} · week N of 6", chips (plan dates, days left, flash colour), then Role, Active and a mint New workout. Sticky pill tabs Overview / Stats / Templates / Videos (selected = ink fill). A tab mounts the first time it's opened, so Templates and Videos only read Appwrite when the coach looks.
+- **Overview**: wide (≥1200) = left column training plan, next workout, timeline, recent activity; right column (360) athlete, homework, jump rope cardio. One column (iPad portrait, phone): homework first.
+- **Training plan** is an ink card (dark scope inside, `PaperDark`; its sheets go back to the app theme with `PaperAppTheme`): mint mono title, week + dates, S&C / mobility chips, big "Workouts done / built / this week" numbers with bars. **Next workout** is its own card outlined 2px in ink: mono category, the block on its own line, the exercises under it, a ⇄ Swap pill per row, the note "Swap only changes this workout…", Edit details + Create workout N.
+- **Wide layout** (≥900): no COACH poster; the roster has its own "Athletes · N active" head and is grouped "Pending homework first" / "Everyone else"; the coach tools sit in the athlete header's top row. Phone keeps the COACH poster on the roster screen.
+- Cards: frosted, radius 28, mono ink title; buttons are pills (mint = the action, ink outline = the rest).
+- **Builder** (`components/AthleteWorkoutBuilder.tsx`): a full page on paper. Top row "‹ Back to {athlete}", Copy to athletes and Save to library (ghost, wide; under ⋯ on a phone), and a mint "Send to {athlete}" ("Save" when editing or in the library). The name is the headline input with the melt, mono eyebrow and chips (plan slot, blocks, flash, coached, homework due). Each block card gets a footer: Coached switch and a pink "Move to homework" / "In homework · undo"; a homework block is outlined in pink. Under the blocks: the homework deadline stepper and "Move the whole workout to homework".
+- Not built from the mock-ups (no data or would cost reads): the 14-day readiness chart (the athlete card keeps today's check-in), the left nav rail (the app's tab bar does that), per-block minutes and the workout's total time.
