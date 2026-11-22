@@ -1,6 +1,7 @@
 import { useRestNotification } from "@/hooks/useRestNotification"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ScReviewLog } from "@/utils/scReview"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -302,7 +303,10 @@ export function useWorkout(protocolInput: Block[]) {
         timestamp: Date.now(),
       }
 
-      setAttempts((prev) => [...prev, newAttempt])
+      // A redone S&C round (Back arrow, or the block reopened) replaces
+      // the earlier log of that round, and a block's review its earlier
+      // review (utils/scRedo.ts).
+      setAttempts((prev) => newAttempt.scData || newAttempt.scReview ? withoutRedoneRounds([...prev, newAttempt]) : [...prev, newAttempt])
     },
     [status, currentBlock, currentBlockIndex]
   )

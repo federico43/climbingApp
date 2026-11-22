@@ -16,6 +16,7 @@ import { ScProgressionCard } from "@/components/ScProgressionCard"
 import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { coachExerciseView, type CoachExerciseView } from "@/utils/scCoach"
 import { loadWeightUnit } from "@/utils/weightUnit"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ function buildProgressData(sessions: SessionRow[], exerciseName: string): DayPoi
   for (const session of sessions) {
     const date = session.$createdAt.slice(0, 10)
     let attempts: any[] = []
-    try { attempts = JSON.parse(session.attempts) } catch {}
+    try { attempts = withoutRedoneRounds(JSON.parse(session.attempts)) } catch {}
 
     for (const a of attempts) {
       const fields = extractSCFields(a)

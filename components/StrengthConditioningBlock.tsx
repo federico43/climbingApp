@@ -548,7 +548,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       ...log, exerciseIndex: idx, round: currentRound, swappedTo: swap?.row.$id, swapReason: swap?.reason, swapScope: swap?.scope,
       unit: ex.type === "7/3s" ? undefined : isTimedExercise(ex) ? "seconds" : ex.unit,
     }
-    setLogs((prev) => [...prev, fullLog])
+    // A redone round (Back arrow) replaces the one logged before.
+    setLogs((prev) => [...prev.filter((l) => l.exerciseIndex !== idx || l.round !== currentRound), fullLog])
 
     // Remember the weight / level for this exercise so the next round prefills them.
     // (Reps and effort are never prefilled — see AmountInput.)
@@ -619,6 +620,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // compares against rounds done at the same focus.
         focus: ex.type !== "7/3s" ? ex.focus : undefined,
         round: currentRound + 1,
+        // The exercise's place in the block: a redone round replaces the
+        // earlier log of the same slot and round (utils/scRedo.ts).
+        slot: idx,
         repsCompleted: log.repsCompleted,
         weight: log.weight,
         weightUnit: log.weightUnit ?? "kg",
