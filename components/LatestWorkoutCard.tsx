@@ -1,4 +1,5 @@
 import { Card, CardTitle, ListRow, MintButton, Mono, PrimaryCTA, usePaper } from "@/components/paper"
+import { tasksAllowedFor } from "@/utils/sessionTasks"
 import { Block, BLOCK_ICONS, BLOCK_LABELS } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { ProtocolRow, sessionLinkFor } from "@/services/BoulderGraphService"
@@ -39,7 +40,7 @@ function planTag(p: ProtocolRow): string | null {
 }
 
 export function startWorkout(ctx: ReturnType<typeof useWorkoutContext>, w: ProtocolRow) {
-  ctx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))
+  ctx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w), { tasks: tasksAllowedFor(w) })
 }
 
 // `fill`: grows to fill Home's screen (Start is pinned outside it there);
