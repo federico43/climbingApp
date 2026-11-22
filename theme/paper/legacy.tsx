@@ -17,11 +17,20 @@ export type Palette = { -readonly [K in keyof typeof LEGACY]: string } & {
   onAccent: string
   /** Homework / coach-assigned only. */
   homework: string
+  /**
+   * Fill for an alert state that used to be a red or yellow fill (time's up,
+   * fell, stop). Paper Mint has no red or yellow: a light neutral chip with
+   * an ink outline, dark text on it (C.onAccent) in both modes.
+   */
+  alertFill: string
   /** An old hard-coded translucent colour, as it should look here. */
   tint: (rgba: string) => string
 }
 
 type Scope = PaperMode | null
+
+// Neutral alert chip (see Palette.alertFill). Declared before the palettes use it.
+const ALERT_FILL = "#CFC7DA"
 
 const ScopeContext = createContext<Scope>(null)
 
@@ -37,7 +46,7 @@ export function usePaperScope(): PaperTheme | null {
   return mode ? paperThemes[mode] : null
 }
 
-const legacyPalette: Palette = { ...LEGACY, onAccent: LEGACY.bg, homework: "#E0568A", tint: (c) => c }
+const legacyPalette: Palette = { ...LEGACY, onAccent: LEGACY.bg, homework: "#E0568A", alertFill: LEGACY.red, tint: (c) => c }
 
 function paletteFor(t: PaperTheme): Palette {
   const light = t.mode === "light"
@@ -53,11 +62,17 @@ function paletteFor(t: PaperTheme): Palette {
     // As text/icons: readable mint. As a fill, sheets swap in t.mint (see fix()).
     green: t.mintText,
     greenDeep: t.mintDeep,
-    red: light ? "#B3372F" : "#F07167",
-    yellow: light ? "#946600" : "#FED766",
+    // No red or yellow in Paper Mint (docs/design-system.md §2, §10). Old
+    // "red" (errors, delete, fell, went down) reads as ink and old "yellow"
+    // (warnings, same, rest) as the muted label colour. Both are kept as
+    // their own values (a hair off ink / label) so fix() can still tell an
+    // old red or yellow fill apart and turn it into the alert chip.
+    red: light ? "#16131A" : "#EEE9E1",
+    yellow: light ? "#4A3F56" : "#C3BACF",
     side: light ? "#6A48D6" : "#A78BFA",
     onAccent: t.onMint,
     homework: t.pink,
+    alertFill: ALERT_FILL,
     tint: (c) => tint(c, light),
   }
 }
@@ -108,22 +123,25 @@ function toPaper<T>(sheet: T, p: Palette, t: PaperTheme): T {
   return out
 }
 
-const LIGHT_FILL: Record<string, string> = {}
 
 function fix(s: any, p: Palette, t: PaperTheme) {
   const light = t.mode === "light"
   for (const k of Object.keys(s)) {
     if (/color$/i.test(k) && typeof s[k] === "string") s[k] = tint(s[k], light)
   }
-  if (!Object.keys(LIGHT_FILL).length) {
-    LIGHT_FILL[palettes.light.red] = "#E56B60"
-    LIGHT_FILL[palettes.light.yellow] = "#F2C94C"
-  }
-  // Fills: mint is the action colour; in light mode red/yellow fills get
-  // lighter so the dark text on them still reads.
+  // Fills: mint is the action colour; old red/yellow fills become the
+  // neutral alert chip (Paper Mint has no red or yellow).
   if (s.backgroundColor === p.green) s.backgroundColor = t.mint
-  else if (light && LIGHT_FILL[s.backgroundColor]) s.backgroundColor = LIGHT_FILL[s.backgroundColor]
+  else if (s.backgroundColor === p.red || s.backgroundColor === p.yellow) {
+    // Old red / yellow fill → the neutral alert chip, outlined in ink.
+    s.backgroundColor = ALERT_FILL
+    s.borderWidth = Math.max(s.borderWidth ?? 0, 1.5)
+    s.borderColor = t.ink
+    if (s.shadowColor === p.red || s.shadowColor === p.yellow) s.shadowColor = "transparent"
+  }
   if (s.borderColor === p.green) s.borderColor = t.mintDeep
+  // Old yellow also meant "score / achievement" on big numbers: those read in ink.
+  if (s.color === p.yellow && (s.fontSize ?? 0) >= 24) s.color = t.ink
   // Old code wrote text on green buttons in the background colour.
   if (s.color === p.bg) s.color = p.onAccent
   if (s.backgroundColor === t.mint && (s.paddingVertical ?? 0) >= 12 && s.alignItems === "center") {
@@ -161,8 +179,8 @@ function tint(c: string, light: boolean): string {
   const k = light ? 1.6 : 1
   const out = (v: string, alpha: number) => `rgba(${v},${Math.min(1, Math.round(alpha * 100) / 100)})`
   if (rgb === OLD_GREEN || rgb === "98,201,154") return out("138,214,162", a * k)
-  if (rgb === OLD_YELLOW) return out(light ? "214,160,20" : OLD_YELLOW, a * k)
-  if (rgb === OLD_RED) return out(light ? "179,55,47" : "240,113,103", a * k)
+  // Old yellow / red tints → a neutral ink (light) or paper (dark) wash.
+  if (rgb === OLD_YELLOW || rgb === OLD_RED) return out(light ? "18,16,20" : "241,236,228", a * (light ? 0.6 : 1))
   if (light && rgb === "255,255,255" && a < 0.6) return out("18,16,20", a * 0.6)
   return c
 }

@@ -221,4 +221,6 @@ Since 2026-11-13 the whole app runs inside one `<PaperScope>` (app/_layout.tsx),
 - Coach tab: outlined icon tools, "Your athletes · N" + COACH poster. The athlete detail, its timeline and the block review follow the theme (no more forced dark).
 - Always dark (`PaperDark`): the class calendar (calTheme) and the media screens: video player, coach feedback recorder, feedback viewer, spray wall photo editor.
 - Tab bar and the minimised workout bar follow the theme on every screen except the class calendar.
+- **No red or yellow anywhere** (2026-11-22, Federico): inside the scope the old `C.red` reads as ink and `C.yellow` as the muted label colour (big yellow numbers as ink). Old red/yellow fills (time's up, fell, stop) become the neutral alert chip `C.alertFill` (#CFC7DA, ink outline, dark text). Homework counts are pink: filled = overdue, outline = pending. Only exception: the spray wall's own hold colours (start / finish).
+- The melt sits behind the headline only; on list screens it is clipped to the header so lists sit on plain paper.
 

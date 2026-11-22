@@ -1532,7 +1532,7 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
           {remaining}<Text style={styles.timedBigUnit}>s</Text>
         </Text>
         <Pressable style={[styles.holdTimerBtn, styles.holdTimerBtnStop, styles.timedStopBtn]} onPress={stopEarly}>
-          <Text style={[styles.holdTimerBtnText, { color: "#fff" }]}>Stop</Text>
+          <Text style={[styles.holdTimerBtnText, { color: C.onAccent }]}>Stop</Text>
         </Pressable>
       </View>
     )

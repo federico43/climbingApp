@@ -488,7 +488,7 @@ function BlockCountdown({ minutes, label }: { minutes: number; label: string }) 
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
   return (
-    <View style={[styles.countdownChip, over && { backgroundColor: C.red, borderColor: C.red }]}>
+    <View style={[styles.countdownChip, over && { backgroundColor: C.alertFill, borderColor: t.ink }]}>
       <Ionicons name="time-outline" size={13} color={over ? t.onMint : t.mintText} />
       <Mono color={over ? t.onMint : t.mintText} size={11}>
         {over ? "Time's up" : `${m}:${String(s).padStart(2, "0")}`}

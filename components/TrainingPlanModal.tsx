@@ -450,7 +450,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
 
           {mode === "edit" && current && (
             <Pressable style={[s.deleteBtn, deleting && { opacity: 0.4 }]} onPress={handleDelete} disabled={saving || deleting}>
-              {deleting ? <ActivityIndicator color="#E0837A" /> : <Text style={s.deleteBtnText}>Delete plan</Text>}
+              {deleting ? <ActivityIndicator color={C.red} /> : <Text style={s.deleteBtnText}>Delete plan</Text>}
             </Pressable>
           )}
         </View>
@@ -479,7 +479,7 @@ const sSheet = paperSheet((C) => StyleSheet.create({
   dateFixed: { backgroundColor: C.surfaceHigh },
   dateText: { fontSize: 14, color: C.textPrimary, fontVariant: ["tabular-nums"] },
   toText: { alignSelf: "center", fontSize: 12, color: C.textMuted },
-  error: { fontSize: 12, color: "#E0837A", marginTop: 6, textAlign: "center" },
+  error: { fontSize: 12, color: C.red, marginTop: 6, textAlign: "center" },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border },
   chipSelected: { backgroundColor: C.green, borderColor: C.green },
@@ -492,5 +492,5 @@ const sSheet = paperSheet((C) => StyleSheet.create({
   submitBtn: { marginTop: 18, backgroundColor: C.green, borderRadius: 16, padding: 16, alignItems: "center" },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
   deleteBtn: { marginTop: 10, padding: 10, alignItems: "center" },
-  deleteBtnText: { fontSize: 13, fontWeight: "600", color: "#E0837A" },
+  deleteBtnText: { fontSize: 13, fontWeight: "600", color: C.red },
 }))

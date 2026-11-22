@@ -15,6 +15,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 
+// Spray wall hold colours (start / finish) are the wall's convention, so they
+// keep their colours in Paper Mint too.
+const FINISH_HOLD = "#FED766"
+
 const HAND_LABEL: Record<StartingHand, string> = { left: "L", right: "R", both: "LR" }
 
 function computeDisplayNums(holds: PlacedHold[]): Map<string, { first: number; second?: number }> {
@@ -242,7 +246,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                 const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                 const badgeBg =
                   hold.type === "start"  ? C.green :
-                  hold.type === "finish" ? C.yellow :
+                  hold.type === "finish" ? FINISH_HOLD :  // the wall's own hold colour, not a UI state
                   hold.type === "foot"   ? "#4FA3E0" :
                   hold.bounce            ? BOUNCE_COLOR :
                   "rgba(0,0,0,0.75)"

@@ -605,7 +605,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   },
   chipOn: { backgroundColor: C.red, borderColor: C.red },
   chipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  chipTextOn: { color: "#fff", fontWeight: "800" },
+  chipTextOn: { color: C.onAccent, fontWeight: "800" },
   promptOverlay: {
     ...StyleSheet.absoluteFillObject, zIndex: 5, backgroundColor: C.bg,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 18,

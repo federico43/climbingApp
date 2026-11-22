@@ -522,7 +522,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   reasonChip: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 22, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
   reasonChipOn: { backgroundColor: C.red, borderColor: C.red },
   reasonChipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  reasonChipTextOn: { color: "#fff", fontWeight: "800" },
+  reasonChipTextOn: { color: C.onAccent, fontWeight: "800" },
   input: { minHeight: 80, backgroundColor: C.surface, borderRadius: 12, padding: 12, color: C.textPrimary, fontSize: 15, textAlignVertical: "top" },
 
   reviewScroll: { flexGrow: 1, padding: 20, alignItems: "center", gap: 12 },

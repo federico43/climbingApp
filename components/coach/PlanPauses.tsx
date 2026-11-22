@@ -222,7 +222,7 @@ const stylesSheet = paperSheet((C) => StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
   chipTextSelected: { color: C.bg },
   summary: { fontSize: 12.5, color: C.textSecondary, textAlign: "center", marginTop: 16 },
-  error: { fontSize: 12, color: "#E0837A", marginTop: 6, textAlign: "center" },
+  error: { fontSize: 12, color: C.red, marginTop: 6, textAlign: "center" },
   submitBtn: { marginTop: 14, backgroundColor: C.green, borderRadius: 16, padding: 16, alignItems: "center" },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
 }))
