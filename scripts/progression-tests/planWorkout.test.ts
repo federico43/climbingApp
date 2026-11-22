@@ -8,7 +8,7 @@ import {
   alternateMainBlock, builtMainBlock, canRotate, hasBuiltMainBlock, mainTypeLabel, scPatternMax, builtMainType, coreFocusFor, localDateStr, mainTypeFor, MAIN_BLOCKS, nextPlanIndex, planEndFor, planIsOver, planWeek, workoutSpec, type BuiltPlanWorkout, type PlanShape,
   mainBlockRun, effectiveFocus, noPowerFocusFor,
 } from "@/utils/planRotation"
-import { buildScBlocks, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
+import { buildScBlocks, inheritFocus, mobilityByRecency, orderPatterns } from "@/utils/scPlanBuilder"
 import { buildPlanWorkout, withUpcomingWorkouts } from "@/utils/planWorkout"
 import { focusesFor } from "@/utils/scProgression"
 import { planFromHistory } from "@/utils/scPrefill"
@@ -524,3 +524,15 @@ assert.deepEqual([1, 3].map((i) => noPowerFocusFor(i, ["explosiveness"])), ["max
 assert.equal(mainTypeLabel("power", "conditioning", ["max_force", "hypertrophy"]), "Max force")
 
 console.log("all plan-workout tests passed")
+
+// ── builder: an added exercise takes the block's shared focus ──
+{
+  const pu: any = { type: "reps", name: "Pull Ups", unit: "reps", movementType: "pull_vertical", reps: "" }
+  assert.deepEqual(inheritFocus(pu, [{ focus: "hypertrophy", movementType: "squat" }, { movementType: "mobility" }]), { ...pu, focus: "hypertrophy", reps: "8-12" })
+  assert.equal(inheritFocus(pu, [{ focus: "hypertrophy" }, { focus: "max_force" }]), pu)   // no shared focus
+  assert.equal(inheritFocus(pu, []), pu)
+  const core: any = { ...pu, movementType: "core" }
+  assert.equal(inheritFocus(core, [{ focus: "explosiveness" }]), core)                        // core has no explosiveness
+  const mob: any = { ...pu, movementType: "mobility" }
+  assert.equal(inheritFocus(mob, [{ focus: "max_force" }]), mob)
+}

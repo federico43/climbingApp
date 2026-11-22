@@ -51,3 +51,14 @@ assert.equal(loggedFocus({ blockIndex: 3, scData: { exerciseId: "pu" } }, protoc
 assert.equal(findLastScSession(sessions, ["kb"], "KB squat")!.finalExerciseId, "kb")
 
 console.log("all sc-history tests passed")
+
+// ── findLastScSession at one focus: a newer session at another focus is skipped ──
+{
+  const s = (id: string, date: string, exId: string, focus: string) => ({
+    $id: id, $createdAt: date, userId: "a", protocol: "[]",
+    attempts: JSON.stringify([{ type: "strength_conditioning", blockIndex: 0, scData: { exerciseId: exId, exerciseName: exId, focus, round: 1, repsCompleted: "8" } }]),
+  })
+  const rows: any[] = [s("2", "2026-10-28T10:00:00Z", "pu", "explosiveness"), s("1", "2026-10-26T10:00:00Z", "neg", "hypertrophy")]
+  assert.equal(findLastScSession(rows, ["neg", "pu"], "x")?.finalExerciseId, "pu")
+  assert.equal(findLastScSession(rows, ["neg", "pu"], "x", "hypertrophy")?.finalExerciseId, "neg")
+}

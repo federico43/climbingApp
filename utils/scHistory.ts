@@ -244,8 +244,9 @@ export interface ScSessionSummary {
   loggedExerciseIds: string[]   // every distinct family member logged, any round
 }
 
-export function findLastScSession(sessions: SessionRow[], candidateIds: string[], exerciseName: string): ScSessionSummary | null {
-  const matches = matchesInMostRecentSession(sessions, candidateIds, exerciseName)
+// `focus`: only sessions whose rounds were done at it.
+export function findLastScSession(sessions: SessionRow[], candidateIds: string[], exerciseName: string, focus?: Focus): ScSessionSummary | null {
+  const matches = matchesInMostRecentSession(sessions, candidateIds, exerciseName, focus)
   if (!matches) return null
   return {
     finalExerciseId: matches[0].scData?.exerciseId,
