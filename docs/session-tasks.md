@@ -12,7 +12,7 @@ Athletes need to spend a few minutes every session on one thing they haven't fig
 2. **Next session, after the warm-up.** When a workout starts, each open task becomes its own block, placed right after the warm-up. It runs as a Project bouldering block: one big Attempt button, then "Sent it?" and why they came off. In tries mode there is a 3-minute rest between tries and the block ends after the last one. In time mode there is no rest countdown (they rest as they like inside the time limit and tap "Next attempt"), and the block ends when the clock runs out.
 3. **Keep or close.** At the end of the block the athlete picks **Keep it** (back next session) or **Close it**. If they sent it, Close is preselected. A task carries over until the athlete closes it.
 4. **Not today.** The task block's intro has "Not today". That skips the block for this session only, and the task stays.
-5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks with ✕ to remove one and "Add a task", which opens a short sheet (text, tries or time limit). There is no separate edit mode.
+5. **Edit any time.** The "Next session" card (summary, Plan page, Home) lists the open tasks. Tapping one opens it in a short sheet (text, tries or time limit) to change it, with "Remove task" at the bottom. "Add a task" opens the same sheet empty. There is no separate edit mode. A changed task keeps its id, so a workout already running it still closes the right one.
 
 ## Rules
 

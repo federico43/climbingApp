@@ -1,10 +1,10 @@
-import { Body, Card, GhostButton, Mono, NavBar, Stepper, TextField, usePaper, usePaperStyles } from "@/components/paper"
+import { Body, Card, GhostButton, Mono, NavBar, Stepper, TextButton, TextField, usePaper, usePaperStyles } from "@/components/paper"
 import { useAuth } from "@/components/auth-context"
 import { useSessionTasks } from "@/contexts/SessionTasksContext"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { localDateStr } from "@/utils/planRotation"
 import {
-  addTask, amountLabel, canAdd, MAX_TASKS, MAX_TEXT, removeTasks, TIME_RANGE, TRIES_RANGE,
+  addTask, amountLabel, canAdd, editTask, MAX_TASKS, MAX_TEXT, removeTasks, TIME_RANGE, TRIES_RANGE,
   type SessionTask, type TaskMode,
 } from "@/utils/sessionTasks"
 import { Ionicons } from "@expo/vector-icons"
@@ -13,52 +13,67 @@ import { BackHandler, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollVi
 import { useSafeAreaInsets, type EdgeInsets } from "react-native-safe-area-context"
 
 // Next-session tasks (docs/session-tasks.md) outside the task blocks:
-//   • NextSessionCard — the open tasks (✕ removes one), on the workout summary and on Plan / Home.
-//   • AddTaskSheet — full screen: one new task (text, tries or time limit).
+//   • NextSessionCard — the open tasks, on the workout summary and on Plan / Home.
+//     Tap one to change or remove it; "Add a task" for a new one.
+//   • TaskSheet — full screen: one task (text, tries or time limit), new or edited.
 //   • TasksCardWithEditor — the card + sheet in a Modal, for Plan / Home.
 // Inside the workout the sheet is an overlay, not a <Modal>: iOS can't stack
 // Modals (utils/popupTurn.ts).
 
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
-function TaskRow({ task, onRemove, first }: { task: SessionTask; onRemove?: () => void; first?: boolean }) {
+function TaskRow({ task, onPress, first }: { task: SessionTask; onPress: () => void; first?: boolean }) {
   const t = usePaper()
   const styles = usePaperStyles(makeStyles)
   return (
-    <View style={[styles.row, !first && styles.rowDivider]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Change ${task.text}`}
+      style={({ pressed }) => [styles.row, !first && styles.rowDivider, pressed && { opacity: 0.6 }]}
+    >
       <Ionicons name={task.mode === "time" ? "time-outline" : "repeat"} size={20} color={t.mintText} />
       <View style={{ flex: 1 }}>
         <Body weight={700} size={16}>{task.text}</Body>
         <Mono color={t.mintText} style={{ marginTop: 3 }}>{amountLabel(task)}</Mono>
       </View>
-      {onRemove && (
-        <Pressable onPress={onRemove} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Remove ${task.text}`}>
-          <Ionicons name="close" size={20} color={t.label} />
-        </Pressable>
-      )}
-    </View>
+      <Ionicons name="create-outline" size={20} color={t.label} />
+    </Pressable>
   )
 }
 
-// The open tasks. ✕ removes one right here; "Add a task" opens the add sheet.
-// No separate edit mode (Federico 2026-11-22: "Edit" mixed too much).
-export function NextSessionCard({ onAdd, style }: { onAdd: () => void; style?: StyleProp<ViewStyle> }) {
-  const { list, update } = useSessionTasks()
+// The open tasks. Tapping one opens it in the sheet (change it or remove it);
+// "Add a task" opens an empty one. No separate edit mode (Federico 2026-11-22:
+// "Edit" mixed too much). `onHelp` opens the intro slides again.
+export function NextSessionCard({ onOpen, onHelp, style }: {
+  onOpen: (task: SessionTask | null) => void
+  onHelp?: () => void
+  style?: StyleProp<ViewStyle>
+}) {
+  const t = usePaper()
+  const styles = usePaperStyles(makeStyles)
+  const { list } = useSessionTasks()
   const full = !canAdd(list)
   return (
     <View style={style}>
-      <Card eyebrow={`Next session · ${list.tasks.length} of ${MAX_TASKS}`}>
+      <Card>
+        <View style={styles.cardHead}>
+          <Mono color={t.label}>Next session · {list.tasks.length} of {MAX_TASKS}</Mono>
+          {onHelp && (
+            <Pressable onPress={onHelp} hitSlop={10} accessibilityRole="button" accessibilityLabel="How next-session tasks work">
+              <Mono color={t.mintText}>How it works</Mono>
+            </Pressable>
+          )}
+        </View>
         {list.tasks.length === 0 ? (
           <Body muted size={14}>Your project, or a movement you haven&apos;t figured out. It comes right after the warm-up.</Body>
         ) : (
-          list.tasks.map((task, i) => (
-            <TaskRow key={task.id} task={task} first={i === 0} onRemove={() => update((l) => removeTasks(l, [task.id], Date.now()))} />
-          ))
+          list.tasks.map((task, i) => <TaskRow key={task.id} task={task} first={i === 0} onPress={() => onOpen(task)} />)
         )}
         {full ? (
-          <Body muted size={13} style={{ marginTop: 8 }}>Remove one to add another.</Body>
+          <Body muted size={13} style={{ marginTop: 8 }}>Tap a task to change or remove it.</Body>
         ) : (
-          <GhostButton label="Add a task" icon="add" onPress={onAdd} style={{ marginTop: 14 }} />
+          <GhostButton label="Add a task" icon="add" onPress={() => onOpen(null)} style={{ marginTop: 14 }} />
         )}
       </Card>
     </View>
@@ -70,14 +85,15 @@ const MODES: { mode: TaskMode; label: string; start: number }[] = [
   { mode: "time", label: "Time limit", start: TIME_RANGE.start },
 ]
 
-// One task: what, then tries or a time limit. Cancel / Add in the nav bar.
-export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets: EdgeInsets }) {
+// One task: what, then tries or a time limit. `task` = change that one (same
+// id, so a block already running it still matches), null = a new one.
+export function TaskSheet({ task, onClose, insets }: { task: SessionTask | null; onClose: () => void; insets: EdgeInsets }) {
   const t = usePaper()
   const styles = usePaperStyles(makeStyles)
   const { list, update } = useSessionTasks()
-  const [text, setText] = useState("")
-  const [mode, setMode] = useState<TaskMode>("tries")
-  const [amount, setAmount] = useState(TRIES_RANGE.start)
+  const [text, setText] = useState(task?.text ?? "")
+  const [mode, setMode] = useState<TaskMode>(task?.mode ?? "tries")
+  const [amount, setAmount] = useState(task?.amount ?? TRIES_RANGE.start)
 
   // Android back closes the sheet, not the screen under it.
   const closeRef = useRef(onClose)
@@ -87,17 +103,37 @@ export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets:
     return () => sub.remove()
   }, [])
 
-  const ready = text.trim().length > 0 && canAdd(list)
-  function add() {
+  const ready = text.trim().length > 0 && (task ? true : canAdd(list))
+  function save() {
     if (!ready) return
-    update((l) => addTask(l, { text, mode, amount }, newId(), localDateStr(new Date()), Date.now()))
+    const now = Date.now()
+    update((l) => (task
+      ? editTask(l, task.id, { text, mode, amount }, now)
+      : addTask(l, { text, mode, amount }, newId(), localDateStr(new Date()), now)))
     onClose()
+  }
+  function remove() {
+    if (!task) return
+    update((l) => removeTasks(l, [task.id], Date.now()))
+    onClose()
+  }
+  function pickMode(m: (typeof MODES)[number]) {
+    if (m.mode === mode) return
+    setMode(m.mode)
+    // Back to the task's own mode → its own amount.
+    setAmount(task?.mode === m.mode ? task.amount : m.start)
   }
 
   const range = mode === "time" ? TIME_RANGE : TRIES_RANGE
   return (
     <View style={[styles.editor, { paddingTop: insets.top }]}>
-      <NavBar title="New task" onCancel={onClose} onSave={add} saveLabel="Add" saveDisabled={!ready} />
+      <NavBar
+        title={task ? "Edit task" : "New task"}
+        onCancel={onClose}
+        onSave={save}
+        saveLabel={task ? "Save" : "Add"}
+        saveDisabled={!ready}
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
           contentContainerStyle={[styles.editorScroll, { paddingBottom: insets.bottom + 40 }]}
@@ -109,9 +145,9 @@ export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets:
             onChangeText={setText}
             placeholder="The crux of the blue project"
             maxLength={MAX_TEXT}
-            autoFocus
+            autoFocus={!task}
             returnKeyType="done"
-            onSubmitEditing={add}
+            onSubmitEditing={save}
           />
           <Mono style={{ marginTop: 20, marginBottom: 8 }}>How much</Mono>
           <View style={styles.modes}>
@@ -120,7 +156,7 @@ export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets:
               return (
                 <Pressable
                   key={m.mode}
-                  onPress={() => { setMode(m.mode); setAmount(m.start) }}
+                  onPress={() => pickMode(m)}
                   style={[styles.mode, on && styles.modeOn]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: on }}
@@ -139,6 +175,11 @@ export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets:
             format={(v) => amountLabel({ mode, amount: v })}
             style={{ marginTop: 12 }}
           />
+          {task && (
+            <View style={{ alignItems: "center", marginTop: 36 }}>
+              <TextButton label="Remove task" onPress={remove} />
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -149,13 +190,14 @@ export function AddTaskSheet({ onClose, insets }: { onClose: () => void; insets:
 export function TasksCardWithEditor({ style }: { style?: StyleProp<ViewStyle> }) {
   const { role } = useAuth()
   const insets = useSafeAreaInsets()
-  const [open, setOpen] = useState(false)
+  // The sheet: which task (null = a new one), or closed.
+  const [sheet, setSheet] = useState<{ task: SessionTask | null } | null>(null)
   if (role === "coach") return null
   return (
     <>
-      <NextSessionCard onAdd={() => setOpen(true)} style={style} />
-      <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        {open && <AddTaskSheet onClose={() => setOpen(false)} insets={insets} />}
+      <NextSessionCard onOpen={(task) => setSheet({ task })} style={style} />
+      <Modal visible={!!sheet} animationType="slide" onRequestClose={() => setSheet(null)}>
+        {sheet && <TaskSheet task={sheet.task} onClose={() => setSheet(null)} insets={insets} />}
       </Modal>
     </>
   )
@@ -163,6 +205,7 @@ export function TasksCardWithEditor({ style }: { style?: StyleProp<ViewStyle> })
 
 function makeStyles(t: PaperTheme) {
   return StyleSheet.create({
+    cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
     row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
     rowDivider: { borderTopWidth: 1, borderTopColor: t.hairline },
     editor: {

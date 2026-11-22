@@ -106,6 +106,26 @@ export function addTask(
   }
 }
 
+// Changes a task in place (same id, so a block already running it still
+// matches). Unchanged list when the id is gone, the text is empty, or nothing
+// changed.
+export function editTask(
+  list: SessionTaskList,
+  id: string,
+  task: { text: string; mode: TaskMode; amount: number },
+  now: number,
+): SessionTaskList {
+  const text = task.text.trim().slice(0, MAX_TEXT)
+  const old = list.tasks.find((t) => t.id === id)
+  if (!old || !text) return list
+  const amount = clampAmount(task.mode, task.amount)
+  if (old.text === text && old.mode === task.mode && old.amount === amount) return list
+  return {
+    tasks: list.tasks.map((t) => (t.id === id ? { ...t, text, mode: task.mode, amount } : t)),
+    updatedAt: now,
+  }
+}
+
 export function removeTasks(list: SessionTaskList, ids: Iterable<string>, now: number): SessionTaskList {
   const drop = new Set(ids)
   if (!list.tasks.some((t) => drop.has(t.id))) return list

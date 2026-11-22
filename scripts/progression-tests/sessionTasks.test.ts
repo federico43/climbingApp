@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict"
 import {
-  addTask, amountLabel, COLUMN_SIZE, canAdd, closedTaskIds, EMPTY_TASKS, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
+  addTask, amountLabel, COLUMN_SIZE, canAdd, closedTaskIds, editTask, EMPTY_TASKS, isTaskBlock, MAX_TEXT, newerList, parseSessionTasks,
   removeTasks, serializeSessionTasks, taskBlock, taskInsertIndex, tasksAllowedFor, triesLeft, withTaskBlocks,
   type SessionTaskList,
 } from "@/utils/sessionTasks"
@@ -26,6 +26,15 @@ assert.equal(addTask(EMPTY_TASKS, { text: "t", mode: "time", amount: 1 }, "c", d
 // remove
 assert.deepEqual(removeTasks(two, ["a"], 9).tasks.map((t) => t.id), ["b"])
 assert.equal(removeTasks(two, ["zzz"], 9), two)
+
+// edit: same id and place, trimmed and clamped, no-ops kept as the same list
+const edited = editTask(two, "a", { text: " Blue crux, left hand ", mode: "time", amount: 99 }, 10)
+assert.deepEqual(edited.tasks.map((t) => [t.id, t.text, t.mode, t.amount]), [["a", "Blue crux, left hand", "time", 60], ["b", "Drop knee", "time", 10]])
+assert.equal(edited.tasks[0].added, day)
+assert.equal(edited.updatedAt, 10)
+assert.equal(editTask(two, "a", { text: "Blue crux", mode: "tries", amount: 5 }, 10), two)
+assert.equal(editTask(two, "a", { text: "  ", mode: "tries", amount: 5 }, 10), two)
+assert.equal(editTask(two, "zzz", { text: "x", mode: "tries", amount: 5 }, 10), two)
 
 // labels
 assert.equal(amountLabel({ mode: "tries", amount: 1 }), "1 try")
