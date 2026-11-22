@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { MAX_LEVEL, MIN_LEVEL, ROUTE_TYPES, ROUTE_TYPE_LABEL } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
@@ -55,6 +55,9 @@ interface Props {
 }
 
 export function RouteFilterBar({ filters, onChange, walls }: Props) {
+  // Follows the screen's theme (Paper light / dark, or the old dark look).
+  const C = useC()
+  const styles = useSheet(sheet)
   // The type/level chips can scroll out of view, so a selected chip (e.g. a
   // level near the end of the row) can end up with no visible trace that a
   // filter is even on. This summary stays put under the search box and
@@ -165,7 +168,7 @@ export function RouteFilterBar({ filters, onChange, walls }: Props) {
   )
 }
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   wrap: { gap: 8 },
   searchRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -187,6 +190,6 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: C.green, borderColor: C.green },
   chipText: { fontSize: 12, fontWeight: "600", color: C.textSecondary },
-  chipTextActive: { color: C.bg },
+  chipTextActive: { color: C.onAccent },
   chipDivider: { width: 1, height: 18, backgroundColor: C.border, marginHorizontal: 2 },
-})
+}))
