@@ -24,6 +24,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { isSprayBlock } from "@/utils/sprayBlocks"
 import { reviewLogLine, type ScReviewLog } from "@/utils/scReview"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -94,7 +95,7 @@ function parseSession(session: SessionRow): {
   let attempts: any[] = []
   let durations: Record<number, number> = {}
   try { protocol = JSON.parse(session.protocol) } catch {}
-  try { attempts = JSON.parse(session.attempts) } catch {}
+  try { attempts = withoutRedoneRounds(JSON.parse(session.attempts)) } catch {}
   try { if (session.blockDurations) durations = JSON.parse(session.blockDurations) } catch {}
 
   const firstTs = attempts[0]?.timestamp

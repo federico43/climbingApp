@@ -1,5 +1,6 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
 import { convertWeight, type Focus, type WeightUnit, type WorkingSet } from "@/utils/scProgression"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // "easier": the app offered it after the athlete missed the minimum with
 // nothing left to lower (RoundDrop.pickEasier) — the coach is told to add
@@ -68,6 +69,8 @@ function* sessionsWithMatches(sessions: SessionRow[], candidateIds: string[], ex
     let attempts: any[] = []
     let protocol: any[] = []
     try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
+    if (!Array.isArray(attempts)) continue
+    attempts = withoutRedoneRounds(attempts)
     try { protocol = JSON.parse(s.protocol || "[]") } catch { protocol = [] }
     if (!Array.isArray(protocol)) protocol = []
     const matches = attempts.filter(
@@ -107,6 +110,17 @@ export interface ScSessionEntry {
   exerciseName?: string      // what was actually done (a level's name)
   effort?: string            // the last round's Easy / Solid / Max, if logged
   summary: ScSetsSummary
+  // Every round of the session on this family, oldest first — the summary
+  // only judges the ones at the final load (coach's Progression card).
+  rounds: LoggedRound[]
+}
+
+export interface LoggedRound {
+  exerciseName?: string
+  weight?: number
+  amount?: number
+  effort?: string
+  hardest?: boolean
 }
 
 export function findScSessions(
@@ -128,6 +142,16 @@ export function findScSessions(
       exerciseName: final.scData?.exerciseName,
       effort: final.scData?.effort,
       summary,
+      rounds: [...matches].reverse().map((m) => {
+        const r = readRound(m.scData, opts.unit)
+        return {
+          exerciseName: m.scData?.exerciseName,
+          ...(r.weight != null ? { weight: r.weight } : {}),
+          ...(r.amount != null ? { amount: r.amount } : {}),
+          ...(m.scData?.effort ? { effort: m.scData.effort } : {}),
+          ...(r.hardest ? { hardest: true } : {}),
+        }
+      }),
     })
     if (opts.limit && out.length >= opts.limit) break
   }
@@ -244,8 +268,9 @@ export interface ScSessionSummary {
   loggedExerciseIds: string[]   // every distinct family member logged, any round
 }
 
-export function findLastScSession(sessions: SessionRow[], candidateIds: string[], exerciseName: string): ScSessionSummary | null {
-  const matches = matchesInMostRecentSession(sessions, candidateIds, exerciseName)
+// `focus`: only sessions whose rounds were done at it.
+export function findLastScSession(sessions: SessionRow[], candidateIds: string[], exerciseName: string, focus?: Focus): ScSessionSummary | null {
+  const matches = matchesInMostRecentSession(sessions, candidateIds, exerciseName, focus)
   if (!matches) return null
   return {
     finalExerciseId: matches[0].scData?.exerciseId,

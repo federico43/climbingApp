@@ -14,6 +14,7 @@ import { attemptGrades } from "@/utils/progression/fourByFour"
 import { intervalsLog } from "@/utils/progression/intervals"
 import { normalizeProjectBlock } from "@/utils/progression/projectBouldering"
 import { loggedFocus, readRound, setsAtFinalLoad } from "@/utils/scHistory"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // Reads the coach Stats card's numbers out of an athlete's history
 // (docs/athlete-stats.md §3–5). Pure: the dashboard loads the rows, this
@@ -72,7 +73,7 @@ export function parseSessions(sessions: SessionRow[]): ParsedSession[] {
     try { protocol = JSON.parse(s.protocol || "[]") } catch { continue }
     try { attempts = JSON.parse(s.attempts || "[]") } catch { continue }
     if (!Array.isArray(protocol) || !Array.isArray(attempts)) continue
-    out.push({ id: s.$id, date: sessionLocalDate(s), protocol, attempts: attempts as Attempt[] })
+    out.push({ id: s.$id, date: sessionLocalDate(s), protocol, attempts: withoutRedoneRounds(attempts as Attempt[]) })
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }
