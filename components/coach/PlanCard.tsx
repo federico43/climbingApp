@@ -1,5 +1,6 @@
-import { PaperDark, paperSheet, useC, usePaperScope, useSheet, type Palette } from "@/theme/paper/legacy"
+import { PaperScope, paperSheet, useC, usePaperScope, useSheet, type Palette } from "@/theme/paper/legacy"
 import { font, type PaperTheme } from "@/theme/paper/tokens"
+import { PaperThemeOverride } from "@/components/paper"
 import { AthleteWorkoutBuilder } from "@/components/AthleteWorkoutBuilder"
 import { TrainingPlanModal } from "@/components/TrainingPlanModal"
 import { ExtraSessionRow } from "@/components/coach/ExtraSessionRow"
@@ -462,12 +463,14 @@ export function PlanCard({
     return (
       <>
         {/* The ink card: dark theme inside, whatever the app's mode. */}
-        <PaperDark>
+        {/* Inverted card: ink on light paper, light on dark (Federico 2026-11-23). */}
+        <PaperThemeOverride mode={P.mode === "dark" ? "light" : "dark"}>
+         <PaperScope>
           <Themed>
             {(t) => (
               <View style={[t.card.card, t.styles.inkCard]}>
                 <View style={t.card.headerRow}>
-                  <Text style={[t.card.title, { color: t.P?.mint }]}>Training plan</Text>
+                  <Text style={[t.card.title, { color: t.P?.mintText }]}>Training plan</Text>
                   {editLink(t)}
                 </View>
                 {planInfo(t)}
@@ -476,7 +479,8 @@ export function PlanCard({
               </View>
             )}
           </Themed>
-        </PaperDark>
+         </PaperScope>
+        </PaperThemeOverride>
 
         {showNext && nextSpec && (
           <View style={[card.card, styles.nextCard]}>
@@ -610,7 +614,11 @@ function ExerciseChips({ names }: { names: string[] }) {
 
 const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   // Paper: the ink plan card (dark scope inside) and the outlined next workout.
-  inkCard: { backgroundColor: P?.mode === "dark" ? "#121014" : C.surface, borderColor: "rgba(255,255,255,0.08)" },
+  // The plan card is drawn in the opposite scope: ink on light paper, a
+  // light card on dark.
+  inkCard: P?.mode === "dark"
+    ? { backgroundColor: "#121014", borderColor: "rgba(255,255,255,0.08)" }
+    : { backgroundColor: "#F6F3ED", borderColor: "rgba(18,16,20,0.12)" },
   nextCard: P ? { borderWidth: 2, borderColor: P.ink, backgroundColor: P.mode === "light" ? "#FBF9F5" : P.card } : {},
   planEyebrow: { fontSize: 11, fontWeight: "600", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 1.2 },
   editLink: P ? { fontSize: 13, fontWeight: "800", color: P.ink, textDecorationLine: "underline" } : { fontSize: 13, fontWeight: "700", color: C.green },
