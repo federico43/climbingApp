@@ -401,7 +401,7 @@ function PlanBody({
         <SectionHeader>Your training plan</SectionHeader>
       </RailAnchor>
       <View style={{ gap: 12 }}>
-        <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+        <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} squares />
 
         {!notStarted && (
           <BlockProgressCard plan={plan} workouts={workouts} sessions={sessions} library={exercises} edgeLiftMaxLog={edgeLiftMaxLog} />
