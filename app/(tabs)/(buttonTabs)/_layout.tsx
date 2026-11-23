@@ -2,11 +2,13 @@ import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
 import { ClassNotificationRouter } from "@/components/schedule/ClassNotificationRouter"
 import { PackageLock } from "@/components/schedule/PackageLock"
+import { SessionTasksIntro } from "@/components/SessionTasksIntro"
 import { WorkOutState } from "@/components/workOutState"
 import { PaperScope } from "@/theme/paper/legacy"
 import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
+import { SessionTasksProvider } from "@/contexts/SessionTasksContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
 import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
@@ -51,94 +53,98 @@ function TabsWithPlan() {
   const hideBar = hasPlan && role !== "coach"
 
   return (
-    <WorkoutProvider>
-      <Tabs
-        tabBar={(props) => <CustomTabBar tabBarProps={props} hideBar={hideBar} />}
-        // Hidden screens (Settings, Videos, …) are pushed like a stack, so
-        // back should return to where they were opened from, not to Home.
-        backBehavior="history"
-        screenOptions={{
-          headerShown: false,
-          sceneStyle: { backgroundColor: C.bg },
-          tabBarStyle: {
-            backgroundColor: C.bg,
-            borderTopColor: C.border,
-            borderTopWidth: 1,
-            height: 60 + insets.bottom,
-            paddingBottom: insets.bottom,
-            paddingTop: 8,
-          },
-          tabBarActiveTintColor: C.green,
-          tabBarInactiveTintColor: "#4F5C56",
-        }}
-      >
-        {/* ── Visible tabs ───────────────────────────────────────────── */}
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: "Home",
-            href: hasPlan ? null : undefined,
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-            ),
+    <SessionTasksProvider>
+      <WorkoutProvider>
+        <Tabs
+          tabBar={(props) => <CustomTabBar tabBarProps={props} hideBar={hideBar} />}
+          // Hidden screens (Settings, Videos, …) are pushed like a stack, so
+          // back should return to where they were opened from, not to Home.
+          backBehavior="history"
+          screenOptions={{
+            headerShown: false,
+            sceneStyle: { backgroundColor: C.bg },
+            tabBarStyle: {
+              backgroundColor: C.bg,
+              borderTopColor: C.border,
+              borderTopWidth: 1,
+              height: 60 + insets.bottom,
+              paddingBottom: insets.bottom,
+              paddingTop: 8,
+            },
+            tabBarActiveTintColor: C.green,
+            tabBarInactiveTintColor: "#4F5C56",
           }}
-        />
-        <Tabs.Screen
-          name="plan"
-          options={{
-            title: "Plan",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "calendar" : "calendar-outline"} size={22} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="classes"
-          options={{
-            title: "Classes",
-            href: role === "coach" ? undefined : null,
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="design"
-          options={{
-            title: "Design",
-            href: role === "coach" ? undefined : null,
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "create" : "create-outline"} size={22} color={color} />
-            ),
-          }}
-        />
+        >
+          {/* ── Visible tabs ───────────────────────────────────────────── */}
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: "Home",
+              href: hasPlan ? null : undefined,
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="plan"
+            options={{
+              title: "Plan",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons name={focused ? "calendar" : "calendar-outline"} size={22} color={color} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="classes"
+            options={{
+              title: "Classes",
+              href: role === "coach" ? undefined : null,
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="design"
+            options={{
+              title: "Design",
+              href: role === "coach" ? undefined : null,
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons name={focused ? "create" : "create-outline"} size={22} color={color} />
+              ),
+            }}
+          />
 
-        {/* ── Hidden screens (pushed via router.push) ────────────────── */}
-        {/* Settings opens from the gear top-right (SettingsButton); Videos from Settings. */}
-        <Tabs.Screen name="settings" options={{ href: null }} />
-        <Tabs.Screen name="library" options={{ href: null }} />
-        <Tabs.Screen name="my-workouts" options={{ href: null }} />
-        <Tabs.Screen name="my-sequences" options={{ href: null }} />
-        <Tabs.Screen name="past-workouts" options={{ href: null }} />
-        <Tabs.Screen name="exerciseProgress" options={{ href: null }} />
-        <Tabs.Screen name="exercises" options={{ href: null }} />
-        <Tabs.Screen name="sprayWall" options={{ href: null }} />
-        <Tabs.Screen name="sprayWallBuilder" options={{ href: null }} />
-        <Tabs.Screen name="past-projects" options={{ href: null }} />
-        <Tabs.Screen name="workout-log" options={{ href: null }} />
-        <Tabs.Screen name="workout-library" options={{ href: null }} />
-        <Tabs.Screen name="schedule" options={{ href: null }} />
-        <Tabs.Screen name="push-log" options={{ href: null }} />
-      </Tabs>
+          {/* ── Hidden screens (pushed via router.push) ────────────────── */}
+          {/* Settings opens from the gear top-right (SettingsButton); Videos from Settings. */}
+          <Tabs.Screen name="settings" options={{ href: null }} />
+          <Tabs.Screen name="library" options={{ href: null }} />
+          <Tabs.Screen name="my-workouts" options={{ href: null }} />
+          <Tabs.Screen name="my-sequences" options={{ href: null }} />
+          <Tabs.Screen name="past-workouts" options={{ href: null }} />
+          <Tabs.Screen name="exerciseProgress" options={{ href: null }} />
+          <Tabs.Screen name="exercises" options={{ href: null }} />
+          <Tabs.Screen name="sprayWall" options={{ href: null }} />
+          <Tabs.Screen name="sprayWallBuilder" options={{ href: null }} />
+          <Tabs.Screen name="past-projects" options={{ href: null }} />
+          <Tabs.Screen name="workout-log" options={{ href: null }} />
+          <Tabs.Screen name="workout-library" options={{ href: null }} />
+          <Tabs.Screen name="schedule" options={{ href: null }} />
+          <Tabs.Screen name="push-log" options={{ href: null }} />
+        </Tabs>
 
-      {/* Workout modal lives at the layout level so it overlays everything */}
-      <WorkoutModalHost />
-      {/* Tapped homework notifications → the homework card on home */}
-      <HomeworkNotificationRouter hasPlan={hasPlan} />
-      {/* Class pushes: reload the calendar, and open it when tapped */}
-      <ClassNotificationRouter role={role} />
-      <PackageLock />
-    </WorkoutProvider>
+        {/* Workout modal lives at the layout level so it overlays everything */}
+        <WorkoutModalHost />
+        {/* Next-session tasks intro: one instance for Plan, Home and the summary */}
+        <SessionTasksIntro />
+        {/* Tapped homework notifications → the homework card on home */}
+        <HomeworkNotificationRouter hasPlan={hasPlan} />
+        {/* Class pushes: reload the calendar, and open it when tapped */}
+        <ClassNotificationRouter role={role} />
+        <PackageLock />
+      </WorkoutProvider>
+    </SessionTasksProvider>
   )
 }
 

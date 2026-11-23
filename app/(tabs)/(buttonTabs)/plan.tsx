@@ -1,4 +1,6 @@
 import { ConsumeAuth } from "@/components/auth-context"
+import { tasksAllowedFor } from "@/utils/sessionTasks"
+import { TasksCardWithEditor } from "@/components/SessionTasks"
 import {
   Body, Card, CardTitle, IconButton, Melt, MintButton, Mono, PaperScreen, PosterHeadline, ProgressBar,
   RailAnchor, SectionHeader, SpecsRow, usePaper, usePaperStyles,
@@ -234,7 +236,7 @@ export default function PlanScreen() {
             exercises={exercises}
             edgeLiftMaxLog={edgeLiftMaxLog}
             defaultClasses={defaultClasses}
-            onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
+            onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w), { tasks: tasksAllowedFor(w) })}
             onChanged={load}
           />
         )}
@@ -390,6 +392,7 @@ function PlanBody({
             <LatestWorkoutCard workout={latest} scPart={scPart} />
           </RailAnchor>
         )}
+        <TasksCardWithEditor />
         <ThisWeekCard />
         <CardioSection />
         {plan.hasSc && <ConditioningBasicsCard />}

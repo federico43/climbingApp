@@ -24,6 +24,9 @@ import { router } from "expo-router"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { isTaskBlock, isTaskIntroBlock, isTaskSlot, type SessionTask } from "@/utils/sessionTasks"
+import { NextSessionCard, TaskSheet } from "./SessionTasks"
+import { openTasksIntro } from "./SessionTasksIntro"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -135,6 +138,15 @@ export function WorkOutState({
 
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
+  const taskBlock = isTaskSlot(currentBlock)
+
+  // Next-session tasks (docs/session-tasks.md): set on the summary. Opening
+  // the task sheet, or scrolling the summary, stops it from closing itself.
+  const [sheet, setSheet] = useState<{ task: SessionTask | null } | null>(null)
+  const [holdSummary, setHoldSummary] = useState(false)
+  useEffect(() => {
+    if (status !== "completed") { setSheet(null); setHoldSummary(false) }
+  }, [status])
   const [workoutElapsed, setWorkoutElapsed] = useState(0)
 
   // Time-constraint countdown arms when the block signals it started (Start
@@ -162,7 +174,7 @@ export function WorkOutState({
   const closeSummaryRef = useRef(() => {})
   closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
   useEffect(() => {
-    if (status !== "completed") return
+    if (status !== "completed" || holdSummary) return
     setAutoCloseIn(AUTO_CLOSE_SECS)
     const end = Date.now() + AUTO_CLOSE_SECS * 1000
     const id = setInterval(() => {
@@ -174,7 +186,7 @@ export function WorkOutState({
       }
     }, 250)
     return () => clearInterval(id)
-  }, [status])
+  }, [status, holdSummary])
 
   function handleStartWorkout() {
     onWorkoutStart()
@@ -195,7 +207,8 @@ export function WorkOutState({
       <Pressable style={styles.menuBackdrop} onPress={() => setBlockMenu(false)}>
         <Pressable style={[styles.menuSheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
           <Mono style={styles.menuTitle}>{currentBlock?.blockName || "This block"}</Mono>
-          <Pressable
+          {/* A task can't be left as homework: "Not today" keeps it for next session. */}
+          {!taskBlock && <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
             onPress={() => { setBlockMenu(false); leaveAsHomework() }}
           >
@@ -206,7 +219,7 @@ export function WorkOutState({
               <Body weight={800} size={16}>Leave as homework</Body>
               <Body muted size={13} style={{ marginTop: 2 }}>Finish it another day</Body>
             </View>
-          </Pressable>
+          </Pressable>}
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
             onPress={() => { setBlockMenu(false); skipBlock() }}
@@ -215,8 +228,12 @@ export function WorkOutState({
               <Ionicons name="play-skip-forward" size={18} color={C.red} />
             </View>
             <View style={{ flex: 1 }}>
-              <Body weight={800} size={16} style={{ color: C.red }}>Skip block</Body>
-              <Body muted size={13} style={{ marginTop: 2 }}>{"It won't be saved"}</Body>
+              <Body weight={800} size={16} style={{ color: C.red }}>{taskBlock ? "Not today" : "Skip block"}</Body>
+              <Body muted size={13} style={{ marginTop: 2 }}>
+                {isTaskIntroBlock(currentBlock)
+                  ? "You can set a task at the end of the workout"
+                  : taskBlock ? "The task stays for next session" : "It won't be saved"}
+              </Body>
             </View>
           </Pressable>
           <GhostButton label="Cancel" onPress={() => setBlockMenu(false)} style={{ marginTop: 6 }} />
@@ -272,7 +289,12 @@ export function WorkOutState({
           <IconButton icon="close" label="Close summary" size={36} onPress={() => closeSummaryRef.current()} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.summaryScroll}
+          showsVerticalScrollIndicator={false}
+          // Reading the summary: don't close it under the athlete's finger.
+          onScrollBeginDrag={() => setHoldSummary(true)}
+        >
           {/* Melt kept short and soft, behind the headline only, so the
               mint "Back to home" button sits on plain paper and stands out. */}
           <View pointerEvents="none" style={styles.summaryMelt}>
@@ -293,6 +315,13 @@ export function WorkOutState({
               <Mono>Block{doneCount !== 1 ? "s" : ""} done</Mono>
             </View>
           </Card>
+
+          {/* Above the blocks, so it's on screen before the summary closes itself. */}
+          <NextSessionCard
+            onOpen={(task) => { setHoldSummary(true); setSheet({ task }) }}
+            onHelp={() => { setHoldSummary(true); openTasksIntro() }}
+            style={{ marginTop: 24 }}
+          />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>
@@ -332,6 +361,11 @@ export function WorkOutState({
                   {!!projectAttempts?.length && (
                     <View style={styles.summaryProject}>
                       <ProjectSummaryCard attempts={projectAttempts} compact />
+                      {isTaskBlock(block) && (
+                        <Mono color={t.mintText} style={{ marginTop: 6 }}>
+                          {block.focusTask.closed ? "Task closed" : "Task stays for next session"}
+                        </Mono>
+                      )}
                     </View>
                   )}
                 </View>
@@ -357,9 +391,10 @@ export function WorkOutState({
           <Mono style={styles.summaryAutoClose}>
             {sync.pending > 0 && sync.offline
               ? "No connection — saved on this phone, it uploads once you're back online"
-              : "Workout saved"} · closing in {autoCloseIn}s
+              : "Workout saved"}{holdSummary ? "" : ` · closing in ${autoCloseIn}s`}
           </Mono>
         </ScrollView>
+        {sheet && <TaskSheet task={sheet.task} onClose={() => setSheet(null)} insets={insets} />}
       </SafeAreaView>
     )
   }
@@ -407,7 +442,7 @@ export function WorkOutState({
       </View>
       {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
       <View style={styles.blockSwitches}>
-        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && (
+        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && !taskBlock && (
           <Pressable
             style={[styles.coachSwitch, coached && styles.coachSwitchOn]}
             onPress={() => onSetCoached(currentBlockIndex, !coached)}
