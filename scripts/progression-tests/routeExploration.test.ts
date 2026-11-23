@@ -151,3 +151,22 @@ assert.equal(formatPoints(7), "7")
 }
 
 console.log("routeExploration points ok")
+
+// ── old library copies get today's notes and minutes (2026-11-22) ──
+{
+  const { withExplorationDefaults, EXPLORATION_PART_MIN } = await import("@/utils/routeExploration")
+  const oldNotes = [
+    "Warm up first with *4 orange routes* before you start.",
+    "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+    "*3 goes max* per route. Sent or not, move on to the next one.",
+    "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+    "Tried every {colour} and there's still time left? Go on to part 2.",
+  ].join("\n")
+  const fixed = withExplorationDefaults<{ type: string; description: string; timeLimit?: number; projectTime?: number }>({ type: "route_exploration", description: oldNotes, timeLimit: 25 })
+  assert.equal(fixed.description, EXPLORATION_DEFAULT_DESCRIPTION)
+  assert.equal(fixed.projectTime, EXPLORATION_PART_MIN)
+  assert.equal(withExplorationDefaults({ description: "" }).description, EXPLORATION_DEFAULT_DESCRIPTION)
+  const own = "Five boulders at el Muro."
+  assert.equal(withExplorationDefaults({ description: own, timeLimit: 20, projectTime: 30 }).description, own)
+  assert.equal(withExplorationDefaults({ description: own, timeLimit: 20, projectTime: 30 }).projectTime, 30)
+}

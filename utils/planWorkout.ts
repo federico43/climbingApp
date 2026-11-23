@@ -2,7 +2,7 @@ import type { Block } from "@/components/workoutBlocks"
 import type { BlockRow, ExerciseRow, SessionRow } from "@/services/BoulderGraphService"
 import { suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage, type WarmupPick } from "@/utils/progression/constraintWarmup"
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
-import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, explorationStartColour } from "@/utils/routeExploration"
+import { EXPLORATION_DEFAULT_DESCRIPTION, explorationStartColour, withExplorationDefaults } from "@/utils/routeExploration"
 import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 import { benchmarkBlockDraft, benchmarkComparison } from "@/utils/benchmark"
@@ -66,9 +66,7 @@ export function explorationDraft(library: BlockRow[], flash: string | null | und
     ? cloneLibraryBlock(row) as any
     : { type: "route_exploration", blockName: EXPLORATION_BLOCK.name, description: EXPLORATION_DEFAULT_DESCRIPTION }
   return {
-    ...base,
-    timeLimit: base.timeLimit || EXPLORATION_PART_MIN,
-    projectTime: base.projectTime || EXPLORATION_PART_MIN,
+    ...withExplorationDefaults(base),
     startColour: explorationStartColour(flash),
   } as PlanBlockDraft
 }

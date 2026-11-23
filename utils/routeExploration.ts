@@ -60,6 +60,19 @@ export function explorationDescription(saved: string | null | undefined): string
   return d
 }
 
+// A route exploration copied from the library (or any saved copy) brought
+// up to today's version: old default notes become the current ones and
+// missing minutes get the defaults. Notes the coach wrote stay as they are.
+// So a new exploration always matches the one the plan builds.
+export function withExplorationDefaults<T extends { description?: string; timeLimit?: number; projectTime?: number }>(b: T): T {
+  return {
+    ...b,
+    description: explorationDescription(b.description),
+    timeLimit: b.timeLimit || EXPLORATION_PART_MIN,
+    projectTime: b.projectTime || EXPLORATION_PART_MIN,
+  }
+}
+
 export const EXPLORATION_PROJECT_NOTES = [
   "Part 2 · Project: go back to the routes that didn't go.",
   "Rest more between goes and work the moves you couldn't do.",

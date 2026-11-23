@@ -55,7 +55,7 @@ import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, type ChainMember } from "@/utils/levelChain"
 import { exerciseDraftFromLibrary, inheritFocus } from "@/utils/scPlanBuilder"
 import { findBlockRuns } from "@/utils/blockHistory"
-import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN } from "@/utils/routeExploration"
+import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, withExplorationDefaults } from "@/utils/routeExploration"
 import { routesVisibleTo, suggestNextSequence, type SequenceSuggestion } from "@/utils/progression/sequence"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -302,7 +302,10 @@ export function injectLocalIds(blocks: any[]): Block[] {
 
 export function blockFromLibraryRow(row: BlockRow): Block {
   const data = JSON.parse(row.data)
-  return { ...data, id: generateId(), blockName: row.name, libraryBlockId: row.$id }
+  const block = { ...data, id: generateId(), blockName: row.name, libraryBlockId: row.$id }
+  // An old library copy of the route exploration gets today's notes and
+  // minutes, so it matches the one the plan builds.
+  return block.type === "route_exploration" ? withExplorationDefaults(block) : block
 }
 
 // A block's data as it should be stored on a library row: no local id, and no
