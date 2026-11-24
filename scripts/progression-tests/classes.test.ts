@@ -87,6 +87,7 @@ const users = [
   { $id: "ana", role: "athlete", username: "ana", defaultClasses: ["0@9.5", "3@9.5"] },
   { $id: "bea", role: "athlete", username: "bea", defaultClasses: ["0@9.5"] },
   { $id: "cami", role: "athlete", username: "cami" },
+  { $id: "dani", role: "athlete", username: "dani", active: false },
 ]
 for (const u of users) t("users").set(u.$id, { ...u })
 
@@ -115,6 +116,8 @@ assert.deepEqual(at(0, 9.5).roster, ["ana", "bea"])
 assert.deepEqual(at(3, 9.5).roster, ["ana"])
 assert.equal(t("class_weeks").get(week)!.published, true)
 assert.ok(pushes.some((p) => p.to === "cami" && p.title.includes("Next week")))
+// Deactivated athletes aren't told
+assert.ok(!pushes.some((p) => p.to === "dani"))
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 // Wed is next to Thu, where ana already has a class
