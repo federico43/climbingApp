@@ -1,5 +1,5 @@
-import CustomButton from "@/components/customButton"
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { TimerBar } from "@/components/IntervalVisuals"
 import { account } from "@/components/AppWrite"
@@ -235,20 +235,15 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
     const description = block?.description?.trim() || defaultDesc
 
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={description} title={block?.description?.trim() ? "Coach notes" : "How it works"} />
-          {(block?.timeLimit ?? 0) > 0 && (
-            <View style={styles.timeLimitPill}>
-              <Text style={styles.timeLimitText}>⏱ {block.timeLimit} min timer</Text>
-            </View>
-          )}
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }} />
-        </View>
-      </View>
+      <BlockIntro
+        title={title}
+        onBack={goToPreviousBlock}
+        facts={[(block?.timeLimit ?? 0) > 0 && `${block.timeLimit} min timer`]}
+        note={description}
+        notesTitle={block?.description?.trim() ? "Coach notes" : "How it works"}
+        startSub={["Boulder logger", minutesLabel(block?.timeLimit)].filter(Boolean).join(" · ")}
+        onStart={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }}
+      />
     )
   }
 
@@ -625,14 +620,4 @@ const sheet = paperSheet((C) => StyleSheet.create({
   levelDot: { width: 12, height: 12, borderRadius: 6 },
   breakdownLabel: { fontSize: 15, fontWeight: "600", flex: 1, color: C.textPrimary },
   breakdownCount: { fontSize: 14, color: C.textSecondary },
-
-  // Timer pill shown on intro when timeLimit > 0
-  timeLimitPill: {
-    alignSelf: "flex-start",
-    backgroundColor: C.surface,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 }))

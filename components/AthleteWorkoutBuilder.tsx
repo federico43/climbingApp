@@ -1,6 +1,8 @@
 import { useHoldUpdates } from "@/utils/updateHold"
 import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
-import { GhostButton, HeadlineInput, Melt, MintButton, Mono, PaperBackground, PaperSwitch } from "@/components/paper"
+import { GhostButton, HeadlineInput, Melt, MintButton, Mono, PaperBackground, PaperSwitch, StartBar, TitleGlow } from "@/components/paper"
+import { BlockSheet, SpineBlockRow, SpineWarmup } from "@/components/coach/BuilderSpine"
+import { blockMode, workoutMinutes, type BlockMode } from "@/utils/builderSpine"
 import { font } from "@/theme/paper/tokens"
 import { BoulderLevelOptions } from "@/utils/boulderColours"
 import { Ionicons } from "@expo/vector-icons"
@@ -73,9 +75,12 @@ export function AthleteWorkoutBuilder({
   initialName,
   initialHomeworkIds,
   plan,
+  focusLabel,
   onClose,
   onSaved,
 }: {
+  /** The athlete's plan focus ("Mental"), for the eyebrow ("FEDE18 · MENTAL FOCUS"). */
+  focusLabel?: string | null
   athlete?: AppUser | null
   roster: AppUser[]
   protocol?: ProtocolRow | null  // when set, edit this template instead of creating a new one
@@ -155,6 +160,11 @@ export function AthleteWorkoutBuilder({
     return () => clearTimeout(t)
   }, [wide, libraryBlockId, blocks])
   const [pickerOpen, setPickerOpen] = useState(false)
+  // Phone (Paper): the block open in its sheet.
+  const [sheetId, setSheetId] = useState<string | null>(null)
+  const spine = !!P && !wide
+  // Phone header: where the chips end (the title glow's height).
+  const [titleH, setTitleH] = useState(0)
 
   // Right pane (block picker/library) width — user-resizable by dragging the
   // divider. Kept in a ref too so the pan handlers (created once) always read
@@ -210,6 +220,7 @@ export function AthleteWorkoutBuilder({
     // for it straight away instead of making the coach hit "Add exercise".
     // (Blocks picked from the library already come with theirs.)
     if (b.type === "strength_conditioning" && b.exercises.length === 0) setLibraryBlockId(b.id)
+    else if (spine) setSheetId(b.id)
   }
   function updateBlock(b: Block) { setBlocks((p) => p.map((x) => (x.id === b.id ? b : x))) }
   const deleteBlock = useCallback((id: string) => {
@@ -218,6 +229,7 @@ export function AthleteWorkoutBuilder({
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => {
         setLibraryBlockId((cur) => (cur === id ? null : cur))
+        setSheetId((cur) => (cur === id ? null : cur))
         setBlocks((p) => p.filter((x) => x.id !== id))
         setHomeworkIds((prev) => { const n = new Set(prev); n.delete(id); return n })
       } },
@@ -225,7 +237,18 @@ export function AthleteWorkoutBuilder({
   }, [blocks])
 
   // Narrow: drag-to-reorder list via the grip (long-press starts the drag).
-  const renderBlock = ({ item, drag, isActive }: RenderItemParams<Block>) => frame(item, (
+  const renderBlock = ({ item, drag, isActive, getIndex }: RenderItemParams<Block>) => spine ? (
+    <SpineBlockRow
+      block={item}
+      index={getIndex() ?? blocks.indexOf(item)}
+      total={blocks.length}
+      mode={blockMode(item, canHomework && homeworkIds.has(item.id))}
+      dueLabel={shortDay(dueBy).split(" ").slice(0, 2).join(" ")}
+      isActive={isActive}
+      onOpen={() => setSheetId(item.id)}
+      onDrag={drag}
+    />
+  ) : frame(item, (
     <BlockEditorRow
       card
       block={item}
@@ -408,33 +431,66 @@ export function AthleteWorkoutBuilder({
     )
   }
 
+  // Coached / Own / Homework from the phone's block sheet (homework is saved uncoached).
+  function setMode(id: string, m: BlockMode) {
+    setHomeworkIds((prev) => { const n = new Set(prev); if (m === "homework") n.add(id); else n.delete(id); return n })
+    setBlocks((p) => p.map((b) => (b.id === id ? { ...b, coached: m === "coached" ? true : undefined } : b)))
+  }
+  const sheetIndex = sheetId ? blocks.findIndex((b) => b.id === sheetId) : -1
+  const sheetBlock = sheetIndex >= 0 ? blocks[sheetIndex] : null
+
   const flash = BoulderLevelOptions.find((g) => g.value === athlete?.flashLevel)
+  const totalMin = workoutMinutes(blocks)
   const chips = [
     plan ? `Workout ${plan.planIndex} of 12` : null,
     `${blocks.length} block${blocks.length === 1 ? "" : "s"}`,
-    flash ? `Flash · ${flash.label}` : null,
+    blocks.length ? `${totalMin} min` : null,
     coachedBlocks.length ? `${coachedBlocks.length} coached` : null,
   ].filter(Boolean) as string[]
+  const warmup = athlete && !plan ? <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} spine={spine} /> : null
 
   // Name, chips and the athlete's context — scrolls with the blocks.
   const paperHead = P && (
     <View style={s.pHead}>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
-        <Melt top={10} height={wide ? 240 : 190} />
-      </View>
+      {spine ? (
+        // Phone (mock-ups 2026-11-25): a soft glow behind the name only —
+        // blue-violet top right, mint under it — ending at the chips, so
+        // the training days, warm-up and blocks sit on plain paper.
+        titleH > 0 && (
+          <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0 }}>
+            <TitleGlow width={width} height={titleH} variant="header" />
+          </View>
+        )
+      ) : (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+          <Melt top={10} height={wide ? 240 : 190} />
+        </View>
+      )}
       <Mono color={P.ink} size={11} numberOfLines={1}>
-        {[athleteName ?? "Library", editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
+        {[athleteName ?? "Library", focusLabel ? `${focusLabel} focus` : editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
       </Mono>
       <HeadlineInput value={name} onChangeText={setName} placeholder="Workout name" style={{ marginTop: 10 }} />
-      <View style={s.pChips}>
-        {chips.map((c) => <View key={c} style={s.pChip}><Text style={s.pChipText}>{c}</Text></View>)}
+      <View style={s.pChips} onLayout={(e) => setTitleH(e.nativeEvent.layout.y + e.nativeEvent.layout.height + 12)}>
+        {chips.map((c) => <View key={c} style={[s.pChip, spine && s.pChipSpine]}><Text style={[s.pChipText, spine && s.pChipTextSpine]}>{c}</Text></View>)}
+        {flash && (
+          // The flash grade's own colour is data (a route colour), not UI.
+          <View style={[s.pChip, s.pChipRow, spine && s.pChipSpine]}>
+            <Text style={[s.pChipText, spine && s.pChipTextSpine]}>Flash</Text>
+            <View style={[s.pFlashDot, { backgroundColor: flash.color }]} />
+            <Text style={[s.pChipText, spine && s.pChipTextSpine]}>{flash.label}</Text>
+          </View>
+        )}
         {homework.length > 0 && (
           <View style={[s.pChip, s.pChipHw]}><Text style={[s.pChipText, { color: P.pink }]}>{`Homework · due ${shortDay(dueBy)}`}</Text></View>
         )}
       </View>
-      {athlete && <View style={{ marginTop: 14 }}><AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} /></View>}
-      {athlete && !plan && <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} />}
-      <View style={s.pRule}><Mono color={P.ink} size={11}>The workout</Mono></View>
+      {athlete && <View style={{ marginTop: 14 }}><AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} flat={spine} /></View>}
+      {!spine && warmup}
+      <View style={s.pRule}>
+        <Mono color={P.ink} size={11} style={{ flex: 1 }}>The workout</Mono>
+        {blocks.length > 0 && <Mono color={P.ink} size={11}>{`${totalMin} min`}</Mono>}
+      </View>
+      {spine && warmup && <View style={{ marginTop: 14, marginHorizontal: -16, marginBottom: -4 }}><SpineWarmup hasBlocks={blocks.length > 0}>{warmup}</SpineWarmup></View>}
     </View>
   )
 
@@ -503,7 +559,7 @@ export function AthleteWorkoutBuilder({
           <View style={s.pTop}>
             <Pressable onPress={onClose} hitSlop={8} style={s.pBack} accessibilityRole="button" accessibilityLabel="Close without saving">
               <Ionicons name="chevron-back" size={20} color={P.ink} />
-              <Text style={s.pBackText} numberOfLines={1}>{firstName ? `Back to ${firstName}` : "Back"}</Text>
+              <Text style={[s.pBackText, spine && s.pBackTextPhone]} numberOfLines={1}>{firstName ? (spine ? firstName : `Back to ${firstName}`) : "Back"}</Text>
             </Pressable>
             <View style={{ flex: 1 }} />
             {wide && !!athlete && otherAthletes.length > 0 && (
@@ -513,11 +569,18 @@ export function AthleteWorkoutBuilder({
               <GhostButton label={savingLibrary ? "Saving…" : "Save to library"} icon="albums-outline" compact disabled={savingLibrary} onPress={saveToLibrary} />
             )}
             {!wide && !!athlete && (
-              <Pressable style={s.pDots} onPress={() => setMenuOpen((o) => !o)} hitSlop={6} accessibilityLabel="More">
+              <Pressable style={[s.pDots, spine && s.pDotsPhone]} onPress={() => setMenuOpen((o) => !o)} hitSlop={6} accessibilityLabel="More">
                 <Ionicons name="ellipsis-horizontal" size={18} color={P.ink} />
               </Pressable>
             )}
-            <MintButton label={sendLabel} icon={editing || !athlete ? "checkmark" : "paper-plane"} compact={!wide} disabled={saving} onPress={handleSave} />
+            {/* Phone: "✓ Save" as in the mock-up (it still sends the workout to the athlete). */}
+            <MintButton
+              label={spine && sendLabel.startsWith("Send to") ? "Save" : sendLabel}
+              icon={editing || !athlete || spine ? "checkmark" : "paper-plane"}
+              compact={!wide && !spine}
+              disabled={saving}
+              onPress={handleSave}
+            />
           </View>
         ) : (
         <View style={s.header}>
@@ -638,6 +701,8 @@ export function AthleteWorkoutBuilder({
                 keyExtractor={(item) => item.id}
                 onDragEnd={({ data }) => setBlocks(data)}
                 renderItem={renderBlock}
+                // Spine cards show homework and its deadline, kept outside `blocks`.
+                extraData={`${[...homeworkIds].join(",")}|${dueBy}`}
                 contentContainerStyle={P ? s.pBlockList : s.blockList}
                 ListHeaderComponent={paperHead || undefined}
                 ListFooterComponent={paperFooter || undefined}
@@ -648,11 +713,20 @@ export function AthleteWorkoutBuilder({
           </GestureHandlerRootView>
 
           {/* Narrow screens: the block picker opens as a sheet instead of a side pane */}
-          {!wide && !libraryBlockId && (
+          {!wide && !libraryBlockId && (spine ? (
+            <StartBar
+              label="Add block"
+              sub="Warm-up · Climbing · S&C · Mental"
+              icon="add"
+              offset
+              style={s.pAddBar}
+              onPress={() => setPickerOpen(true)}
+            />
+          ) : (
             <Pressable style={s.addBlockBtn} onPress={() => setPickerOpen(true)}>
               <Text style={s.addBlockBtnText}>+ Add block</Text>
             </Pressable>
-          )}
+          ))}
 
           {/* Narrow: the S&C exercise library opens as a bottom sheet; the
               list shrinks above it so each added exercise shows up there. */}
@@ -731,6 +805,23 @@ export function AthleteWorkoutBuilder({
             </SCLibraryContext.Provider>
           </SafeAreaProvider>
         </Modal>
+      )}
+
+      {/* Phone: the block's sheet (mock-up "Expanded block"). */}
+      {spine && (
+        <BlockSheet
+          block={sheetBlock}
+          index={Math.max(0, sheetIndex)}
+          total={blocks.length}
+          mode={sheetBlock ? blockMode(sheetBlock, canHomework && homeworkIds.has(sheetBlock.id)) : "own"}
+          athleteName={athleteName}
+          canHomework={canHomework}
+          insets={insets}
+          onUpdate={updateBlock}
+          onMode={(m) => sheetBlock && setMode(sheetBlock.id, m)}
+          onDelete={() => sheetBlock && deleteBlock(sheetBlock.id)}
+          onClose={() => setSheetId(null)}
+        />
       )}
 
       {/* Homework picker: which blocks, and the deadline. */}
@@ -894,7 +985,14 @@ const sSheet = paperSheet((C, P) => StyleSheet.create({
   } : {},
   pChipHw: P ? { borderColor: P.pink, borderWidth: 1.5 } : {},
   pChipText: P ? { fontFamily: font.mono, fontSize: 11, letterSpacing: 0.5, color: P.ink } : {},
-  pRule: P ? { marginTop: 18, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: P.ink } : {},
+  pChipRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  pFlashDot: { width: 8, height: 8, borderRadius: 4 },
+  pRule: P ? { flexDirection: "row", alignItems: "center", marginTop: 18, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: P.ink } : {},
+  pBackTextPhone: { textDecorationLine: "none", fontSize: 17 },
+  pDotsPhone: { width: 40, height: 40, borderRadius: 20, borderColor: P?.ink },
+  pChipSpine: P ? { backgroundColor: "transparent", borderColor: P.ink, borderWidth: 1.5 } : {},
+  pChipTextSpine: { textTransform: "uppercase", letterSpacing: 1.2, fontSize: 10.5 },
+  pAddBar: { marginHorizontal: 12, marginTop: 6, marginBottom: 8 },
   pBlockList: { paddingHorizontal: 14, paddingBottom: 40 },
   pEmpty: P ? {
     margin: 16, padding: 18, borderRadius: 22, borderWidth: 1.5, borderStyle: "dashed", borderColor: P.ghostBorder,

@@ -1,3 +1,5 @@
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -224,18 +226,15 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "intro") {
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={text} title="Coach notes" />
-          <View style={styles.timeLimitPill}>
-            <Text style={styles.timeLimitText}>⏱ {flashMin} min + {projectMin} min</Text>
-          </View>
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={() => setPhase("flash")} />
-        </View>
-      </View>
+      <BlockIntro
+        title={title}
+        onBack={goToPreviousBlock}
+        facts={[`1 · Explore ${flashMin} min`, `2 · Project ${projectMin} min`]}
+        note={text}
+        notesTitle="Coach notes"
+        startSub={`Route exploration · ${minutesLabel(flashMin + projectMin)}`}
+        onStart={() => setPhase("flash")}
+      />
     )
   }
 
@@ -524,8 +523,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
   finishPillText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   startButton: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
   startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
-  timeLimitPill: { alignSelf: "flex-start", backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 
   // Part 2's countdown — same as FreeSessionBlock.
   centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
