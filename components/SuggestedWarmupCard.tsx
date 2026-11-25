@@ -6,6 +6,9 @@ import { constraintWarmupDrafts } from "@/utils/planWorkout"
 import { suggestWarmup, WARMUP_PILLAR_LABEL, warmupCandidates, warmupPillarFor, warmupUsage } from "@/utils/progression/constraintWarmup"
 import type { WarmupPillar } from "@/utils/progression/profiles"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { usePaper } from "@/theme/paper/PaperThemeProvider"
+import { font } from "@/theme/paper/tokens"
+import { Ionicons } from "@expo/vector-icons"
 import React, { useEffect, useMemo, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -37,12 +40,16 @@ function workoutPillar(blocks: Block[]): WarmupPillar | null {
   return best
 }
 
-export function SuggestedWarmupCard({ athleteId, blocks, onApply }: {
+export function SuggestedWarmupCard({ athleteId, blocks, onApply, spine }: {
   athleteId: string
   blocks: Block[]
   onApply: (next: Block[]) => void
+  /** Phone builder (mock-ups 2026-11-25): mint dashed card, "+ Add" pill, pillar under the eyebrow's chevron. */
+  spine?: boolean
 }) {
   const C = useC()
+  const t = usePaper()
+  const [pillarsOpen, setPillarsOpen] = useState(false)
   const s = useSheet(sSheet)
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [library, setLibrary] = useState<BlockRow[]>([])
@@ -82,6 +89,59 @@ export function SuggestedWarmupCard({ athleteId, blocks, onApply }: {
     let at = 0
     while (at < rest.length && rest[at].type === "strength_conditioning") at++
     onApply([...rest.slice(0, at), ...injectLocalIds(constraintWarmupDrafts(picks, library)), ...rest.slice(at)])
+  }
+
+  if (spine) {
+    const dark = t.mode === "dark"
+    return (
+      <View style={[s.sCard, { borderColor: t.mintText, backgroundColor: dark ? "rgba(138,214,162,0.10)" : "rgba(138,214,162,0.18)" }]}>
+        <View style={s.sHead}>
+          <Pressable style={s.sEyebrow} onPress={() => setPillarsOpen((o) => !o)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Change the warm-up focus">
+            <Text style={[s.sEyebrowText, { color: t.mintText }]} numberOfLines={1}>
+              {`Suggested warm-up${pillar ? ` · ${WARMUP_PILLAR_LABEL[pillar]}` : ""}`}
+            </Text>
+            <Ionicons name={pillarsOpen ? "chevron-up" : "chevron-down"} size={12} color={t.mintText} />
+          </Pressable>
+          {!!picks && (
+            <Pressable
+              onPress={apply}
+              style={[s.sAdd, { backgroundColor: t.mint, borderColor: dark ? t.mint : t.ink }]}
+              accessibilityRole="button"
+              accessibilityLabel={hasWarmup ? "Replace the warm-up with these" : "Add these to the workout"}
+            >
+              <Ionicons name={hasWarmup ? "swap-horizontal" : "add"} size={14} color={t.onMint} />
+              <Text style={[s.sAddText, { color: t.onMint }]}>{hasWarmup ? "Replace" : "Add"}</Text>
+            </Pressable>
+          )}
+        </View>
+        {(pillarsOpen || !pillar) && (
+          <View style={s.chipRow}>
+            {PILLARS.map((p) => {
+              const on = pillar === p
+              return (
+                <Pressable key={p} onPress={() => { setChosenPillar(p); setPillarsOpen(false) }} style={[s.sChip, { borderColor: on ? t.ink : t.ghostBorder, backgroundColor: on ? t.ink : "transparent" }]}>
+                  <Text style={[s.sChipText, { color: on ? t.paper : t.ink }]}>{WARMUP_PILLAR_LABEL[p]}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        )}
+        {!flash && <Text style={[s.sHint, { color: t.textMuted }]}>No flash level set — every constraint on orange.</Text>}
+        {!pillar ? null : !picks ? (
+          <Text style={[s.sHint, { color: t.textMuted }]}>No constraints in the rotation for this group.</Text>
+        ) : picks.map((p, i) => {
+          const opt = BoulderLevelOptions.find((o) => o.value === p.colour)
+          return (
+            <View key={p.id} style={s.pickRow}>
+              <Text style={[s.sNum, { color: t.mintText }]}>{i + 1}</Text>
+              <Text style={[s.sName, { color: t.ink }]} numberOfLines={1}>{p.name}</Text>
+              <View style={[s.sDot, { backgroundColor: opt?.color ?? t.label }]} />
+              <Text style={[s.sMeta, { color: t.ink }]}>{`${opt?.label ?? p.colour} · ${p.attempts}×`}</Text>
+            </View>
+          )
+        })}
+      </View>
+    )
   }
 
   return (
@@ -142,5 +202,19 @@ const sSheet = paperSheet((C) => StyleSheet.create({
   pickName: { flex: 1, fontSize: 14, fontWeight: "700", color: C.textPrimary },
   dot: { width: 10, height: 10, borderRadius: 5 },
   pickMeta: { fontSize: 12.5, color: C.textSecondary },
+  // Phone builder (spine)
+  sCard: { borderWidth: 1.5, borderStyle: "dashed", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  sHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sEyebrow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
+  sEyebrowText: { flexShrink: 1, fontFamily: font.mono, fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase" },
+  sAdd: { flexDirection: "row", alignItems: "center", gap: 4, height: 30, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1.5 },
+  sAddText: { fontFamily: font.bold, fontSize: 13 },
+  sChip: { paddingHorizontal: 10, height: 28, justifyContent: "center", borderRadius: 14, borderWidth: 1.5 },
+  sChipText: { fontFamily: font.bold, fontSize: 12 },
+  sHint: { fontFamily: font.body, fontSize: 12.5 },
+  sNum: { width: 14, fontFamily: font.mono, fontSize: 12 },
+  sName: { flex: 1, fontFamily: font.bold, fontSize: 15 },
+  sDot: { width: 8, height: 8, borderRadius: 4 },
+  sMeta: { fontFamily: font.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase" },
   action: { fontSize: 13, fontWeight: "700", color: C.green, textDecorationLine: "underline", marginTop: 2 },
 }))

@@ -1,4 +1,7 @@
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { PaperSwitch } from "@/components/paper/Inputs"
+import { usePaper } from "@/theme/paper/PaperThemeProvider"
+import { font as paperFont } from "@/theme/paper/tokens"
 import CustomButton from "@/components/customButton"
 import { Ionicons } from "@expo/vector-icons"
 import { ExerciseForm } from "@/components/ExerciseForm"
@@ -1196,11 +1199,13 @@ export function BlockSheetFields({ block, onUpdate }: { block: Block; onUpdate: 
   const styles = useSheet(stylesSheet)
   return (
     <NoteOutsideContext.Provider value={true}>
-      <View style={[styles.standaloneFields, { paddingHorizontal: 0, paddingBottom: 0 }]}>
-        <TimeLimitToggle block={block} onUpdate={onUpdate} />
-        <BlockNumerics block={block} onUpdate={onUpdate} standalone />
-        <TypeSpecificFields block={block} onUpdate={onUpdate} />
-      </View>
+      <SheetRowsContext.Provider value={true}>
+        <View style={[styles.standaloneFields, { paddingHorizontal: 0, paddingBottom: 0, gap: 6 }]}>
+          <TimeLimitToggle block={block} onUpdate={onUpdate} />
+          <BlockNumerics block={block} onUpdate={onUpdate} standalone />
+          <TypeSpecificFields block={block} onUpdate={onUpdate} />
+        </View>
+      </SheetRowsContext.Provider>
     </NoteOutsideContext.Provider>
   )
 }
@@ -1365,6 +1370,76 @@ function FieldLabel({ label }: { label: string }) {
 // The phone builder's block sheet shows the description as its own "Note
 // for {athlete}" section, so the fields inside it leave it out.
 const NoteOutsideContext = createContext(false)
+// …and lays its numbers out as rows: label left, a pill stepper right,
+// hairlines between (mock-up "Expanded block", 2026-11-25).
+const SheetRowsContext = createContext(false)
+
+function SheetStepperRow({ label, display, onMinus, onPlus }: { label: string; display: string; onMinus: () => void; onPlus: () => void }) {
+  const t = usePaper()
+  return (
+    <View style={[sheetRowStyles.row, { borderBottomColor: t.hairline }]}>
+      <Text style={[sheetRowStyles.label, { color: t.ink }]} numberOfLines={1}>{label}</Text>
+      <View style={[sheetRowStyles.stepper, { borderColor: t.ink }]}>
+        <Pressable onPress={onMinus} hitSlop={8} style={sheetRowStyles.stepBtn} accessibilityLabel={`${label}: less`}>
+          <Ionicons name="remove" size={16} color={t.ink} />
+        </Pressable>
+        <Text style={[sheetRowStyles.value, { color: t.ink }]} numberOfLines={1}>{display}</Text>
+        <Pressable onPress={onPlus} hitSlop={8} style={sheetRowStyles.stepBtn} accessibilityLabel={`${label}: more`}>
+          <Ionicons name="add" size={16} color={t.ink} />
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
+const sheetRowStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 56, borderBottomWidth: StyleSheet.hairlineWidth * 2 },
+  label: { flex: 1, fontFamily: paperFont.bold, fontSize: 16 },
+  stepper: { flexDirection: "row", alignItems: "center", height: 40, borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 4 },
+  stepBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  value: { minWidth: 44, textAlign: "center", fontFamily: paperFont.title, fontSize: 18, fontVariant: ["tabular-nums"] },
+  muted: { flex: 1, fontFamily: paperFont.bold, fontSize: 15 },
+  total: { fontFamily: paperFont.mono, fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase" },
+})
+
+// Sheet: "Time limit" with the Paper switch; on, a minutes row (route
+// exploration: its part 1, "1 · Explore").
+function SheetTimeLimit({ block, onUpdate, enabled }: { block: Block; onUpdate: (b: Block) => void; enabled: boolean }) {
+  const t = usePaper()
+  const explore = block.type === "route_exploration"
+  return (
+    <>
+      <View style={[sheetRowStyles.row, { borderBottomColor: t.hairline }]}>
+        <Text style={[sheetRowStyles.label, { color: t.ink }]}>Time limit</Text>
+        <PaperSwitch
+          value={enabled}
+          onValueChange={(v) => onUpdate({ ...block, timeLimit: v ? (block.timeLimit || (explore ? EXPLORATION_PART_MIN : 10)) : 0 })}
+          label="Time limit"
+        />
+      </View>
+      {enabled && (
+        <StepperField
+          label={explore ? "1 · Explore" : "Minutes"}
+          unit="′"
+          value={block.timeLimit ?? 10}
+          onChange={(n) => onUpdate({ ...block, timeLimit: Math.max(1, n) })}
+          min={1}
+          step={explore ? 5 : 1}
+        />
+      )}
+    </>
+  )
+}
+
+function SheetTotalRow({ minutes }: { minutes: number }) {
+  const t = usePaper()
+  return (
+    <View style={[sheetRowStyles.row, { borderBottomWidth: 0, minHeight: 48 }]}>
+      <Text style={[sheetRowStyles.muted, { color: t.textMuted }]}>Total</Text>
+      <Text style={[sheetRowStyles.total, { color: t.ink }]}>{`${minutes} min`}</Text>
+    </View>
+  )
+}
 
 function DescField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const outside = useContext(NoteOutsideContext)
@@ -1476,11 +1551,15 @@ function RestField({ label, value, onChange }: {
 // Same idea as NumField, but as a −/value/+ stepper instead of a raw text
 // box — used by the standalone editor, where there's room and the mockup
 // calls for it.
-function StepperField({ label, value, onChange, min = 0, step = 1 }: {
+function StepperField({ label, value, onChange, min = 0, step = 1, unit = "" }: {
   label: string; value: number; onChange: (n: number) => void; min?: number; step?: number
+  /** Sheet rows only: shown after the value, e.g. "′" for minutes. */
+  unit?: string
 }) {
   const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
+  const rows = useContext(SheetRowsContext)
+  if (rows) return <SheetStepperRow label={label} display={`${value}${unit}`} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   if (compact) return <CompactStepper label={label} display={String(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
     <View style={styles.stepperField}>
@@ -1504,6 +1583,8 @@ function StepperRestField({ label, value, onChange, min = 0, step = 15 }: {
 }) {
   const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
+  const rows = useContext(SheetRowsContext)
+  if (rows) return <SheetStepperRow label={label} display={formatDuration(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   if (compact) return <CompactStepper label={label} display={formatDuration(value)} onMinus={() => onChange(Math.max(min, value - step))} onPlus={() => onChange(value + step)} />
   return (
     <View style={styles.stepperField}>
@@ -1568,6 +1649,7 @@ function TimeLimitChip({ block, onUpdate }: { block: Block; onUpdate: (b: Block)
 function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate: (b: Block) => void; standalone?: boolean }) {
   const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
+  const rows = useContext(SheetRowsContext)
   function update(fields: any) { onUpdate({ ...block, ...fields } as Block) }
   const Field = standalone ? StepperField : NumField
   const Rest = standalone ? StepperRestField : RestField
@@ -1629,6 +1711,7 @@ function BlockNumerics({ block, onUpdate, standalone }: { block: Block; onUpdate
       </View>
     )
   }
+  if (rows) return <>{fields}</>
   return <View style={standalone ? styles.numericsRowStandalone : styles.numericsRow}>{fields}</View>
 }
 
@@ -1654,8 +1737,10 @@ function TimeLimitField({ block, onUpdate }: { block: Block; onUpdate: (b: Block
 function TimeLimitToggle({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
   const C = useC()
   const styles = useSheet(stylesSheet)
+  const rows = useContext(SheetRowsContext)
   if (block.type === "project_bouldering") return null  // always timed — set in BlockNumerics
   const enabled = (block.timeLimit ?? 0) > 0
+  if (rows) return <SheetTimeLimit block={block} onUpdate={onUpdate} enabled={enabled} />
   return (
     <View style={{ gap: 10 }}>
       <View style={styles.timeLimitToggleRow}>
@@ -2563,9 +2648,11 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
 // (Project) has its own minutes here.
 function RouteExplorationFields({ block, onUpdate }: { block: RouteExplorationBlock; onUpdate: (b: Block) => void }) {
   function update(fields: Partial<RouteExplorationBlock>) { onUpdate({ ...block, ...fields }) }
+  const rows = useContext(SheetRowsContext)
   return (
     <>
-      <StepperField label="Part 2 · project (min)" value={block.projectTime ?? EXPLORATION_PART_MIN} onChange={(n) => update({ projectTime: n })} min={5} step={5} />
+      <StepperField label={rows ? "2 · Project" : "Part 2 · project (min)"} unit="′" value={block.projectTime ?? EXPLORATION_PART_MIN} onChange={(n) => update({ projectTime: n })} min={5} step={5} />
+      {rows && <SheetTotalRow minutes={(block.timeLimit || EXPLORATION_PART_MIN) + (block.projectTime ?? EXPLORATION_PART_MIN)} />}
       <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What should athletes know before starting?" />
     </>
   )

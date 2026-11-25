@@ -75,9 +75,12 @@ export function AthleteWorkoutBuilder({
   initialName,
   initialHomeworkIds,
   plan,
+  focusLabel,
   onClose,
   onSaved,
 }: {
+  /** The athlete's plan focus ("Mental"), for the eyebrow ("FEDE18 · MENTAL FOCUS"). */
+  focusLabel?: string | null
   athlete?: AppUser | null
   roster: AppUser[]
   protocol?: ProtocolRow | null  // when set, edit this template instead of creating a new one
@@ -238,7 +241,7 @@ export function AthleteWorkoutBuilder({
       index={getIndex() ?? blocks.indexOf(item)}
       total={blocks.length}
       mode={blockMode(item, canHomework && homeworkIds.has(item.id))}
-      dueLabel={shortDay(dueBy)}
+      dueLabel={shortDay(dueBy).split(" ").slice(0, 2).join(" ")}
       isActive={isActive}
       onOpen={() => setSheetId(item.id)}
       onDrag={drag}
@@ -442,7 +445,7 @@ export function AthleteWorkoutBuilder({
     blocks.length ? `${totalMin} min` : null,
     coachedBlocks.length ? `${coachedBlocks.length} coached` : null,
   ].filter(Boolean) as string[]
-  const warmup = athlete && !plan ? <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} /> : null
+  const warmup = athlete && !plan ? <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} spine={spine} /> : null
 
   // Name, chips and the athlete's context — scrolls with the blocks.
   const paperHead = P && (
@@ -451,24 +454,24 @@ export function AthleteWorkoutBuilder({
         <Melt top={10} height={wide ? 240 : 190} />
       </View>
       <Mono color={P.ink} size={11} numberOfLines={1}>
-        {[athleteName ?? "Library", editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
+        {[athleteName ?? "Library", focusLabel ? `${focusLabel} focus` : editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
       </Mono>
       <HeadlineInput value={name} onChangeText={setName} placeholder="Workout name" style={{ marginTop: 10 }} />
       <View style={s.pChips}>
-        {chips.map((c) => <View key={c} style={s.pChip}><Text style={s.pChipText}>{c}</Text></View>)}
+        {chips.map((c) => <View key={c} style={[s.pChip, spine && s.pChipSpine]}><Text style={[s.pChipText, spine && s.pChipTextSpine]}>{c}</Text></View>)}
         {flash && (
           // The flash grade's own colour is data (a route colour), not UI.
-          <View style={[s.pChip, s.pChipRow]}>
-            <Text style={s.pChipText}>Flash</Text>
+          <View style={[s.pChip, s.pChipRow, spine && s.pChipSpine]}>
+            <Text style={[s.pChipText, spine && s.pChipTextSpine]}>Flash</Text>
             <View style={[s.pFlashDot, { backgroundColor: flash.color }]} />
-            <Text style={s.pChipText}>{flash.label}</Text>
+            <Text style={[s.pChipText, spine && s.pChipTextSpine]}>{flash.label}</Text>
           </View>
         )}
         {homework.length > 0 && (
           <View style={[s.pChip, s.pChipHw]}><Text style={[s.pChipText, { color: P.pink }]}>{`Homework · due ${shortDay(dueBy)}`}</Text></View>
         )}
       </View>
-      {athlete && <View style={{ marginTop: 14 }}><AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} /></View>}
+      {athlete && <View style={{ marginTop: 14 }}><AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} flat={spine} /></View>}
       {!spine && warmup}
       <View style={s.pRule}>
         <Mono color={P.ink} size={11} style={{ flex: 1 }}>The workout</Mono>
@@ -553,7 +556,7 @@ export function AthleteWorkoutBuilder({
               <GhostButton label={savingLibrary ? "Saving…" : "Save to library"} icon="albums-outline" compact disabled={savingLibrary} onPress={saveToLibrary} />
             )}
             {!wide && !!athlete && (
-              <Pressable style={s.pDots} onPress={() => setMenuOpen((o) => !o)} hitSlop={6} accessibilityLabel="More">
+              <Pressable style={[s.pDots, spine && s.pDotsPhone]} onPress={() => setMenuOpen((o) => !o)} hitSlop={6} accessibilityLabel="More">
                 <Ionicons name="ellipsis-horizontal" size={18} color={P.ink} />
               </Pressable>
             )}
@@ -561,7 +564,7 @@ export function AthleteWorkoutBuilder({
             <MintButton
               label={spine && sendLabel.startsWith("Send to") ? "Save" : sendLabel}
               icon={editing || !athlete || spine ? "checkmark" : "paper-plane"}
-              compact={!wide}
+              compact={!wide && !spine}
               disabled={saving}
               onPress={handleSave}
             />
@@ -702,6 +705,7 @@ export function AthleteWorkoutBuilder({
               label="Add block"
               sub="Warm-up · Climbing · S&C · Mental"
               icon="add"
+              offset
               style={s.pAddBar}
               onPress={() => setPickerOpen(true)}
             />
@@ -971,7 +975,10 @@ const sSheet = paperSheet((C, P) => StyleSheet.create({
   pChipRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   pFlashDot: { width: 8, height: 8, borderRadius: 4 },
   pRule: P ? { flexDirection: "row", alignItems: "center", marginTop: 18, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: P.ink } : {},
-  pBackTextPhone: { textDecorationLine: "none" },
+  pBackTextPhone: { textDecorationLine: "none", fontSize: 17 },
+  pDotsPhone: { width: 40, height: 40, borderRadius: 20, borderColor: P?.ink },
+  pChipSpine: P ? { backgroundColor: "transparent", borderColor: P.ink, borderWidth: 1.5 } : {},
+  pChipTextSpine: { textTransform: "uppercase", letterSpacing: 1.2, fontSize: 10.5 },
   pAddBar: { marginHorizontal: 12, marginTop: 6, marginBottom: 8 },
   pBlockList: { paddingHorizontal: 14, paddingBottom: 40 },
   pEmpty: P ? {

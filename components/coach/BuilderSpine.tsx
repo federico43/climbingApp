@@ -4,6 +4,7 @@ import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { font } from "@/theme/paper/tokens"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL, resolveAdaptation } from "@/utils/adaptations"
 import { blockMinutes, blockOrdinal, noteExcerpt, type BlockMode } from "@/utils/builderSpine"
+import { noteParts } from "@/utils/blockNotes"
 import { isSprayBlock } from "@/utils/sprayBlocks"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useContext, useMemo, useState } from "react"
@@ -18,7 +19,7 @@ import type { EdgeInsets } from "react-native-safe-area-context"
 // for the athlete, closed with the Done bar.
 
 const SPINE_W = 34
-const NODE = 28
+const NODE = 30
 
 function blockTitle(b: Block): string {
   if (b.type === "strength_conditioning") {
@@ -27,28 +28,52 @@ function blockTitle(b: Block): string {
   return b.blockName?.trim() || BLOCK_LABELS[b.type]
 }
 
+/** Drag handle: 2 × 3 dots. */
+function Grip({ color }: { color: string }) {
+  return (
+    <View style={{ flexDirection: "row", gap: 3, padding: 2 }} accessibilityElementsHidden importantForAccessibility="no">
+      {[0, 1].map((c) => (
+        <View key={c} style={{ gap: 3 }}>
+          {[0, 1, 2].map((r) => <View key={r} style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: color }} />)}
+        </View>
+      ))}
+    </View>
+  )
+}
+
+/** The note with its key numbers in bold ("Warm up with **4 orange routes**"). */
+function NoteText({ text, color }: { text: string; color: string }) {
+  return (
+    <Text style={[styles.noteText, { color }]}>
+      {noteParts(text).map((p, i) => p.key ? <Text key={i} style={{ fontFamily: font.bold }}>{p.text}</Text> : p.text)}
+    </Text>
+  )
+}
+
 /** The spine's line + node beside a row. `node` null = a "+" node (suggested warm-up). */
 function SpineColumn({ node, homework, first, last }: { node: string | null; homework?: boolean; first?: boolean; last?: boolean }) {
   const t = usePaper()
-  const line = hexAlpha(t.ink, 0.3)
+  const line = hexAlpha(t.ink, 0.85)
   return (
     <View style={{ width: SPINE_W, alignItems: "center" }}>
-      <View style={{ width: 1.5, height: 18, backgroundColor: first ? "transparent" : line }} />
+      <View style={{ width: 2, height: 16, backgroundColor: first ? "transparent" : line }} />
       <View
         style={[
           styles.node,
           node === null
-            ? { borderWidth: 1.5, borderColor: t.ghostBorder, backgroundColor: t.paper }
+            ? { borderWidth: 1.5, borderStyle: "dashed", borderColor: t.ink, backgroundColor: t.paper }
             : homework
               ? { borderWidth: 2, borderColor: t.pink, backgroundColor: t.paper }
-              : { backgroundColor: t.ink },
+              : t.mode === "dark"
+                ? { borderWidth: 1.5, borderColor: t.ink, backgroundColor: t.paper }
+                : { backgroundColor: t.ink },
         ]}
       >
         {node === null
           ? <Ionicons name="add" size={15} color={t.ink} />
-          : <Text style={[styles.nodeText, { color: homework ? t.pink : t.paper }]}>{node}</Text>}
+          : <Text style={[styles.nodeText, { color: homework ? t.pink : t.mode === "dark" ? t.ink : t.paper }]}>{node}</Text>}
       </View>
-      <View style={{ width: 1.5, flex: 1, backgroundColor: last ? "transparent" : line }} />
+      <View style={{ width: 2, flex: 1, backgroundColor: last ? "transparent" : line }} />
     </View>
   )
 }
@@ -77,7 +102,6 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
   const t = usePaper()
   const homework = mode === "homework"
   const note = noteExcerpt(block.description)
-  const color = ADAPTATION_COLOR[resolveAdaptation(block)]
   return (
     <View style={styles.row}>
       <SpineColumn node={String(index + 1).padStart(2, "0")} homework={homework} last={index === total - 1} />
@@ -97,11 +121,11 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
           ]}
         >
           <View style={styles.cardTop}>
-            <View style={[styles.dot, { backgroundColor: color }]} />
-            <Mono color={t.label} numberOfLines={1} style={{ flex: 1 }}>
+            <View style={[styles.dot, { backgroundColor: t.ink }]} />
+            <Mono color={t.ink} numberOfLines={1} style={{ flex: 1 }}>
               {`${BLOCK_LABELS[block.type]} · ${blockMinutes(block)} min`}
             </Mono>
-            <Ionicons name="reorder-two" size={18} color={hexAlpha(t.ink, 0.45)} />
+            <Grip color={hexAlpha(t.ink, 0.5)} />
           </View>
           <View style={styles.cardTitleRow}>
             <Text style={[styles.cardTitle, { color: t.ink }]} numberOfLines={2}>{blockTitle(block)}</Text>
@@ -109,15 +133,15 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
           </View>
           {!!note && <Text style={[styles.cardNote, { color: t.textMuted }]} numberOfLines={1}>{note}</Text>}
           {mode === "coached" && (
-            <View style={[styles.chip, { backgroundColor: hexAlpha(t.mint, 0.22), borderColor: t.mode === "dark" ? t.mint : t.mintText }]}>
-              <Ionicons name="person" size={11} color={t.mintText} />
+            <View style={[styles.chip, { backgroundColor: hexAlpha(t.mint, t.mode === "dark" ? 0.18 : 0.35), borderColor: "transparent" }]}>
+              <Ionicons name="people-outline" size={11} color={t.mintText} />
               <Mono color={t.mintText} size={9.5}>Coached</Mono>
             </View>
           )}
           {homework && (
             <View style={[styles.chip, { borderColor: t.pink }]}>
-              <Ionicons name="school" size={11} color={t.pink} />
-              <Mono color={t.pink} size={9.5}>{dueLabel ? `Homework · due ${dueLabel}` : "Homework"}</Mono>
+              <Ionicons name="home-outline" size={11} color={t.pink} />
+              <Mono color={t.pink} size={9.5}>{dueLabel ? `Homework · ${dueLabel}` : "Homework"}</Mono>
             </View>
           )}
         </Pressable>
@@ -129,7 +153,7 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
 const MODES: { key: BlockMode; label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
   { key: "coached", label: "Coached", icon: "people-outline" },
   { key: "own", label: "Own", icon: "person-outline" },
-  { key: "homework", label: "Homework", icon: "school-outline" },
+  { key: "homework", label: "Homework", icon: "home-outline" },
 ]
 
 /** The block's sheet over the builder (the mock-up's "Expanded" screen). */
@@ -168,7 +192,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close the block" />
         {block && (
-          <View style={[styles.sheet, { backgroundColor: t.paper, marginTop: insets.top + 24, paddingBottom: insets.bottom + 12 }]}>
+          <View style={[styles.sheet, { backgroundColor: t.paper, marginTop: insets.top + 64, paddingBottom: insets.bottom + 8 }]}>
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden", borderTopLeftRadius: 28, borderTopRightRadius: 28 }]}>
               <Melt top={30} height={230} />
             </View>
@@ -201,7 +225,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
                 <>
                   <Pressable
                     onPress={() => setTrainsOpen((o) => !o)}
-                    style={[styles.trains, { borderColor: t.ink, backgroundColor: t.card }]}
+                    style={[styles.trains, { borderColor: t.ink }]}
                     accessibilityRole="button"
                     accessibilityLabel={`Trains ${ADAPTATION_LABEL[adaptation]}. Change`}
                   >
@@ -223,15 +247,17 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
               </View>
 
               {!!athleteName && (
-                <View style={[styles.segment, { borderColor: t.ink }]}>
+                <View style={[styles.segment, { borderColor: t.ink, backgroundColor: t.card }]}>
                   {modes.map((m) => {
                     const on = mode === m.key
-                    const tone = m.key === "homework" && on ? t.pink : t.ink
+                    // Selected = filled (ink; homework pink), text in paper.
+                    const fill = m.key === "homework" ? t.pink : t.ink
+                    const tone = on ? t.paper : t.ink
                     return (
                       <Pressable
                         key={m.key}
                         onPress={() => onMode(m.key)}
-                        style={[styles.segmentItem, on && { backgroundColor: t.card, borderColor: tone, borderWidth: 1.5 }]}
+                        style={[styles.segmentItem, on && { backgroundColor: fill }]}
                         accessibilityRole="radio"
                         accessibilityState={{ selected: on }}
                       >
@@ -262,9 +288,9 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
                     style={[styles.noteInput, { color: t.ink, backgroundColor: t.inputFill, borderColor: t.inputBorder }]}
                   />
                 ) : (
-                  <Text style={[styles.noteText, { color: block.description?.trim() ? t.ink : t.label }]}>
-                    {block.description?.trim() || "No note yet. Tap Edit to add one."}
-                  </Text>
+                  block.description?.trim()
+                    ? <NoteText text={block.description.trim()} color={t.ink} />
+                    : <Text style={[styles.noteText, { color: t.label }]}>No note yet. Tap Edit to add one.</Text>
                 )}
               </View>
 
@@ -274,7 +300,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
               </Pressable>
             </ScrollView>
             <View style={styles.sheetFooter}>
-              <StartBar label="Done" sub="Back to the workout" icon="checkmark" onPress={close} />
+              <StartBar label="Done" sub="Back to the workout" icon="checkmark" offset onPress={close} />
             </View>
           </View>
         )}
@@ -288,11 +314,11 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1, paddingBottom: 12, paddingLeft: 6 },
   node: { width: NODE, height: NODE, borderRadius: NODE / 2, alignItems: "center", justifyContent: "center" },
   nodeText: { fontFamily: font.mono, fontSize: 10.5, letterSpacing: 0.5 },
-  card: { borderRadius: 22, padding: 14, gap: 6 },
+  card: { borderRadius: 22, paddingHorizontal: 16, paddingVertical: 14, gap: 6 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 7 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  cardTitle: { flex: 1, fontFamily: font.bold, fontSize: 17 },
+  cardTitle: { flex: 1, fontFamily: font.bold, fontSize: 20 },
   cardNote: { fontFamily: font.body, fontSize: 13 },
   chip: {
     flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start",
@@ -309,17 +335,17 @@ const styles = StyleSheet.create({
   renameInput: { fontFamily: font.title, fontSize: 34, borderBottomWidth: 2, paddingVertical: 6, marginTop: 4 },
   trains: {
     flexDirection: "row", alignItems: "center", gap: 7, alignSelf: "flex-start",
-    borderWidth: 1.5, borderRadius: 999, paddingHorizontal: 12, height: 34,
+    borderWidth: 1.5, borderRadius: 999, paddingHorizontal: 14, height: 40,
   },
-  trainsText: { fontFamily: font.bold, fontSize: 13 },
-  fieldsCard: { borderRadius: 22, borderWidth: 1, padding: 14 },
-  segment: { flexDirection: "row", borderWidth: 1.5, borderRadius: 999, padding: 3, gap: 3 },
+  trainsText: { fontFamily: font.bold, fontSize: 15 },
+  fieldsCard: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 2 },
+  segment: { flexDirection: "row", borderWidth: 2, borderRadius: 999, padding: 4, gap: 4 },
   segmentItem: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
-    height: 38, borderRadius: 999, borderWidth: 1.5, borderColor: "transparent",
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    height: 42, borderRadius: 999,
   },
-  segmentText: { fontFamily: font.bold, fontSize: 13 },
-  noteCard: { borderRadius: 22, borderWidth: 1, padding: 14, gap: 8 },
+  segmentText: { fontFamily: font.bold, fontSize: 15 },
+  noteCard: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   noteText: { fontFamily: font.body, fontSize: 14, lineHeight: 20 },
   noteInput: { minHeight: 90, borderRadius: 14, borderWidth: 1.5, padding: 12, fontFamily: font.body, fontSize: 14, textAlignVertical: "top" },
   deleteBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "center", minHeight: 36 },
