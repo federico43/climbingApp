@@ -11,7 +11,7 @@ import {
 } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
@@ -20,6 +20,7 @@ import {
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
@@ -93,6 +94,7 @@ export function SprayBlock({
   const athleteId = User?.$id
   const nextLabel = useNextBlockLabel("Continue")
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const settings = spraySettings(block)
   const routeType = settings.routeType as RouteType
   const title = block.blockName || "Spray wall"
@@ -103,6 +105,9 @@ export function SprayBlock({
 
   // Resuming: clock rebuilt from the attempts, back on the last sequence.
   const [startedAt, setStartedAt] = useState<number | null>(() => resumedBlockStart(attempts.map((a) => a.timestamp)))
+  // Pausable like every timer: the block clock reads `pause.now()`.
+  const pause = usePauseClock()
+  const pauseNow = pause.now
   const [now, setNow] = useState(Date.now())
   const secondsLeft = startedAt == null ? limitSecs : limitSecs - Math.floor((now - startedAt) / 1000)
   const [routeId, setRouteId] = useState<string | null>(() => [...attempts].reverse().find((a) => a.routeId)?.routeId ?? null)
@@ -142,9 +147,9 @@ export function SprayBlock({
   // Tick the block clock (time blocks).
   useEffect(() => {
     if (!timed || startedAt == null) return
-    const id = setInterval(() => setNow(Date.now()), 500)
+    const id = setInterval(() => setNow(pauseNow()), 500)
     return () => clearInterval(id)
-  }, [timed, startedAt])
+  }, [timed, startedAt, pauseNow])
 
   // The end: time's up (time blocks) or the attempt target reached — asked
   // once the athlete is between attempts, never mid-rest.
@@ -221,7 +226,7 @@ export function SprayBlock({
   function choose(id: string) {
     setRouteId(id)
     blockTimer.start()
-    if (startedAt == null) { setStartedAt(Date.now()); setNow(Date.now()) }
+    if (startedAt == null) { pause.reset(); setStartedAt(Date.now()); setNow(Date.now()) }
     setPhase("work")
   }
 
@@ -306,6 +311,8 @@ export function SprayBlock({
       color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
       seconds={Math.max(0, secondsLeft)}
       text={secondsLeft > 0 ? clock(secondsLeft) : "0:00"}
+      paused={pause.paused}
+      onTogglePause={secondsLeft > 0 ? pause.toggle : undefined}
     />
   )
   // Attempts blocks: one segment per attempt, green = top, red = fell.
@@ -650,7 +657,7 @@ export function SprayBlock({
               </Text>
             )}
           </View>
-          <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} />
+          <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />
         </View>
         {attemptBar(`Next: attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.restOptions}>

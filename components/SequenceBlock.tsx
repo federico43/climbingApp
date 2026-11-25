@@ -6,7 +6,7 @@ import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import {
   getSessions, getSprayRoute, getSprayRoutes, getSprayWall, saveSprayRoute,
   SprayRouteRow, SprayWallRow,
@@ -105,6 +105,7 @@ export function SequenceBlock({
   })
   const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null)
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const [outcome, setOutcome]           = useState<Outcome | null>(null)
   const [highPoint, setHighPoint]       = useState<number>(1)
   const [rpe, setRpe]                   = useState<string>("")
@@ -555,6 +556,8 @@ export function SequenceBlock({
                 color={timerColor(C, "rest")}
                 seconds={restTimeRemaining ?? 0}
                 text={restDisplay ?? undefined}
+                paused={rest.paused}
+                onTogglePause={rest.toggle}
               />
               <Text style={[styles.restBarText, { color: C.textPrimary }]}>Rest</Text>
             </View>
@@ -639,6 +642,19 @@ export function SequenceBlock({
     const timerDisplay = restTimeRemaining != null && restTimeRemaining > 0
       ? `${Math.floor(restTimeRemaining / 60)}:${String(restTimeRemaining % 60).padStart(2, "0")}`
       : "go!"
+    // The standard small timer ring, pausable (tap).
+    const restLeft = restTimeRemaining ?? 0
+    const restRing = (
+      <TimerRing
+        size={56}
+        fill={ringFill(restTime, restLeft)}
+        color={timerColor(C, restLeft > 0 ? "rest" : "over")}
+        seconds={restLeft}
+        text={timerDisplay}
+        paused={rest.paused}
+        onTogglePause={restLeft > 0 ? rest.toggle : undefined}
+      />
+    )
 
     // ── Step 1: outcome
     if (rest1Step === "outcome") {
@@ -646,9 +662,7 @@ export function SequenceBlock({
         <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
           <View style={styles.rest1Header}>
             <Text style={styles.rest1Question}>How did it go?</Text>
-            <View style={styles.pillTimer}>
-              <Text style={styles.pillTimerText}>{timerDisplay}</Text>
-            </View>
+            {restRing}
           </View>
           <ScrollView contentContainerStyle={styles.rest1Content}>
 
@@ -718,9 +732,7 @@ export function SequenceBlock({
       <View style={[shared_styles.screen, { backgroundColor: C.bg }]}>
         <View style={styles.rest1Header}>
           <Text style={styles.rest1Question}>How hard was it?</Text>
-          <View style={styles.pillTimer}>
-            <Text style={styles.pillTimerText}>{timerDisplay}</Text>
-          </View>
+          {restRing}
         </View>
         <ScrollView contentContainerStyle={styles.rest1Content}>
 
@@ -943,11 +955,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
   // Calibration screen (blind selection)
 
   // ── Rest 1
-  pillTimer: {
-    backgroundColor: "transparent", borderRadius: 20, borderWidth: 1.5, borderColor: C.green,
-    paddingHorizontal: 16, paddingVertical: 6, minWidth: 84, alignItems: "center",
-  },
-  pillTimerText: { fontSize: 15, fontWeight: "700", color: C.green },
   rest1Header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8,

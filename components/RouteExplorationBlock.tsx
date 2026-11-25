@@ -16,6 +16,7 @@ import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
@@ -60,25 +61,29 @@ function formatTime(seconds: number): string {
 
 // Countdown from `minutes` while `running`; calls onEnd once at zero. Beeps at
 // zero, and notifies (as `label`) when it runs out with the app in the background.
+// Pausable (`paused` / `toggle`); starting it again starts unpaused.
 function useCountdown(minutes: number, running: boolean, label: string, onEnd: () => void) {
   const [left, setLeft] = useState(minutes * 60)
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(running ? endsAt : null, label)
+  const clock = usePauseClock()
+  const { now, reset } = clock
+  useBlockTimerAlert(running ? clock.real(endsAt) : null, label)
   const onEndRef = useRef(onEnd)
   onEndRef.current = onEnd
   useEffect(() => {
     if (!running) return
+    reset()
     const end = Date.now() + minutes * 60 * 1000
     setEndsAt(end)
     setLeft(minutes * 60)
     const id = setInterval(() => {
-      const s = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const s = Math.max(0, Math.ceil((end - now()) / 1000))
       setLeft(s)
       if (s === 0) { clearInterval(id); onEndRef.current() }
     }, 250)
     return () => { clearInterval(id); setEndsAt(null) }
-  }, [running, minutes])
-  return left
+  }, [running, minutes, now, reset])
+  return { left, paused: clock.paused, toggle: left > 0 ? clock.toggle : undefined }
 }
 
 export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttempt, goToNextBlock, goToPreviousBlock }: Props) {
@@ -134,14 +139,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const flashLeft = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
+  const flash = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("review")
   })
-  const projectLeft = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
+  const project = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("question")
   })
+  const flashLeft = flash.left
+  const projectLeft = project.left
 
   function logRoute() {
     if (!wall) return
@@ -181,7 +188,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       </Pressable>
       <Text style={topBar_styles.title} numberOfLines={1}>{barTitle}</Text>
       <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-        <TimerRing size={46} fill={ringFill(total, left)} color={timerColor(C, left > 0 ? "work" : "over")} seconds={left} text={formatTime(left)} />
+        <TimerRing size={46} fill={ringFill(total, left)} color={timerColor(C, left > 0 ? "work" : "over")} seconds={left} text={formatTime(left)} paused={flash.paused} onTogglePause={flash.toggle} />
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
@@ -338,6 +345,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
             seconds={projectLeft}
             text={formatTime(projectLeft)}
             glow={projectLeft > 0}
+            paused={project.paused}
+            onTogglePause={project.toggle}
           />
           <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
             <Text style={styles.stopBtnText}>Stop</Text>

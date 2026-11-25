@@ -7,7 +7,7 @@ import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions, getUsers } from "@/services/BoulderGraphService"
 import { findBlockRuns } from "@/utils/blockHistory"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { colourIndex, colourLabel } from "@/utils/boulderColours"
 import {
   attemptGrades, authoredGrades, fitGrades, liveStepDown, pendingStepDowns, suggestNextFourByFour,
@@ -98,6 +98,7 @@ export function FourByFourBlock({
   const [perBoulder, setPerBoulder] = useState(false)
   const [tops, setTops] = useState<number>(bouldersPerSet)
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const { User } = ConsumeAuth()
   const [showIntro, setShowIntro] = useState(false)
   useEffect(() => {
@@ -334,7 +335,7 @@ export function FourByFourBlock({
         </View>
 
         <View style={styles.restCircle}>
-          <TimerRing size={230} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} title="Rest" seconds={t} text={display} />
+          <TimerRing size={230} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} title="Rest" seconds={t} text={display} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />
         </View>
 
         <View style={styles.restFooter}>
