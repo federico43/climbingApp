@@ -9,6 +9,7 @@
 //     --as=Pablo:USERNAME        which username an athlete is, when the match is wrong or ambiguous
 //     --barbas-paid=YYYY-MM-DD   day Pipe Barbas's new package starts (default 2026-11-23)
 //     --barbas-size=N            sessions in it (default 8)
+//     --left=Pipe:6              set an athlete's sessions left by hand (wins over the rules below)
 //
 // Only in-person classes in the app count down a package. Virtual classes
 // (workouts) don't, so a virtual balance stays until the coach changes it.
@@ -17,6 +18,7 @@ import { classesDone, createRow, describe, loadAll, now, packageNow, plusDays, r
 const APPLY = process.argv.includes("--apply")
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3)
 const AS = Object.fromEntries(process.argv.filter((a) => a.startsWith("--as=")).map((a) => a.slice(5).split(":")))
+const LEFT = Object.fromEntries(process.argv.filter((a) => a.startsWith("--left=")).map((a) => a.slice(7).split(":")))
 const BARBAS_PAID = arg("barbas-paid") ?? "2026-11-23"
 const BARBAS_SIZE = Number(arg("barbas-size") ?? 8)
 const at = now()
@@ -53,11 +55,12 @@ for (const p of PLAN) {
   }
   const user = found[0]
   const before = packageNow(all, user.$id, at)
-  const left = p.left({ all, user, leticia: leticia.filter((w) => !w.athleteId || w.athleteId === user.$id) })
+  const byHand = LEFT[p.who] ?? LEFT[p.who.split(" ")[0]]
+  const left = byHand !== undefined ? Number(byHand) : p.left({ all, user, leticia: leticia.filter((w) => !w.athleteId || w.athleteId === user.$id) })
   const useBy = p.useBy === "keep" && before.pkg && before.pkg.useBy >= at.ymd ? before.pkg.useBy : NEW_USE_BY
   console.log(`${p.who} = ${user.username}`)
   console.log(`   before: ${describe(before)}`)
-  console.log(`   after:  ${left} of ${left} left · started ${at.ymd} · use by ${useBy}${left <= 0 ? " · LOCKED" : ""}   (${p.why})`)
+  console.log(`   after:  ${left} of ${left} left · started ${at.ymd} · use by ${useBy}${left <= 0 ? " · LOCKED" : ""}   (${byHand !== undefined ? "set by hand" : p.why})`)
   if (p.who === "Milena") console.log(`   "leticia" workouts counted: ${leticia.filter((w) => !w.athleteId || w.athleteId === user.$id).length}`)
   if (before.locked && left > 0) console.log("   note: was locked, so the app took them out of this week's classes; they go back into their usual ones from next week (add them to this week's by hand if needed)")
   todo.push({ user, row: { athleteId: user.$id, total: left, startsOn: at.ymd, useBy } })
