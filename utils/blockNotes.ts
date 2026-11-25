@@ -4,6 +4,10 @@
 
 export interface NotePart { text: string; key: boolean }
 
+/** A colour chip under a step on a running screen (e.g. the route colours a
+ *  warm-up may use). `struck`: the colour to leave alone, crossed out. */
+export interface NoteChip { label: string; color: string; struck?: boolean }
+
 const BULLET = /^\s*(?:[-•*·–]|\d{1,2}[.)])\s+/
 
 // One step per line. A single paragraph with several sentences becomes one
