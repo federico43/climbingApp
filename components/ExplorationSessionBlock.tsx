@@ -1,7 +1,7 @@
 import { BlockIntro } from "@/components/BlockIntro"
 import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { TimerBar } from "@/components/IntervalVisuals"
 import { account } from "@/components/AppWrite"
 import { getBoulderLevels, logRecord } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
@@ -340,17 +340,6 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           {block?.blockName || "Boulder Logger"}
         </Text>
         <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-          {timeRemaining !== null && (
-            <TimerRing
-              size={46}
-              fill={ringFill(timeLimitSeconds, timeRemaining)}
-              color={timerColor(C, timeRemaining > 0 ? "work" : "over")}
-              seconds={timeRemaining}
-              text={formatTime(timeRemaining)}
-              paused={clock.paused}
-              onTogglePause={timeRemaining > 0 && phase === "active" ? clock.toggle : undefined}
-            />
-          )}
           {climbs.length > 0 && (
             <View style={styles.scoreBadge}>
               <Text style={styles.scoreBadgeText}>
@@ -360,6 +349,15 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           )}
         </View>
       </View>
+      {timeRemaining !== null && (
+        <TimerBar
+          total={timeLimitSeconds}
+          left={timeRemaining}
+          text={formatTime(timeRemaining)}
+          paused={clock.paused}
+          onTogglePause={timeRemaining > 0 && phase === "active" ? clock.toggle : undefined}
+        />
+      )}
 
       <View style={styles.container}>
       {loadingLevels ? (
