@@ -490,7 +490,7 @@ export function AthleteWorkoutBuilder({
         <Mono color={P.ink} size={11} style={{ flex: 1 }}>The workout</Mono>
         {blocks.length > 0 && <Mono color={P.ink} size={11}>{`${totalMin} min`}</Mono>}
       </View>
-      {spine && warmup && <View style={{ marginTop: 14, marginHorizontal: -2 }}><SpineWarmup hasBlocks={blocks.length > 0}>{warmup}</SpineWarmup></View>}
+      {spine && warmup && <View style={{ marginTop: 14, marginHorizontal: -16, marginBottom: -4 }}><SpineWarmup hasBlocks={blocks.length > 0}>{warmup}</SpineWarmup></View>}
     </View>
   )
 
