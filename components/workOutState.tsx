@@ -6,10 +6,11 @@ import { useC } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { useSessionSyncState } from "@/services/sessionSyncQueue"
 import { BlockRenderer } from "@/utils/blockRenderer"
-import { BlockTimerContext } from "@/utils/blockTimer"
+import { BlockTimerContext, RestPauseContext } from "@/utils/blockTimer"
 import { LastBlockContext } from "@/utils/blockNav"
 import { Ionicons } from "@expo/vector-icons"
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -93,6 +94,8 @@ export function WorkOutState({
     updateLastAttempt,
     startWorkout,
     startRestTimer,
+    restPaused,
+    toggleRestPause,
     currentBlockIndex,
     totalBlocks,
     isLastBlock,
@@ -158,6 +161,7 @@ export function WorkOutState({
     () => ({ start: () => setTimerStartedAt((t) => t ?? Date.now()) }),
     [],
   )
+  const restPause = useMemo(() => ({ paused: restPaused, toggle: toggleRestPause }), [restPaused, toggleRestPause])
 
   // Total time spans the real workout — workoutStartTime lives in the hook, so
   // it's the original start even after a resume (not the resume moment).
@@ -170,16 +174,20 @@ export function WorkOutState({
   // The session is saved the moment it completes (see WorkoutContext — kept on
   // the phone until it reaches the server), so the summary just closes itself after AUTO_CLOSE_SECS — doing what "Save
   // workout" used to — unless the athlete leaves first.
+  // Pausable like every timer: tapping "closing in" keeps the summary open.
   const [autoCloseIn, setAutoCloseIn] = useState(AUTO_CLOSE_SECS)
+  const autoCloseClock = usePauseClock()
   const sync = useSessionSyncState()
   const closeSummaryRef = useRef(() => {})
   closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
+  const { now: autoCloseNow, reset: resetAutoClose } = autoCloseClock
   useEffect(() => {
     if (status !== "completed" || holdSummary) return
+    resetAutoClose()
     setAutoCloseIn(AUTO_CLOSE_SECS)
     const end = Date.now() + AUTO_CLOSE_SECS * 1000
     const id = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - autoCloseNow()) / 1000))
       setAutoCloseIn(r)
       if (r <= 0) {
         clearInterval(id)
@@ -187,7 +195,7 @@ export function WorkOutState({
       }
     }, 250)
     return () => clearInterval(id)
-  }, [status, holdSummary])
+  }, [status, holdSummary, autoCloseNow, resetAutoClose])
 
   function handleStartWorkout() {
     onWorkoutStart()
@@ -389,11 +397,28 @@ export function WorkOutState({
               router.navigate("/")
             }}
           />
-          <Mono style={styles.summaryAutoClose}>
-            {sync.pending > 0 && sync.offline
-              ? "No connection — saved on this phone, it uploads once you're back online"
-              : "Workout saved"}{holdSummary ? "" : ` · closing in ${autoCloseIn}s`}
-          </Mono>
+          {holdSummary ? (
+            <Mono style={styles.summaryAutoClose}>
+              {sync.pending > 0 && sync.offline
+                ? "No connection — saved on this phone, it uploads once you're back online"
+                : "Workout saved"}
+            </Mono>
+          ) : (
+            <Pressable
+              onPress={autoCloseClock.toggle}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={autoCloseClock.paused ? "Resume closing" : "Keep the summary open"}
+            >
+              <Mono style={styles.summaryAutoClose}>
+                {sync.pending > 0 && sync.offline
+                  ? "No connection — saved on this phone, it uploads once you're back online"
+                  : "Workout saved"} · {autoCloseClock.paused
+                  ? `paused at ${autoCloseIn}s · tap to resume`
+                  : `closing in ${autoCloseIn}s · tap to pause`}
+              </Mono>
+            </Pressable>
+          )}
         </ScrollView>
         {sheet && <TaskSheet task={sheet.task} onClose={() => setSheet(null)} insets={insets} />}
       </SafeAreaView>
@@ -468,6 +493,7 @@ export function WorkOutState({
       </View>
       <BlockEntry key={`${currentBlockIndex}-${currentBlock?.blockName ?? ""}-${currentBlock?.coached ? "c" : "g"}`}>
         <BlockTimerContext.Provider value={blockTimer}>
+          <RestPauseContext.Provider value={restPause}>
           <LastBlockContext.Provider value={isLastBlock}>
             <BlockRenderer
               block={currentBlock}
@@ -486,6 +512,7 @@ export function WorkOutState({
               blockStartTime={blockStartTime}
             />
           </LastBlockContext.Provider>
+          </RestPauseContext.Provider>
         </BlockTimerContext.Provider>
       </BlockEntry>
       {blockMenuNode}
@@ -508,16 +535,18 @@ function BlockCountdown({ minutes, label }: { minutes: number; label: string }) 
   const C = useC()
   const total = Math.max(0, Math.round(minutes * 60))
   const [remaining, setRemaining] = useState(total)
+  const clock = usePauseClock()
+  const { now } = clock
   const [end] = useState(() => Date.now() + total * 1000)
-  useBlockTimerAlert(total > 0 ? end : null, label)
+  useBlockTimerAlert(total > 0 ? clock.real(end) : null, label)
   useEffect(() => {
     const id = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - now()) / 1000))
       setRemaining(r)
       if (r <= 0) clearInterval(id)
     }, 250)
     return () => clearInterval(id)
-  }, [end])
+  }, [end, now])
   const over = remaining <= 0
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
@@ -529,6 +558,8 @@ function BlockCountdown({ minutes, label }: { minutes: number; label: string }) 
       color={timerColor(C, over ? "over" : "work")}
       seconds={remaining}
       text={`${m}:${String(s).padStart(2, "0")}`}
+      paused={clock.paused}
+      onTogglePause={over ? undefined : clock.toggle}
     />
   )
 }

@@ -76,19 +76,33 @@ export function SeriesBar({ total, done, current, now, word = "Series" }: {
  * colour by phase (`timerColor`). Big (≥ 120): phase on top, the clock and
  * "Then: …" under it. Small (a chip in a bar, a rest next to a title): the
  * clock only.
+ *
+ * Every timer must be pausable (Federico 2026-11-25): pass `onTogglePause`
+ * and tapping the ring pauses / resumes it. Paused, the ring turns ink and a
+ * play mark shows (big: "Paused" on top); running, a big ring shows a small
+ * pause mark under the clock so the tap is findable.
  */
-export function TimerRing({ fill, color, title, seconds, next, glow, size = 260, text }: {
+export function TimerRing({ fill, color, title, seconds, next, glow, size = 260, text, paused, onTogglePause }: {
   fill: number; color: string; title?: string; seconds: number; next?: string | null; glow?: boolean
   /** Ring diameter. Default 260 (full screen timers). */
   size?: number
   /** Clock text instead of the seconds (e.g. "go!", "+1:05"). */
   text?: string
+  paused?: boolean
+  /** Tapping the ring pauses / resumes. */
+  onTogglePause?: () => void
 }) {
   const C = useC()
   const s = useSheet(sheet)
   const big = size >= 120
   const k = size / 260
   const clock = text ?? (seconds >= 60 ? fmtSec(seconds) : String(seconds))
+  if (paused) {
+    color = timerColor(C, "paused")
+    if (big) title = "Paused"
+    glow = false
+  }
+  const mark = onTogglePause ? (paused ? "play" : "pause") : null
   const ring = (
     <AnimatedCircularProgress
       size={size} width={big ? Math.max(8, Math.round(16 * k)) : Math.max(3, Math.round(size / 13))}
@@ -105,15 +119,39 @@ export function TimerRing({ fill, color, title, seconds, next, glow, size = 260,
           >
             {clock}
           </Text>
-          {next ? <Text style={s.next} numberOfLines={2}>{next}</Text> : null}
+          {mark && <Ionicons name={mark} size={Math.max(16, Math.round(22 * k))} color={paused ? C.textPrimary : C.textSecondary} style={{ marginTop: 2 }} />}
+          {next && !paused ? <Text style={s.next} numberOfLines={2}>{next}</Text> : null}
+          {paused ? <Text style={s.next}>Tap to resume</Text> : null}
         </View>
       ) : (
         <Text style={[s.clockSmall, { fontSize: Math.round(size * (clock.length > 4 ? 0.22 : 0.27)) }]} numberOfLines={1}>{clock}</Text>
       )}
     </AnimatedCircularProgress>
   )
-  if (!big) return ring
-  return <View style={[s.ringWrap, { padding: Math.round(14 * k) }, glow && { backgroundColor: C.tint("rgba(111,207,151,0.06)") }]}>{ring}</View>
+  const body = big
+    ? <View style={[s.ringWrap, { padding: Math.round(14 * k) }, glow && { backgroundColor: C.tint("rgba(111,207,151,0.06)") }]}>{ring}</View>
+    : (
+      <View>
+        {ring}
+        {paused && (
+          <View style={[s.badge, { width: Math.max(14, Math.round(size * 0.36)), height: Math.max(14, Math.round(size * 0.36)) }]}>
+            <Ionicons name="play" size={Math.max(8, Math.round(size * 0.2))} color={C.bg} />
+          </View>
+        )}
+      </View>
+    )
+  if (!onTogglePause) return body
+  return (
+    <Pressable
+      onPress={onTogglePause}
+      hitSlop={big ? 0 : 8}
+      accessibilityRole="button"
+      accessibilityLabel={paused ? "Resume timer" : "Pause timer"}
+      style={({ pressed }) => pressed && { opacity: 0.75 }}
+    >
+      {body}
+    </Pressable>
+  )
 }
 
 /** Ring colour by phase: work / hang / running = mint, rest = muted, the rest ink. */
@@ -148,6 +186,10 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
   segments: { flexDirection: "row", gap: 4, width: "100%" },
   segment: { flex: 1, height: 8, borderRadius: 4, backgroundColor: C.surfaceHigh, ...(P && { height: 6, borderRadius: 3, backgroundColor: P.hairline }) },
   ringWrap: { borderRadius: 160, padding: 14 },
+  badge: {
+    position: "absolute", right: -3, bottom: -3, borderRadius: 999,
+    backgroundColor: C.textPrimary, alignItems: "center", justifyContent: "center",
+  },
   inner: { alignItems: "center", paddingHorizontal: 28 },
   phase: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2, ...(P && { fontFamily: font.title, textTransform: "uppercase", fontSize: 24 }) },
   clock: { fontSize: 84, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], lineHeight: 96, ...(P && { fontFamily: font.poster, fontSize: 108, lineHeight: 108, letterSpacing: -2 }) },

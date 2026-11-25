@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getUsers } from "@/services/BoulderGraphService"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { BoulderLevelOptions, colourIndex, colourLabel, shiftColour } from "@/utils/boulderColours"
 import {
   FALL_REASONS, fallReasonLabel, normalizeProjectBlock, PROJECT_V2, resumedBlockStart,
@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
@@ -86,12 +87,16 @@ function ProjectBoulderingRun({
   // inside the task's own clock and taps "Next attempt".
   const restSecs = task?.mode === "time" ? 0 : settings.restTime
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const { User } = useAuth()
 
   // Resuming (or coming back to) a block with attempts: the clock is rebuilt
   // from them (the live timer isn't persisted) and the grade from their level.
   const [startedAt, setStartedAt] = useState<number | null>(() => resumedBlockStart(attempts.map((a) => a.timestamp)))
   const [grade, setGrade] = useState<string>(() => settings.grade || summarizeProjectAttempts(attempts).grade)
+  // Pausable like every timer: the block clock reads `pause.now()`.
+  const pause = usePauseClock()
+  const pauseNow = pause.now
   const [now, setNow] = useState(Date.now())
   const secondsLeft = startedAt == null ? limitSecs : limitSecs - Math.floor((now - startedAt) / 1000)
   const left = triesLeft(task, attempts.length)
@@ -101,7 +106,7 @@ function ProjectBoulderingRun({
   const [overtime, setOvertime] = useState(false)   // "One more attempt" after time's up
   // Beeps when the block's time runs out, and notifies if the app is in the background.
   useBlockTimerAlert(
-    timed && startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? startedAt + limitSecs * 1000 : null,
+    timed && startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? pause.real(startedAt + limitSecs * 1000) : null,
     blockTitle,
   )
 
@@ -130,9 +135,9 @@ function ProjectBoulderingRun({
   // Tick the block clock once it has started.
   useEffect(() => {
     if (startedAt == null) return
-    const id = setInterval(() => setNow(Date.now()), 500)
+    const id = setInterval(() => setNow(pauseNow()), 500)
     return () => clearInterval(id)
-  }, [startedAt])
+  }, [startedAt, pauseNow])
 
   // Time's up: ask once the athlete is between attempts (never mid-rest).
   useEffect(() => {
@@ -162,7 +167,7 @@ function ProjectBoulderingRun({
 
   function start() {
     blockTimer.start()
-    if (startedAt == null) { setStartedAt(Date.now()); setNow(Date.now()) }
+    if (startedAt == null) { pause.reset(); setStartedAt(Date.now()); setNow(Date.now()) }
     setPhase("ready")
   }
 
@@ -243,6 +248,8 @@ function ProjectBoulderingRun({
       color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
       seconds={Math.max(0, secondsLeft)}
       text={secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
+      paused={pause.paused}
+      onTogglePause={phase !== "review" ? pause.toggle : undefined}
     />
   )
 
@@ -428,7 +435,7 @@ function ProjectBoulderingRun({
               {restSecs > 0 ? "Rest" : `${clock(clockLeft)} left on the task`}{last?.videoId ? " · clip saved 🎥" : ""}
             </Text>
           </View>
-          {restSecs > 0 && <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} />}
+          {restSecs > 0 && <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />}
         </View>
 
         <ScrollView contentContainerStyle={s.restContent}>

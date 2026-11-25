@@ -126,6 +126,7 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
       <TimerRing
         fill={dur ? ((dur - left) / dur) * 100 : 0} color={color} title={title} seconds={left}
         next={next} glow={phase === "work" && !paused}
+        paused={paused} onTogglePause={togglePause}
       />
       {doublesEverySec ? (
         <View style={[s.hint, doubles && s.hintOn]}>

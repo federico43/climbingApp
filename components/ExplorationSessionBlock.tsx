@@ -19,6 +19,7 @@ import {
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { WALLS, wallLabel } from "@/utils/routeExploration"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,8 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   const timerEndRef = useRef<number | null>(null)
   // When the running time limit ends (null when none) — beeps / notifies.
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(endsAt, block?.blockName || "Exploration session")
+  const clock = usePauseClock()
+  useBlockTimerAlert(clock.real(endsAt), block?.blockName || "Exploration session")
   const climbsRef   = useRef<ClimbEntry[]>([])
 
   // keep ref in sync so the timer callback can access latest climbs
@@ -129,11 +131,12 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
   function startTimer() {
     if (!timeLimitSeconds) return
+    clock.reset()
     timerEndRef.current = Date.now() + timeLimitSeconds * 1000
     setEndsAt(timerEndRef.current)
     setTimeRemaining(timeLimitSeconds)
     timerRef.current = setInterval(() => {
-      const remaining = Math.ceil((timerEndRef.current! - Date.now()) / 1000)
+      const remaining = Math.ceil((timerEndRef.current! - clock.now()) / 1000)
       if (remaining <= 0) {
         clearInterval(timerRef.current!)
         timerRef.current = null
@@ -344,6 +347,8 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
               color={timerColor(C, timeRemaining > 0 ? "work" : "over")}
               seconds={timeRemaining}
               text={formatTime(timeRemaining)}
+              paused={clock.paused}
+              onTogglePause={timeRemaining > 0 && phase === "active" ? clock.toggle : undefined}
             />
           )}
           {climbs.length > 0 && (

@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
@@ -70,7 +71,8 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   const [note, setNote] = useState("")
   // When the time limit (if any) runs out while running — beeps / notifies.
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(endsAt, block.blockName || "Free session")
+  const clock = usePauseClock()
+  useBlockTimerAlert(clock.real(endsAt), block.blockName || "Free session")
 
   const holds = useMemo(() => {
     if (!block.routeHolds) return []
@@ -87,11 +89,12 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   }, [])
 
   function start() {
+    clock.reset()
     startTimeRef.current = Date.now()
     const limitSec = (block.timeLimit ?? 0) * 60
     setEndsAt(limitSec > 0 ? startTimeRef.current + limitSec * 1000 : null)
     intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current!) / 1000))
+      setElapsed(Math.floor((clock.now() - startTimeRef.current!) / 1000))
     }, 500)
     setPhase("running")
   }
@@ -102,6 +105,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
       intervalRef.current = null
     }
     setEndsAt(null)
+    clock.reset()
     setPhase("done")
   }
 
@@ -162,6 +166,8 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
             seconds={hasLimit ? remaining : elapsed}
             text={formatElapsed(hasLimit ? remaining : elapsed)}
             glow={!over}
+            paused={clock.paused}
+            onTogglePause={over ? undefined : clock.toggle}
           />
           <Pressable style={styles.stopBtn} onPress={stop}>
             <Text style={styles.stopBtnText}>Stop</Text>

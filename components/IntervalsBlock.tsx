@@ -365,7 +365,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
         {series > 1 && (
           <SeriesBar total={series} done={doneRounds} current={phase === "work" ? round : null} now={round + 1} word="Round" />
         )}
-        <TimerRing fill={fill} color={tint} title={label} seconds={left} next={nextText} glow={phase === "work" && !paused} />
+        <TimerRing fill={fill} color={tint} title={label} seconds={left} next={nextText} glow={phase === "work" && !paused} paused={paused} onTogglePause={paused ? resumeTimer : pauseTimer} />
         {/* A fall during work ends the round and starts the rest at once.
             During rest the button still records the round just finished
             (a fall right at the end of a round). */}
