@@ -18,7 +18,7 @@ type RingProps = React.ComponentProps<typeof TimerRing>
 // the room left allows, and the ink bar that ends the part, with what comes
 // next on its mono line ("Next · one question").
 // With `children` (e.g. the spray wall viewer) they take the room and the
-// dial sits small under them.
+// dial, if any, sits small under them (the breathing screen has none).
 export function ActiveScreen({ title, meta, onBack, notes, words, chips, ring, action, children }: {
   title: string
   /** Mono line right of the title, e.g. "8:00 total". */
@@ -31,7 +31,7 @@ export function ActiveScreen({ title, meta, onBack, notes, words, chips, ring, a
   /** Colour chips under a step of the notes, by step index (0 = first). */
   chips?: Record<number, NoteChip[]>
   /** The dial; ActiveScreen sizes it. What comes next goes on the bar, not under the dial. */
-  ring: Omit<RingProps, "size" | "next">
+  ring?: Omit<RingProps, "size" | "next">
   /** The ink bar at the bottom. `next`: what comes after it, e.g. "one question". */
   action: { label: string; next?: string; icon?: IconName; onPress: () => void }
   children?: React.ReactNode
@@ -56,9 +56,11 @@ export function ActiveScreen({ title, meta, onBack, notes, words, chips, ring, a
       {children ? (
         <>
           <View style={styles.children}>{children}</View>
-          <View style={styles.ringSmall}>
-            <TimerRing {...ring} size={150} />
-          </View>
+          {ring && (
+            <View style={styles.ringSmall}>
+              <TimerRing {...ring} size={150} />
+            </View>
+          )}
         </>
       ) : (
         <View
@@ -68,7 +70,7 @@ export function ActiveScreen({ title, meta, onBack, notes, words, chips, ring, a
             setSize(fitDialSize(width - 32, height - 16))
           }}
         >
-          {size > 0 && <TimerRing {...ring} size={size} />}
+          {ring && size > 0 && <TimerRing {...ring} size={size} />}
         </View>
       )}
       <View style={styles.footer}>

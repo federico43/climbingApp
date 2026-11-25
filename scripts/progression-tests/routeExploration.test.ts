@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import {
   EXPLORATION_DEFAULT_DESCRIPTION, explorationDescription, explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
   nextExplorationColour, notSentColours, summarizeExploration, routePoints, explorationPoints, formatPoints, lastExploration,
-  breathAt, explorationFocusSlides,
+  breathAt, explorationFocusSlides, warmupColours,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
 import { buildPlanWorkout } from "@/utils/planWorkout"
@@ -24,6 +24,14 @@ assert.equal(nextExplorationColour("blue", [r("blue", true), r("blue", false)]),
 assert.equal(nextExplorationColour("blue", []), null)
 assert.equal(nextExplorationColour("black", [r("black", true)]), null)
 assert.equal(explorationGoes([r("blue", true), r("blue", true, 2), r("green", false)]), 6)
+
+// ── warm-up chips: below the flash from blue up, the flash struck ──
+const chipsOf = (c: string) => warmupColours(c).map((x) => (x.struck ? `~${x.colour}` : x.colour))
+assert.deepEqual(chipsOf("red"), ["blue", "green", "yellow", "~red"]) // the mock-up
+assert.deepEqual(chipsOf("green"), ["blue", "~green"])
+assert.deepEqual(chipsOf("blue"), ["orange", "~blue"])
+assert.deepEqual(chipsOf("black"), ["blue", "green", "yellow", "red", "~black"])
+assert.deepEqual(warmupColours("pink"), [])
 
 // ── part 2: the colours that didn't go, once each, easiest first ──
 assert.deepEqual(notSentColours([r("green", false), r("blue", true), r("yellow", false), r("blue", false), r("green", false)]), ["blue", "green", "yellow"])

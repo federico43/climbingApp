@@ -76,9 +76,10 @@ export function explorationDescription(saved: string | null | undefined): string
   return d
 }
 
+// Worded as in Federico's mock-up of the warm-up screen (2026-11-25).
 export const EXPLORATION_WARMUP_NOTES = [
-  "Warm up on *easy routes below your flash level*, a little harder each time.",
-  "*Not the new routes*: save them for part 1.",
+  "Easy routes *below your flash level*, a little harder each time.",
+  "*Not the new routes.* Save them for part 1.",
 ].join("\n")
 
 export const EXPLORATION_BREATHING_NOTES = [
@@ -102,6 +103,22 @@ export function explorationStartColour(flash: string | null | undefined): string
   const min = colourIndex(EXPLORATION_MIN_COLOUR)
   const i = colourIndex(flash)
   return BoulderLevelOptions[Math.max(min, i)].value
+}
+
+// The warm-up's colour chips (Federico's mock-up 2026-11-25: flash red →
+// Blue, Green, Yellow, ~~Red~~): the colours below the flash level, from
+// blue up (orange when the flash is blue, the only one below it), then the
+// flash colour itself crossed out, kept for part 1. `startColour` is part
+// 1's colour (explorationStartColour).
+export function warmupColours(startColour: string): { colour: string; struck: boolean }[] {
+  const flash = colourIndex(startColour)
+  if (flash < 0) return []
+  const blue = colourIndex(EXPLORATION_MIN_COLOUR)
+  const from = flash > blue ? blue : 0
+  return [
+    ...BoulderLevelOptions.slice(from, flash).map((o) => ({ colour: o.value, struck: false })),
+    { colour: startColour, struck: true },
+  ]
 }
 
 // ─── Breathing ───────────────────────────────────────────────────────────────
