@@ -27,7 +27,7 @@ import {
   SessionRow,
   TrainingPlanRow,
 } from "@/services/BoulderGraphService"
-import { addDays, localDateStr, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
+import { addDays, localDateStr, PLAN_FOCUS_LABEL, PLAN_WEEKS, planWeek } from "@/utils/planRotation"
 import { pauseOn } from "@/utils/planPauses"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
@@ -198,6 +198,7 @@ export function AthleteDetail({
           <AthleteWorkoutBuilder
             athlete={athlete}
             roster={roster}
+            focusLabel={plan?.focus ? PLAN_FOCUS_LABEL[plan.focus] : null}
             onClose={() => setBuilding(false)}
             onSaved={() => setTemplatesKey((k) => k + 1)}
           />

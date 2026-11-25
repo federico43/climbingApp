@@ -1,4 +1,5 @@
-import CustomButton from "@/components/customButton"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
@@ -115,18 +116,14 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 
   if (phase === "intro") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={block.blockName} onBack={goToPreviousBlock} poster />
-        <ScrollView
-          contentContainerStyle={shared_styles.introContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <BlockNotes text={block.description} />
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={start} />
-        </View>
-      </View>
+      <BlockIntro
+        title={block.blockName || "Free session"}
+        onBack={goToPreviousBlock}
+        facts={[minutesLabel(block.timeLimit)]}
+        note={block.description}
+        startSub={["Free session", minutesLabel(block.timeLimit)].filter(Boolean).join(" · ")}
+        onStart={start}
+      />
     )
   }
 

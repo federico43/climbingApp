@@ -438,6 +438,7 @@ export function PlanCard({
             initialBlocks={draftWorkout.blocks}
             initialHomeworkIds={draftWorkout.homeworkIds}
             plan={draftWorkout.plan}
+            focusLabel={plan?.focus ? PLAN_FOCUS_LABEL[plan.focus] : null}
             onSaved={() => {
               if (plan) listPlanWorkouts(plan.$id).then(onPlanWorkouts).catch(console.error)
               onHomeworkChanged()

@@ -1,4 +1,5 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
@@ -282,47 +283,39 @@ function ProjectBoulderingRun({
 
   if (phase === "intro" && task) {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <Text style={s.taskText}>{task.text}</Text>
-          <View style={s.introPills}>
-            <View style={s.infoPill}><Text style={s.infoPillText}>{task.mode === "time" ? `⏱ ${amountLabel(task)}` : amountLabel(task)}</Text></View>
-            {restSecs > 0 && <View style={s.infoPill}><Text style={s.infoPillText}>{clock(restSecs)} rest</Text></View>}
-          </View>
-          <Text style={s.hint}>
-            The task you set for this session. Tap the big button every time you come off (or top out).
-          </Text>
-        </ScrollView>
-        {/* Skipping is in the ⋯ menu ("Not today"), not here (Federico 2026-11-22). */}
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={start} />
-        </View>
-      </View>
+      // Skipping is in the ⋯ menu ("Not today"), not here (Federico 2026-11-22).
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={[amountLabel(task), restSecs > 0 && `${clock(restSecs)} rest`]}
+        startSub={`Your task · ${amountLabel(task)}`}
+        onStart={start}
+      >
+        <Text style={s.taskText}>{task.text}</Text>
+        <Text style={s.hint}>
+          The task you set for this session. Tap the big button every time you come off (or top out).
+        </Text>
+      </BlockIntro>
     )
   }
 
   if (phase === "intro") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <View style={s.introPills}>
-            {settings.grade ? <GradePill grade={settings.grade} /> : (
-              <View style={s.infoPill}><Text style={s.infoPillText}>You pick the grade</Text></View>
-            )}
-            <View style={s.infoPill}><Text style={s.infoPillText}>⏱ {settings.timeLimit} min</Text></View>
-            <View style={s.infoPill}><Text style={s.infoPillText}>{clock(settings.restTime)} rest</Text></View>
-          </View>
-          <BlockNotes text={block.description} />
-          <Text style={s.hint}>
-            Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
-          </Text>
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title={settings.grade ? "Start" : "Next"} onPress={() => (settings.grade ? start() : setPhase("grade"))} />
-        </View>
-      </View>
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={[minutesLabel(settings.timeLimit), `${clock(settings.restTime)} rest`, !settings.grade && "You pick the grade"]}
+        note={block.description}
+        startLabel={settings.grade ? "Start" : "Next"}
+        startSub={settings.grade ? `${colourLabel(settings.grade)} · ${minutesLabel(settings.timeLimit) ?? ""}` : "Pick the grade"}
+        startIcon={settings.grade ? "play" : "arrow-forward"}
+        onStart={() => (settings.grade ? start() : setPhase("grade"))}
+      >
+        {!!settings.grade && <View style={{ alignSelf: "flex-start" }}><GradePill grade={settings.grade} /></View>}
+        <Text style={s.hint}>
+          Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
+        </Text>
+      </BlockIntro>
     )
   }
 
@@ -636,9 +629,6 @@ export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] 
 const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
-  introPills: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  infoPill: { backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  infoPillText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
 
   // Task mode (next-session tasks)
   taskText: { fontSize: 26, fontWeight: "800", color: C.textPrimary, lineHeight: 32 },
