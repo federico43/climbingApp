@@ -1,6 +1,7 @@
 import { useRestNotification } from "@/hooks/useRestNotification"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ScReviewLog } from "@/utils/scReview"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,9 @@ export function useWorkout(protocolInput: Block[]) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
+  // A paused rest: ms it had left (every timer is pausable, 2026-11-25).
+  const restPausedLeftRef = useRef<number | null>(null)
+  const [restPaused, setRestPaused] = useState(false)
 
   useRestNotification(restEndsAt)
 
@@ -220,6 +224,8 @@ export function useWorkout(protocolInput: Block[]) {
     setTimeRemaining(null)
     setRestTimeRemaining(null)
     setRestEndsAt(null)
+    restPausedLeftRef.current = null
+    setRestPaused(false)
     setStatus("running")
   }, [])
 
@@ -232,6 +238,8 @@ export function useWorkout(protocolInput: Block[]) {
     setTimeRemaining(null)
     setRestTimeRemaining(null)
     setRestEndsAt(null)
+    restPausedLeftRef.current = null
+    setRestPaused(false)
     setBlockDurations({})
     setBlockStartTime(null)
     setWorkoutStartTime(null)
@@ -302,34 +310,60 @@ export function useWorkout(protocolInput: Block[]) {
         timestamp: Date.now(),
       }
 
-      setAttempts((prev) => [...prev, newAttempt])
+      // A redone S&C round (Back arrow, or the block reopened) replaces
+      // the earlier log of that round, and a block's review its earlier
+      // review (utils/scRedo.ts).
+      setAttempts((prev) => newAttempt.scData || newAttempt.scReview ? withoutRedoneRounds([...prev, newAttempt]) : [...prev, newAttempt])
     },
     [status, currentBlock, currentBlockIndex]
   )
 
-  const startRestTimer = useCallback((duration: number) => {
-  if (restTimerRef.current !== null) {
+  // Runs the shared rest for `ms`. `startRestTimer` starts a new one;
+  // resuming a paused rest runs it again for what it had left.
+  const runRest = useCallback((ms: number) => {
+    if (restTimerRef.current !== null) {
+      clearInterval(restTimerRef.current)
+      restTimerRef.current = null
+    }
+    restPausedLeftRef.current = null
+    setRestPaused(false)
+
+    const endTime = Date.now() + ms
+    restEndTimeRef.current = endTime
+    setRestTimeRemaining(Math.ceil(ms / 1000))
+    setRestEndsAt(ms > 0 ? endTime : null)
+
+    restTimerRef.current = setInterval(() => {
+      const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
+      if (remaining <= 0) {
+        clearInterval(restTimerRef.current!)
+        restTimerRef.current = null
+        setRestTimeRemaining(0)
+        setRestEndsAt(null)
+      } else {
+        setRestTimeRemaining(remaining)
+      }
+    }, 200) // poll every 200ms so it catches up quickly when returning
+  }, [])
+
+  const startRestTimer = useCallback((duration: number) => runRest(duration * 1000), [runRest])
+
+  // Pause / resume the running rest. Paused: the clock stops and the
+  // background notification is cleared (restEndsAt null).
+  const toggleRestPause = useCallback(() => {
+    if (restPausedLeftRef.current != null) {
+      runRest(restPausedLeftRef.current)
+      return
+    }
+    if (restTimerRef.current === null || restEndTimeRef.current == null) return
+    const left = restEndTimeRef.current - Date.now()
+    if (left <= 0) return
     clearInterval(restTimerRef.current)
     restTimerRef.current = null
-  }
-
-  const endTime = Date.now() + duration * 1000
-  restEndTimeRef.current = endTime
-  setRestTimeRemaining(duration)
-  setRestEndsAt(duration > 0 ? endTime : null)
-
-  restTimerRef.current = setInterval(() => {
-    const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
-    if (remaining <= 0) {
-      clearInterval(restTimerRef.current!)
-      restTimerRef.current = null
-      setRestTimeRemaining(0)
-      setRestEndsAt(null)
-    } else {
-      setRestTimeRemaining(remaining)
-    }
-  }, 200) // poll every 200ms so it catches up quickly when returning
-}, [])
+    restPausedLeftRef.current = left
+    setRestPaused(true)
+    setRestEndsAt(null)
+  }, [runRest])
 
   return {
     currentBlock,
@@ -352,6 +386,8 @@ export function useWorkout(protocolInput: Block[]) {
     startWorkout,
     restoreWorkout,
     startRestTimer,
+    restPaused,
+    toggleRestPause,
     resetWorkout,
     blockDurations,
     blockStartTime,

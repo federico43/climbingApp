@@ -147,3 +147,55 @@ export function TextButton({ label, style, ...rest }: BaseProps) {
     </Pressable>
   )
 }
+
+/**
+ * Start / Done / Add block bar (mock-ups 2026-11-25): a 64pt pill filled in
+ * ink (so light paper on dark mode), the label with a mono line under it on
+ * the left and a mint circle on the right. Dark mode adds the mint glow.
+ */
+export function StartBar({ label, sub, icon = "play", style, disabled, offset, ...rest }: BaseProps & {
+  sub?: string; icon?: IconName
+  /** Builder bars (Add block, Done): a hard mint offset under the bar, like the Primary CTA's. */
+  offset?: boolean
+}) {
+  const t = usePaper()
+  const h = offset ? 68 : 64
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={sub ? `${label}, ${sub}` : label} disabled={disabled} {...rest} style={[offset && { paddingBottom: 6 }, style]}>
+      {({ pressed }) => (
+        <View style={{ opacity: disabled ? 0.5 : 1 }}>
+        {offset && (
+          <View style={{ position: "absolute", left: 0, right: 0, top: 6, height: h, borderRadius: h / 2, backgroundColor: "#2F9E63" }} />
+        )}
+        <View
+          style={[
+            {
+              height: h, borderRadius: h / 2, backgroundColor: t.ink, flexDirection: "row", alignItems: "center",
+              paddingLeft: 22, paddingRight: 8, gap: 12,
+              transform: [{ translateY: offset && pressed ? 4 : 0 }, { scale: !offset && pressed ? 0.98 : 1 }],
+            },
+            glowStyle(t.glow, 36, 0.4),
+          ]}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ fontFamily: font.bold, fontSize: offset ? 20 : 18, color: t.paper }} numberOfLines={1}>{label}</Text>
+            {!!sub && (
+              <Text style={{ fontFamily: font.mono, fontSize: 9.5, letterSpacing: 1.3, color: t.paper, opacity: 0.7, textTransform: "uppercase" }} numberOfLines={1}>
+                {sub}
+              </Text>
+            )}
+          </View>
+          <View
+            style={{
+              width: offset ? 52 : 48, height: offset ? 52 : 48, borderRadius: offset ? 26 : 24, backgroundColor: t.mint, borderWidth: 1.5,
+              borderColor: t.mode === "dark" ? t.ink : t.paper, alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Ionicons name={icon} size={20} color={t.onMint} style={icon === "play" ? { marginLeft: 2 } : undefined} />
+          </View>
+        </View>
+        </View>
+      )}
+    </Pressable>
+  )
+}

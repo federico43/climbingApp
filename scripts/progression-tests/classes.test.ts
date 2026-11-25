@@ -78,6 +78,7 @@ const ctx = {
     return users.length
   },
   claim: async (key: string) => (claimed.has(key) ? false : (claimed.add(key), true)),
+  unclaim: async (key: string) => { claimed.delete(key) },
   log: () => {}, error: () => {}, tz: "UTC",
 }
 
@@ -440,6 +441,89 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.equal((await call("classAnswer", "coach", { requestId: r.json.request.$id, accept: true })).status, 200)
   assert.deepEqual(t("classes").get(soon.$id)!.roster, [])
   assert.ok(pushes.some((p) => p.to === "hugo" && p.title === "Cancel accepted"))
+}
+
+// ── The cron reads little (each row returned is a billed database read) ─────
+{
+  let rows = 0
+  const counting = { ...ctx, db: { ...ctx.db, list: async (table: string, queries: any[]) => {
+    const out = await ctx.db.list(table, queries)
+    rows += out.length
+    return out
+  } } }
+  // A busy week far ahead: 10 classes of 3 athletes each, all booked.
+  const wk = addDays(week, 70)
+  for (let i = 0; i < 10; i++) {
+    await ctx.db.create("classes", { weekStart: wk, day: i % 6, start: 7 + i, roster: ["ana", "bea", "cami"] })
+  }
+  for (const a of ["ana", "bea", "cami"]) await ctx.db.create("packages", { athleteId: a, total: 12, startsOn: wk, useBy: addDays(wk, 40) })
+  const [y5, m5, d5] = wk.split("-").map(Number)
+  // The first run of the day checks everyone's package once…
+  await runClassCron(counting, new Date(Date.UTC(y5, m5 - 1, d5 + 2, 5, 0)))
+  const firstRun = rows
+  // …later runs that day read only that day's and the day before's classes
+  // (and the pending requests), nothing for a class that hasn't ended.
+  rows = 0
+  const later = await runClassCron(counting, new Date(Date.UTC(y5, m5 - 1, d5 + 2, 6, 0)))
+  assert.equal(later.daily, false)
+  assert.ok(rows <= 4, `a quiet run read ${rows} rows`)
+  assert.ok(firstRun > rows)
+  // A class that ended is checked by one run, not by every run for a day.
+  rows = 0
+  await runClassCron(counting, new Date(Date.UTC(y5, m5 - 1, d5 + 2, 12, 0)))
+  const afterEnd = rows
+  rows = 0
+  await runClassCron(counting, new Date(Date.UTC(y5, m5 - 1, d5 + 2, 13, 0)))
+  assert.ok(rows < afterEnd, `second run after a class read ${rows} rows, first ${afterEnd}`)
+}
+
+// ── A skip that uses the package up: out of the classes ahead right away ────
+{
+  const wk = addDays(week, 84)
+  t("users").set("eli", { $id: "eli", role: "athlete", username: "eli" })
+  await ctx.db.create("class_weeks", { published: true, blocks: "[]" }, wk)
+  const wed = await ctx.db.create("classes", { weekStart: wk, day: 2, start: 9.5, roster: ["eli"] })
+  const fri = await ctx.db.create("classes", { weekStart: wk, day: 4, start: 9.5, roster: ["eli"] })
+  await ctx.db.create("packages", { athleteId: "eli", total: 1, startsOn: new Date().toISOString().slice(0, 10), useBy: addDays(wk, 30) })
+  // Two skips already: those move to a later week, the third costs the last session.
+  for (const n of [1, 2]) await ctx.db.create("class_requests", { athleteId: "eli", weekStart: wk, kind: "skip", status: "accepted", fromClassId: `gone${n}` })
+  const r = await call("classRequest", "eli", { kind: "skip", classId: wed.$id })
+  assert.equal(r.status, 200, r.json.error)
+  assert.deepEqual(t("classes").get(wed.$id)!.roster, [])
+  assert.deepEqual(t("classes").get(fri.$id)!.roster, [], "used up: out of Friday too, not at the next daily check")
+}
+
+// ── A read that fails during the cron is checked again next run ─────────────
+{
+  const wk = addDays(week, 91)
+  t("users").set("fay", { $id: "fay", role: "athlete", username: "fay" })
+  const cls = await ctx.db.create("classes", { weekStart: wk, day: 1, start: 9, roster: ["fay"] })
+  await ctx.db.create("packages", { athleteId: "fay", total: 3, startsOn: wk, useBy: addDays(wk, 40) })
+  let failPackages = true
+  let failed = false
+  const flaky = {
+    ...ctx,
+    db: { ...ctx.db, list: async (table: string, queries: any[]) => {
+      // Appwrite didn't answer: main.js reads that as no rows and says so.
+      if (table === "packages" && failPackages) { failed = true; return [] }
+      return ctx.db.list(table, queries)
+    } },
+    readFailed: () => failed,
+  }
+  const [y6, m6, d6] = wk.split("-").map(Number)
+  pushes.length = 0
+  const first = await runClassCron(flaky, new Date(Date.UTC(y6, m6 - 1, d6 + 1, 12, 0)))
+  assert.equal(first.low, 0)
+  assert.equal(first.retry, true)
+  assert.ok(!claimed.has(`ended:${cls.$id}`), "the class's check is given back")
+  failPackages = false
+  failed = false
+  const second = await runClassCron(flaky, new Date(Date.UTC(y6, m6 - 1, d6 + 1, 13, 0)))
+  assert.equal(second.low, 1)
+  assert.ok(pushes.some((p) => p.to === "fay" && p.title === "2 sessions left"))
+  assert.equal(second.retry, false)
+  const third = await runClassCron(flaky, new Date(Date.UTC(y6, m6 - 1, d6 + 1, 14, 0)))
+  assert.equal(third.low, 0)
 }
 
 console.log("classes: all tests passed")

@@ -1,6 +1,7 @@
-import CustomButton from "@/components/customButton"
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { TimerBar } from "@/components/IntervalVisuals"
 import { account } from "@/components/AppWrite"
 import { getBoulderLevels, logRecord } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
@@ -18,6 +19,7 @@ import {
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { WALLS, wallLabel } from "@/utils/routeExploration"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +96,8 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
   const timerEndRef = useRef<number | null>(null)
   // When the running time limit ends (null when none) — beeps / notifies.
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(endsAt, block?.blockName || "Exploration session")
+  const clock = usePauseClock()
+  useBlockTimerAlert(clock.real(endsAt), block?.blockName || "Exploration session")
   const climbsRef   = useRef<ClimbEntry[]>([])
 
   // keep ref in sync so the timer callback can access latest climbs
@@ -128,11 +131,12 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
 
   function startTimer() {
     if (!timeLimitSeconds) return
+    clock.reset()
     timerEndRef.current = Date.now() + timeLimitSeconds * 1000
     setEndsAt(timerEndRef.current)
     setTimeRemaining(timeLimitSeconds)
     timerRef.current = setInterval(() => {
-      const remaining = Math.ceil((timerEndRef.current! - Date.now()) / 1000)
+      const remaining = Math.ceil((timerEndRef.current! - clock.now()) / 1000)
       if (remaining <= 0) {
         clearInterval(timerRef.current!)
         timerRef.current = null
@@ -231,20 +235,15 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
     const description = block?.description?.trim() || defaultDesc
 
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={description} title={block?.description?.trim() ? "Coach notes" : "How it works"} />
-          {(block?.timeLimit ?? 0) > 0 && (
-            <View style={styles.timeLimitPill}>
-              <Text style={styles.timeLimitText}>⏱ {block.timeLimit} min timer</Text>
-            </View>
-          )}
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }} />
-        </View>
-      </View>
+      <BlockIntro
+        title={title}
+        onBack={goToPreviousBlock}
+        facts={[(block?.timeLimit ?? 0) > 0 && `${block.timeLimit} min timer`]}
+        note={description}
+        notesTitle={block?.description?.trim() ? "Coach notes" : "How it works"}
+        startSub={["Boulder logger", minutesLabel(block?.timeLimit)].filter(Boolean).join(" · ")}
+        onStart={() => { setPhase("active"); if (timeLimitSeconds) startTimer() }}
+      />
     )
   }
 
@@ -341,13 +340,6 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           {block?.blockName || "Boulder Logger"}
         </Text>
         <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-          {timeRemaining !== null && (
-            <View style={[styles.timerBadge, timeRemaining <= 60 && styles.timerBadgeUrgent]}>
-              <Text style={[styles.timerText, timeRemaining <= 60 && styles.timerTextUrgent]}>
-                {formatTime(timeRemaining)}
-              </Text>
-            </View>
-          )}
           {climbs.length > 0 && (
             <View style={styles.scoreBadge}>
               <Text style={styles.scoreBadgeText}>
@@ -357,6 +349,15 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
           )}
         </View>
       </View>
+      {timeRemaining !== null && (
+        <TimerBar
+          total={timeLimitSeconds}
+          left={timeRemaining}
+          text={formatTime(timeRemaining)}
+          paused={clock.paused}
+          onTogglePause={timeRemaining > 0 && phase === "active" ? clock.toggle : undefined}
+        />
+      )}
 
       <View style={styles.container}>
       {loadingLevels ? (
@@ -619,14 +620,4 @@ const sheet = paperSheet((C) => StyleSheet.create({
   levelDot: { width: 12, height: 12, borderRadius: 6 },
   breakdownLabel: { fontSize: 15, fontWeight: "600", flex: 1, color: C.textPrimary },
   breakdownCount: { fontSize: 14, color: C.textSecondary },
-
-  // Timer pill shown on intro when timeLimit > 0
-  timeLimitPill: {
-    alignSelf: "flex-start",
-    backgroundColor: C.surface,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  timeLimitText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
 }))

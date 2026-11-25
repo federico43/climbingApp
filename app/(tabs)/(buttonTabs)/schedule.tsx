@@ -1,3 +1,5 @@
+import { PaperThemeOverride, usePaperStatusBar } from "@/components/paper"
+import { PaperScope } from "@/theme/paper/legacy"
 import { useAuth } from "@/components/auth-context"
 
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
@@ -13,7 +15,7 @@ import {
   classesToJoin, headcount, missingUsual, proposeProblem,
   dateOf, openDays, parseSlot, restDayOk, slotKey, startFromOffset, usualFits, weekDates, weekdayOf,
 } from "@/utils/classSchedule"
-import { cancelExtra, changeClass, joinClass, refreshClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
+import { cancelExtra, changeClass, joinClass, refreshClassSchedule, reloadClassSchedule, saveUsualClasses, stopUsual, useClassSchedule } from "@/utils/classScheduleStore"
 import { setFixedAnswer, useFixedAnswer } from "@/utils/fixedScheduleAnswer"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
@@ -40,7 +42,21 @@ const MISSING_KEY = (user: string, weekStart: string) => `missing-usual-seen:${u
 // The athlete's week of classes, laid out like Google Calendar, opened from
 // the "This week" card on Plan. Tap a class with a free spot to join it (just
 // this week or every week); tap one of yours if you can't go.
+// The calendar is dark-only (calTheme), so shared Paper pieces on it
+// (settings button, intro sheets) stay dark in the light theme too.
 export default function ScheduleScreen() {
+  return (
+    <PaperThemeOverride mode="dark">
+      <PaperScope>
+        <ScheduleScreenBody />
+      </PaperScope>
+    </PaperThemeOverride>
+  )
+}
+
+function ScheduleScreenBody() {
+  // The calendar is dark-only (calTheme): light status bar text in both themes.
+  usePaperStatusBar({ dark: true })
   const { userName } = useAuth()
   const me = userName || "you"
   const st = useClassSchedule()
@@ -339,7 +355,7 @@ export default function ScheduleScreen() {
           dimPast
           dimDays={proposingFrom ? [0, 1, 2, 3, 4, 5, 6].filter((d) => d >= today && !proposeDays.includes(d)) : []}
           onPressTime={proposingFrom ? proposeAt : undefined}
-          onRefresh={refreshClassSchedule}
+          onRefresh={reloadClassSchedule}
           renderDay={renderDay}
         />
         </TourSpot>

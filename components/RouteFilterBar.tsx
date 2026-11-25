@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { MAX_LEVEL, MIN_LEVEL, ROUTE_TYPES, ROUTE_TYPE_LABEL } from "@/utils/sequenceVariations"
 import { Ionicons } from "@expo/vector-icons"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
@@ -25,13 +25,16 @@ export interface FilterableWall {
 
 // Shared by the sequence route picker and the Spray Wall list — both browse
 // the same SprayRouteRow[] and should filter the same way.
+// Lower-case and drop accents, so "volcan" finds "Volcán" (2026-11-22).
+export const foldSearch = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+
 export function applyRouteFilters<T extends { name: string; type?: string; level?: number; wallId?: string }>(
   routes: T[],
   filters: RouteFilters
 ): T[] {
-  const q = filters.search.trim().toLowerCase()
+  const q = foldSearch(filters.search)
   return routes.filter((r) => {
-    if (q && !r.name.toLowerCase().includes(q)) return false
+    if (q && !foldSearch(r.name ?? "").includes(q)) return false
     if (filters.type && r.type !== filters.type) return false
     if (filters.level != null && r.level !== filters.level) return false
     if (filters.wallId && r.wallId !== filters.wallId) return false
@@ -52,6 +55,9 @@ interface Props {
 }
 
 export function RouteFilterBar({ filters, onChange, walls }: Props) {
+  // Follows the screen's theme (Paper light / dark, or the old dark look).
+  const C = useC()
+  const styles = useSheet(sheet)
   // The type/level chips can scroll out of view, so a selected chip (e.g. a
   // level near the end of the row) can end up with no visible trace that a
   // filter is even on. This summary stays put under the search box and
@@ -162,7 +168,7 @@ export function RouteFilterBar({ filters, onChange, walls }: Props) {
   )
 }
 
-const styles = StyleSheet.create({
+const sheet = paperSheet((C) => StyleSheet.create({
   wrap: { gap: 8 },
   searchRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -184,6 +190,6 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: C.green, borderColor: C.green },
   chipText: { fontSize: 12, fontWeight: "600", color: C.textSecondary },
-  chipTextActive: { color: C.bg },
+  chipTextActive: { color: C.onAccent },
   chipDivider: { width: 1, height: 18, backgroundColor: C.border, marginHorizontal: 2 },
-})
+}))

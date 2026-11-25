@@ -19,7 +19,7 @@ export const K = {
   green: "#8AD6A2",         // mint
   greenDeep: "#2F9E63",
   onMint: "#121014",
-  red: "#F07167",
+  red: "#F1ECE4",           // no red in Paper Mint: "running out" reads in ink (bold)
   yellow: "#8AD6A2",        // "waiting" is mint (dashed), not yellow, in Paper Mint
   side: "#A78BFA",
   past: "#6F687B",

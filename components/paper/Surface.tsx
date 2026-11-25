@@ -6,7 +6,7 @@ import React, { useCallback, useMemo } from "react"
 import { Image, ScrollView, ScrollViewProps, StyleProp, StyleSheet, useWindowDimensions, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { RailProvider, ScrollRail, useScrollRail } from "./ScrollRail"
-import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg"
+import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from "react-native-svg"
 
 const GRAIN = require("@/assets/images/paper/grain.png")
 const MELT = require("@/assets/images/paper/melt.png")
@@ -43,6 +43,45 @@ export function Melt({ top = 0, height = 460 }: { top?: number; height?: number 
     <View pointerEvents="none" style={{ position: "absolute", left: -16, right: -16, top, height, opacity: t.meltOpacity }}>
       <Image source={MELT} resizeMode="stretch" style={StyleSheet.absoluteFill} />
     </View>
+  )
+}
+
+// Soft glows behind a title, drawn to an exact box (mock-ups 2026-11-25:
+// the phone builder's header and the block sheet). Unlike the melt PNG it
+// never spills over the content under the title: the box is its limit.
+// "header": blue-violet at the top right, mint under it. "sheet": mint in
+// the middle, blue at the right edge.
+type Glow = { cx: number; cy: number; rx: number; ry: number; color: string; a: number }
+const GLOWS: Record<"header" | "sheet", Glow[]> = {
+  header: [
+    { cx: 0.92, cy: 0.2, rx: 0.42, ry: 0.75, color: "#3A46FF", a: 0.55 },
+    { cx: 1.0, cy: 0.05, rx: 0.2, ry: 0.4, color: "#7A2BD8", a: 0.35 },
+    { cx: 0.6, cy: 0.62, rx: 0.42, ry: 0.5, color: "#6FDC98", a: 0.5 },
+  ],
+  sheet: [
+    { cx: 0.5, cy: 0.5, rx: 0.42, ry: 0.42, color: "#6FDC98", a: 0.55 },
+    { cx: 0.98, cy: 0.55, rx: 0.28, ry: 0.55, color: "#3A46FF", a: 0.5 },
+  ],
+}
+
+export function TitleGlow({ width, height, variant = "header", top = 0 }: { width: number; height: number; variant?: "header" | "sheet"; top?: number }) {
+  const t = usePaper()
+  const boost = t.mode === "dark" ? 1.25 : 1
+  return (
+    <Svg pointerEvents="none" width={width} height={height} style={{ position: "absolute", left: 0, top }}>
+      <Defs>
+        {GLOWS[variant].map((g, i) => (
+          <RadialGradient key={i} id={`tg-${variant}-${i}`} cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0" stopColor={g.color} stopOpacity={Math.min(1, g.a * boost)} />
+            <Stop offset="0.55" stopColor={g.color} stopOpacity={Math.min(1, g.a * boost * 0.45)} />
+            <Stop offset="1" stopColor={g.color} stopOpacity={0} />
+          </RadialGradient>
+        ))}
+      </Defs>
+      {GLOWS[variant].map((g, i) => (
+        <Ellipse key={i} cx={g.cx * width} cy={g.cy * height} rx={g.rx * width} ry={g.ry * height} fill={`url(#tg-${variant}-${i})`} />
+      ))}
+    </Svg>
   )
 }
 
@@ -135,15 +174,17 @@ export function PaperScreen({ children, header, footer, scrollProps, bottomPad =
 }
 
 /**
- * Status bar text that reads on this screen's paper while it's focused;
- * back to light text (the old dark screens) when it loses focus.
+ * Status bar text that reads on this screen's paper while it's focused.
+ * `dark` = the screen is dark whatever the theme (the class calendar).
+ * On blur it goes back to the app's paper, which every other screen uses.
  */
-export function usePaperStatusBar() {
+export function usePaperStatusBar(opts?: { dark?: boolean }) {
   const t = usePaper()
+  const dark = opts?.dark
   useFocusEffect(
     useCallback(() => {
-      setStatusBarStyle(t.mode === "dark" ? "light" : "dark", true)
-      return () => setStatusBarStyle("light", true)
-    }, [t.mode])
+      setStatusBarStyle(dark || t.mode === "dark" ? "light" : "dark", true)
+      return () => setStatusBarStyle(t.mode === "dark" ? "light" : "dark", true)
+    }, [t.mode, dark])
   )
 }

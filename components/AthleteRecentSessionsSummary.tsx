@@ -1,5 +1,7 @@
-import { C } from "@/utils/theme"
-import { adaptationColor } from "@/utils/adaptations"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { adaptationColor, adaptationLabel, resolveAdaptation } from "@/utils/adaptations"
+import { usePaper } from "@/theme/paper/PaperThemeProvider"
+import { font } from "@/theme/paper/tokens"
 import { getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { colourLabel } from "@/utils/boulderColours"
 import { fallReasonLabel, PROJECT_V2, summarizeProjectAttempts } from "@/utils/progression/projectBouldering"
@@ -7,6 +9,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { withoutRedoneRounds } from "@/utils/scRedo"
 
 // Collapsible "what did they do last time" panel for the workout builder —
 // so a coach can see the athlete's last two training days (S&C average
@@ -19,7 +22,7 @@ export function formatBlockType(type: string): string {
 }
 
 function parseAttempts(session: SessionRow): any[] {
-  try { return JSON.parse(session.attempts) } catch { return [] }
+  try { const a = JSON.parse(session.attempts); return Array.isArray(a) ? withoutRedoneRounds(a) : [] } catch { return [] }
 }
 
 function sessionTimestamp(session: SessionRow, attempts: any[]): number {
@@ -81,6 +84,9 @@ export interface SummaryBlock {
   blockName: string
   blockType: string
   color: string
+  // "Power", "Technique" — what the block trained (its adaptation).
+  focus: string
+  warmup: boolean
   isSC: boolean
   scLines: string[]
   // Project bouldering v2: "Yellow · 9 attempts · sent" + top fall reason.
@@ -130,6 +136,8 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
       blockName: block.coached ? `${name} · coached` : name,
       blockType: block.type ?? "",
       color: adaptationColor(block),
+      focus: adaptationLabel(block),
+      warmup: block.type === "constraint_warmup" || resolveAdaptation(block) === "general",
       isSC,
       scLines: isSC ? scSummaryLines(blockAttempts.filter((a: any) => a.scData).map((a: any) => a.scData)) : [],
       projectLine: block.type === "project_bouldering" && !block.coached && blockAttempts.some((a: any) => a.pbv === PROJECT_V2)
@@ -169,7 +177,33 @@ export function groupByDay(sessions: SessionRow[], dayCount: number): DaySummary
   })
 }
 
-export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: string; wide?: boolean }) {
+// A day's main focus: the adaptation most of its blocks trained (warm-ups
+// left out), with its colour. null when nothing was logged.
+export function dayFocus(day: DaySummary): { label: string; color: string } | null {
+  const counts = new Map<string, { label: string; color: string; n: number }>()
+  const blocks = day.sessions.flatMap((s) => s.blocks)
+  const main = blocks.filter((b) => !b.warmup)
+  for (const b of main.length ? main : blocks) {
+    const c = counts.get(b.focus) ?? { label: b.focus, color: b.color, n: 0 }
+    c.n++
+    counts.set(b.focus, c)
+  }
+  let best: { label: string; color: string; n: number } | null = null
+  for (const c of counts.values()) if (!best || c.n > best.n) best = c
+  return best && { label: best.label, color: best.color }
+}
+
+function weekdayOf(dateKey: string): string {
+  return new Date(dateKey + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" })
+}
+
+// `flat` (Paper builder, mock-ups 2026-11-25): a full-width row between
+// hairlines, "Last 2 training days" with each day's weekday and focus under
+// it ("● SAT · POWER  ● THU · TECHNIQUE"); the days open under it.
+export function AthleteRecentSessionsSummary({ athleteId, wide, flat }: { athleteId: string; wide?: boolean; flat?: boolean }) {
+  const C = useC()
+  const t = usePaper()
+  const s = useSheet(sSheet)
   const [days, setDays] = useState<DaySummary[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
@@ -185,7 +219,30 @@ export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: s
   }, [athleteId])
 
   return (
-    <View style={s.wrap}>
+    <View style={flat ? [s.flatWrap, { borderColor: t.hairline }] : s.wrap}>
+      {flat ? (
+        <Pressable style={s.flatToggle} onPress={() => setExpanded((e) => !e)} disabled={loading} accessibilityRole="button" accessibilityState={{ expanded }}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={[s.flatTitle, { color: t.ink }]}>Last 2 training days</Text>
+            {!loading && (
+              <View style={s.flatDays}>
+                {days.length === 0 ? (
+                  <Text style={[s.flatDayText, { color: t.label }]}>No sessions yet</Text>
+                ) : days.map((d) => {
+                  const f = dayFocus(d)
+                  return (
+                    <View key={d.dateKey} style={s.flatDay}>
+                      {f && <View style={[s.flatDot, { backgroundColor: f.color }]} />}
+                      <Text style={[s.flatDayText, { color: t.label }]}>{[weekdayOf(d.dateKey), f?.label].filter(Boolean).join(" · ")}</Text>
+                    </View>
+                  )
+                })}
+              </View>
+            )}
+          </View>
+          {loading ? <ActivityIndicator size="small" color={t.label} /> : <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={t.ink} />}
+        </Pressable>
+      ) : (
       <Pressable style={s.toggle} onPress={() => setExpanded((e) => !e)} disabled={loading}>
         <Text style={s.toggleText}>Last 2 training days</Text>
         {loading ? (
@@ -194,6 +251,7 @@ export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: s
           <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color={C.textSecondary} />
         )}
       </Pressable>
+      )}
 
       {expanded && !loading && (
         days.length === 0 ? (
@@ -269,13 +327,20 @@ export function AthleteRecentSessionsSummary({ athleteId, wide }: { athleteId: s
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   wrap: { marginHorizontal: 14, marginBottom: 8, backgroundColor: C.surfaceHigh, borderRadius: 12, overflow: "hidden" },
   toggle: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 12, paddingVertical: 10,
   },
   toggleText: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
+  flatWrap: { borderTopWidth: 1, borderBottomWidth: 1 },
+  flatToggle: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, minHeight: 56 },
+  flatTitle: { fontFamily: font.bold, fontSize: 16 },
+  flatDays: { flexDirection: "row", flexWrap: "wrap", columnGap: 14, rowGap: 4 },
+  flatDay: { flexDirection: "row", alignItems: "center", gap: 6 },
+  flatDot: { width: 7, height: 7, borderRadius: 4 },
+  flatDayText: { fontFamily: font.mono, fontSize: 10, letterSpacing: 1.2, textTransform: "uppercase" },
 
   // Generous ceiling — just a safety valve for an unusually packed day, not
   // meant to clip either of the 2 day-cards in the common case.
@@ -315,4 +380,4 @@ const s = StyleSheet.create({
   pillText: { fontSize: 10, fontWeight: "700" },
   blockName: { fontSize: 12, fontWeight: "700", color: C.textPrimary, flex: 1 },
   line: { fontSize: 12, color: C.textSecondary, lineHeight: 17 },
-})
+}))

@@ -1,5 +1,5 @@
-import { C } from "@/utils/theme"
-import { card } from "@/components/coach/styles"
+import { PaperAppTheme, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { cardSheet } from "@/components/coach/styles"
 import { getActiveTrainingPlan, TrainingPlanRow } from "@/services/BoulderGraphService"
 import { savePlanPauses } from "@/services/classSchedule"
 import {
@@ -27,6 +27,8 @@ export function PlanPauses({ plan, onPlanChanged, onHomeworkChanged }: {
   onPlanChanged: (plan: TrainingPlanRow) => void
   onHomeworkChanged: () => void // homework deadlines may have moved
 }) {
+  const styles = useSheet(stylesSheet)
+  const card = useSheet(cardSheet)
   const today = localDateStr(new Date())
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -85,16 +87,18 @@ export function PlanPauses({ plan, onPlanChanged, onHomeworkChanged }: {
       <Pressable onPress={() => setAdding(true)} hitSlop={8} style={{ alignSelf: "flex-start" }} disabled={saving}>
         <Text style={card.link}>{saving ? "Saving…" : "+ Add pause"}</Text>
       </Pressable>
-      <AddPauseModal
-        visible={adding}
-        plan={plan}
-        saving={saving}
-        onClose={() => setAdding(false)}
-        onSave={async (pause) => {
-          const ok = await save([...plan.pauses, pause].sort((a, b) => (a.start < b.start ? -1 : 1)))
-          if (ok) setAdding(false)
-        }}
-      />
+      <PaperAppTheme>
+        <AddPauseModal
+          visible={adding}
+          plan={plan}
+          saving={saving}
+          onClose={() => setAdding(false)}
+          onSave={async (pause) => {
+            const ok = await save([...plan.pauses, pause].sort((a, b) => (a.start < b.start ? -1 : 1)))
+            if (ok) setAdding(false)
+          }}
+        />
+      </PaperAppTheme>
     </View>
   )
 }
@@ -106,6 +110,8 @@ function AddPauseModal({ visible, plan, saving, onClose, onSave }: {
   onClose: () => void
   onSave: (pause: PlanPause) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [start, setStart] = useState(localDateStr(new Date()))
   const [weeks, setWeeks] = useState(1)
   const [reason, setReason] = useState("")
@@ -193,7 +199,7 @@ function AddPauseModal({ visible, plan, saving, onClose, onSave }: {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   wrap: { gap: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   icon: { fontSize: 13, color: C.textSecondary },
@@ -218,7 +224,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
   chipTextSelected: { color: C.bg },
   summary: { fontSize: 12.5, color: C.textSecondary, textAlign: "center", marginTop: 16 },
-  error: { fontSize: 12, color: "#E0837A", marginTop: 6, textAlign: "center" },
+  error: { fontSize: 12, color: C.red, marginTop: 6, textAlign: "center" },
   submitBtn: { marginTop: 14, backgroundColor: C.green, borderRadius: 16, padding: 16, alignItems: "center" },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
-})
+}))

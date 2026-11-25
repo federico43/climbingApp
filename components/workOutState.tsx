@@ -3,12 +3,14 @@ import {
   ProgressBar, SectionHeader, SpecsRow, usePaper, usePaperStyles,
 } from "@/components/paper"
 import { useC } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { useWorkout } from "@/hooks/WorkoutHook"
 import { useSessionSyncState } from "@/services/sessionSyncQueue"
 import { BlockRenderer } from "@/utils/blockRenderer"
-import { BlockTimerContext } from "@/utils/blockTimer"
+import { BlockTimerContext, RestPauseContext } from "@/utils/blockTimer"
 import { LastBlockContext } from "@/utils/blockNav"
 import { Ionicons } from "@expo/vector-icons"
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -24,6 +26,9 @@ import { router } from "expo-router"
 import { ProjectSummaryCard } from "./ProjectBoulderingBlock"
 import { mainSwapFor } from "@/utils/mainSwap"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { isTaskBlock, isTaskIntroBlock, isTaskSlot, type SessionTask } from "@/utils/sessionTasks"
+import { NextSessionCard, TaskSheet } from "./SessionTasks"
+import { openTasksIntro } from "./SessionTasksIntro"
 
 // ─── Block slide-in wrapper ───────────────────────────────────────────────────
 
@@ -89,6 +94,8 @@ export function WorkOutState({
     updateLastAttempt,
     startWorkout,
     startRestTimer,
+    restPaused,
+    toggleRestPause,
     currentBlockIndex,
     totalBlocks,
     isLastBlock,
@@ -135,6 +142,15 @@ export function WorkOutState({
 
   const insets = useSafeAreaInsets()
   const didAutoStart = useRef(false)
+  const taskBlock = isTaskSlot(currentBlock)
+
+  // Next-session tasks (docs/session-tasks.md): set on the summary. Opening
+  // the task sheet, or scrolling the summary, stops it from closing itself.
+  const [sheet, setSheet] = useState<{ task: SessionTask | null } | null>(null)
+  const [holdSummary, setHoldSummary] = useState(false)
+  useEffect(() => {
+    if (status !== "completed") { setSheet(null); setHoldSummary(false) }
+  }, [status])
   const [workoutElapsed, setWorkoutElapsed] = useState(0)
 
   // Time-constraint countdown arms when the block signals it started (Start
@@ -145,6 +161,7 @@ export function WorkOutState({
     () => ({ start: () => setTimerStartedAt((t) => t ?? Date.now()) }),
     [],
   )
+  const restPause = useMemo(() => ({ paused: restPaused, toggle: toggleRestPause }), [restPaused, toggleRestPause])
 
   // Total time spans the real workout — workoutStartTime lives in the hook, so
   // it's the original start even after a resume (not the resume moment).
@@ -157,16 +174,20 @@ export function WorkOutState({
   // The session is saved the moment it completes (see WorkoutContext — kept on
   // the phone until it reaches the server), so the summary just closes itself after AUTO_CLOSE_SECS — doing what "Save
   // workout" used to — unless the athlete leaves first.
+  // Pausable like every timer: tapping "closing in" keeps the summary open.
   const [autoCloseIn, setAutoCloseIn] = useState(AUTO_CLOSE_SECS)
+  const autoCloseClock = usePauseClock()
   const sync = useSessionSyncState()
   const closeSummaryRef = useRef(() => {})
   closeSummaryRef.current = () => { onWorkoutEnd(); resetWorkout() }
+  const { now: autoCloseNow, reset: resetAutoClose } = autoCloseClock
   useEffect(() => {
-    if (status !== "completed") return
+    if (status !== "completed" || holdSummary) return
+    resetAutoClose()
     setAutoCloseIn(AUTO_CLOSE_SECS)
     const end = Date.now() + AUTO_CLOSE_SECS * 1000
     const id = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - autoCloseNow()) / 1000))
       setAutoCloseIn(r)
       if (r <= 0) {
         clearInterval(id)
@@ -174,7 +195,7 @@ export function WorkOutState({
       }
     }, 250)
     return () => clearInterval(id)
-  }, [status])
+  }, [status, holdSummary, autoCloseNow, resetAutoClose])
 
   function handleStartWorkout() {
     onWorkoutStart()
@@ -195,7 +216,8 @@ export function WorkOutState({
       <Pressable style={styles.menuBackdrop} onPress={() => setBlockMenu(false)}>
         <Pressable style={[styles.menuSheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
           <Mono style={styles.menuTitle}>{currentBlock?.blockName || "This block"}</Mono>
-          <Pressable
+          {/* A task can't be left as homework: "Not today" keeps it for next session. */}
+          {!taskBlock && <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
             onPress={() => { setBlockMenu(false); leaveAsHomework() }}
           >
@@ -206,7 +228,7 @@ export function WorkOutState({
               <Body weight={800} size={16}>Leave as homework</Body>
               <Body muted size={13} style={{ marginTop: 2 }}>Finish it another day</Body>
             </View>
-          </Pressable>
+          </Pressable>}
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
             onPress={() => { setBlockMenu(false); skipBlock() }}
@@ -215,8 +237,12 @@ export function WorkOutState({
               <Ionicons name="play-skip-forward" size={18} color={C.red} />
             </View>
             <View style={{ flex: 1 }}>
-              <Body weight={800} size={16} style={{ color: C.red }}>Skip block</Body>
-              <Body muted size={13} style={{ marginTop: 2 }}>{"It won't be saved"}</Body>
+              <Body weight={800} size={16} style={{ color: C.red }}>{taskBlock ? "Not today" : "Skip block"}</Body>
+              <Body muted size={13} style={{ marginTop: 2 }}>
+                {isTaskIntroBlock(currentBlock)
+                  ? "You can set a task at the end of the workout"
+                  : taskBlock ? "The task stays for next session" : "It won't be saved"}
+              </Body>
             </View>
           </Pressable>
           <GhostButton label="Cancel" onPress={() => setBlockMenu(false)} style={{ marginTop: 6 }} />
@@ -272,7 +298,12 @@ export function WorkOutState({
           <IconButton icon="close" label="Close summary" size={36} onPress={() => closeSummaryRef.current()} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.summaryScroll}
+          showsVerticalScrollIndicator={false}
+          // Reading the summary: don't close it under the athlete's finger.
+          onScrollBeginDrag={() => setHoldSummary(true)}
+        >
           {/* Melt kept short and soft, behind the headline only, so the
               mint "Back to home" button sits on plain paper and stands out. */}
           <View pointerEvents="none" style={styles.summaryMelt}>
@@ -293,6 +324,13 @@ export function WorkOutState({
               <Mono>Block{doneCount !== 1 ? "s" : ""} done</Mono>
             </View>
           </Card>
+
+          {/* Above the blocks, so it's on screen before the summary closes itself. */}
+          <NextSessionCard
+            onOpen={(task) => { setHoldSummary(true); setSheet({ task }) }}
+            onHelp={() => { setHoldSummary(true); openTasksIntro() }}
+            style={{ marginTop: 24 }}
+          />
 
           {completedBlocks.length > 0 && <SectionHeader>Blocks</SectionHeader>}
           {completedBlocks.length > 0 && <Card padded={false}>
@@ -332,6 +370,11 @@ export function WorkOutState({
                   {!!projectAttempts?.length && (
                     <View style={styles.summaryProject}>
                       <ProjectSummaryCard attempts={projectAttempts} compact />
+                      {isTaskBlock(block) && (
+                        <Mono color={t.mintText} style={{ marginTop: 6 }}>
+                          {block.focusTask.closed ? "Task closed" : "Task stays for next session"}
+                        </Mono>
+                      )}
                     </View>
                   )}
                 </View>
@@ -354,12 +397,30 @@ export function WorkOutState({
               router.navigate("/")
             }}
           />
-          <Mono style={styles.summaryAutoClose}>
-            {sync.pending > 0 && sync.offline
-              ? "No connection — saved on this phone, it uploads once you're back online"
-              : "Workout saved"} · closing in {autoCloseIn}s
-          </Mono>
+          {holdSummary ? (
+            <Mono style={styles.summaryAutoClose}>
+              {sync.pending > 0 && sync.offline
+                ? "No connection — saved on this phone, it uploads once you're back online"
+                : "Workout saved"}
+            </Mono>
+          ) : (
+            <Pressable
+              onPress={autoCloseClock.toggle}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={autoCloseClock.paused ? "Resume closing" : "Keep the summary open"}
+            >
+              <Mono style={styles.summaryAutoClose}>
+                {sync.pending > 0 && sync.offline
+                  ? "No connection — saved on this phone, it uploads once you're back online"
+                  : "Workout saved"} · {autoCloseClock.paused
+                  ? `paused at ${autoCloseIn}s · tap to resume`
+                  : `closing in ${autoCloseIn}s · tap to pause`}
+              </Mono>
+            </Pressable>
+          )}
         </ScrollView>
+        {sheet && <TaskSheet task={sheet.task} onClose={() => setSheet(null)} insets={insets} />}
       </SafeAreaView>
     )
   }
@@ -407,7 +468,7 @@ export function WorkOutState({
       </View>
       {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
       <View style={styles.blockSwitches}>
-        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && (
+        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && !taskBlock && (
           <Pressable
             style={[styles.coachSwitch, coached && styles.coachSwitchOn]}
             onPress={() => onSetCoached(currentBlockIndex, !coached)}
@@ -432,6 +493,7 @@ export function WorkOutState({
       </View>
       <BlockEntry key={`${currentBlockIndex}-${currentBlock?.blockName ?? ""}-${currentBlock?.coached ? "c" : "g"}`}>
         <BlockTimerContext.Provider value={blockTimer}>
+          <RestPauseContext.Provider value={restPause}>
           <LastBlockContext.Provider value={isLastBlock}>
             <BlockRenderer
               block={currentBlock}
@@ -450,6 +512,7 @@ export function WorkOutState({
               blockStartTime={blockStartTime}
             />
           </LastBlockContext.Provider>
+          </RestPauseContext.Provider>
         </BlockTimerContext.Provider>
       </BlockEntry>
       {blockMenuNode}
@@ -470,30 +533,34 @@ const SELF_TIMED_BLOCKS = new Set(["exploration_session", "route_exploration", "
 // notifies when it runs out with the app in the background.
 function BlockCountdown({ minutes, label }: { minutes: number; label: string }) {
   const C = useC()
-  const t = usePaper()
-  const styles = usePaperStyles(makeStyles)
   const total = Math.max(0, Math.round(minutes * 60))
   const [remaining, setRemaining] = useState(total)
+  const clock = usePauseClock()
+  const { now } = clock
   const [end] = useState(() => Date.now() + total * 1000)
-  useBlockTimerAlert(total > 0 ? end : null, label)
+  useBlockTimerAlert(total > 0 ? clock.real(end) : null, label)
   useEffect(() => {
     const id = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - now()) / 1000))
       setRemaining(r)
       if (r <= 0) clearInterval(id)
     }, 250)
     return () => clearInterval(id)
-  }, [end])
+  }, [end, now])
   const over = remaining <= 0
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
+  // The standard timer ring (the 1 on 1 off look), small.
   return (
-    <View style={[styles.countdownChip, over && { backgroundColor: C.red, borderColor: C.red }]}>
-      <Ionicons name="time-outline" size={13} color={over ? t.onMint : t.mintText} />
-      <Mono color={over ? t.onMint : t.mintText} size={11}>
-        {over ? "Time's up" : `${m}:${String(s).padStart(2, "0")}`}
-      </Mono>
-    </View>
+    <TimerRing
+      size={42}
+      fill={ringFill(total, remaining)}
+      color={timerColor(C, over ? "over" : "work")}
+      seconds={remaining}
+      text={`${m}:${String(s).padStart(2, "0")}`}
+      paused={clock.paused}
+      onTogglePause={over ? undefined : clock.toggle}
+    />
   )
 }
 

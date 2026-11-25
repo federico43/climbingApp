@@ -1,5 +1,7 @@
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
-import { C } from "@/utils/theme"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ExerciseForm } from "@/components/ExerciseForm"
 import { ExerciseLibraryCard } from "@/components/ExerciseLibraryCard"
@@ -25,6 +27,7 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { usePullRefresh } from "@/components/PullRefresh"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExerciseType = "reps" | "both_sides" | "7/3s"
@@ -51,6 +54,8 @@ function estimateHeight(ex: ExerciseRow, width: number): number {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExercisesScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { role } = ConsumeAuth()
   const isCoach = role === "coach"
@@ -70,6 +75,7 @@ export default function ExercisesScreen() {
       loadExercises()
     }, [])
   )
+  const pull = usePullRefresh(() => loadExercises())
 
   async function loadExercises() {
     setLoading(true)
@@ -149,20 +155,19 @@ export default function ExercisesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
-        <Text style={styles.title}>Exercise Library</Text>
-        {isCoach ? (
-          <Pressable style={styles.newBtn} onPress={() => setShowCreate(true)}>
-            <Text style={styles.newBtnText}>+ New</Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 60 }} />
-        )}
-      </View>
+    <ScreenGradient>
+    <SafeAreaView style={styles.screen}>
+      <SubScreenHeader
+        title="Exercise Library"
+        onBack={() => router.navigate("/(tabs)/(buttonTabs)/design" as any)}
+        right={
+          isCoach ? (
+            <Pressable style={styles.newBtn} onPress={() => setShowCreate(true)} accessibilityRole="button">
+              <Text style={styles.newBtnText}>+ New</Text>
+            </Pressable>
+          ) : null
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
@@ -203,7 +208,7 @@ export default function ExercisesScreen() {
               </Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" refreshControl={pull}>
               <View style={styles.sections} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
                 {(["reps", "both_sides", "7/3s"] as ExerciseType[]).map((type) => {
                   const list = grouped[type]
@@ -278,14 +283,17 @@ export default function ExercisesScreen() {
         )}
       </Modal>
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -382,4 +390,4 @@ const styles = StyleSheet.create({
   typeChipActive: { backgroundColor: C.green },
   typeChipText: { fontSize: 13, fontWeight: "600", color: C.textSecondary },
   typeChipTextActive: { color: C.bg },
-})
+}))

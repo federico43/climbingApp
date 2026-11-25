@@ -1,4 +1,5 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
+import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, type RouteFilters } from "@/components/RouteFilterBar"
 import { StepList } from "@/components/cardio/CardioVisuals"
 import CustomButton from "@/components/customButton"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -10,7 +11,7 @@ import {
 } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { resumedBlockStart } from "@/utils/progression/projectBouldering"
 import { parseVariations, ROUTE_TYPE_LABEL, type RouteType, type RouteVariations } from "@/utils/sequenceVariations"
 import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
@@ -18,13 +19,15 @@ import {
   newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, sprayShowsCoachNotes, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -91,6 +94,7 @@ export function SprayBlock({
   const athleteId = User?.$id
   const nextLabel = useNextBlockLabel("Continue")
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const settings = spraySettings(block)
   const routeType = settings.routeType as RouteType
   const title = block.blockName || "Spray wall"
@@ -101,6 +105,9 @@ export function SprayBlock({
 
   // Resuming: clock rebuilt from the attempts, back on the last sequence.
   const [startedAt, setStartedAt] = useState<number | null>(() => resumedBlockStart(attempts.map((a) => a.timestamp)))
+  // Pausable like every timer: the block clock reads `pause.now()`.
+  const pause = usePauseClock()
+  const pauseNow = pause.now
   const [now, setNow] = useState(Date.now())
   const secondsLeft = startedAt == null ? limitSecs : limitSecs - Math.floor((now - startedAt) / 1000)
   const [routeId, setRouteId] = useState<string | null>(() => [...attempts].reverse().find((a) => a.routeId)?.routeId ?? null)
@@ -120,7 +127,7 @@ export function SprayBlock({
   // Fetched again each time the selector opens, and on Reload / pull down.
   const [reloadKey, setReloadKey] = useState(0)
   const [reloading, setReloading] = useState(false)
-  const reload = () => { setReloading(true); setReloadKey((k) => k + 1) }
+  const reload = () => { freshReads(); setReloading(true); setReloadKey((k) => k + 1) }
   useEffect(() => {
     let cancelled = false
     if (athleteId) getUsers(athleteId).then((u: any) => { if (!cancelled) setFlash(u?.flashLevel ?? null) }).catch(() => {})
@@ -140,9 +147,9 @@ export function SprayBlock({
   // Tick the block clock (time blocks).
   useEffect(() => {
     if (!timed || startedAt == null) return
-    const id = setInterval(() => setNow(Date.now()), 500)
+    const id = setInterval(() => setNow(pauseNow()), 500)
     return () => clearInterval(id)
-  }, [timed, startedAt])
+  }, [timed, startedAt, pauseNow])
 
   // The end: time's up (time blocks) or the attempt target reached — asked
   // once the athlete is between attempts, never mid-rest.
@@ -189,6 +196,17 @@ export function SprayBlock({
     return newSprayRoutes(routes.values(), records, routeType, [...suggestions.map((r) => r.routeId), ...(routeId ? [routeId] : [])])
   }, [routes, records, routeType, suggestions, routeId])
 
+  // Every sequence on the wall, searchable (coach 2026-11-22: an athlete
+  // couldn't find one that wasn't among the suggested / new ones). Starts on
+  // this block's tag; the type chips open it to the rest (untagged too).
+  const [filters, setFilters] = useState<RouteFilters>(() => ({ ...EMPTY_ROUTE_FILTERS, type: routeType ?? null }))
+  const allRoutes = useMemo(() => {
+    if (!routes) return []
+    const rows = [...routes.values()].filter((r) => r.$id !== routeId)
+      .sort((a, b) => (b.$createdAt ?? "").localeCompare(a.$createdAt ?? ""))
+    return applyRouteFilters(rows, filters)
+  }, [routes, routeId, filters])
+
   function openChooser() {
     reload()
     setPhase("choose")
@@ -208,7 +226,7 @@ export function SprayBlock({
   function choose(id: string) {
     setRouteId(id)
     blockTimer.start()
-    if (startedAt == null) { setStartedAt(Date.now()); setNow(Date.now()) }
+    if (startedAt == null) { pause.reset(); setStartedAt(Date.now()); setNow(Date.now()) }
     setPhase("work")
   }
 
@@ -287,10 +305,15 @@ export function SprayBlock({
   const previewRow = preview ? routes?.get(preview) ?? null : null
 
   const timeChip = timed && startedAt != null && (
-    <View style={[s.chip, secondsLeft <= 60 && s.chipUrgent]}>
-      <Ionicons name="time-outline" size={16} color={secondsLeft <= 60 ? C.onAccent : C.green} />
-      <Text style={[s.chipText, secondsLeft <= 60 && { color: C.onAccent }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
-    </View>
+    <TimerRing
+      size={46}
+      fill={ringFill(limitSecs, secondsLeft)}
+      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
+      seconds={Math.max(0, secondsLeft)}
+      text={secondsLeft > 0 ? clock(secondsLeft) : "0:00"}
+      paused={pause.paused}
+      onTogglePause={secondsLeft > 0 ? pause.toggle : undefined}
+    />
   )
   // Attempts blocks: one segment per attempt, green = top, red = fell.
   const results = attempts.filter((a) => a.routeId).map((a) => !!a.success)
@@ -428,27 +451,25 @@ export function SprayBlock({
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
 
   if (phase === "intro") {
+    const locked = !!(block.lockRoute && block.routeId)
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <StatsCard
-            kicker={`${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`}
-            items={[
-              ...(sprayShowsAttempts(block, settings) ? [{ value: String(settings.attempts), label: "attempts", color: C.textPrimary }] : []),
-              ...(timed ? [{ value: `${isTime ? settings.minutes : settings.timeCap}`, label: "min", color: C.green }] : []),
-              { value: restLabel(settings.rest), label: "rest", color: C.textSecondary },
-            ]}
-          />
-          {sprayShowsCoachNotes(block) && <BlockNotes text={block.description} />}
-          <StepList steps={sprayBlockSteps(block, settings)} />
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          {block.lockRoute && block.routeId
-            ? <CustomButton title="Start" onPress={() => choose(block.routeId!)} />
-            : <CustomButton title="Choose sequence" onPress={openChooser} />}
-        </View>
-      </View>
+      <BlockIntro
+        title={title}
+        onBack={goToPreviousBlock}
+        facts={[
+          `${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`,
+          sprayShowsAttempts(block, settings) && `${settings.attempts} attempts`,
+          timed && `${isTime ? settings.minutes : settings.timeCap} min`,
+          `${restLabel(settings.rest)} rest`,
+        ]}
+        note={sprayShowsCoachNotes(block) ? block.description : null}
+        startLabel={locked ? "Start" : "Choose sequence"}
+        startSub={`Spray wall${timed ? ` · ${isTime ? settings.minutes : settings.timeCap} min` : ""}`}
+        startIcon={locked ? "play" : "arrow-forward"}
+        onStart={() => (locked ? choose(block.routeId!) : openChooser())}
+      >
+        <StepList steps={sprayBlockSteps(block, settings)} />
+      </BlockIntro>
     )
   }
 
@@ -525,6 +546,34 @@ export function SprayBlock({
               </Pressable>
             )
           })}
+          {routes && routes.size > 0 && (
+            <>
+              <Text style={[s.sectionLabel, { marginTop: 8 }]}>All sequences</Text>
+              <View style={{ marginHorizontal: -16 }}>
+                <RouteFilterBar filters={filters} onChange={setFilters} walls={walls ?? undefined} />
+              </View>
+              {allRoutes.length === 0 && <Text style={s.empty}>No sequences match.</Text>}
+              {allRoutes.map((row) => {
+                const rec = records.get(row.$id)
+                return (
+                  <Pressable key={row.$id} style={s.row} onPress={() => setPreview(row.$id)}>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={s.rowName} numberOfLines={1}>{row.name || "Sequence"}</Text>
+                      <View style={s.rowMeta}>
+                        <LevelColour level={row.level} />
+                      </View>
+                    </View>
+                    {!rec ? <Text style={s.rowRecord}>Not tried yet</Text> : (
+                      <Text style={s.rowRecord}>
+                        <Text style={rec.sends > 0 && { color: C.green }}>{rec.sends} top{rec.sends !== 1 ? "s" : ""}</Text> · {rec.tries} tr{rec.tries !== 1 ? "ies" : "y"}
+                      </Text>
+                    )}
+                    <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+                  </Pressable>
+                )
+              })}
+            </>
+          )}
         </ScrollView>
         {modals}
       </View>
@@ -588,7 +637,7 @@ export function SprayBlock({
 
   if (phase === "rest") {
     const t = restTimeRemaining ?? 0
-    const fill = restLength ? (t / restLength) * 100 : 0
+    const fill = ringFill(restLength, t)
     const last = attempts[attempts.length - 1]
     return (
       <View style={shared_styles.screen}>
@@ -601,17 +650,12 @@ export function SprayBlock({
             </View>
             <Text style={s.meta} numberOfLines={1}>Rest · {route?.name ?? "Sequence"}</Text>
             {timed && startedAt != null && (
-              <Text style={[s.meta, secondsLeft <= 60 && { color: C.red }]}>
+              <Text style={s.meta}>
                 {secondsLeft > 0 ? `Block: ${clock(secondsLeft)} left` : "Time's up after this rest"}
               </Text>
             )}
           </View>
-          <AnimatedCircularProgress
-            size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
-          >
-            {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
-          </AnimatedCircularProgress>
+          <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />
         </View>
         {attemptBar(`Next: attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.restOptions}>

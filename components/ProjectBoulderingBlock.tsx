@@ -1,11 +1,13 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getUsers } from "@/services/BoulderGraphService"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { BoulderLevelOptions, colourIndex, colourLabel, shiftColour } from "@/utils/boulderColours"
 import {
   FALL_REASONS, fallReasonLabel, normalizeProjectBlock, PROJECT_V2, resumedBlockStart,
@@ -17,10 +19,13 @@ import { Ionicons } from "@expo/vector-icons"
 import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
+import { useTaskBlockActions } from "@/contexts/WorkoutContext"
+import { amountLabel, isTaskBlock, isTaskIntroBlock, triesLeft, type FocusTaskNote } from "@/utils/sessionTasks"
+import { TaskIntroStep } from "@/components/SessionTasks"
 
 // Project bouldering v2 (docs/project-bouldering-v2.md): work boulders of one
 // grade against the block's clock. One big button logs an attempt and starts
@@ -29,6 +34,11 @@ import { useNextBlockLabel } from "@/utils/blockNav"
 // for the coach (shouldPromptReviewClip).
 //
 // Phases: intro → [grade] → ready ⇄ rest → … → timeUp → review.
+//
+// Task mode (block.focusTask — a next-session task, docs/session-tasks.md):
+// no grade, no review prompt; "Not today" on the intro skips it; in tries
+// mode there's no clock and the block ends after the last try; the review
+// asks "Keep it" / "Close it".
 
 type Phase = "intro" | "grade" | "ready" | "rest" | "timeUp" | "review"
 
@@ -50,7 +60,15 @@ function clock(secs: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
-export function ProjectBoulderingBlock({
+// The first-task intro block (docs/session-tasks.md) has its own screen until
+// the athlete writes the task; then the block runs as that task (a new
+// component, so the run starts fresh).
+export function ProjectBoulderingBlock(props: Props) {
+  if (isTaskIntroBlock(props.block)) return <TaskIntroStep />
+  return <ProjectBoulderingRun {...props} />
+}
+
+function ProjectBoulderingRun({
   block, logAttempt, updateLastAttempt, undoLastAttempt, restTimeRemaining, startRestTimer,
   attempts, allAttempts, goToNextBlock, goToPreviousBlock,
 }: Props) {
@@ -59,24 +77,36 @@ export function ProjectBoulderingBlock({
   const shared_styles = useSheet(shared_stylesSheet)
   const nextLabel = useNextBlockLabel("Continue")
   const settings = normalizeProjectBlock(block)
-  const blockTitle: string = block.blockName || "Project bouldering"
-  const limitSecs = settings.timeLimit * 60
+  const task: FocusTaskNote | null = isTaskBlock(block) ? block.focusTask : null
+  const taskActions = useTaskBlockActions()
+  // Tries-mode tasks have no clock.
+  const timed = !task || task.mode === "time"
+  const blockTitle: string = task ? "Your task" : block.blockName || "Project bouldering"
+  const limitSecs = timed ? settings.timeLimit * 60 : 0
+  // Time-limit tasks have no rest countdown: the athlete rests as they like
+  // inside the task's own clock and taps "Next attempt".
+  const restSecs = task?.mode === "time" ? 0 : settings.restTime
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const { User } = useAuth()
 
   // Resuming (or coming back to) a block with attempts: the clock is rebuilt
   // from them (the live timer isn't persisted) and the grade from their level.
   const [startedAt, setStartedAt] = useState<number | null>(() => resumedBlockStart(attempts.map((a) => a.timestamp)))
   const [grade, setGrade] = useState<string>(() => settings.grade || summarizeProjectAttempts(attempts).grade)
+  // Pausable like every timer: the block clock reads `pause.now()`.
+  const pause = usePauseClock()
+  const pauseNow = pause.now
   const [now, setNow] = useState(Date.now())
   const secondsLeft = startedAt == null ? limitSecs : limitSecs - Math.floor((now - startedAt) / 1000)
+  const left = triesLeft(task, attempts.length)
   const [phase, setPhase] = useState<Phase>(() =>
-    attempts.length === 0 ? "intro" : secondsLeft <= 0 ? "review" : "ready"
+    attempts.length === 0 ? "intro" : (timed ? secondsLeft <= 0 : left === 0) ? "review" : "ready"
   )
   const [overtime, setOvertime] = useState(false)   // "One more attempt" after time's up
   // Beeps when the block's time runs out, and notifies if the app is in the background.
   useBlockTimerAlert(
-    startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? startedAt + limitSecs * 1000 : null,
+    timed && startedAt != null && limitSecs > 0 && !overtime && phase !== "review" ? pause.real(startedAt + limitSecs * 1000) : null,
     blockTitle,
   )
 
@@ -90,7 +120,7 @@ export function ProjectBoulderingBlock({
 
   // Grade picker default: one colour above the athlete's flash level.
   useEffect(() => {
-    if (grade || !User?.$id) return
+    if (grade || task || !User?.$id) return
     let cancelled = false
     getUsers(User.$id)
       .then((u: any) => {
@@ -105,26 +135,39 @@ export function ProjectBoulderingBlock({
   // Tick the block clock once it has started.
   useEffect(() => {
     if (startedAt == null) return
-    const id = setInterval(() => setNow(Date.now()), 500)
+    const id = setInterval(() => setNow(pauseNow()), 500)
     return () => clearInterval(id)
-  }, [startedAt])
+  }, [startedAt, pauseNow])
 
   // Time's up: ask once the athlete is between attempts (never mid-rest).
   useEffect(() => {
-    if (phase === "ready" && startedAt != null && secondsLeft <= 0 && !overtime) setPhase("timeUp")
-  }, [phase, startedAt, secondsLeft, overtime])
+    if (timed && phase === "ready" && startedAt != null && secondsLeft <= 0 && !overtime) setPhase("timeUp")
+  }, [timed, phase, startedAt, secondsLeft, overtime])
+
+  // Tries-mode task: the last try's rest is over → the review.
+  useEffect(() => {
+    if (phase === "ready" && left === 0) setPhase("review")
+  }, [phase, left])
+
+  // Task review: a send preselects "Close it" (once — the athlete can change it).
+  const closePreset = useRef(false)
+  useEffect(() => {
+    if (phase !== "review" || !task || !taskActions || closePreset.current) return
+    closePreset.current = true
+    if (summarizeProjectAttempts(attempts).sent && !taskActions.closed) taskActions.setClosed(true)
+  }, [phase, task, taskActions, attempts])
 
   // End of rest → back to the button.
   useEffect(() => {
-    if (phase === "rest" && restTimeRemaining === 0) setPhase("ready")
-  }, [phase, restTimeRemaining])
+    if (restSecs > 0 && phase === "rest" && restTimeRemaining === 0) setPhase("ready")
+  }, [restSecs, phase, restTimeRemaining])
 
   const last = attempts[attempts.length - 1]
   const summary = summarizeProjectAttempts(attempts)
 
   function start() {
     blockTimer.start()
-    if (startedAt == null) { setStartedAt(Date.now()); setNow(Date.now()) }
+    if (startedAt == null) { pause.reset(); setStartedAt(Date.now()); setNow(Date.now()) }
     setPhase("ready")
   }
 
@@ -137,7 +180,7 @@ export function ProjectBoulderingBlock({
       clipsThisWorkout: allAttempts.filter((a) => a.reviewClip).length + (extra.reviewClip ? 1 : 0),
       ...reviewPromptHistory(attempts),
       secondsLeft: startedAt == null ? null : secondsLeft,
-      restTime: settings.restTime,
+      restTime: restSecs,
       // The review clip being logged right now settles the pending one.
       pendingRecord: recordNext && !extra.reviewClip,
     }, Math.random)
@@ -147,7 +190,7 @@ export function ProjectBoulderingBlock({
     })
     if (overtime) setOvertime(false)   // the one extra attempt is spent
     setPromptVisible(ask)
-    startRestTimer(settings.restTime)
+    startRestTimer(restSecs)
     setPhase("rest")
   }
 
@@ -198,13 +241,16 @@ export function ProjectBoulderingBlock({
     setPhase("ready")
   }
 
-  const timeChip = startedAt != null && (
-    <View style={[s.timeChip, secondsLeft <= 60 && s.timeChipUrgent]}>
-      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.onAccent : C.green} />
-      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.onAccent }]}>
-        {secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
-      </Text>
-    </View>
+  const timeChip = timed && startedAt != null && (
+    <TimerRing
+      size={46}
+      fill={ringFill(limitSecs, secondsLeft)}
+      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
+      seconds={Math.max(0, secondsLeft)}
+      text={secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
+      paused={pause.paused}
+      onTogglePause={phase !== "review" ? pause.toggle : undefined}
+    />
   )
 
   // The algorithm asks for a review clip: a full-screen takeover so it can't be
@@ -242,27 +288,41 @@ export function ProjectBoulderingBlock({
 
   // ── 1. Intro ─────────────────────────────────────────────────────────────────
 
+  if (phase === "intro" && task) {
+    return (
+      // Skipping is in the ⋯ menu ("Not today"), not here (Federico 2026-11-22).
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={[amountLabel(task), restSecs > 0 && `${clock(restSecs)} rest`]}
+        startSub={`Your task · ${amountLabel(task)}`}
+        onStart={start}
+      >
+        <Text style={s.taskText}>{task.text}</Text>
+        <Text style={s.hint}>
+          The task you set for this session. Tap the big button every time you come off (or top out).
+        </Text>
+      </BlockIntro>
+    )
+  }
+
   if (phase === "intro") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <View style={s.introPills}>
-            {settings.grade ? <GradePill grade={settings.grade} /> : (
-              <View style={s.infoPill}><Text style={s.infoPillText}>You pick the grade</Text></View>
-            )}
-            <View style={s.infoPill}><Text style={s.infoPillText}>⏱ {settings.timeLimit} min</Text></View>
-            <View style={s.infoPill}><Text style={s.infoPillText}>{clock(settings.restTime)} rest</Text></View>
-          </View>
-          <BlockNotes text={block.description} />
-          <Text style={s.hint}>
-            Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
-          </Text>
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title={settings.grade ? "Start" : "Next"} onPress={() => (settings.grade ? start() : setPhase("grade"))} />
-        </View>
-      </View>
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={[minutesLabel(settings.timeLimit), `${clock(settings.restTime)} rest`, !settings.grade && "You pick the grade"]}
+        note={block.description}
+        startLabel={settings.grade ? "Start" : "Next"}
+        startSub={settings.grade ? `${colourLabel(settings.grade)} · ${minutesLabel(settings.timeLimit) ?? ""}` : "Pick the grade"}
+        startIcon={settings.grade ? "play" : "arrow-forward"}
+        onStart={() => (settings.grade ? start() : setPhase("grade"))}
+      >
+        {!!settings.grade && <View style={{ alignSelf: "flex-start" }}><GradePill grade={settings.grade} /></View>}
+        <Text style={s.hint}>
+          Tap the big button every time you come off (or top out). Rest starts on its own — use it to note what happened.
+        </Text>
+      </BlockIntro>
     )
   }
 
@@ -304,7 +364,7 @@ export function ProjectBoulderingBlock({
       <View style={shared_styles.screen}>
         <TopBar
           title={blockTitle}
-          onBack={attempts.length === 0 ? () => setPhase(settings.grade ? "intro" : "grade") : undefined}
+          onBack={attempts.length === 0 ? () => setPhase(settings.grade || task ? "intro" : "grade") : undefined}
         />
         <View style={s.readyBody}>
           <View style={s.readyTop}>
@@ -313,9 +373,10 @@ export function ProjectBoulderingBlock({
               {!!grade && <GradePill grade={grade} />}
               {timeChip}
             </View>
+            {task && <Text style={s.taskTextSmall} numberOfLines={2}>{task.text}</Text>}
             <Text style={s.countNum}>{attempts.length}</Text>
             <Text style={s.countLabel}>
-              attempt{attempts.length !== 1 ? "s" : ""}
+              {task?.mode === "tries" ? `of ${task.amount} ` : ""}attempt{(task?.mode === "tries" ? task.amount : attempts.length) !== 1 ? "s" : ""}
               {summary.sends > 0 ? ` · ${summary.sends} send${summary.sends !== 1 ? "s" : ""} 🎉` : ""}
             </Text>
           </View>
@@ -361,7 +422,8 @@ export function ProjectBoulderingBlock({
 
   if (phase === "rest") {
     const t = restTimeRemaining ?? 0
-    const fill = settings.restTime ? (t / settings.restTime) * 100 : 0
+    const fill = ringFill(restSecs, t)
+    const clockLeft = Math.max(0, secondsLeft)
     const sent = !!last?.success
     const reasons = last?.fallReasons ?? []
     return (
@@ -369,14 +431,11 @@ export function ProjectBoulderingBlock({
         <View style={s.restHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.restTitle}>Attempt {attempts.length}</Text>
-            <Text style={s.restSub}>Rest{last?.videoId ? " · clip saved 🎥" : ""}</Text>
+            <Text style={s.restSub}>
+              {restSecs > 0 ? "Rest" : `${clock(clockLeft)} left on the task`}{last?.videoId ? " · clip saved 🎥" : ""}
+            </Text>
           </View>
-          <AnimatedCircularProgress
-            size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
-          >
-            {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
-          </AnimatedCircularProgress>
+          {restSecs > 0 && <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />}
         </View>
 
         <ScrollView contentContainerStyle={s.restContent}>
@@ -413,7 +472,7 @@ export function ProjectBoulderingBlock({
             <Text style={s.linkMuted}>Undo attempt</Text>
           </Pressable>
           <Pressable style={s.pillBtn} onPress={() => setPhase("ready")}>
-            <Text style={s.pillBtnText}>Skip rest</Text>
+            <Text style={s.pillBtnText}>{restSecs > 0 ? "Skip rest" : "Next attempt"}</Text>
           </Pressable>
         </View>
         {promptOverlay}
@@ -430,7 +489,7 @@ export function ProjectBoulderingBlock({
         <View style={[shared_styles.container, { justifyContent: "center", gap: 14 }]}>
           <Ionicons name="alarm-outline" size={56} color={C.red} />
           <Text style={s.heading}>Time&apos;s up</Text>
-          <Text style={s.hint}>{attempts.length} attempt{attempts.length !== 1 ? "s" : ""} on {colourLabel(grade)}.</Text>
+          <Text style={s.hint}>{attempts.length} attempt{attempts.length !== 1 ? "s" : ""} on {task ? "your task" : colourLabel(grade)}.</Text>
           <View style={{ width: "100%", gap: 12, marginTop: 12 }}>
             <CustomButton title="Finish block" onPress={() => setPhase("review")} />
             <Pressable onPress={() => { setOvertime(true); setPhase("ready") }} style={{ alignItems: "center" }} hitSlop={8}>
@@ -448,13 +507,51 @@ export function ProjectBoulderingBlock({
     <View style={shared_styles.screen}>
       <TopBar
         title="Review"
-        onBack={startedAt != null && secondsLeft > 0 ? () => setPhase("ready") : undefined}
+        onBack={startedAt != null && (timed ? secondsLeft > 0 : (left ?? 0) > 0) ? () => setPhase("ready") : undefined}
       />
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+        {task && <Text style={s.taskTextSmall}>{task.text}</Text>}
         <ProjectSummaryCard attempts={attempts} />
+        {task && taskActions && (
+          <View style={{ gap: 10 }}>
+            <Text style={s.sectionLabel}>Next session</Text>
+            <TaskChoice
+              on={!taskActions.closed}
+              title="Keep it"
+              sub="It comes back after the warm-up next session."
+              onPress={() => taskActions.setClosed(false)}
+            />
+            <TaskChoice
+              on={taskActions.closed}
+              title="Close it"
+              sub={summary.sent ? "You sent it. 🎉" : "Done with it, or not worth it anymore."}
+              onPress={() => taskActions.setClosed(true)}
+            />
+          </View>
+        )}
         <CustomButton title={nextLabel} onPress={goToNextBlock} />
       </ScrollView>
     </View>
+  )
+}
+
+// "Keep it" / "Close it" on a task's review.
+function TaskChoice({ on, title, sub, onPress }: { on: boolean; title: string; sub: string; onPress: () => void }) {
+  const C = useC()
+  const s = useSheet(sheet)
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[s.taskChoice, on && s.taskChoiceOn]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
+    >
+      <Ionicons name={on ? "radio-button-on" : "radio-button-off"} size={22} color={on ? C.green : C.textSecondary} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.taskChoiceTitle}>{title}</Text>
+        <Text style={s.taskChoiceSub}>{sub}</Text>
+      </View>
+    </Pressable>
   )
 }
 
@@ -539,9 +636,17 @@ export function ProjectSummaryCard({ attempts, compact }: { attempts: Attempt[] 
 const sheet = paperSheet((C) => StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
   hint: { fontSize: 14, color: C.textSecondary, lineHeight: 20, textAlign: "center" },
-  introPills: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  infoPill: { backgroundColor: C.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  infoPillText: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+
+  // Task mode (next-session tasks)
+  taskText: { fontSize: 26, fontWeight: "800", color: C.textPrimary, lineHeight: 32 },
+  taskTextSmall: { fontSize: 16, fontWeight: "700", color: C.textPrimary, textAlign: "center" },
+  taskChoice: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    borderRadius: 18, borderWidth: 1.5, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  taskChoiceOn: { borderColor: C.green, backgroundColor: C.surface },
+  taskChoiceTitle: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
+  taskChoiceSub: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
 
   // Same chips as the 4×4 / constraint-warmup grade pickers.
   gradeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -605,7 +710,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   },
   chipOn: { backgroundColor: C.red, borderColor: C.red },
   chipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  chipTextOn: { color: "#fff", fontWeight: "800" },
+  chipTextOn: { color: C.onAccent, fontWeight: "800" },
   promptOverlay: {
     ...StyleSheet.absoluteFillObject, zIndex: 5, backgroundColor: C.bg,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 18,

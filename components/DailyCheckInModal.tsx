@@ -1,5 +1,5 @@
 import { usePopupTurn } from "@/utils/popupTurn"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { CheckinRow, saveCheckin } from "@/services/BoulderGraphService"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native"
@@ -21,6 +21,8 @@ interface Props {
 // they've eaten — shown once per day before the Home screen content, and
 // reachable any time after from Settings if they skipped it.
 export function DailyCheckInModal({ visible, onDone, onClose, initial }: Props) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const [restRating, setRestRating] = useState<number | null>(null)
   const [ate, setAte] = useState<boolean | null>(null)
   const [saving, setSaving] = useState(false)
@@ -106,7 +108,7 @@ export function DailyCheckInModal({ visible, onDone, onClose, initial }: Props) 
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   overlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center", alignItems: "center", padding: 24,
@@ -145,4 +147,4 @@ const s = StyleSheet.create({
   toggleBtnTextActive: { color: C.bg },
   submitBtn: { marginTop: 24, backgroundColor: C.green, borderRadius: 16, padding: 16, alignItems: "center" },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: C.bg },
-})
+}))

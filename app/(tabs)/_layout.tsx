@@ -1,5 +1,6 @@
 import Auth_context, { ConsumeAuth } from "@/components/auth-context"
 import { InactiveAccount } from "@/components/InactiveAccount"
+import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { Redirect, Stack, useSegments } from "expo-router"
 import React, { useEffect, useState } from "react"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
@@ -8,6 +9,7 @@ import { hasSeenOnboarding } from "../../hooks/onBoardingHook"
 export default function AppLayout() {
   const segments = useSegments()
   const { User, isLoadingUser, active, role } = ConsumeAuth()
+  const paper = usePaper()
   const [seenOnboarding, setSeenOnboardingState] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export default function AppLayout() {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Auth_context>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#242325" } }} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: paper.paper } }} />
         </Auth_context>
       </GestureHandlerRootView>
     )
@@ -44,7 +46,7 @@ export default function AppLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Auth_context>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#242325" } }} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: paper.paper } }} />
       </Auth_context>
     </GestureHandlerRootView>
   )

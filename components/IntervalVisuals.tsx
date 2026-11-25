@@ -70,28 +70,151 @@ export function SeriesBar({ total, done, current, now, word = "Series" }: {
   )
 }
 
-/** The big ring: phase on top, the clock, and "Then: …" under it. */
-export function TimerRing({ fill, color, title, seconds, next, glow }: {
-  fill: number; color: string; title: string; seconds: number; next?: string | null; glow?: boolean
+/**
+ * The timer ring — the one standard look for every timer in the app
+ * (Federico 2026-11-25): the 1 on 1 off ring. It fills as time passes;
+ * colour by phase (`timerColor`). Big (≥ 120): phase on top, the clock and
+ * "Then: …" under it. Small (a chip in a bar, a rest next to a title): the
+ * clock only.
+ *
+ * Every timer must be pausable (Federico 2026-11-25): pass `onTogglePause`
+ * and tapping the ring pauses / resumes it. Paused, the ring turns ink and a
+ * play mark shows (big: "Paused" on top); running, a big ring shows a small
+ * pause mark under the clock so the tap is findable.
+ */
+export function TimerRing({ fill, color, title, seconds, next, glow, size = 260, text, paused, onTogglePause }: {
+  fill: number; color: string; title?: string; seconds: number; next?: string | null; glow?: boolean
+  /** Ring diameter. Default 260 (full screen timers). */
+  size?: number
+  /** Clock text instead of the seconds (e.g. "go!", "+1:05"). */
+  text?: string
+  paused?: boolean
+  /** Tapping the ring pauses / resumes. */
+  onTogglePause?: () => void
 }) {
   const C = useC()
   const s = useSheet(sheet)
-  return (
-    <View style={[s.ringWrap, glow && { backgroundColor: C.tint("rgba(111,207,151,0.06)") }]}>
-      <AnimatedCircularProgress
-        size={260} width={16} fill={fill}
-        tintColor={color} backgroundColor={C.surfaceHigh} rotation={0} lineCap="round"
-      >
-        {() => (
-          <View style={s.inner}>
-            <Text style={[s.phase, { color }]} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
-            <Text style={s.clock}>{seconds >= 60 ? fmtSec(seconds) : seconds}</Text>
-            {next ? <Text style={s.next}>{next}</Text> : null}
+  const big = size >= 120
+  const k = size / 260
+  const clock = text ?? (seconds >= 60 ? fmtSec(seconds) : String(seconds))
+  if (paused) {
+    color = timerColor(C, "paused")
+    if (big) title = "Paused"
+    glow = false
+  }
+  const mark = onTogglePause ? (paused ? "play" : "pause") : null
+  const ring = (
+    <AnimatedCircularProgress
+      size={size} width={big ? Math.max(8, Math.round(16 * k)) : Math.max(3, Math.round(size / 13))}
+      fill={Math.min(100, Math.max(0, fill))}
+      tintColor={color} backgroundColor={C.surfaceHigh} rotation={0} lineCap="round"
+    >
+      {() => big ? (
+        <View style={[s.inner, { paddingHorizontal: Math.round(28 * k) }]}>
+          {!!title && <Text style={[s.phase, { color }, k < 0.8 && { fontSize: Math.round(24 * Math.max(k, 0.7)) }]} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>}
+          <Text
+            style={[s.clock, k < 1 && { fontSize: Math.round(108 * k), lineHeight: Math.round(108 * k) }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {clock}
+          </Text>
+          {mark && <Ionicons name={mark} size={Math.max(16, Math.round(22 * k))} color={paused ? C.textPrimary : C.textSecondary} style={{ marginTop: 2 }} />}
+          {next && !paused ? <Text style={s.next} numberOfLines={2}>{next}</Text> : null}
+          {paused ? <Text style={s.next}>Tap to resume</Text> : null}
+        </View>
+      ) : (
+        <Text style={[s.clockSmall, { fontSize: Math.round(size * (clock.length > 4 ? 0.22 : 0.27)) }]} numberOfLines={1}>{clock}</Text>
+      )}
+    </AnimatedCircularProgress>
+  )
+  const body = big
+    ? <View style={[s.ringWrap, { padding: Math.round(14 * k) }, glow && { backgroundColor: C.tint("rgba(111,207,151,0.06)") }]}>{ring}</View>
+    : (
+      <View>
+        {ring}
+        {paused && (
+          <View style={[s.badge, { width: Math.max(14, Math.round(size * 0.36)), height: Math.max(14, Math.round(size * 0.36)) }]}>
+            <Ionicons name="play" size={Math.max(8, Math.round(size * 0.2))} color={C.bg} />
           </View>
         )}
-      </AnimatedCircularProgress>
+      </View>
+    )
+  if (!onTogglePause) return body
+  return (
+    <Pressable
+      onPress={onTogglePause}
+      hitSlop={big ? 0 : 8}
+      accessibilityRole="button"
+      accessibilityLabel={paused ? "Resume timer" : "Pause timer"}
+      style={({ pressed }) => pressed && { opacity: 0.75 }}
+    >
+      {body}
+    </Pressable>
+  )
+}
+
+/**
+ * The big countdown for logging screens (route exploration flash, density
+ * test), where a ring would squeeze the chips under it (Federico
+ * 2026-11-25): a full-width strip with the clock in big mono digits and a
+ * bar that fills as time passes. Same colours and pause rule as TimerRing:
+ * mint while running, ink when paused or over; tap anywhere to pause.
+ */
+export function TimerBar({ total, left, text, paused, onTogglePause }: {
+  /** Full time and time left, in seconds. */
+  total: number; left: number
+  /** Clock text (e.g. "24:59"). */
+  text: string
+  paused?: boolean
+  onTogglePause?: () => void
+}) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const over = left <= 0
+  const color = timerColor(C, paused ? "paused" : over ? "over" : "work")
+  const label = over ? "Time's up" : paused ? "Paused · tap to resume" : "Remaining"
+  const fill = Math.min(100, Math.max(0, ringFill(total, left)))
+  const mark = onTogglePause && !over ? (paused ? "play" : "pause") : null
+  const body = (
+    <View style={s.barWrap}>
+      <View style={s.barRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.barLabel, paused && { color: C.textPrimary }]} numberOfLines={1}>{label}</Text>
+          <Text style={[s.barClock, { color: paused || over ? C.textPrimary : color }]} numberOfLines={1} adjustsFontSizeToFit>{text}</Text>
+        </View>
+        {mark && (
+          <View style={[s.barMark, paused && { backgroundColor: C.textPrimary, borderColor: C.textPrimary }]}>
+            <Ionicons name={mark} size={24} color={paused ? C.bg : C.textPrimary} />
+          </View>
+        )}
+      </View>
+      <View style={s.barTrack}>
+        <View style={[s.barFill, { width: `${fill}%`, backgroundColor: color }]} />
+      </View>
     </View>
   )
+  if (!onTogglePause || over) return body
+  return (
+    <Pressable
+      onPress={onTogglePause}
+      accessibilityRole="button"
+      accessibilityLabel={paused ? "Resume timer" : "Pause timer"}
+      style={({ pressed }) => pressed && { opacity: 0.75 }}
+    >
+      {body}
+    </Pressable>
+  )
+}
+
+/** Ring colour by phase: work / hang / running = mint, rest = muted, the rest ink. */
+export function timerColor(C: { green: string; yellow: string; textPrimary: string; textSecondary: string }, phase: "work" | "rest" | "prepare" | "paused" | "over"): string {
+  return phase === "work" ? C.green : phase === "rest" ? C.yellow : phase === "prepare" ? C.textSecondary : C.textPrimary
+}
+
+/** % of the ring filled after `elapsed` of `total` seconds. */
+export function ringFill(total: number, left: number): number {
+  return total > 0 ? ((total - Math.max(0, left)) / total) * 100 : 0
 }
 
 export function PauseButton({ paused, onPress }: { paused: boolean; onPress: () => void }) {
@@ -116,10 +239,25 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
   segments: { flexDirection: "row", gap: 4, width: "100%" },
   segment: { flex: 1, height: 8, borderRadius: 4, backgroundColor: C.surfaceHigh, ...(P && { height: 6, borderRadius: 3, backgroundColor: P.hairline }) },
   ringWrap: { borderRadius: 160, padding: 14 },
+  badge: {
+    position: "absolute", right: -3, bottom: -3, borderRadius: 999,
+    backgroundColor: C.textPrimary, alignItems: "center", justifyContent: "center",
+  },
   inner: { alignItems: "center", paddingHorizontal: 28 },
   phase: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2, ...(P && { fontFamily: font.title, textTransform: "uppercase", fontSize: 24 }) },
   clock: { fontSize: 84, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], lineHeight: 96, ...(P && { fontFamily: font.poster, fontSize: 108, lineHeight: 108, letterSpacing: -2 }) },
+  clockSmall: { fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], ...(P && { fontFamily: font.title }) },
   next: { fontSize: 14, color: C.textSecondary, fontWeight: "600", ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3, textTransform: "uppercase" }) },
+  barWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 10 },
+  barRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  barLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3 }) },
+  barClock: { fontSize: 64, lineHeight: 72, fontWeight: "800", fontVariant: ["tabular-nums"], letterSpacing: -1, ...(P && { fontFamily: font.mono, fontSize: 68, lineHeight: 76, letterSpacing: -2 }) },
+  barMark: {
+    width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: P ? P.ink : C.textPrimary,
+  },
+  barTrack: { height: 10, borderRadius: 5, overflow: "hidden", backgroundColor: P ? P.hairline : C.surfaceHigh },
+  barFill: { height: "100%", borderRadius: 5 },
   pause: {
     width: 64, height: 64, borderRadius: 32, backgroundColor: C.surfaceHigh,
     alignItems: "center", justifyContent: "center",

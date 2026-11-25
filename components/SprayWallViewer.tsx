@@ -1,6 +1,6 @@
 import { handsAfterBounce, type HandLetter } from "@/utils/sprayHands"
 import { BOUNCE_COLOR, PlacedHold, StartingHand } from "@/components/SprayWallBuilder"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { getDisplayRadius } from "@/utils/holdRadius"
 import { wallPreviewUrl } from "@/services/BoulderGraphService"
 import { useImageSize } from "@/utils/useImageSize"
@@ -14,6 +14,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated"
+
+// Spray wall hold colours (start / finish) are the wall's convention, so they
+// keep their colours in Paper Mint too.
+const FINISH_HOLD = "#FED766"
 
 const HAND_LABEL: Record<StartingHand, string> = { left: "L", right: "R", both: "LR" }
 
@@ -64,6 +68,8 @@ interface Props {
 }
 
 export function SprayWallViewer({ imageSource, holds, style, freeGesture, interactive = true, previewWidth = 1200, naturalSize }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [containerW, setContainerW] = useState(0)
   const [containerH, setContainerH] = useState(0)
   // Resize remote wall photos to a server-side preview (small, WebP). Bundled
@@ -240,7 +246,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
                 const badgeLabel = holdBadge(hold, displayNums, afterBounce)
                 const badgeBg =
                   hold.type === "start"  ? C.green :
-                  hold.type === "finish" ? C.yellow :
+                  hold.type === "finish" ? FINISH_HOLD :  // the wall's own hold colour, not a UI state
                   hold.type === "foot"   ? "#4FA3E0" :
                   hold.bounce            ? BOUNCE_COLOR :
                   "rgba(0,0,0,0.75)"
@@ -320,7 +326,7 @@ export function SprayWallViewer({ imageSource, holds, style, freeGesture, intera
   return <GestureDetector gesture={gesture}>{inner}</GestureDetector>
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "transparent", overflow: "hidden" },
 
   revealCircle: { overflow: "hidden", borderColor: "rgba(255,255,255,0.5)", borderWidth: 2 },
@@ -338,4 +344,4 @@ const styles = StyleSheet.create({
   bounceHintText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "600", lineHeight: 16 },
   bounceHintClose: { color: "#fff", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
   bounceChip: { position: "absolute", left: 10, bottom: 10, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
-})
+}))

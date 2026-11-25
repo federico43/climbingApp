@@ -9,3 +9,11 @@ export type BlockTimerApi = { start: () => void }
 export const BlockTimerContext = createContext<BlockTimerApi>({ start: () => {} })
 
 export const useBlockTimer = () => useContext(BlockTimerContext)
+
+// The workout's shared rest timer (hooks/WorkoutHook.tsx startRestTimer):
+// lets the blocks that show it pause / resume it without threading props.
+export type RestPauseApi = { paused: boolean; toggle: () => void }
+
+export const RestPauseContext = createContext<RestPauseApi>({ paused: false, toggle: () => {} })
+
+export const useRestPause = () => useContext(RestPauseContext)

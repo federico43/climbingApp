@@ -1,4 +1,5 @@
-import CustomButton from "@/components/customButton"
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
@@ -8,6 +9,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { usePauseClock } from "@/hooks/usePauseClock"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -68,7 +71,8 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   const [note, setNote] = useState("")
   // When the time limit (if any) runs out while running — beeps / notifies.
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(endsAt, block.blockName || "Free session")
+  const clock = usePauseClock()
+  useBlockTimerAlert(clock.real(endsAt), block.blockName || "Free session")
 
   const holds = useMemo(() => {
     if (!block.routeHolds) return []
@@ -85,11 +89,12 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   }, [])
 
   function start() {
+    clock.reset()
     startTimeRef.current = Date.now()
     const limitSec = (block.timeLimit ?? 0) * 60
     setEndsAt(limitSec > 0 ? startTimeRef.current + limitSec * 1000 : null)
     intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current!) / 1000))
+      setElapsed(Math.floor((clock.now() - startTimeRef.current!) / 1000))
     }, 500)
     setPhase("running")
   }
@@ -100,6 +105,7 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
       intervalRef.current = null
     }
     setEndsAt(null)
+    clock.reset()
     setPhase("done")
   }
 
@@ -114,18 +120,14 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 
   if (phase === "intro") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={block.blockName} onBack={goToPreviousBlock} poster />
-        <ScrollView
-          contentContainerStyle={shared_styles.introContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <BlockNotes text={block.description} />
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={start} />
-        </View>
-      </View>
+      <BlockIntro
+        title={block.blockName || "Free session"}
+        onBack={goToPreviousBlock}
+        facts={[minutesLabel(block.timeLimit)]}
+        note={block.description}
+        startSub={["Free session", minutesLabel(block.timeLimit)].filter(Boolean).join(" · ")}
+        onStart={start}
+      />
     )
   }
 
@@ -154,10 +156,19 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           </View>
         )}
         <View style={hasRoute ? styles.timerFooter : styles.centerContent}>
-          <Text style={styles.timerLabel}>{hasLimit ? (over ? "time's up" : "remaining") : "elapsed"}</Text>
-          <Text style={[styles.timer, over && { color: C.red }, hasRoute && styles.timerCompact]}>
-            {hasLimit ? formatElapsed(remaining) : formatElapsed(elapsed)}
-          </Text>
+          {/* The standard timer ring (the 1 on 1 off look). No limit: it
+              counts up, one lap a minute. */}
+          <TimerRing
+            size={hasRoute ? 150 : 260}
+            fill={hasLimit ? ringFill(limitSec, remaining) : ((elapsed % 60) / 60) * 100}
+            color={timerColor(C, over ? "over" : "work")}
+            title={hasLimit ? (over ? "Time's up" : "Remaining") : "Elapsed"}
+            seconds={hasLimit ? remaining : elapsed}
+            text={formatElapsed(hasLimit ? remaining : elapsed)}
+            glow={!over}
+            paused={clock.paused}
+            onTogglePause={over ? undefined : clock.toggle}
+          />
           <Pressable style={styles.stopBtn} onPress={stop}>
             <Text style={styles.stopBtnText}>Stop</Text>
           </Pressable>

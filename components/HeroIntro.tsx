@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { paperSheet, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { PaperBackground } from "@/components/paper/Surface"
 import { LinearGradient } from "expo-linear-gradient"
 import { useEffect } from "react"
 import { StyleSheet, useWindowDimensions } from "react-native"
@@ -19,6 +20,8 @@ const HOLD = 650
 const EXIT = 600
 
 export function HeroIntro({ name, onDone }: { name: string; onDone: () => void }) {
+  const styles = useSheet(stylesSheet)
+  const P = usePaperScope()
   const { height } = useWindowDimensions()
   const opacity = useSharedValue(0)
   const scale = useSharedValue(0.8)
@@ -54,14 +57,14 @@ export function HeroIntro({ name, onDone }: { name: string; onDone: () => void }
   return (
     <Animated.View pointerEvents="none" style={styles.overlay}>
       <Animated.View style={[StyleSheet.absoluteFill, bgStyle]}>
-        <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }} />
+        {P ? <PaperBackground /> : <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }} />}
       </Animated.View>
       <Animated.Text style={[styles.name, textStyle]}>Hi,{"\n"}{name}</Animated.Text>
     </Animated.View>
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 100,
@@ -75,4 +78,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 50,
   },
-})
+}))

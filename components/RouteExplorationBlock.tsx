@@ -1,3 +1,5 @@
+import { BlockIntro } from "@/components/BlockIntro"
+import { minutesLabel } from "@/utils/blockIntro"
 import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
 import { ExplorationFocusSlides, useExplorationFocusFirstTime } from "@/components/ExplorationFocusSlides"
@@ -15,9 +17,11 @@ import {
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { usePopupTurn } from "@/utils/popupTurn"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import React, { useEffect, useRef, useState } from "react"
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
@@ -65,25 +69,29 @@ function formatTime(seconds: number): string {
 
 // Countdown from `minutes` while `running`; calls onEnd once at zero. Beeps at
 // zero, and notifies (as `label`) when it runs out with the app in the background.
+// Pausable (`paused` / `toggle`); starting it again starts unpaused.
 function useCountdown(minutes: number, running: boolean, label: string, onEnd: () => void) {
   const [left, setLeft] = useState(minutes * 60)
   const [endsAt, setEndsAt] = useState<number | null>(null)
-  useBlockTimerAlert(running ? endsAt : null, label)
+  const clock = usePauseClock()
+  const { now, reset } = clock
+  useBlockTimerAlert(running ? clock.real(endsAt) : null, label)
   const onEndRef = useRef(onEnd)
   onEndRef.current = onEnd
   useEffect(() => {
     if (!running) return
+    reset()
     const end = Date.now() + minutes * 60 * 1000
     setEndsAt(end)
     setLeft(minutes * 60)
     const id = setInterval(() => {
-      const s = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const s = Math.max(0, Math.ceil((end - now()) / 1000))
       setLeft(s)
       if (s === 0) { clearInterval(id); onEndRef.current() }
     }, 250)
     return () => { clearInterval(id); setEndsAt(null) }
-  }, [running, minutes])
-  return left
+  }, [running, minutes, now, reset])
+  return { left, paused: clock.paused, toggle: left > 0 ? clock.toggle : undefined }
 }
 
 export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttempt, goToNextBlock, goToPreviousBlock }: Props) {
@@ -156,23 +164,25 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     />
   )
 
-  const warmupLeft = useCountdown(warmupMin, phase === "warmup", `${title} · warm-up`, () => {
+  const warmup = useCountdown(warmupMin, phase === "warmup", `${title} · warm-up`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
     setPhase("breathingIntro")
   })
-  const breathingLeft = useCountdown(breathingMin, phase === "breathing", `${title} · breathing`, () => {
+  const breathing = useCountdown(breathingMin, phase === "breathing", `${title} · breathing`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
     setPhase("flashIntro")
   })
 
-  const flashLeft = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
+  const flash = useCountdown(flashMin, phase === "flash", `${title} · part 1`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("review")
   })
-  const projectLeft = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
+  const project = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("question")
   })
+  const flashLeft = flash.left
+  const projectLeft = project.left
 
   function logRoute() {
     if (!wall) return
@@ -199,8 +209,10 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     goToNextBlock()
   }
 
-  // Density test's top bar: back, title, timer and count badges.
-  const activeBar = (barTitle: string, left: number, onBack?: () => void) => (
+  // Density test's top bar: back, title and the points badge, then the big
+  // countdown strip under it.
+  const activeBar = (barTitle: string, left: number, total: number, onBack?: () => void) => (
+    <>
     <View style={topBar_styles.bar}>
       <Pressable
         onPress={onBack}
@@ -212,9 +224,6 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       </Pressable>
       <Text style={topBar_styles.title} numberOfLines={1}>{barTitle}</Text>
       <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-        <View style={[styles.timerBadge, left <= 60 && styles.timerBadgeUrgent]}>
-          <Text style={[styles.timerText, left <= 60 && styles.timerTextUrgent]}>{formatTime(left)}</Text>
-        </View>
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
@@ -222,6 +231,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         )}
       </View>
     </View>
+    <TimerBar total={total} left={left} text={formatTime(left)} paused={flash.paused} onTogglePause={flash.toggle} />
+    </>
   )
 
   // Part 1's attempts, in the same order as `routes`, for the ✕ on each row.
@@ -247,33 +258,23 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "intro") {
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={text} title="Coach notes" />
-          <View style={styles.stepsCard}>
-            {[
-              ["Warm-up", `${warmupMin} min`],
-              ["Breathing", `${breathingMin} min`],
-              ["Part 1 · Flash", `${flashMin} min`],
-              ["Part 2 · Project", `${projectMin} min`],
-            ].map(([label, mins], n) => (
-              <View key={label} style={styles.stepRow}>
-                <Text style={styles.stepNum}>{n + 1}</Text>
-                <Text style={styles.stepLabel}>{label}</Text>
-                <Text style={styles.stepMins}>{mins}</Text>
-              </View>
-            ))}
-          </View>
+      <>
+        <BlockIntro
+          title={title}
+          onBack={goToPreviousBlock}
+          facts={[`1 · Warm-up ${warmupMin} min`, `2 · Breathe ${breathingMin} min`, `3 · Explore ${flashMin} min`, `4 · Project ${projectMin} min`]}
+          note={text}
+          notesTitle="Coach notes"
+          startLabel="Start warm-up"
+          startSub={`Route exploration · ${minutesLabel(warmupMin + breathingMin + flashMin + projectMin)}`}
+          onStart={() => setPhase("warmup")}
+        >
           <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
             <Text style={styles.whyLink}>Why breathe? See the 5 slides</Text>
           </Pressable>
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title={`Start warm-up · ${warmupMin} min`} onPress={() => setPhase("warmup")} />
-        </View>
+        </BlockIntro>
         {slides}
-      </View>
+      </>
     )
   }
 
@@ -284,8 +285,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         <TopBar title="Warm-up" onBack={() => setPhase("intro")} />
         <BlockNotes text={EXPLORATION_WARMUP_NOTES} compact />
         <View style={styles.centerContent}>
-          <Text style={styles.bigTimerLabel}>warm-up</Text>
-          <Text style={styles.bigTimer}>{formatTime(warmupLeft)}</Text>
+          <TimerRing
+            fill={ringFill(warmupMin * 60, warmup.left)}
+            color={timerColor(C, "work")}
+            title="Warm-up"
+            seconds={warmup.left}
+            text={formatTime(warmup.left)}
+            glow={warmup.left > 0}
+            paused={warmup.paused}
+            onTogglePause={warmup.toggle}
+          />
           <Pressable style={styles.nextBtn} onPress={() => setPhase("breathingIntro")}>
             <Text style={styles.nextBtnText}>I&apos;m warm</Text>
           </Pressable>
@@ -297,22 +306,26 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   // ── Breathing ──────────────────────────────────────────────────────────────
   if (phase === "breathingIntro") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Breathing" onBack={() => setPhase("intro")} />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <BlockNotes text={EXPLORATION_BREATHING_NOTES} title="Before part 1" />
+      <>
+        <BlockIntro
+          title="Breathing"
+          onBack={() => setPhase("intro")}
+          facts={[`4 s in · 6 s out · ${breathingMin} min`]}
+          note={EXPLORATION_BREATHING_NOTES}
+          notesTitle="Before part 1"
+          startLabel="Start breathing"
+          startSub={minutesLabel(breathingMin) ?? undefined}
+          onStart={() => setPhase("breathing")}
+        >
           <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
             <Text style={styles.whyLink}>Why breathe?</Text>
           </Pressable>
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title={`Start breathing · ${breathingMin} min`} onPress={() => setPhase("breathing")} />
           <Pressable onPress={() => setPhase("flashIntro")} hitSlop={10} style={styles.skipLink}>
             <Text style={styles.skipLinkText}>Skip breathing</Text>
           </Pressable>
-        </View>
+        </BlockIntro>
         {slides}
-      </View>
+      </>
     )
   }
 
@@ -320,9 +333,9 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     return (
       <View style={shared_styles.screen}>
         <TopBar title="Breathing" onBack={() => setPhase("breathingIntro")} />
+        <TimerBar total={breathingMin * 60} left={breathing.left} text={formatTime(breathing.left)} paused={breathing.paused} onTogglePause={breathing.toggle} />
         <View style={styles.centerContent}>
-          <BreathingCircle />
-          <Text style={styles.breathTimer}>{formatTime(breathingLeft)}</Text>
+          <BreathingCircle paused={breathing.paused} />
           <Pressable style={styles.nextBtn} onPress={() => setPhase("flashIntro")}>
             <Text style={styles.nextBtnText}>I&apos;m ready</Text>
           </Pressable>
@@ -335,16 +348,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "flashIntro") {
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Part 1 · Flash" onBack={() => setPhase("breathingIntro")} />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <Text style={styles.readyLine}>Head on the wall. One move at a time.</Text>
-          <BlockNotes text={text} title="Coach notes" />
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title={`Start part 1 · ${flashMin} min`} onPress={() => setPhase("flash")} />
-        </View>
-      </View>
+      <BlockIntro
+        title="Part 1 · Flash"
+        onBack={() => setPhase("breathingIntro")}
+        facts={[`1 · Explore ${flashMin} min`, `2 · Project ${projectMin} min`]}
+        note={text}
+        notesTitle="Head on the wall. One move at a time."
+        startLabel="Start part 1"
+        startSub={minutesLabel(flashMin) ?? undefined}
+        onStart={() => setPhase("flash")}
+      />
     )
   }
 
@@ -352,7 +365,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "flash") {
     return (
       <View style={shared_styles.screen}>
-        {activeBar("Part 1 · Flash", flashLeft, () => setPhase("flashIntro"))}
+        {activeBar("Part 1 · Flash", flashLeft, flashMin * 60, () => setPhase("flashIntro"))}
         <View style={styles.container}>
           {notice && <Text style={styles.notice}>{notice}</Text>}
 
@@ -450,8 +463,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         <TopBar title="Part 2 · Project" />
         <BlockNotes text={EXPLORATION_PROJECT_NOTES} compact />
         <View style={styles.centerContent}>
-          <Text style={styles.bigTimerLabel}>remaining</Text>
-          <Text style={styles.bigTimer}>{formatTime(projectLeft)}</Text>
+          <TimerRing
+            fill={ringFill(projectMin * 60, projectLeft)}
+            color={timerColor(C, projectLeft > 0 ? "work" : "over")}
+            title={projectLeft > 0 ? "Remaining" : "Time's up"}
+            seconds={projectLeft}
+            text={formatTime(projectLeft)}
+            glow={projectLeft > 0}
+            paused={project.paused}
+            onTogglePause={project.toggle}
+          />
           <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
             <Text style={styles.stopBtnText}>Stop</Text>
           </Pressable>
@@ -572,11 +593,13 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
 
 // The breathing guide: a circle that grows while breathing in (4 s) and
 // shrinks while breathing out (6 s), with the cue under it.
-function BreathingCircle() {
+function BreathingCircle({ paused }: { paused?: boolean }) {
   const styles = useSheet(sheet)
   const scale = useRef(new Animated.Value(0.55)).current
   const [cue, setCue] = useState<"in" | "out">("in")
   useEffect(() => {
+    // Paused with the timer: hold the circle where it is.
+    if (paused) return
     // Each half starts the next one, so the words always match the circle
     // (also after the app was in the background, where animations pause).
     let alive = true
@@ -593,7 +616,7 @@ function BreathingCircle() {
     }
     run("in")
     return () => { alive = false; scale.stopAnimation() }
-  }, [scale])
+  }, [scale, paused])
   return (
     <View style={styles.breathWrap}>
       <Animated.View style={[styles.breathCircle, { transform: [{ scale }] }]} />
@@ -660,33 +683,24 @@ const sheet = paperSheet((C) => StyleSheet.create({
 
   // Part 2's countdown — same as FreeSessionBlock.
   centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
-  bigTimerLabel: { fontSize: 13, fontWeight: "600", color: C.textMuted, textTransform: "uppercase", letterSpacing: 1.5 },
-  bigTimer: { fontSize: 72, fontWeight: "700", color: C.textPrimary, fontVariant: ["tabular-nums"], letterSpacing: -2, lineHeight: 80 },
   stopBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.red, marginTop: 8 },
   stopBtnText: { fontSize: 18, fontWeight: "700", color: C.red, letterSpacing: 0.3 },
 
-  stepsCard: { backgroundColor: C.surface, borderRadius: 14, padding: 14, gap: 10 },
-  stepRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  stepNum: { width: 22, height: 22, borderRadius: 11, overflow: "hidden", textAlign: "center", lineHeight: 22, fontSize: 12, fontWeight: "800", color: C.onAccent, backgroundColor: C.green },
-  stepLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  stepMins: { fontSize: 14, fontWeight: "700", color: C.textSecondary, fontVariant: ["tabular-nums"] },
   whyLink: { fontSize: 15, fontWeight: "700", color: C.green, textDecorationLine: "underline" },
   skipLink: { alignSelf: "center", paddingTop: 12 },
   skipLinkText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  readyLine: { fontSize: 20, fontWeight: "800", color: C.textPrimary, lineHeight: 26 },
   nextBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.green, marginTop: 8 },
   nextBtnText: { fontSize: 18, fontWeight: "700", color: C.green, letterSpacing: 0.3 },
   breathWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
   breathCircle: { position: "absolute", width: 240, height: 240, borderRadius: 120, backgroundColor: C.green, opacity: 0.22 },
   breathCue: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
-  breathTimer: { fontSize: 32, fontWeight: "700", color: C.textSecondary, fontVariant: ["tabular-nums"] },
 
   questionContent: { padding: 20, gap: 14 },
   question: { fontSize: 18, fontWeight: "700", color: C.textPrimary, lineHeight: 24 },
   reasonChip: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 22, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
   reasonChipOn: { backgroundColor: C.red, borderColor: C.red },
   reasonChipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  reasonChipTextOn: { color: "#fff", fontWeight: "800" },
+  reasonChipTextOn: { color: C.onAccent, fontWeight: "800" },
   input: { minHeight: 80, backgroundColor: C.surface, borderRadius: 12, padding: 12, color: C.textPrimary, fontSize: 15, textAlignVertical: "top" },
 
   reviewScroll: { flexGrow: 1, padding: 20, alignItems: "center", gap: 12 },

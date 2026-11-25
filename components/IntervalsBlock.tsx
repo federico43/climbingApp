@@ -1,4 +1,4 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import CustomButton from "@/components/customButton"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
@@ -11,7 +11,7 @@ import {
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
 import { IntervalStats, PauseButton, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
 import { Ionicons } from "@expo/vector-icons"
 import { useNextBlockLabel } from "@/utils/blockNav"
@@ -257,48 +257,49 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
   // ── Ready ──
   if (phase === "ready") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={s.centerScroll}>
-          {/* Built from the settings actually being run (incl. a suggested
-              work time), then the coach's notes, if any. */}
-          {suggestionReady && (
-            <Text style={shared_styles.description}>{intervalsDescription({ kind, series, workTime, restTime })}</Text>
-          )}
-          <BlockNotes text={block.description} />
-          {!suggestionReady ? <ActivityIndicator color={C.green} /> : (
-            <View style={s.card}>
-              <IntervalStats series={series} workSec={workTime} restSec={restTime} seriesLabel="rounds" />
-              <View style={s.footRow}>
-                <Ionicons name="time-outline" size={14} color={C.textSecondary} />
-                <Text style={s.foot}>About {Math.ceil((series * workTime + (series - 1) * restTime) / 60)} min</Text>
-              </View>
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={suggestionReady ? [`${series} rounds`, `${workTime}s on · ${restTime}s off`, `about ${Math.ceil((series * workTime + (series - 1) * restTime) / 60)} min`] : []}
+        note={block.description}
+        startSub={suggestionReady ? `Intervals · about ${Math.ceil((series * workTime + (series - 1) * restTime) / 60)} min` : "Intervals"}
+        onStart={handleStart}
+        startDisabled={!suggestionReady}
+      >
+        {/* Built from the settings actually being run (incl. a suggested
+            work time), then the coach's notes, if any. */}
+        {suggestionReady && (
+          <Text style={shared_styles.description}>{intervalsDescription({ kind, series, workTime, restTime })}</Text>
+        )}
+        {!suggestionReady ? <ActivityIndicator color={C.green} /> : (
+          <View style={s.card}>
+            <IntervalStats series={series} workSec={workTime} restSec={restTime} seriesLabel="rounds" />
+            <View style={s.footRow}>
+              <Ionicons name="time-outline" size={14} color={C.textSecondary} />
+              <Text style={s.foot}>About {Math.ceil((series * workTime + (series - 1) * restTime) / 60)} min</Text>
             </View>
-          )}
-          {/* Progression suggestion — stays until the athlete overrides it. */}
-          {!!suggestion && (
-            <View style={s.suggestionBanner}>
-              <Text style={s.suggestionBannerLast}>{suggestion.lastTime}</Text>
-              <Text style={s.suggestionBannerText}>{suggestion.note}</Text>
-              <Pressable onPress={chooseOwnTime} hitSlop={8}>
-                <Text style={s.suggestionDecline}>Choose my own time</Text>
+          </View>
+        )}
+        {/* Progression suggestion — stays until the athlete overrides it. */}
+        {!!suggestion && (
+          <View style={s.suggestionBanner}>
+            <Text style={s.suggestionBannerLast}>{suggestion.lastTime}</Text>
+            <Text style={s.suggestionBannerText}>{suggestion.note}</Text>
+            <Pressable onPress={chooseOwnTime} hitSlop={8}>
+              <Text style={s.suggestionDecline}>Choose my own time</Text>
+            </Pressable>
+          </View>
+        )}
+        {pickOwn && (
+          <View style={s.answerRow}>
+            {ownTimes.map((t) => (
+              <Pressable key={t} onPress={() => setWorkTime(t)} style={[s.timeChip, workTime === t && s.answerBtnOn]}>
+                <Text style={[s.answerText, workTime === t && s.answerTextOn]}>{t}s</Text>
               </Pressable>
-            </View>
-          )}
-          {pickOwn && (
-            <View style={s.answerRow}>
-              {ownTimes.map((t) => (
-                <Pressable key={t} onPress={() => setWorkTime(t)} style={[s.timeChip, workTime === t && s.answerBtnOn]}>
-                  <Text style={[s.answerText, workTime === t && s.answerTextOn]}>{t}s</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          <CustomButton title="Start" onPress={handleStart} disabled={!suggestionReady} />
-        </View>
-      </View>
+            ))}
+          </View>
+        )}
+      </BlockIntro>
     )
   }
 
@@ -364,7 +365,7 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
         {series > 1 && (
           <SeriesBar total={series} done={doneRounds} current={phase === "work" ? round : null} now={round + 1} word="Round" />
         )}
-        <TimerRing fill={fill} color={tint} title={label} seconds={left} next={nextText} glow={phase === "work" && !paused} />
+        <TimerRing fill={fill} color={tint} title={label} seconds={left} next={nextText} glow={phase === "work" && !paused} paused={paused} onTogglePause={paused ? resumeTimer : pauseTimer} />
         {/* A fall during work ends the round and starts the rest at once.
             During rest the button still records the round just finished
             (a fall right at the end of a round). */}

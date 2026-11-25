@@ -1,4 +1,6 @@
 import { ConsumeAuth } from "@/components/auth-context"
+import { tasksAllowedFor } from "@/utils/sessionTasks"
+import { TasksCardWithEditor } from "@/components/SessionTasks"
 import {
   Body, Card, CardTitle, IconButton, Melt, MintButton, Mono, PaperScreen, PosterHeadline, ProgressBar,
   RailAnchor, SectionHeader, SpecsRow, usePaper, usePaperStyles,
@@ -81,6 +83,7 @@ import {
   Text,
   View,
 } from "react-native"
+import { freshReads } from "@/utils/readCache"
 
 function shortDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number)
@@ -184,6 +187,7 @@ export default function PlanScreen() {
   const t = usePaper()
   const refresh = async () => {
     setRefreshing(true)
+    freshReads()
     // The This week card reads the class store, not this screen's state.
     try { await Promise.all([load(), refreshClassSchedule()]) }
     finally { setRefreshing(false) }
@@ -232,7 +236,7 @@ export default function PlanScreen() {
             exercises={exercises}
             edgeLiftMaxLog={edgeLiftMaxLog}
             defaultClasses={defaultClasses}
-            onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w))}
+            onStart={(w) => workoutCtx.openWorkout(parseBlocks(w), w.name, sessionLinkFor(w), { tasks: tasksAllowedFor(w) })}
             onChanged={load}
           />
         )}
@@ -388,6 +392,7 @@ function PlanBody({
             <LatestWorkoutCard workout={latest} scPart={scPart} />
           </RailAnchor>
         )}
+        <TasksCardWithEditor />
         <ThisWeekCard />
         <CardioSection />
         {plan.hasSc && <ConditioningBasicsCard />}
@@ -399,7 +404,7 @@ function PlanBody({
         <SectionHeader>Your training plan</SectionHeader>
       </RailAnchor>
       <View style={{ gap: 12 }}>
-        <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} />
+        <PlanTimelineCard plan={plan} sessions={sessions} homework={homework} squares />
 
         {!notStarted && (
           <BlockProgressCard plan={plan} workouts={workouts} sessions={sessions} library={exercises} edgeLiftMaxLog={edgeLiftMaxLog} />

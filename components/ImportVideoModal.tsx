@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { BLOCK_ICONS, BLOCK_LABELS, BlockType } from "@/components/workoutBlocks"
 import { Ionicons } from "@expo/vector-icons"
 import * as VideoThumbnails from "expo-video-thumbnails"
@@ -37,6 +37,8 @@ interface Props {
 }
 
 export function ImportVideoModal({ visible, videoUri, onClose, onImport }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [thumbnail, setThumbnail] = useState<string | null>(null)
   const [selectedType, setSelectedType] = useState<BlockType | null>(null)
   const [notifyCoach, setNotifyCoach] = useState(true)
@@ -137,7 +139,7 @@ export function ImportVideoModal({ visible, videoUri, onClose, onImport }: Props
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -194,4 +196,4 @@ const styles = StyleSheet.create({
   },
   confirmBtnDisabled: { opacity: 0.4 },
   confirmBtnText: { fontSize: 15, fontWeight: "700", color: C.bg },
-})
+}))

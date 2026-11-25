@@ -1,5 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
@@ -34,6 +35,7 @@ import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPES, type MovementType } from "@/utils/
 import { planPickFor, swapCandidates, swappedExercise, type PatternPicks, type SwapReason, type SwapScope } from "@/utils/scSwap"
 import { useWorkoutLink } from "@/contexts/WorkoutContext"
 import { useRestNotification } from "@/hooks/useRestNotification"
+import { usePauseClock } from "@/hooks/usePauseClock"
 import { useAuth } from "@/components/auth-context"
 import { planForWorkout, swapExerciseInPlan } from "@/services/planSwap"
 import { Audio } from "expo-av"
@@ -380,7 +382,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const restEndTimeRef = useRef<number | null>(null)
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
-  useRestNotification(restEndsAt)
+  // Pausable like every timer: the rest reads `restClock.now()`.
+  const restClock = usePauseClock()
+  useRestNotification(restClock.real(restEndsAt))
 
   useEffect(() => {
     return () => {
@@ -499,13 +503,14 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
 
   function startRestTimer(duration: number, onDone: () => void) {
     if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
+    restClock.reset()
     const end = Date.now() + duration * 1000
     restEndTimeRef.current = end
     setRestTimeRemaining(duration)
     setRestEndsAt(duration > 0 ? end : null)
 
     restTimerRef.current = setInterval(() => {
-      const remaining = Math.ceil((restEndTimeRef.current! - Date.now()) / 1000)
+      const remaining = Math.ceil((restEndTimeRef.current! - restClock.now()) / 1000)
       if (remaining <= 0) {
         clearInterval(restTimerRef.current!)
         restTimerRef.current = null
@@ -548,7 +553,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
       ...log, exerciseIndex: idx, round: currentRound, swappedTo: swap?.row.$id, swapReason: swap?.reason, swapScope: swap?.scope,
       unit: ex.type === "7/3s" ? undefined : isTimedExercise(ex) ? "seconds" : ex.unit,
     }
-    setLogs((prev) => [...prev, fullLog])
+    // A redone round (Back arrow) replaces the one logged before.
+    setLogs((prev) => [...prev.filter((l) => l.exerciseIndex !== idx || l.round !== currentRound), fullLog])
 
     // Remember the weight / level for this exercise so the next round prefills them.
     // (Reps and effort are never prefilled — see AmountInput.)
@@ -619,6 +625,9 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
         // compares against rounds done at the same focus.
         focus: ex.type !== "7/3s" ? ex.focus : undefined,
         round: currentRound + 1,
+        // The exercise's place in the block: a redone round replaces the
+        // earlier log of the same slot and round (utils/scRedo.ts).
+        slot: idx,
         repsCompleted: log.repsCompleted,
         weight: log.weight,
         weightUnit: log.weightUnit ?? "kg",
@@ -719,15 +728,13 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // ── Rest between rounds ─────────────────────────────────────────────────────
 
   if (phase === "rest") {
-    const fillPercent =
-      restTimeRemaining != null
-        ? (restTimeRemaining / block.restBetweenRounds) * 100
-        : 0
-    const restUrgent = (restTimeRemaining ?? 99) <= 15
+    // Fills as the rest passes (the standard timer ring).
+    const fillPercent = ringFill(block.restBetweenRounds, restTimeRemaining ?? 0)
 
     const skipRest = () => {
       if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
       setRestEndsAt(null)
+      restClock.reset()
       setCurrentRound((r) => r + 1)
       setCurrentExerciseIndex(0)
       setPhase("circuit")
@@ -744,20 +751,21 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           <Text style={styles.exKicker}>Rest</Text>
           <Text style={styles.introTitle}>Round {currentRound + 2} of {block.rounds} next</Text>
           <View style={styles.restCircle}>
-            <AnimatedCircularProgress
-              size={ringSize} width={ringSize > 200 ? 10 : 8} fill={fillPercent}
-              tintColor={restUrgent ? C.red : C.green}
-              backgroundColor={C.surfaceHigh}
-              rotation={0}
-            >
-              {() => {
-                const t = restTimeRemaining ?? 0
-                const display = t > 0
-                  ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
-                  : "go!"
-                return <Text style={[styles.restTimerText, { fontSize: Math.round(ringSize * 0.25) }]}>{display}</Text>
-              }}
-            </AnimatedCircularProgress>
+            {(() => {
+              const t = restTimeRemaining ?? 0
+              return (
+                <TimerRing
+                  size={ringSize}
+                  fill={fillPercent}
+                  color={timerColor(C, t > 0 ? "rest" : "over")}
+                  title="Rest"
+                  seconds={t}
+                  text={t > 0 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` : "go!"}
+                  paused={restClock.paused}
+                  onTogglePause={t > 0 ? restClock.toggle : undefined}
+                />
+              )
+            })()}
           </View>
           {Object.entries(roundDrops).map(([i, d]) => (
             <View key={i} style={styles.restDrop}>
@@ -1437,6 +1445,8 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
   const beepRef = useRef<Audio.Sound | null>(null)   // go / done cue
   const tickRef = useRef<Audio.Sound | null>(null)   // last-3s ticks
   const lastSecRef = useRef(-1)
+  // Pausable like every timer (get ready and the hold).
+  const clock = usePauseClock()
 
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
@@ -1461,12 +1471,13 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
   function clearTick() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null } }
 
   function startPrepare() {
+    clock.reset()
     setPhase("prepare")
     setPrep(TIMED_PREP_SECS)
     lastSecRef.current = -1
     const end = Date.now() + TIMED_PREP_SECS * 1000
     intervalRef.current = setInterval(() => {
-      const r = Math.ceil((end - Date.now()) / 1000)
+      const r = Math.ceil((end - clock.now()) / 1000)
       if (r !== lastSecRef.current) { lastSecRef.current = r; if (r >= 1 && r <= 3) play(tickRef) }
       if (r <= 0) { clearTick(); play(beepRef); beginRun() } else setPrep(r)
     }, 100)
@@ -1475,17 +1486,17 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
     setPhase("running")
     setRemaining(dur)
     lastSecRef.current = -1
-    const end = Date.now() + dur * 1000
+    const end = clock.now() + dur * 1000
     intervalRef.current = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - clock.now()) / 1000))
       if (r !== lastSecRef.current) { lastSecRef.current = r; if (r >= 1 && r <= 3) play(tickRef) }
       setRemaining(r)
       if (r <= 0) { clearTick(); play(beepRef); finish(dur) }
     }, 100)
   }
   function finish(secs: number) { setCompleted(secs); setPhase("done"); onChange(secs) }
-  function stopEarly() { clearTick(); finish(dur - remaining) }
-  function reset() { clearTick(); setPhase("idle"); setRemaining(dur) }
+  function stopEarly() { clearTick(); clock.reset(); finish(dur - remaining) }
+  function reset() { clearTick(); clock.reset(); setPhase("idle"); setRemaining(dur) }
 
   if (phase === "idle") {
     return (
@@ -1513,22 +1524,17 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
   if (phase === "prepare") {
     return (
       <View style={styles.timedActive}>
-        <Text style={styles.timedPhaseLabel}>GET READY</Text>
-        <Text style={[styles.timedBig, { color: C.yellow }]}>{prep}</Text>
+        <TimerRing size={190} fill={ringFill(TIMED_PREP_SECS, prep)} color={timerColor(C, "prepare")} title="Get ready" seconds={prep} paused={clock.paused} onTogglePause={clock.toggle} />
       </View>
     )
   }
 
   if (phase === "running") {
-    const urgent = remaining <= 3
     return (
       <View style={styles.timedActive}>
-        <Text style={styles.timedPhaseLabel}>HOLD</Text>
-        <Text style={[styles.timedBig, { color: urgent ? C.red : C.green }]}>
-          {remaining}<Text style={styles.timedBigUnit}>s</Text>
-        </Text>
+        <TimerRing size={190} fill={ringFill(dur, remaining)} color={timerColor(C, "work")} title="Hold" seconds={remaining} glow paused={clock.paused} onTogglePause={clock.toggle} />
         <Pressable style={[styles.holdTimerBtn, styles.holdTimerBtnStop, styles.timedStopBtn]} onPress={stopEarly}>
-          <Text style={[styles.holdTimerBtnText, { color: "#fff" }]}>Stop</Text>
+          <Text style={[styles.holdTimerBtnText, { color: C.onAccent }]}>Stop</Text>
         </Pressable>
       </View>
     )
@@ -2987,10 +2993,12 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
   const [remaining, setRemaining] = useState(secs)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
+  const clock = usePauseClock()
+  const { now } = clock
   useEffect(() => {
-    const end = Date.now() + secs * 1000
+    const end = now() + secs * 1000
     const id = setInterval(() => {
-      const r = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      const r = Math.max(0, Math.ceil((end - now()) / 1000))
       setRemaining(r)
       if (r <= 0) {
         clearInterval(id)
@@ -2999,8 +3007,7 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
       }
     }, 200)
     return () => clearInterval(id)
-  }, [secs])
-  const urgent = remaining <= 10
+  }, [secs, now])
   return (
     <ExerciseScreen
       scrollKey="warmup-rest"
@@ -3011,12 +3018,16 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
         <Text style={styles.introTitle}>{title}</Text>
       </View>
       <View style={styles.restCircle}>
-        <AnimatedCircularProgress
-          size={220} width={10} fill={(remaining / secs) * 100}
-          tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
-        >
-          {() => <Text style={[styles.restTimerText, { fontSize: 56 }]}>{`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}</Text>}
-        </AnimatedCircularProgress>
+        <TimerRing
+          size={220}
+          fill={ringFill(secs, remaining)}
+          color={timerColor(C, "rest")}
+          title="Rest"
+          seconds={remaining}
+          text={`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+          paused={clock.paused}
+          onTogglePause={remaining > 0 ? clock.toggle : undefined}
+        />
       </View>
       <Text style={styles.sectionLabel}>Up next</Text>
       {upNext}
@@ -3349,10 +3360,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
     })
   }
 
-  const fillPercent =
-    innerPhase === "hanging"
-      ? ((timeRemaining ?? 0) / 7) * 100
-      : ((timeRemaining ?? 0) / 3) * 100
+  const fillPercent = ringFill(innerPhase === "hanging" ? 7 : 3, timeRemaining ?? 0)
 
   if (innerPhase === "ready") {
     return (
@@ -3400,23 +3408,18 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
             Series {seriesDone + 1} of {exercise.series}
           </Text>
 
-          <AnimatedCircularProgress
-            style={styles.circularProgress}
-            size={200}
-            width={10}
-            fill={fillPercent}
-            tintColor={innerPhase === "hanging" ? C.green : C.textMuted}
-            backgroundColor={C.surfaceHigh}
-          >
-            {() => (
-              <>
-                <Text style={styles.hangRestLabel}>
-                  {paused ? "PAUSED" : innerPhase === "hanging" ? "HANG" : "REST"}
-                </Text>
-                <Text style={styles.timerText}>{timeRemaining}s</Text>
-              </>
-            )}
-          </AnimatedCircularProgress>
+          <View style={styles.circularProgress}>
+            <TimerRing
+              size={220}
+              fill={fillPercent}
+              color={timerColor(C, paused ? "paused" : innerPhase === "hanging" ? "work" : "rest")}
+              title={paused ? "Paused" : innerPhase === "hanging" ? "Hang" : "Rest"}
+              seconds={timeRemaining ?? 0}
+              glow={innerPhase === "hanging" && !paused}
+              paused={paused}
+              onTogglePause={paused ? resume : pause}
+            />
+          </View>
           {pauseButton}
         </View>
       </ExerciseScreen>

@@ -1,11 +1,8 @@
-import { Body, Card, CardTitle, GhostButton, IconButton, IconCircle, Melt, Mono, PaperBackground, PosterHeadline, PrimaryCTA, TextButton, usePaper } from "@/components/paper"
-import { space } from "@/theme/paper/tokens"
+import { Body, Card, CardTitle, GhostButton, IconCircle, Slides, type Slide } from "@/components/paper"
 import { spreadSlideText, type Weekday } from "@/utils/extraSession"
-import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useEffect, useState } from "react"
-import { Modal, View } from "react-native"
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import { View } from "react-native"
 
 // Conditioning basics (coach 2026-11-11): full-screen Paper Mint slides that
 // teach the athlete what matters in S&C — close to failure, full range, no
@@ -13,14 +10,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 // and the extra session's days, utils/extraSession.ts). Shown once on the
 // Plan page of a plan with S&C; the "How to train S&C" card opens it again.
 
-type IconName = React.ComponentProps<typeof Ionicons>["name"]
-
-export interface BasicsSlide {
-  poster: string // the slide's poster word(s)
-  icon: IconName
-  title: string
-  text: string
-}
+export type BasicsSlide = Slide
 
 // Same key FeatureIntro used, so whoever saw the first version isn't shown it again.
 const SEEN_KEY = "feature-intro-seen:conditioning-basics"
@@ -74,12 +64,9 @@ export function openConditioningBasics() {
 
 // The slides. Shows itself once; `ready` holds the first showing back while
 // another pop-up on the page needs the screen (two modals can't show at
-// once on iOS).
+// once on iOS; Slides also waits its turn behind other pop-ups).
 export function ConditioningBasics({ gymDays, ready = true }: { gymDays: Weekday[]; ready?: boolean }) {
-  const t = usePaper()
   const [show, setShow] = useState(false)
-  const [i, setI] = useState(0)
-  const slides = conditioningSlides(gymDays)
 
   useEffect(() => {
     if (!ready) return
@@ -89,7 +76,7 @@ export function ConditioningBasics({ gymDays, ready = true }: { gymDays: Weekday
   }, [ready])
 
   useEffect(() => {
-    const open = () => { setI(0); setShow(true) }
+    const open = () => setShow(true)
     openers.add(open)
     return () => { openers.delete(open) }
   }, [])
@@ -98,60 +85,9 @@ export function ConditioningBasics({ gymDays, ready = true }: { gymDays: Weekday
     setShow(false)
     AsyncStorage.setItem(SEEN_KEY, "1").catch(() => {})
   }
-  const slide = slides[i]
-  const last = i === slides.length - 1
-  const num = (n: number) => String(n).padStart(2, "0")
 
   return (
-    <Modal visible={show} animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
-      {/* A modal is its own native window: it needs its own safe-area provider. */}
-      <SafeAreaProvider>
-        <PaperBackground>
-          <SafeAreaView style={{ flex: 1, paddingHorizontal: space.gutter }} edges={["top", "bottom"]}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 8 }}>
-              <Mono>Conditioning basics · {num(i + 1)} / {num(slides.length)}</Mono>
-              <IconButton icon="close" label="Close" onPress={close} />
-            </View>
-
-            <View style={{ marginTop: 28 }}>
-              <Melt top={20} height={380} />
-              <PosterHeadline>{slide.poster}</PosterHeadline>
-            </View>
-
-            <View style={{ flex: 1, justifyContent: "flex-end", paddingBottom: 20 }}>
-              <Card>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <IconCircle icon={slide.icon} size={40} />
-                  <CardTitle size={26} style={{ flex: 1 }}>{slide.title}</CardTitle>
-                </View>
-                <Body size={17} weight={600} muted style={{ lineHeight: 24 }}>{slide.text}</Body>
-              </Card>
-
-              <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 20 }}>
-                {slides.map((_, n) => (
-                  <View
-                    key={n}
-                    style={{
-                      height: 6, borderRadius: 3, width: n === i ? 22 : 6,
-                      backgroundColor: n <= i ? t.mintDeep : t.ringIdle,
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <PrimaryCTA
-              label={last ? "Let's train" : "Next"}
-              icon={last ? "checkmark" : "arrow-forward"}
-              onPress={() => (last ? close() : setI(i + 1))}
-            />
-            <View style={{ alignItems: "center", paddingVertical: 12, minHeight: 44 }}>
-              {i > 0 && <TextButton label="Back" onPress={() => setI(i - 1)} />}
-            </View>
-          </SafeAreaView>
-        </PaperBackground>
-      </SafeAreaProvider>
-    </Modal>
+    <Slides visible={show} label="Conditioning basics" slides={conditioningSlides(gymDays)} finishLabel="Let's train" onClose={close} />
   )
 }
 

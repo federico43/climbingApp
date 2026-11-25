@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { tasksAllowedFor } from "@/utils/sessionTasks"
 import { AthleteCustomizeWorkout } from "@/components/AthleteCustomizeWorkout"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
@@ -22,6 +23,7 @@ import {
   View,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { freshReads } from "@/utils/readCache"
 
 function blockCount(p: ProtocolRow): { blocks: any[]; label: string } {
   let blocks: any[] = []
@@ -32,6 +34,8 @@ function blockCount(p: ProtocolRow): { blocks: any[]; label: string } {
 // Settings › My workouts — every workout the athlete has: the coach's
 // (start only) and their own picks from the shared library (edit / delete).
 export default function MyWorkoutsScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
   const router = useRouter()
   const workoutCtx = useWorkoutContext()
@@ -117,6 +121,7 @@ export default function MyWorkoutsScreen() {
                 refreshing={refreshing}
                 onRefresh={async () => {
                   setRefreshing(true)
+                  freshReads()
                   try { await load() }
                   finally { setRefreshing(false) }
                 }}
@@ -135,7 +140,7 @@ export default function MyWorkoutsScreen() {
                     <ScalePressable
                       key={t.$id}
                       style={styles.card}
-                      onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t))}
+                      onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t), { tasks: tasksAllowedFor(t) })}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.cardTitle}>{t.name}</Text>
@@ -172,7 +177,7 @@ export default function MyWorkoutsScreen() {
                     <View key={t.$id} style={styles.card}>
                       <ScalePressable
                         style={{ flex: 1 }}
-                        onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t))}
+                        onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t), { tasks: tasksAllowedFor(t) })}
                       >
                         <Text style={styles.cardTitle}>{t.name}</Text>
                         <Text style={styles.cardSub}>{label} · Tap to start</Text>
@@ -207,7 +212,7 @@ export default function MyWorkoutsScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   scroll: { paddingHorizontal: 16, paddingBottom: 40, gap: 20 },
   section: { backgroundColor: C.surface, borderRadius: 18, padding: 16, gap: 12 },
@@ -230,4 +235,4 @@ const styles = StyleSheet.create({
   cardArrow: { fontSize: 26, color: C.green, marginLeft: 12 },
   empty: { backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 16, alignItems: "center" },
   emptyText: { fontSize: 14, color: C.textMuted },
-})
+}))

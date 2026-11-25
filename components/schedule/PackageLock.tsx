@@ -1,6 +1,6 @@
 import { useAuth } from "@/components/auth-context"
-import { refreshClassSchedule, useClassSchedule } from "@/utils/classScheduleStore"
-import { C } from "@/utils/theme"
+import { refreshClassSchedule, reloadClassSchedule, useClassSchedule } from "@/utils/classScheduleStore"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, AppState, Modal, Pressable, StyleSheet, Text, View } from "react-native"
@@ -16,6 +16,8 @@ export function PackageLock() {
 }
 
 function Lock() {
+  const C = useC()
+  const s = useSheet(sSheet)
   const { signOut } = useAuth()
   const st = useClassSchedule()
   const [checking, setChecking] = useState(false)
@@ -43,7 +45,7 @@ function Lock() {
         <Pressable
           style={s.button}
           disabled={checking}
-          onPress={() => { setChecking(true); refreshClassSchedule().finally(() => setChecking(false)) }}
+          onPress={() => { setChecking(true); reloadClassSchedule().finally(() => setChecking(false)) }}
         >
           {checking ? <ActivityIndicator color={C.bg} /> : <Text style={s.buttonText}>Check again</Text>}
         </Pressable>
@@ -55,7 +57,7 @@ function Lock() {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg, alignItems: "center", justifyContent: "center", padding: 32, gap: 16 },
   title: { color: C.textPrimary, fontSize: 24, fontWeight: "800", textAlign: "center" },
   body: { color: C.textSecondary, fontSize: 15, lineHeight: 22, textAlign: "center" },
@@ -64,4 +66,4 @@ const s = StyleSheet.create({
   },
   buttonText: { color: C.bg, fontSize: 16, fontWeight: "800" },
   link: { color: C.textMuted, fontSize: 14, fontWeight: "700", marginTop: 8 },
-})
+}))

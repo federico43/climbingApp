@@ -1,12 +1,13 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { ConsumeAuth } from "@/components/auth-context"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions, getUsers } from "@/services/BoulderGraphService"
 import { findBlockRuns } from "@/utils/blockHistory"
-import { useBlockTimer } from "@/utils/blockTimer"
+import { useBlockTimer, useRestPause } from "@/utils/blockTimer"
 import { colourIndex, colourLabel } from "@/utils/boulderColours"
 import {
   attemptGrades, authoredGrades, fitGrades, liveStepDown, pendingStepDowns, suggestNextFourByFour,
@@ -16,7 +17,6 @@ import { FOUR_BY_FOUR_RULES } from "@/utils/progression/profiles"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
@@ -98,6 +98,7 @@ export function FourByFourBlock({
   const [perBoulder, setPerBoulder] = useState(false)
   const [tops, setTops] = useState<number>(bouldersPerSet)
   const blockTimer = useBlockTimer()
+  const rest = useRestPause()
   const { User } = ConsumeAuth()
   const [showIntro, setShowIntro] = useState(false)
   useEffect(() => {
@@ -183,101 +184,94 @@ export function FourByFourBlock({
   // ── Preview ───────────────────────────────────────────────────────────────
   if (phase === "preview") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={blockTitle} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={styles.content}>
-          <BlockNotes text={block.description} />
-          {showIntro && <Text style={styles.intro}>{introLine}</Text>}
+      <BlockIntro
+        title={blockTitle}
+        onBack={goToPreviousBlock}
+        facts={[`${sets} sets`, `${bouldersPerSet} boulders each`, `${restTime >= 60 ? `${Math.round(restTime / 60)} min` : `${restTime}s`} rest`]}
+        note={block.description}
+        startSub={`4×4 · ${sets} sets of ${bouldersPerSet}`}
+        onStart={() => { blockTimer.start(); setPhase("active") }}
+        startDisabled={!ready}
+      >
+        {showIntro && <Text style={styles.intro}>{introLine}</Text>}
 
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}><Text style={styles.statNum}>{sets}</Text><Text style={styles.statLabel}>sets</Text></View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}><Text style={styles.statNum}>{bouldersPerSet}</Text><Text style={styles.statLabel}>boulders per set</Text></View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}><Text style={styles.statNum}>{restTime >= 60 ? `${Math.round(restTime / 60)}m` : `${restTime}s`}</Text><Text style={styles.statLabel}>rest</Text></View>
+        {/* Progression suggestion — stays until the athlete overrides it
+            (same persistent pattern as S&C and sequence). */}
+        {!!suggestion && (
+          <View style={styles.suggestionBanner}>
+            <Text style={styles.suggestionBannerLast}>{suggestion.lastTime}</Text>
+            <Text style={styles.suggestionBannerText}>{suggestion.note}</Text>
+            <Pressable onPress={declineSuggestion} hitSlop={8}>
+              <Text style={styles.suggestionDecline}>Choose my own colour</Text>
+            </Pressable>
           </View>
+        )}
 
-          {/* Progression suggestion — stays until the athlete overrides it
-              (same persistent pattern as S&C and sequence). */}
-          {!!suggestion && (
-            <View style={styles.suggestionBanner}>
-              <Text style={styles.suggestionBannerLast}>{suggestion.lastTime}</Text>
-              <Text style={styles.suggestionBannerText}>{suggestion.note}</Text>
-              <Pressable onPress={declineSuggestion} hitSlop={8}>
-                <Text style={styles.suggestionDecline}>Choose my own colour</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {!suggestionReady ? (
-            <ActivityIndicator color={C.green} />
-          ) : (ready && !pickOwn) ? (
-            <>
-              <Text style={styles.sectionLabel}>Boulders in each set</Text>
-              <BoulderList grades={grades} />
-              {/* The athlete can still change any boulder's colour. */}
-              <Pressable onPress={() => { setSuggestion(null); setPickOwn(true); setPerBoulder(true) }} hitSlop={8}>
-                <Text style={styles.suggestionDecline}>Change colours</Text>
-              </Pressable>
-            </>
-          ) : perBoulder ? (
-            <>
-              {/* The athlete picks each boulder's colour separately. */}
-              <Text style={styles.sectionLabel}>Colour of each boulder</Text>
-              <View style={styles.boulderList}>
-                {Array.from({ length: bouldersPerSet }).map((_, i) => (
-                  <View key={i} style={[styles.slotRow, i > 0 && styles.boulderRowSep]}>
-                    <Text style={styles.boulderName}>Boulder {i + 1}</Text>
-                    <View style={styles.slotDots}>
-                      {BoulderLevelOptions.map((g) => {
-                        const sel = grades[i] === g.value
-                        return (
-                          <Pressable
-                            key={g.value}
-                            onPress={() => setSlot(i, g.value)}
-                            hitSlop={4}
-                            accessibilityLabel={`Boulder ${i + 1}: ${g.label}`}
-                            style={[styles.slotDot, { backgroundColor: g.color }, sel && styles.slotDotSel]}
-                          />
-                        )
-                      })}
-                    </View>
+        {!suggestionReady ? (
+          <ActivityIndicator color={C.green} />
+        ) : (ready && !pickOwn) ? (
+          <>
+            <Text style={styles.sectionLabel}>Boulders in each set</Text>
+            <BoulderList grades={grades} />
+            {/* The athlete can still change any boulder's colour. */}
+            <Pressable onPress={() => { setSuggestion(null); setPickOwn(true); setPerBoulder(true) }} hitSlop={8}>
+              <Text style={styles.suggestionDecline}>Change colours</Text>
+            </Pressable>
+          </>
+        ) : perBoulder ? (
+          <>
+            {/* The athlete picks each boulder's colour separately. */}
+            <Text style={styles.sectionLabel}>Colour of each boulder</Text>
+            <View style={styles.boulderList}>
+              {Array.from({ length: bouldersPerSet }).map((_, i) => (
+                <View key={i} style={[styles.slotRow, i > 0 && styles.boulderRowSep]}>
+                  <Text style={styles.boulderName}>Boulder {i + 1}</Text>
+                  <View style={styles.slotDots}>
+                    {BoulderLevelOptions.map((g) => {
+                      const sel = grades[i] === g.value
+                      return (
+                        <Pressable
+                          key={g.value}
+                          onPress={() => setSlot(i, g.value)}
+                          hitSlop={4}
+                          accessibilityLabel={`Boulder ${i + 1}: ${g.label}`}
+                          style={[styles.slotDot, { backgroundColor: g.color }, sel && styles.slotDotSel]}
+                        />
+                      )
+                    })}
                   </View>
-                ))}
-              </View>
-              <Pressable onPress={chooseOneForAll} hitSlop={8}>
-                <Text style={styles.suggestionDecline}>Same colour for every boulder</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              {/* No colours set (or the athlete overrode them): one colour for every boulder. */}
-              <Text style={styles.sectionLabel}>What grade?</Text>
-              <View style={styles.gradeRow}>
-                {BoulderLevelOptions.map((g) => {
-                  const sel = ready && grades.every((x) => x === g.value)
-                  return (
-                    <Pressable
-                      key={g.value}
-                      style={[styles.gradeChip, sel && { backgroundColor: g.color, borderColor: g.color }]}
-                      onPress={() => setGrades(fitGrades([g.value], bouldersPerSet) ?? [])}
-                    >
-                      <View style={[styles.gradeDot, { backgroundColor: g.color }, sel && { backgroundColor: g.on }]} />
-                      <Text style={[styles.gradeText, sel && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-              <Pressable onPress={choosePerBoulder} hitSlop={8}>
-                <Text style={styles.suggestionDecline}>Choose a colour for each boulder</Text>
-              </Pressable>
-            </>
-          )}
-        </ScrollView>
-        <View style={styles.footer}>
-          <CustomButton title="Start" onPress={() => { blockTimer.start(); setPhase("active") }} disabled={!ready} />
-        </View>
-      </View>
+                </View>
+              ))}
+            </View>
+            <Pressable onPress={chooseOneForAll} hitSlop={8}>
+              <Text style={styles.suggestionDecline}>Same colour for every boulder</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            {/* No colours set (or the athlete overrode them): one colour for every boulder. */}
+            <Text style={styles.sectionLabel}>What grade?</Text>
+            <View style={styles.gradeRow}>
+              {BoulderLevelOptions.map((g) => {
+                const sel = ready && grades.every((x) => x === g.value)
+                return (
+                  <Pressable
+                    key={g.value}
+                    style={[styles.gradeChip, sel && { backgroundColor: g.color, borderColor: g.color }]}
+                    onPress={() => setGrades(fitGrades([g.value], bouldersPerSet) ?? [])}
+                  >
+                    <View style={[styles.gradeDot, { backgroundColor: g.color }, sel && { backgroundColor: g.on }]} />
+                    <Text style={[styles.gradeText, sel && { color: g.on, fontWeight: "700" }]}>{g.label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+            <Pressable onPress={choosePerBoulder} hitSlop={8}>
+              <Text style={styles.suggestionDecline}>Choose a colour for each boulder</Text>
+            </Pressable>
+          </>
+        )}
+      </BlockIntro>
     )
   }
 
@@ -310,8 +304,7 @@ export function FourByFourBlock({
 
   // ── Rest — timer + how many tops ────────────────────────────────────────────
   if (phase === "rest") {
-    const fill = restTime ? ((restTimeRemaining ?? 0) / restTime) * 100 : 0
-    const urgent = (restTimeRemaining ?? 99) <= 15
+    const fill = ringFill(restTime, restTimeRemaining ?? 0)
     const t = restTimeRemaining ?? 0
     const display = t > 0 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` : "go!"
     return (
@@ -335,12 +328,7 @@ export function FourByFourBlock({
         </View>
 
         <View style={styles.restCircle}>
-          <AnimatedCircularProgress
-            size={230} width={10} fill={fill}
-            tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
-          >
-            {() => <Text style={styles.timerText}>{display}</Text>}
-          </AnimatedCircularProgress>
+          <TimerRing size={230} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} title="Rest" seconds={t} text={display} paused={rest.paused} onTogglePause={t > 0 ? rest.toggle : undefined} />
         </View>
 
         <View style={styles.restFooter}>
@@ -412,15 +400,6 @@ function SetDots({ done, total }: { done: number; total: number }) {
 
 const sheet = paperSheet((C) => StyleSheet.create({
   content: { padding: 20, gap: 16, paddingBottom: 8 },
-
-  statsCard: {
-    flexDirection: "row", backgroundColor: C.surface, borderRadius: 16,
-    paddingVertical: 18, borderWidth: 1, borderColor: C.border,
-  },
-  statItem: { flex: 1, alignItems: "center", gap: 4 },
-  statNum: { fontSize: 26, fontWeight: "800", color: C.green, fontVariant: ["tabular-nums"] },
-  statLabel: { fontSize: 12, color: C.textSecondary },
-  statDivider: { width: 1, backgroundColor: C.border, marginVertical: 4 },
 
   sectionLabel: {
     fontSize: 12, color: C.textMuted, textTransform: "uppercase",
