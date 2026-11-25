@@ -154,6 +154,59 @@ export function TimerRing({ fill, color, title, seconds, next, glow, size = 260,
   )
 }
 
+/**
+ * The big countdown for logging screens (route exploration flash, density
+ * test), where a ring would squeeze the chips under it (Federico
+ * 2026-11-25): a full-width strip with the clock in big mono digits and a
+ * bar that fills as time passes. Same colours and pause rule as TimerRing:
+ * mint while running, ink when paused or over; tap anywhere to pause.
+ */
+export function TimerBar({ total, left, text, paused, onTogglePause }: {
+  /** Full time and time left, in seconds. */
+  total: number; left: number
+  /** Clock text (e.g. "24:59"). */
+  text: string
+  paused?: boolean
+  onTogglePause?: () => void
+}) {
+  const C = useC()
+  const s = useSheet(sheet)
+  const over = left <= 0
+  const color = timerColor(C, paused ? "paused" : over ? "over" : "work")
+  const label = over ? "Time's up" : paused ? "Paused · tap to resume" : "Remaining"
+  const fill = Math.min(100, Math.max(0, ringFill(total, left)))
+  const mark = onTogglePause && !over ? (paused ? "play" : "pause") : null
+  const body = (
+    <View style={s.barWrap}>
+      <View style={s.barRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.barLabel, paused && { color: C.textPrimary }]} numberOfLines={1}>{label}</Text>
+          <Text style={[s.barClock, { color: paused || over ? C.textPrimary : color }]} numberOfLines={1} adjustsFontSizeToFit>{text}</Text>
+        </View>
+        {mark && (
+          <View style={[s.barMark, paused && { backgroundColor: C.textPrimary, borderColor: C.textPrimary }]}>
+            <Ionicons name={mark} size={24} color={paused ? C.bg : C.textPrimary} />
+          </View>
+        )}
+      </View>
+      <View style={s.barTrack}>
+        <View style={[s.barFill, { width: `${fill}%`, backgroundColor: color }]} />
+      </View>
+    </View>
+  )
+  if (!onTogglePause || over) return body
+  return (
+    <Pressable
+      onPress={onTogglePause}
+      accessibilityRole="button"
+      accessibilityLabel={paused ? "Resume timer" : "Pause timer"}
+      style={({ pressed }) => pressed && { opacity: 0.75 }}
+    >
+      {body}
+    </Pressable>
+  )
+}
+
 /** Ring colour by phase: work / hang / running = mint, rest = muted, the rest ink. */
 export function timerColor(C: { green: string; yellow: string; textPrimary: string; textSecondary: string }, phase: "work" | "rest" | "prepare" | "paused" | "over"): string {
   return phase === "work" ? C.green : phase === "rest" ? C.yellow : phase === "prepare" ? C.textSecondary : C.textPrimary
@@ -195,6 +248,16 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
   clock: { fontSize: 84, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], lineHeight: 96, ...(P && { fontFamily: font.poster, fontSize: 108, lineHeight: 108, letterSpacing: -2 }) },
   clockSmall: { fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"], ...(P && { fontFamily: font.title }) },
   next: { fontSize: 14, color: C.textSecondary, fontWeight: "600", ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3, textTransform: "uppercase" }) },
+  barWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 10 },
+  barRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  barLabel: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8, ...(P && { fontFamily: font.mono, fontSize: 11, letterSpacing: 1.3 }) },
+  barClock: { fontSize: 64, lineHeight: 72, fontWeight: "800", fontVariant: ["tabular-nums"], letterSpacing: -1, ...(P && { fontFamily: font.mono, fontSize: 68, lineHeight: 76, letterSpacing: -2 }) },
+  barMark: {
+    width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: P ? P.ink : C.textPrimary,
+  },
+  barTrack: { height: 10, borderRadius: 5, overflow: "hidden", backgroundColor: P ? P.hairline : C.surfaceHigh },
+  barFill: { height: "100%", borderRadius: 5 },
   pause: {
     width: 64, height: 64, borderRadius: 32, backgroundColor: C.surfaceHigh,
     alignItems: "center", justifyContent: "center",

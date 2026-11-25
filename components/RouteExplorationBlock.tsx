@@ -13,7 +13,7 @@ import {
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { usePauseClock } from "@/hooks/usePauseClock"
@@ -175,8 +175,10 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     goToNextBlock()
   }
 
-  // Density test's top bar: back, title, timer and count badges.
+  // Density test's top bar: back, title and the points badge, then the big
+  // countdown strip under it.
   const activeBar = (barTitle: string, left: number, total: number, onBack?: () => void) => (
+    <>
     <View style={topBar_styles.bar}>
       <Pressable
         onPress={onBack}
@@ -188,7 +190,6 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       </Pressable>
       <Text style={topBar_styles.title} numberOfLines={1}>{barTitle}</Text>
       <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-        <TimerRing size={46} fill={ringFill(total, left)} color={timerColor(C, left > 0 ? "work" : "over")} seconds={left} text={formatTime(left)} paused={flash.paused} onTogglePause={flash.toggle} />
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
@@ -196,6 +197,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         )}
       </View>
     </View>
+    <TimerBar total={total} left={left} text={formatTime(left)} paused={flash.paused} onTogglePause={flash.toggle} />
+    </>
   )
 
   // Part 1's attempts, in the same order as `routes`, for the ✕ on each row.
