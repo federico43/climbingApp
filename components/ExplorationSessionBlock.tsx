@@ -1,6 +1,7 @@
 import CustomButton from "@/components/customButton"
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { account } from "@/components/AppWrite"
 import { getBoulderLevels, logRecord } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
@@ -342,11 +343,13 @@ export function ExplorationSessionBlock({ block, logAttempt, goToNextBlock, goTo
         </Text>
         <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
           {timeRemaining !== null && (
-            <View style={[styles.timerBadge, timeRemaining <= 60 && styles.timerBadgeUrgent]}>
-              <Text style={[styles.timerText, timeRemaining <= 60 && styles.timerTextUrgent]}>
-                {formatTime(timeRemaining)}
-              </Text>
-            </View>
+            <TimerRing
+              size={46}
+              fill={ringFill(timeLimitSeconds, timeRemaining)}
+              color={timerColor(C, timeRemaining > 0 ? "work" : "over")}
+              seconds={timeRemaining}
+              text={formatTime(timeRemaining)}
+            />
           )}
           {climbs.length > 0 && (
             <View style={styles.scoreBadge}>

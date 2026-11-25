@@ -1,5 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -16,7 +17,6 @@ import { FOUR_BY_FOUR_RULES } from "@/utils/progression/profiles"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import React, { useEffect, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
@@ -310,8 +310,7 @@ export function FourByFourBlock({
 
   // ── Rest — timer + how many tops ────────────────────────────────────────────
   if (phase === "rest") {
-    const fill = restTime ? ((restTimeRemaining ?? 0) / restTime) * 100 : 0
-    const urgent = (restTimeRemaining ?? 99) <= 15
+    const fill = ringFill(restTime, restTimeRemaining ?? 0)
     const t = restTimeRemaining ?? 0
     const display = t > 0 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` : "go!"
     return (
@@ -335,12 +334,7 @@ export function FourByFourBlock({
         </View>
 
         <View style={styles.restCircle}>
-          <AnimatedCircularProgress
-            size={230} width={10} fill={fill}
-            tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
-          >
-            {() => <Text style={styles.timerText}>{display}</Text>}
-          </AnimatedCircularProgress>
+          <TimerRing size={230} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} title="Rest" seconds={t} text={display} />
         </View>
 
         <View style={styles.restFooter}>

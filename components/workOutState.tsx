@@ -3,6 +3,7 @@ import {
   ProgressBar, SectionHeader, SpecsRow, usePaper, usePaperStyles,
 } from "@/components/paper"
 import { useC } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { font, PaperTheme, radius, space } from "@/theme/paper/tokens"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { useWorkout } from "@/hooks/WorkoutHook"
@@ -470,8 +471,6 @@ const SELF_TIMED_BLOCKS = new Set(["exploration_session", "route_exploration", "
 // notifies when it runs out with the app in the background.
 function BlockCountdown({ minutes, label }: { minutes: number; label: string }) {
   const C = useC()
-  const t = usePaper()
-  const styles = usePaperStyles(makeStyles)
   const total = Math.max(0, Math.round(minutes * 60))
   const [remaining, setRemaining] = useState(total)
   const [end] = useState(() => Date.now() + total * 1000)
@@ -487,13 +486,15 @@ function BlockCountdown({ minutes, label }: { minutes: number; label: string }) 
   const over = remaining <= 0
   const m = Math.floor(remaining / 60)
   const s = remaining % 60
+  // The standard timer ring (the 1 on 1 off look), small.
   return (
-    <View style={[styles.countdownChip, over && { backgroundColor: C.alertFill, borderColor: t.ink }]}>
-      <Ionicons name="time-outline" size={13} color={over ? t.onMint : t.mintText} />
-      <Mono color={over ? t.onMint : t.mintText} size={11}>
-        {over ? "Time's up" : `${m}:${String(s).padStart(2, "0")}`}
-      </Mono>
-    </View>
+    <TimerRing
+      size={42}
+      fill={ringFill(total, remaining)}
+      color={timerColor(C, over ? "over" : "work")}
+      seconds={remaining}
+      text={`${m}:${String(s).padStart(2, "0")}`}
+    />
   )
 }
 

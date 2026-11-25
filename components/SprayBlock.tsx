@@ -19,11 +19,11 @@ import {
   newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, sprayShowsCoachNotes, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { freshReads } from "@/utils/readCache"
@@ -300,10 +300,13 @@ export function SprayBlock({
   const previewRow = preview ? routes?.get(preview) ?? null : null
 
   const timeChip = timed && startedAt != null && (
-    <View style={[s.chip, secondsLeft <= 60 && s.chipUrgent]}>
-      <Ionicons name="time-outline" size={16} color={secondsLeft <= 60 ? C.onAccent : C.green} />
-      <Text style={[s.chipText, secondsLeft <= 60 && { color: C.onAccent }]}>{secondsLeft > 0 ? clock(secondsLeft) : "Time's up"}</Text>
-    </View>
+    <TimerRing
+      size={46}
+      fill={ringFill(limitSecs, secondsLeft)}
+      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
+      seconds={Math.max(0, secondsLeft)}
+      text={secondsLeft > 0 ? clock(secondsLeft) : "0:00"}
+    />
   )
   // Attempts blocks: one segment per attempt, green = top, red = fell.
   const results = attempts.filter((a) => a.routeId).map((a) => !!a.success)
@@ -629,7 +632,7 @@ export function SprayBlock({
 
   if (phase === "rest") {
     const t = restTimeRemaining ?? 0
-    const fill = restLength ? (t / restLength) * 100 : 0
+    const fill = ringFill(restLength, t)
     const last = attempts[attempts.length - 1]
     return (
       <View style={shared_styles.screen}>
@@ -642,17 +645,12 @@ export function SprayBlock({
             </View>
             <Text style={s.meta} numberOfLines={1}>Rest · {route?.name ?? "Sequence"}</Text>
             {timed && startedAt != null && (
-              <Text style={[s.meta, secondsLeft <= 60 && { color: C.red }]}>
+              <Text style={s.meta}>
                 {secondsLeft > 0 ? `Block: ${clock(secondsLeft)} left` : "Time's up after this rest"}
               </Text>
             )}
           </View>
-          <AnimatedCircularProgress
-            size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
-          >
-            {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
-          </AnimatedCircularProgress>
+          <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} />
         </View>
         {attemptBar(`Next: attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.restOptions}>

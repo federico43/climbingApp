@@ -236,3 +236,9 @@ Built from the design chat's "Coach desk · Athlete page" and "Workout builder" 
 - Cards: frosted, radius 28, mono ink title; buttons are pills (mint = the action, ink outline = the rest).
 - **Builder** (`components/AthleteWorkoutBuilder.tsx`): a full page on paper. Top row "‹ Back to {athlete}", Copy to athletes and Save to library (ghost, wide; under ⋯ on a phone), and a mint "Send to {athlete}" ("Save" when editing or in the library). The name is the headline input with the melt, mono eyebrow and chips (plan slot, blocks, flash, coached, homework due). Each block card gets a footer: Coached switch and a pink "Move to homework" / "In homework · undo"; a homework block is outlined in pink. Under the blocks: the homework deadline stepper and "Move the whole workout to homework".
 - Not built from the mock-ups (no data or would cost reads): the 14-day readiness chart (the athlete card keeps today's check-in), the left nav rail (the app's tab bar does that), per-block minutes and the workout's total time.
+
+### Timers (Federico, 2026-11-25)
+
+Every timer uses one look: the 1 on 1 off ring, `TimerRing` in `components/IntervalVisuals.tsx`. The ring fills as time passes (`ringFill(total, left)`); its colour comes from the phase (`timerColor`): work / hang / a block's own clock = mint, rest = muted, get ready = label grey, paused or time's up = ink. No red when time runs low.
+- Big (≥ 120 px): phase on top, the clock, "Then: …" under it. Used for free session, route exploration part 2, the 4x4 / S&C round / warm-up rests, 7/3s, the S&C timed hold, intervals and jump rope cardio.
+- Small (42–92 px, clock only): a block's time limit in a top bar (the workout's chip, exploration session, route exploration part 1, project bouldering, spray), and the rests beside a title (project, spray, sequence).

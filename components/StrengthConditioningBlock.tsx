@@ -1,5 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { amountLabel, ExerciseUnit, isTimedExercise } from "@/utils/exerciseUnit"
 import { useBlockTimer } from "@/utils/blockTimer"
@@ -723,11 +724,8 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
   // ── Rest between rounds ─────────────────────────────────────────────────────
 
   if (phase === "rest") {
-    const fillPercent =
-      restTimeRemaining != null
-        ? (restTimeRemaining / block.restBetweenRounds) * 100
-        : 0
-    const restUrgent = (restTimeRemaining ?? 99) <= 15
+    // Fills as the rest passes (the standard timer ring).
+    const fillPercent = ringFill(block.restBetweenRounds, restTimeRemaining ?? 0)
 
     const skipRest = () => {
       if (restTimerRef.current !== null) clearInterval(restTimerRef.current)
@@ -748,20 +746,19 @@ export function StrengthConditioningBlock({ block, goToNextBlock, goToPreviousBl
           <Text style={styles.exKicker}>Rest</Text>
           <Text style={styles.introTitle}>Round {currentRound + 2} of {block.rounds} next</Text>
           <View style={styles.restCircle}>
-            <AnimatedCircularProgress
-              size={ringSize} width={ringSize > 200 ? 10 : 8} fill={fillPercent}
-              tintColor={restUrgent ? C.red : C.green}
-              backgroundColor={C.surfaceHigh}
-              rotation={0}
-            >
-              {() => {
-                const t = restTimeRemaining ?? 0
-                const display = t > 0
-                  ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
-                  : "go!"
-                return <Text style={[styles.restTimerText, { fontSize: Math.round(ringSize * 0.25) }]}>{display}</Text>
-              }}
-            </AnimatedCircularProgress>
+            {(() => {
+              const t = restTimeRemaining ?? 0
+              return (
+                <TimerRing
+                  size={ringSize}
+                  fill={fillPercent}
+                  color={timerColor(C, t > 0 ? "rest" : "over")}
+                  title="Rest"
+                  seconds={t}
+                  text={t > 0 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` : "go!"}
+                />
+              )
+            })()}
           </View>
           {Object.entries(roundDrops).map(([i, d]) => (
             <View key={i} style={styles.restDrop}>
@@ -1517,20 +1514,15 @@ function TimedAmountControl({ target, onChange, fixed }: { target: number; onCha
   if (phase === "prepare") {
     return (
       <View style={styles.timedActive}>
-        <Text style={styles.timedPhaseLabel}>GET READY</Text>
-        <Text style={[styles.timedBig, { color: C.yellow }]}>{prep}</Text>
+        <TimerRing size={190} fill={ringFill(TIMED_PREP_SECS, prep)} color={timerColor(C, "prepare")} title="Get ready" seconds={prep} />
       </View>
     )
   }
 
   if (phase === "running") {
-    const urgent = remaining <= 3
     return (
       <View style={styles.timedActive}>
-        <Text style={styles.timedPhaseLabel}>HOLD</Text>
-        <Text style={[styles.timedBig, { color: urgent ? C.red : C.green }]}>
-          {remaining}<Text style={styles.timedBigUnit}>s</Text>
-        </Text>
+        <TimerRing size={190} fill={ringFill(dur, remaining)} color={timerColor(C, "work")} title="Hold" seconds={remaining} glow />
         <Pressable style={[styles.holdTimerBtn, styles.holdTimerBtnStop, styles.timedStopBtn]} onPress={stopEarly}>
           <Text style={[styles.holdTimerBtnText, { color: C.onAccent }]}>Stop</Text>
         </Pressable>
@@ -3004,7 +2996,6 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
     }, 200)
     return () => clearInterval(id)
   }, [secs])
-  const urgent = remaining <= 10
   return (
     <ExerciseScreen
       scrollKey="warmup-rest"
@@ -3015,12 +3006,14 @@ function WarmupRest({ secs, title, upNext, onDone }: { secs: number; title: stri
         <Text style={styles.introTitle}>{title}</Text>
       </View>
       <View style={styles.restCircle}>
-        <AnimatedCircularProgress
-          size={220} width={10} fill={(remaining / secs) * 100}
-          tintColor={urgent ? C.red : C.green} backgroundColor={C.surfaceHigh} rotation={0}
-        >
-          {() => <Text style={[styles.restTimerText, { fontSize: 56 }]}>{`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}</Text>}
-        </AnimatedCircularProgress>
+        <TimerRing
+          size={220}
+          fill={ringFill(secs, remaining)}
+          color={timerColor(C, "rest")}
+          title="Rest"
+          seconds={remaining}
+          text={`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+        />
       </View>
       <Text style={styles.sectionLabel}>Up next</Text>
       {upNext}
@@ -3353,10 +3346,7 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
     })
   }
 
-  const fillPercent =
-    innerPhase === "hanging"
-      ? ((timeRemaining ?? 0) / 7) * 100
-      : ((timeRemaining ?? 0) / 3) * 100
+  const fillPercent = ringFill(innerPhase === "hanging" ? 7 : 3, timeRemaining ?? 0)
 
   if (innerPhase === "ready") {
     return (
@@ -3404,23 +3394,16 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
             Series {seriesDone + 1} of {exercise.series}
           </Text>
 
-          <AnimatedCircularProgress
-            style={styles.circularProgress}
-            size={200}
-            width={10}
-            fill={fillPercent}
-            tintColor={innerPhase === "hanging" ? C.green : C.textMuted}
-            backgroundColor={C.surfaceHigh}
-          >
-            {() => (
-              <>
-                <Text style={styles.hangRestLabel}>
-                  {paused ? "PAUSED" : innerPhase === "hanging" ? "HANG" : "REST"}
-                </Text>
-                <Text style={styles.timerText}>{timeRemaining}s</Text>
-              </>
-            )}
-          </AnimatedCircularProgress>
+          <View style={styles.circularProgress}>
+            <TimerRing
+              size={220}
+              fill={fillPercent}
+              color={timerColor(C, paused ? "paused" : innerPhase === "hanging" ? "work" : "rest")}
+              title={paused ? "Paused" : innerPhase === "hanging" ? "Hang" : "Rest"}
+              seconds={timeRemaining ?? 0}
+              glow={innerPhase === "hanging" && !paused}
+            />
+          </View>
           {pauseButton}
         </View>
       </ExerciseScreen>
