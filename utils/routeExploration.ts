@@ -102,6 +102,13 @@ export function explorationGoes(routes: ExplorationRoute[]): number {
   return routes.reduce((t, r) => t + (r.sent ? r.tries : Math.max(r.tries, EXPLORATION_MAX_TRIES)), 0)
 }
 
+// Part 2's colours: those of the routes that didn't go, once each, easiest
+// first (the chips on the running screen's notes).
+export function notSentColours(routes: ExplorationRoute[]): string[] {
+  const colours = [...new Set(routes.filter((r) => !r.sent).map((r) => r.colour))]
+  return colours.sort((a, b) => colourIndex(a) - colourIndex(b))
+}
+
 // ─── Points ──────────────────────────────────────────────────────────────────
 
 // Points per colour: the Density test's (`niveles_boulder.difficulty`):

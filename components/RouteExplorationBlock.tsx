@@ -1,3 +1,4 @@
+import { ActiveScreen } from "@/components/ActiveScreen"
 import { BlockIntro } from "@/components/BlockIntro"
 import { minutesLabel } from "@/utils/blockIntro"
 import CustomButton from "@/components/customButton"
@@ -12,10 +13,11 @@ import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES,
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
-  routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
+  notSentColours, routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor, TimerBar } from "@/components/IntervalVisuals"
+import { clockText } from "@/utils/timerDial"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { usePauseClock } from "@/hooks/usePauseClock"
@@ -333,28 +335,29 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         </View>
       )
     }
-    // Running: like a free session — a big countdown and Stop; what they
-    // realised is asked at the end.
+    // Running (components/ActiveScreen.tsx): the notes with the colours
+    // that didn't go as chips, the countdown dial and Done; what they
+    // realised is asked at the end. Back goes to the start of part 2.
+    const chips = notSentColours(routes).map((c) => ({ label: colourLabel(c), color: swatch(c, C) }))
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Part 2 · Project" />
-        <BlockNotes text={EXPLORATION_PROJECT_NOTES} compact />
-        <View style={styles.centerContent}>
-          <TimerRing
-            fill={ringFill(projectMin * 60, projectLeft)}
-            color={timerColor(C, projectLeft > 0 ? "work" : "over")}
-            title={projectLeft > 0 ? "Remaining" : "Time's up"}
-            seconds={projectLeft}
-            text={formatTime(projectLeft)}
-            glow={projectLeft > 0}
-            paused={project.paused}
-            onTogglePause={project.toggle}
-          />
-          <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
-            <Text style={styles.stopBtnText}>Stop</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ActiveScreen
+        title="Part 2 · Project"
+        meta={`${clockText(projectMin * 60)} total`}
+        onBack={() => setPhase("projectIntro")}
+        notes={EXPLORATION_PROJECT_NOTES}
+        chips={chips.length ? { 0: chips } : undefined}
+        ring={{
+          fill: ringFill(projectMin * 60, projectLeft),
+          color: timerColor(C, projectLeft > 0 ? "work" : "over"),
+          title: projectLeft > 0 ? "Project · left" : "Time's up",
+          seconds: projectLeft,
+          text: clockText(projectLeft),
+          glow: projectLeft > 0,
+          paused: project.paused,
+          onTogglePause: project.toggle,
+        }}
+        action={{ label: "Done", next: "one question", onPress: () => setPhase("question") }}
+      />
     )
   }
 
@@ -523,13 +526,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
   finishPillText: { fontSize: 14, fontWeight: "700", color: C.textSecondary },
   startButton: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
   startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
-
-  // Part 2's countdown — same as FreeSessionBlock.
-  centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
-  bigTimerLabel: { fontSize: 13, fontWeight: "600", color: C.textMuted, textTransform: "uppercase", letterSpacing: 1.5 },
-  bigTimer: { fontSize: 72, fontWeight: "700", color: C.textPrimary, fontVariant: ["tabular-nums"], letterSpacing: -2, lineHeight: 80 },
-  stopBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.red, marginTop: 8 },
-  stopBtnText: { fontSize: 18, fontWeight: "700", color: C.red, letterSpacing: 0.3 },
 
   questionContent: { padding: 20, gap: 14 },
   question: { fontSize: 18, fontWeight: "700", color: C.textPrimary, lineHeight: 24 },

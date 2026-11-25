@@ -1,6 +1,6 @@
+import { ActiveScreen } from "@/components/ActiveScreen"
 import { BlockIntro } from "@/components/BlockIntro"
 import { minutesLabel } from "@/utils/blockIntro"
-import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
@@ -10,7 +10,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { usePauseClock } from "@/hooks/usePauseClock"
-import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor } from "@/components/IntervalVisuals"
+import { clockText } from "@/utils/timerDial"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -99,14 +100,14 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
     setPhase("running")
   }
 
-  function stop() {
+  function stop(next: Phase = "done") {
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
     setEndsAt(null)
     clock.reset()
-    setPhase("done")
+    setPhase(next)
   }
 
   function finish() {
@@ -134,46 +135,43 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
   // ── Running ────────────────────────────────────────────────────────────────
 
   if (phase === "running") {
-    // With a time limit, count down from it (turning red at zero) instead of
-    // showing elapsed time. The countdown starts when the athlete hits Start.
+    // With a time limit, count down from it (ink at zero) instead of showing
+    // elapsed time. The countdown starts when the athlete hits Start.
     const limitSec = (block.timeLimit ?? 0) * 60
     const hasLimit = limitSec > 0
     const remaining = Math.max(0, limitSec - elapsed)
     const over = hasLimit && remaining <= 0
+    // The running screen (components/ActiveScreen.tsx). The dial is the
+    // standard timer ring; with no limit it counts up, one lap a minute.
+    // Back goes to the intro and drops the timer, like route exploration's.
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={block.blockName} />
-        <BlockNotes text={block.description} compact />
-        {hasRoute && (
-          <View style={styles.wallWrap}>
-            <SprayWallViewer
-              imageSource={wallImageSource}
-              holds={holds}
-              style={{ flex: 1 }}
-              freeGesture
-              naturalSize={wallSize}
-            />
-          </View>
-        )}
-        <View style={hasRoute ? styles.timerFooter : styles.centerContent}>
-          {/* The standard timer ring (the 1 on 1 off look). No limit: it
-              counts up, one lap a minute. */}
-          <TimerRing
-            size={hasRoute ? 150 : 260}
-            fill={hasLimit ? ringFill(limitSec, remaining) : ((elapsed % 60) / 60) * 100}
-            color={timerColor(C, over ? "over" : "work")}
-            title={hasLimit ? (over ? "Time's up" : "Remaining") : "Elapsed"}
-            seconds={hasLimit ? remaining : elapsed}
-            text={formatElapsed(hasLimit ? remaining : elapsed)}
-            glow={!over}
-            paused={clock.paused}
-            onTogglePause={over ? undefined : clock.toggle}
+      <ActiveScreen
+        title={block.blockName || "Free session"}
+        meta={hasLimit ? `${clockText(limitSec)} total` : null}
+        onBack={() => { stop("intro"); setElapsed(0) }}
+        notes={block.description}
+        ring={{
+          fill: hasLimit ? ringFill(limitSec, remaining) : ((elapsed % 60) / 60) * 100,
+          color: timerColor(C, over ? "over" : "work"),
+          title: hasLimit ? (over ? "Time's up" : "Session · left") : "Session · so far",
+          seconds: hasLimit ? remaining : elapsed,
+          text: clockText(hasLimit ? remaining : elapsed),
+          glow: !over,
+          paused: clock.paused,
+          onTogglePause: over ? undefined : clock.toggle,
+        }}
+        action={{ label: "Done", next: block.notePrompt || "notes", onPress: () => stop() }}
+      >
+        {hasRoute ? (
+          <SprayWallViewer
+            imageSource={wallImageSource}
+            holds={holds}
+            style={{ flex: 1 }}
+            freeGesture
+            naturalSize={wallSize}
           />
-          <Pressable style={styles.stopBtn} onPress={stop}>
-            <Text style={styles.stopBtnText}>Stop</Text>
-          </Pressable>
-        </View>
-      </View>
+        ) : null}
+      </ActiveScreen>
     )
   }
 
@@ -212,13 +210,6 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const sheet = paperSheet((C) => StyleSheet.create({
-  centerContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 20,
-  },
   doneContent: {
     flexGrow: 1,
     alignItems: "center",
@@ -250,15 +241,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
     textAlignVertical: "top",
   },
 
-  // Attached-sequence viewer (running)
-  wallWrap: { flex: 1 },
-  timerFooter: {
-    alignItems: "center",
-    paddingHorizontal: 32,
-    paddingTop: 12,
-    paddingBottom: 24,
-    gap: 12,
-  },
   timerCompact: {
     fontSize: 44,
     lineHeight: 50,
@@ -294,23 +276,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: C.onAccent,
-    letterSpacing: 0.3,
-  },
-
-  // Stop button
-  stopBtn: {
-    width: "100%",
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: C.red,
-    marginTop: 8,
-  },
-  stopBtnText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: C.red,
     letterSpacing: 0.3,
   },
 

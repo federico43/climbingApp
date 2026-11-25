@@ -5,7 +5,7 @@
 import assert from "node:assert/strict"
 import {
   EXPLORATION_DEFAULT_DESCRIPTION, explorationDescription, explorationNotes, explorationAllowed, explorationGoes, explorationStartColour, hasExplorationBlock, isMonday, mondayOf,
-  nextExplorationColour, summarizeExploration, routePoints, explorationPoints, formatPoints, lastExploration,
+  nextExplorationColour, notSentColours, summarizeExploration, routePoints, explorationPoints, formatPoints, lastExploration,
 } from "@/utils/routeExploration"
 import { planEndFor, workoutSpec, type BuiltPlanWorkout, type PlanShape } from "@/utils/planRotation"
 import { buildPlanWorkout } from "@/utils/planWorkout"
@@ -23,6 +23,11 @@ assert.equal(nextExplorationColour("blue", [r("blue", true), r("blue", false)]),
 assert.equal(nextExplorationColour("blue", []), null)
 assert.equal(nextExplorationColour("black", [r("black", true)]), null)
 assert.equal(explorationGoes([r("blue", true), r("blue", true, 2), r("green", false)]), 6)
+
+// ── part 2: the colours that didn't go, once each, easiest first ──
+assert.deepEqual(notSentColours([r("green", false), r("blue", true), r("yellow", false), r("blue", false), r("green", false)]), ["blue", "green", "yellow"])
+assert.deepEqual(notSentColours([r("blue", true), r("green", true)]), [])
+assert.deepEqual(notSentColours([]), [])
 
 // ── summary from the logged attempts ──
 const sum = summarizeExploration([
