@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet, type Palette } from "@/theme/paper/legacy"
 import type { AppUser } from "@/services/BoulderGraphService"
 import { deleteCardioPlan, getCardioUser, listCardioSessions, saveCardioPlan, setCardioEnabled, type CardioSessionRow } from "@/services/cardio"
 import {
@@ -8,14 +8,14 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Switch, Text, View } from "react-native"
-import { card } from "./styles"
+import { cardSheet } from "./styles"
 
 // Jump rope cardio on the coach's athlete screen (docs/cardio-rope.md): the
 // switch that offers it to the athlete, the starting step (optional — by
 // default the app's test picks it), the current step and cycle with − / +
 // to correct them, and the last sessions.
 
-const LIGHT_COLOR: Record<Light, string> = { green: C.green, yellow: C.yellow, red: C.red }
+const LIGHT_COLOR = (C: Palette): Record<Light, string> => ({ green: C.green, yellow: C.yellow, red: C.red })
 const OUTCOME: Record<string, string> = {
   start: "Test", up: "Up", skip: "Skip up", cycleUp: "New cycle", repeat: "Repeat", down: "Down", deloadHold: "Light week next",
 }
@@ -36,6 +36,9 @@ function parseAnswers(raw: string | null): CardioAnswers | null {
 }
 
 export function CardioCard({ athlete }: { athlete: AppUser }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const s = useSheet(sSheet)
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -179,7 +182,7 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
                       </Text>
                       <View style={s.lights}>
                         {l && (["rest", "pain", "pace", "effort"] as const).map((k) => (
-                          <View key={k} style={[s.light, { backgroundColor: LIGHT_COLOR[l[k]] }]} />
+                          <View key={k} style={[s.light, { backgroundColor: LIGHT_COLOR(C)[l[k]] }]} />
                         ))}
                       </View>
                     </View>
@@ -201,6 +204,8 @@ export function CardioCard({ athlete }: { athlete: AppUser }) {
 }
 
 function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   return (
     <Pressable disabled={disabled} onPress={onPress} style={[s.chip, on && s.chipOn, disabled && { opacity: 0.5 }]}>
       <Text style={[s.chipText, on && { color: C.green }]}>{label}</Text>
@@ -211,6 +216,8 @@ function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; di
 function Stepper({ label, value, min, max, disabled, onChange }: {
   label: string; value: number; min: number; max: number; disabled?: boolean; onChange: (v: number) => void
 }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   return (
     <View style={s.stepper}>
       <Text style={s.label}>{label}</Text>
@@ -225,7 +232,7 @@ function Stepper({ label, value, min, max, disabled, onChange }: {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   delete: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 4 },
   deleteText: { fontSize: 13, fontWeight: "700", color: C.red },
   label: { fontSize: 11, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.8 },
@@ -248,4 +255,4 @@ const s = StyleSheet.create({
   sessionText: { flex: 1, fontSize: 13, color: C.textPrimary },
   lights: { flexDirection: "row", gap: 3 },
   light: { width: 8, height: 8, borderRadius: 4 },
-})
+}))

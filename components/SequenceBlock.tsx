@@ -1,5 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { PlacedHold, SprayWallBuilder } from "@/components/SprayWallBuilder"
 import { SprayWallViewer } from "@/components/SprayWallViewer"
@@ -17,7 +18,6 @@ import React, { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { shared_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { saveVideoLocally } from "@/utils/saveVideo"
 import {
@@ -154,37 +154,6 @@ export function SequenceBlock({
   const [wallSize, setWallSize] = useState<{ w: number; h: number } | null>(
     block.wallWidth && block.wallHeight ? { w: block.wallWidth, h: block.wallHeight } : null
   )
-
-  // Rest progress bar (0 → 1) driven smoothly: the timer only ticks once a
-  // second, so we animate the fill toward each new target over ~1s of linear
-  // motion instead of jumping. On a fresh rest we snap to the start, then glide.
-  const restProgress = useSharedValue(1)
-  const wasRestingRef = useRef(false)
-  useEffect(() => {
-    const remaining = restTimeRemaining ?? 0
-    // The first attempt never rests — a leftover global timer from a previous
-    // block must not count as resting here.
-    const resting = attemptsDone > 0 && remaining > 0
-    if (!resting) {
-      // Done / climb → fill to the right edge.
-      restProgress.value = withTiming(1, { duration: 250, easing: Easing.linear })
-      wasRestingRef.current = false
-      return
-    }
-    const target = restTime > 0
-      ? Math.min(1, Math.max(0, (restTime - remaining) / restTime))
-      : 0
-    if (!wasRestingRef.current) {
-      restProgress.value = target            // new rest: snap to the start
-      wasRestingRef.current = true
-    } else {
-      restProgress.value = withTiming(target, { duration: 1000, easing: Easing.linear })
-    }
-  }, [restTimeRemaining, restTime, attemptsDone, restProgress])
-
-  const restBarFillStyle = useAnimatedStyle(() => ({
-    width: `${restProgress.value * 100}%`,
-  }))
 
   // Resume: restore the variation the athlete was on from the last attempt.
   useEffect(() => {
@@ -578,15 +547,16 @@ export function SequenceBlock({
             simple "Go climb" prompt instead of a bar. */}
         <View style={styles.restPillWrap}>
           {resting ? (
-            <View style={[styles.restBar, styles.restBarResting]}>
-              <Animated.View style={[styles.restBarFill, restBarFillStyle, {
-                backgroundColor: C.tint("rgba(98,201,154,0.5)"),
-              }]} />
-              <View style={styles.restBarContent}>
-                <Text style={[styles.restBarText, { color: C.textPrimary }]}>
-                  Rest · {restDisplay}
-                </Text>
-              </View>
+            // The standard timer ring (the 1 on 1 off look), small.
+            <View style={styles.restRingRow}>
+              <TimerRing
+                size={56}
+                fill={ringFill(restTime, restTimeRemaining ?? 0)}
+                color={timerColor(C, "rest")}
+                seconds={restTimeRemaining ?? 0}
+                text={restDisplay ?? undefined}
+              />
+              <Text style={[styles.restBarText, { color: C.textPrimary }]}>Rest</Text>
             </View>
           ) : (
             <Text style={styles.goClimbText}>Go climb</Text>
@@ -936,6 +906,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
     backgroundColor: C.surface, borderWidth: 1, justifyContent: "center",
   },
   restBarResting: { borderColor: C.border },
+  restRingRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
   restBarFill: { position: "absolute", left: 0, top: 0, bottom: 0 },
   restBarContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   restBarText: { fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"] },

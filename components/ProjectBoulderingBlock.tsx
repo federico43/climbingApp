@@ -1,5 +1,6 @@
 import { BlockNotes } from "@/components/BlockNotes"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
@@ -19,7 +20,6 @@ import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { AnimatedCircularProgress } from "react-native-circular-progress"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useTaskBlockActions } from "@/contexts/WorkoutContext"
 import { amountLabel, isTaskBlock, isTaskIntroBlock, triesLeft, type FocusTaskNote } from "@/utils/sessionTasks"
@@ -236,12 +236,13 @@ function ProjectBoulderingRun({
   }
 
   const timeChip = timed && startedAt != null && (
-    <View style={[s.timeChip, secondsLeft <= 60 && s.timeChipUrgent]}>
-      <Ionicons name="time-outline" size={14} color={secondsLeft <= 60 ? C.onAccent : C.green} />
-      <Text style={[s.timeChipText, secondsLeft <= 60 && { color: C.onAccent }]}>
-        {secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
-      </Text>
-    </View>
+    <TimerRing
+      size={46}
+      fill={ringFill(limitSecs, secondsLeft)}
+      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
+      seconds={Math.max(0, secondsLeft)}
+      text={secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
+    />
   )
 
   // The algorithm asks for a review clip: a full-screen takeover so it can't be
@@ -421,7 +422,7 @@ function ProjectBoulderingRun({
 
   if (phase === "rest") {
     const t = restTimeRemaining ?? 0
-    const fill = restSecs ? (t / restSecs) * 100 : 0
+    const fill = ringFill(restSecs, t)
     const clockLeft = Math.max(0, secondsLeft)
     const sent = !!last?.success
     const reasons = last?.fallReasons ?? []
@@ -434,12 +435,7 @@ function ProjectBoulderingRun({
               {restSecs > 0 ? "Rest" : `${clock(clockLeft)} left on the task`}{last?.videoId ? " · clip saved 🎥" : ""}
             </Text>
           </View>
-          {restSecs > 0 && <AnimatedCircularProgress
-            size={92} width={6} fill={fill} rotation={0}
-            tintColor={t <= 15 ? C.red : C.green} backgroundColor={C.surfaceHigh}
-          >
-            {() => <Text style={s.restTimer}>{t > 0 ? clock(t) : "go!"}</Text>}
-          </AnimatedCircularProgress>}
+          {restSecs > 0 && <TimerRing size={92} fill={fill} color={timerColor(C, t > 0 ? "rest" : "over")} seconds={t} text={t > 0 ? clock(t) : "go!"} />}
         </View>
 
         <ScrollView contentContainerStyle={s.restContent}>
@@ -717,7 +713,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   },
   chipOn: { backgroundColor: C.red, borderColor: C.red },
   chipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  chipTextOn: { color: "#fff", fontWeight: "800" },
+  chipTextOn: { color: C.onAccent, fontWeight: "800" },
   promptOverlay: {
     ...StyleSheet.absoluteFillObject, zIndex: 5, backgroundColor: C.bg,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 18,

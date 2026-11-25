@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ExerciseRow, updateExercise } from "@/services/BoulderGraphService"
 import React, { useEffect, useRef, useState } from "react"
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
@@ -25,6 +25,8 @@ export function ExerciseLibraryCard({ exercise, onPress, onDelete, onEditingChan
   // Reported on blur (not per keystroke) for the same reason.
   onSaved?: (ex: ExerciseRow) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const editable = !!onPress
   const [notes, setNotes] = useState(exercise.notes ?? "")
   const [inputHeight, setInputHeight] = useState(0)
@@ -125,7 +127,7 @@ export function ExerciseLibraryCard({ exercise, onPress, onDelete, onEditingChan
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   card: {
     backgroundColor: C.surfaceHigh, borderRadius: 16,
     borderWidth: 1, borderColor: C.border, overflow: "hidden",
@@ -145,4 +147,4 @@ const styles = StyleSheet.create({
     borderRadius: 14, backgroundColor: C.surfaceHigh,
   },
   deleteBtnText: { fontSize: 15, color: C.textMuted },
-})
+}))

@@ -1,9 +1,10 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { BLOCK_ICONS, BLOCK_LABELS, BlockType, blockFromLibraryRow } from "@/components/workoutBlocks"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
 import { BlockRow, listBlocks } from "@/services/BoulderGraphService"
 import { Ionicons } from "@expo/vector-icons"
-import { LinearGradient } from "expo-linear-gradient"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
@@ -14,6 +15,8 @@ import { usePullRefresh } from "@/components/PullRefresh"
 // Distinct from the video "Library" tab — this one lists every block the
 // coach has saved, runnable individually as a one-block workout.
 export default function WorkoutLibraryScreen() {
+  const C = useC()
+  const s = useSheet(sSheet)
   const router = useRouter()
   const workoutCtx = useWorkoutContext()
   const [blocks, setBlocks] = useState<BlockRow[]>([])
@@ -55,15 +58,9 @@ export default function WorkoutLibraryScreen() {
     .filter((g) => g.rows.length > 0)
 
   return (
-    <LinearGradient colors={["#1B2420", "#242325", "#242325"]} style={{ flex: 1 }}>
+    <ScreenGradient>
       <SafeAreaView style={s.safe} edges={["top"]}>
-        <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
-            <Ionicons name="chevron-back" size={20} color={C.textSecondary} />
-          </Pressable>
-          <Text style={s.title}>Workout Library</Text>
-          <View style={s.backBtn} />
-        </View>
+        <SubScreenHeader title="Workout Library" />
 
         {loadingBlocks ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={C.green} />
@@ -116,11 +113,11 @@ export default function WorkoutLibraryScreen() {
           </ScrollView>
         )}
       </SafeAreaView>
-    </LinearGradient>
+    </ScreenGradient>
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -170,4 +167,4 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   blockRowName: { flex: 1, fontSize: 15, fontWeight: "600", color: C.textPrimary },
-})
+}))

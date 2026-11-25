@@ -213,3 +213,32 @@ The old screens are written against the dark palette `C` (utils/theme.ts) and st
 - Text/icons on a filled colour use `C.onAccent` (never `C.bg`); homework uses `C.homework`.
 
 First area done this way: the athlete workout flow (workout overlay, every block, rest timers, the summary, the jump rope cardio session).
+
+Since 2026-11-13 the whole app runs inside one `<PaperScope>` (app/_layout.tsx), so every screen follows the Paper light/dark theme:
+
+- Screens opened from Settings or the coach tools use `SubScreenHeader`: a 40px outlined back button, the mono subtitle as eyebrow and the screen title as the poster headline with the melt behind it. Screen roots use `ScreenGradient`, which is `PaperBackground` (paper, dark glow, grain) inside the scope.
+- Home (athletes without a plan) is a `PaperScreen` like Plan: greeting row, "Your next workout" + the workout's name as poster, cards, pinned Primary CTA.
+- Coach tab: outlined icon tools, "Your athletes · N" + COACH poster. The athlete detail, its timeline and the block review follow the theme (no more forced dark).
+- Always dark (`PaperDark`): the class calendar (calTheme) and the media screens: video player, coach feedback recorder, feedback viewer, spray wall photo editor.
+- Tab bar and the minimised workout bar follow the theme on every screen except the class calendar.
+- **No red or yellow anywhere** (2026-11-22, Federico): inside the scope the old `C.red` reads as ink and `C.yellow` as the muted label colour (big yellow numbers as ink). Old red/yellow fills (time's up, fell, stop) become the neutral alert chip `C.alertFill` (#CFC7DA, ink outline, dark text). Homework counts are pink: filled = overdue, outline = pending. Only exception: the spray wall's own hold colours (start / finish).
+- The melt sits behind the headline only; on list screens it is clipped to the header so lists sit on plain paper.
+
+
+### Coach athlete page and workout builder (design chat, 2026-11-22)
+
+Built from the design chat's "Coach desk · Athlete page" and "Workout builder" mock-ups, adapted to what the app has.
+
+- **Athlete page** (`components/coach/AthleteDetail.tsx`): the melt and a poster of the athlete's first name (full name under it when it has a space), mono eyebrow "{plan} · week N of 6", chips (plan dates, days left, flash colour), then Role, Active and a mint New workout. Sticky pill tabs Overview / Stats / Templates / Videos (selected = ink fill). A tab mounts the first time it's opened, so Templates and Videos only read Appwrite when the coach looks.
+- **Overview**: wide (≥1200) = left column training plan, next workout, timeline, recent activity; right column (360) athlete, homework, jump rope cardio. One column (iPad portrait, phone): homework first.
+- **Training plan** is an inverted card (ink on light paper, light on dark: the opposite scope inside; its sheets go back to the app theme with `PaperAppTheme`): mint mono title, week + dates, S&C / mobility chips, big "Workouts done / built / this week" numbers with bars. **Next workout** is its own card outlined 2px in ink: mono category, the block on its own line, the exercises under it, a ⇄ Swap pill per row, the note "Swap only changes this workout…", Edit details + Create workout N.
+- **Wide layout** (≥900): no COACH poster; the roster has its own "Athletes · N active" head and is grouped "Pending homework first" / "Everyone else"; the coach tools sit in the athlete header's top row. Phone keeps the COACH poster on the roster screen.
+- Cards: frosted, radius 28, mono ink title; buttons are pills (mint = the action, ink outline = the rest).
+- **Builder** (`components/AthleteWorkoutBuilder.tsx`): a full page on paper. Top row "‹ Back to {athlete}", Copy to athletes and Save to library (ghost, wide; under ⋯ on a phone), and a mint "Send to {athlete}" ("Save" when editing or in the library). The name is the headline input with the melt, mono eyebrow and chips (plan slot, blocks, flash, coached, homework due). Each block card gets a footer: Coached switch and a pink "Move to homework" / "In homework · undo"; a homework block is outlined in pink. Under the blocks: the homework deadline stepper and "Move the whole workout to homework".
+- Not built from the mock-ups (no data or would cost reads): the 14-day readiness chart (the athlete card keeps today's check-in), the left nav rail (the app's tab bar does that), per-block minutes and the workout's total time.
+
+### Timers (Federico, 2026-11-25)
+
+Every timer uses one look: the 1 on 1 off ring, `TimerRing` in `components/IntervalVisuals.tsx`. The ring fills as time passes (`ringFill(total, left)`); its colour comes from the phase (`timerColor`): work / hang / a block's own clock = mint, rest = muted, get ready = label grey, paused or time's up = ink. No red when time runs low.
+- Big (≥ 120 px): phase on top, the clock, "Then: …" under it. Used for free session, route exploration part 2, the 4x4 / S&C round / warm-up rests, 7/3s, the S&C timed hold, intervals and jump rope cardio.
+- Small (42–92 px, clock only): a block's time limit in a top bar (the workout's chip, exploration session, route exploration part 1, project bouldering, spray), and the rests beside a title (project, spray, sequence).

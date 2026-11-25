@@ -1,10 +1,11 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ScreenGradient } from "@/components/ScreenGradient"
+import { SubScreenHeader } from "@/components/SubScreenHeader"
 import { getSessions, getSessionsByUserId, SessionRow } from "@/services/BoulderGraphService"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -154,6 +155,8 @@ function MetricChart({
   chartWidth: number
   maxValue?: number
 }) {
+  const C = useC()
+  const chartStyles = useSheet(chartStylesSheet)
   if (points.length < 2) return null
 
   const max = maxValue ?? Math.ceil(Math.max(...points.map((p) => p.value)) * 1.3)
@@ -201,6 +204,8 @@ function MetricChart({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExerciseProgressScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { name, athleteId } = useLocalSearchParams<{ name: string; athleteId?: string }>()
   const router = useRouter()
   const { width } = useWindowDimensions()
@@ -245,17 +250,13 @@ export default function ExerciseProgressScreen() {
   const latest = dataPoints[dataPoints.length - 1]
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
-          style={styles.backBtn}
-        >
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>{name}</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <ScreenGradient>
+    <SafeAreaView style={styles.screen}>
+      <SubScreenHeader
+        title={name ?? "Exercise"}
+        subtitle="Progress"
+        onBack={() => router.navigate((athleteId ? "/(tabs)/(buttonTabs)/design" : "/(tabs)/(buttonTabs)/") as any)}
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
@@ -329,13 +330,16 @@ export default function ExerciseProgressScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+    </ScreenGradient>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  // Screen root over ScreenGradient (paper + glow + grain show through).
+  screen: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -370,9 +374,9 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 32, fontWeight: "800", color: C.yellow },
   summaryLabel: { fontSize: 12, color: C.textSecondary },
   summaryHint: { fontSize: 12, color: C.textMuted, textAlign: "center" },
-})
+}))
 
-const chartStyles = StyleSheet.create({
+const chartStylesSheet = paperSheet((C) => StyleSheet.create({
   card: {
     backgroundColor: C.surface,
     borderRadius: 16,
@@ -388,4 +392,4 @@ const chartStyles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 12,
   },
-})
+}))

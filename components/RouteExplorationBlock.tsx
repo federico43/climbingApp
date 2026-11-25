@@ -13,6 +13,7 @@ import {
   routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import React, { useEffect, useRef, useState } from "react"
@@ -168,7 +169,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   }
 
   // Density test's top bar: back, title, timer and count badges.
-  const activeBar = (barTitle: string, left: number, onBack?: () => void) => (
+  const activeBar = (barTitle: string, left: number, total: number, onBack?: () => void) => (
     <View style={topBar_styles.bar}>
       <Pressable
         onPress={onBack}
@@ -180,9 +181,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       </Pressable>
       <Text style={topBar_styles.title} numberOfLines={1}>{barTitle}</Text>
       <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-        <View style={[styles.timerBadge, left <= 60 && styles.timerBadgeUrgent]}>
-          <Text style={[styles.timerText, left <= 60 && styles.timerTextUrgent]}>{formatTime(left)}</Text>
-        </View>
+        <TimerRing size={46} fill={ringFill(total, left)} color={timerColor(C, left > 0 ? "work" : "over")} seconds={left} text={formatTime(left)} />
         {routes.length > 0 && (
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreBadgeText}>{formatPoints(summary.points)} pts</Text>
@@ -234,7 +233,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "flash") {
     return (
       <View style={shared_styles.screen}>
-        {activeBar("Part 1 · Flash", flashLeft, () => setPhase("intro"))}
+        {activeBar("Part 1 · Flash", flashLeft, flashMin * 60, () => setPhase("intro"))}
         <View style={styles.container}>
           {notice && <Text style={styles.notice}>{notice}</Text>}
 
@@ -332,8 +331,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         <TopBar title="Part 2 · Project" />
         <BlockNotes text={EXPLORATION_PROJECT_NOTES} compact />
         <View style={styles.centerContent}>
-          <Text style={styles.bigTimerLabel}>remaining</Text>
-          <Text style={styles.bigTimer}>{formatTime(projectLeft)}</Text>
+          <TimerRing
+            fill={ringFill(projectMin * 60, projectLeft)}
+            color={timerColor(C, projectLeft > 0 ? "work" : "over")}
+            title={projectLeft > 0 ? "Remaining" : "Time's up"}
+            seconds={projectLeft}
+            text={formatTime(projectLeft)}
+            glow={projectLeft > 0}
+          />
           <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
             <Text style={styles.stopBtnText}>Stop</Text>
           </Pressable>
@@ -522,7 +527,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   reasonChip: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 22, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
   reasonChipOn: { backgroundColor: C.red, borderColor: C.red },
   reasonChipText: { fontSize: 15, fontWeight: "600", color: C.textPrimary },
-  reasonChipTextOn: { color: "#fff", fontWeight: "800" },
+  reasonChipTextOn: { color: C.onAccent, fontWeight: "800" },
   input: { minHeight: 80, backgroundColor: C.surface, borderRadius: 12, padding: 12, color: C.textPrimary, fontSize: 15, textAlignVertical: "top" },
 
   reviewScroll: { flexGrow: 1, padding: 20, alignItems: "center", gap: 12 },

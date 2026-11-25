@@ -1,5 +1,9 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { GhostButton, HeadlineInput, Melt, MintButton, Mono, PaperBackground, PaperSwitch } from "@/components/paper"
+import { font } from "@/theme/paper/tokens"
+import { BoulderLevelOptions } from "@/utils/boulderColours"
+import { Ionicons } from "@expo/vector-icons"
 import { AppUser, ExerciseRow, ProtocolRow, clearHomeWorkout, createProtocol, deleteProtocol, updateProtocol } from "@/services/BoulderGraphService"
 import { AthleteRecentSessionsSummary } from "@/components/AthleteRecentSessionsSummary"
 import { SuggestedWarmupCard } from "@/components/SuggestedWarmupCard"
@@ -84,6 +88,9 @@ export function AthleteWorkoutBuilder({
   onClose: () => void
   onSaved?: () => void
 }) {
+  const C = useC()
+  const P = usePaperScope()
+  const s = useSheet(sSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const editing = !!protocol
@@ -122,6 +129,10 @@ export function AthleteWorkoutBuilder({
   const coachedBlocks = blocks.filter((b) => b.coached && !isSprayBlock(b))
   function toggleCoached(id: string) {
     setBlocks((p) => p.map((b) => (b.id === id ? { ...b, coached: b.coached ? undefined : true } : b)))
+  }
+  function toggleHomework(id: string) {
+    // (Homework is saved uncoached — see save().)
+    setHomeworkIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
   const [menuOpen, setMenuOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -214,7 +225,7 @@ export function AthleteWorkoutBuilder({
   }, [blocks])
 
   // Narrow: drag-to-reorder list via the grip (long-press starts the drag).
-  const renderBlock = useCallback(({ item, drag, isActive }: RenderItemParams<Block>) => (
+  const renderBlock = ({ item, drag, isActive }: RenderItemParams<Block>) => frame(item, (
     <BlockEditorRow
       card
       block={item}
@@ -225,7 +236,7 @@ export function AthleteWorkoutBuilder({
       onUpdate={updateBlock}
       onDelete={() => deleteBlock(item.id)}
     />
-  ), [expandedId, deleteBlock])
+  ))
 
   // Hosts the exercise library for S&C blocks (signalled via context).
   const libraryController = useMemo(() => ({ open: setLibraryBlockId }), [])
@@ -347,12 +358,139 @@ export function AthleteWorkoutBuilder({
 
   const otherAthletes = roster.filter((a) => a.$id !== athlete?.$id)
   const athleteName = athlete?.username ?? athlete?.$id ?? null
+  const firstName = athleteName?.trim().split(/\s+/)[0] ?? null
+
+  // A copy in the shared library (untagged), whatever this workout is.
+  const [savingLibrary, setSavingLibrary] = useState(false)
+  async function saveToLibrary() {
+    if (!validate()) return
+    setSavingLibrary(true)
+    try {
+      await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks.map((b) => ({ ...b, coached: undefined }))), source: "library" })
+      Alert.alert("Saved to the library", `"${name.trim()}" is in the workout library now. This workout is still open here.`)
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not save to the library.")
+    } finally {
+      setSavingLibrary(false)
+    }
+  }
+
+  // ─── Paper Mint (design chat 2026-11-22) ───────────────────────────────
+  // Each block card gets its own Coached switch and Move to homework toggle
+  // (instead of the two pickers); a homework block is outlined in pink.
+  function frame(b: Block, node: React.ReactElement) {
+    if (!P || !athlete) return node
+    const hw = homeworkIds.has(b.id)
+    const canCoach = !hw && !isSprayBlock(b)
+    return (
+      <View style={[s.pFrame, hw && s.pFrameHw]}>
+        {node}
+        <View style={s.pFoot}>
+          {canCoach ? (
+            <View style={s.pFootSwitch}>
+              <PaperSwitch value={!!b.coached} onValueChange={() => toggleCoached(b.id)} label={`Coached: ${blockLabel(b)}`} />
+              <Text style={s.pFootText} numberOfLines={2}>Coached · you run it in person</Text>
+            </View>
+          ) : <View style={{ flex: 1 }} />}
+          {canHomework && (
+            <Pressable
+              onPress={() => toggleHomework(b.id)}
+              style={[s.pHwBtn, hw && s.pHwBtnOn]}
+              accessibilityRole="button"
+              accessibilityLabel={hw ? `Undo homework: ${blockLabel(b)}` : `Move ${blockLabel(b)} to homework`}
+            >
+              <Ionicons name={hw ? "arrow-undo" : "school-outline"} size={14} color={hw ? (P.mode === "dark" ? P.onMint : "#FFFFFF") : P.pink} />
+              <Text style={[s.pHwText, hw && s.pHwTextOn]}>{hw ? "In homework · undo" : "Move to homework"}</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    )
+  }
+
+  const flash = BoulderLevelOptions.find((g) => g.value === athlete?.flashLevel)
+  const chips = [
+    plan ? `Workout ${plan.planIndex} of 12` : null,
+    `${blocks.length} block${blocks.length === 1 ? "" : "s"}`,
+    flash ? `Flash · ${flash.label}` : null,
+    coachedBlocks.length ? `${coachedBlocks.length} coached` : null,
+  ].filter(Boolean) as string[]
+
+  // Name, chips and the athlete's context — scrolls with the blocks.
+  const paperHead = P && (
+    <View style={s.pHead}>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+        <Melt top={10} height={wide ? 240 : 190} />
+      </View>
+      <Mono color={P.ink} size={11} numberOfLines={1}>
+        {[athleteName ?? "Library", editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
+      </Mono>
+      <HeadlineInput value={name} onChangeText={setName} placeholder="Workout name" style={{ marginTop: 10 }} />
+      <View style={s.pChips}>
+        {chips.map((c) => <View key={c} style={s.pChip}><Text style={s.pChipText}>{c}</Text></View>)}
+        {homework.length > 0 && (
+          <View style={[s.pChip, s.pChipHw]}><Text style={[s.pChipText, { color: P.pink }]}>{`Homework · due ${shortDay(dueBy)}`}</Text></View>
+        )}
+      </View>
+      {athlete && <View style={{ marginTop: 14 }}><AthleteRecentSessionsSummary athleteId={athlete.$id} wide={wide} /></View>}
+      {athlete && !plan && <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} />}
+      <View style={s.pRule}><Mono color={P.ink} size={11}>The workout</Mono></View>
+    </View>
+  )
+
+  // Under the blocks: the homework deadline and the whole-workout switch.
+  const paperFooter = P && canHomework && blocks.length > 0 && (
+    <View style={s.pAfter}>
+      {homework.length > 0 && (
+        <View style={[s.pCard, s.pCardHw]}>
+          <Mono color={P.pink}>{`Homework · ${homework.length} block${homework.length === 1 ? "" : "s"}`}</Mono>
+          <Text style={s.pCardText}>{athleteName ?? "The athlete"} picks the day to do it, before the deadline.</Text>
+          <View style={s.dueRow}>
+            <Pressable
+              style={[s.pDueStep, dueBy <= today && { opacity: 0.3 }]}
+              disabled={dueBy <= today}
+              onPress={() => setDueBy((d) => addDays(d, -1))}
+              accessibilityLabel="Deadline one day earlier"
+            >
+              <Ionicons name="remove" size={20} color={P.ink} />
+            </Pressable>
+            <View style={{ flex: 1, alignItems: "center" }}>
+              <Text style={s.dueDate}>Due {shortDay(dueBy)}</Text>
+              <Text style={s.homeworkSub}>{dueDaysLabel(today, dueBy)}</Text>
+            </View>
+            <Pressable style={s.pDueStep} onPress={() => setDueBy((d) => addDays(d, 1))} accessibilityLabel="Deadline one day later">
+              <Ionicons name="add" size={20} color={P.ink} />
+            </Pressable>
+          </View>
+        </View>
+      )}
+      <View style={[s.pCard, s.pCardRow]}>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={s.pCardTitle}>Move the whole workout to homework</Text>
+          <Text style={s.pCardText}>{athleteName ?? "The athlete"} does it alone, on a day they pick.</Text>
+        </View>
+        <PaperSwitch
+          value={kept.length === 0}
+          onValueChange={(on) => setHomeworkIds(on ? new Set(blocks.map((b) => b.id)) : new Set())}
+          label="Move the whole workout to homework"
+        />
+      </View>
+    </View>
+  )
+
+  // Paper: the builder sits on paper (melt + grain), legacy on its dark sheet.
+  const Root = P ? PaperBackground : View
+  const sendLabel = saving ? "Saving…" : editing || !athlete ? "Save" : kept.length === 0 ? "Send as homework" : `Send to ${firstName}`
 
   return (
    <AuthoringAthleteContext.Provider value={athlete?.$id ?? null}>
    <SCLibraryContext.Provider value={libraryController}>
-    <View style={s.root}>
-      <View style={[s.shell, {
+    <Root style={P ? undefined : s.root}>
+      <View style={[s.shell, P ? {
+        // Paper: a page of its own on paper, not a sheet over Design.
+        marginTop: insets.top, marginBottom: insets.bottom, marginHorizontal: 0,
+        borderRadius: 0, borderWidth: 0, shadowOpacity: 0, elevation: 0, backgroundColor: "transparent",
+      } : {
         marginTop: insets.top + (wide ? 14 : 0),
         marginBottom: insets.bottom + (wide ? 24 : 0),
         marginHorizontal: wide ? 24 : 0,
@@ -361,6 +499,27 @@ export function AthleteWorkoutBuilder({
         shadowOpacity: wide ? 0.45 : 0,
         elevation: wide ? 12 : 0,
       }]}>
+        {P ? (
+          <View style={s.pTop}>
+            <Pressable onPress={onClose} hitSlop={8} style={s.pBack} accessibilityRole="button" accessibilityLabel="Close without saving">
+              <Ionicons name="chevron-back" size={20} color={P.ink} />
+              <Text style={s.pBackText} numberOfLines={1}>{firstName ? `Back to ${firstName}` : "Back"}</Text>
+            </Pressable>
+            <View style={{ flex: 1 }} />
+            {wide && !!athlete && otherAthletes.length > 0 && (
+              <GhostButton label="Copy to athletes" icon="copy-outline" compact onPress={() => setCopyOpen(true)} />
+            )}
+            {wide && !!athlete && (
+              <GhostButton label={savingLibrary ? "Saving…" : "Save to library"} icon="albums-outline" compact disabled={savingLibrary} onPress={saveToLibrary} />
+            )}
+            {!wide && !!athlete && (
+              <Pressable style={s.pDots} onPress={() => setMenuOpen((o) => !o)} hitSlop={6} accessibilityLabel="More">
+                <Ionicons name="ellipsis-horizontal" size={18} color={P.ink} />
+              </Pressable>
+            )}
+            <MintButton label={sendLabel} icon={editing || !athlete ? "checkmark" : "paper-plane"} compact={!wide} disabled={saving} onPress={handleSave} />
+          </View>
+        ) : (
         <View style={s.header}>
           <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
           <View style={s.titleWrap}>
@@ -373,10 +532,12 @@ export function AthleteWorkoutBuilder({
             <Text style={[s.save, saving && { opacity: 0.4 }]}>{saving ? "Saving…" : "Save"}</Text>
           </Pressable>
         </View>
+        )}
 
         <View style={s.panes} onLayout={(e) => setPanesWidth(e.nativeEvent.layout.width)}>
         {/* Left: the workout */}
         <View style={s.leftPane}>
+          {!P && (<>
           <View style={s.leftHeader}>
             <TextInput
               style={s.nameInput}
@@ -426,26 +587,33 @@ export function AthleteWorkoutBuilder({
 
           {/* The constraint warm-up rotation for this athlete (3 blocks). */}
           {athlete && !plan && <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} />}
+          </>)}
 
           {/* GestureHandlerRootView wraps ONLY the card grid. Wrapping the
               whole builder broke taps on overlays on macOS (RNGH nested in a
               Modal swallows pressable touches there). */}
           <GestureHandlerRootView style={{ flex: 1 }}>
             {blocks.length === 0 ? (
-              <View style={s.blockList}><Text style={s.empty}>{wide ? "Add blocks from the right →" : "Tap “Add block” below"}</Text></View>
+              <ScrollView contentContainerStyle={P ? undefined : s.blockList} keyboardShouldPersistTaps="handled">
+                {paperHead}
+                <View style={P ? s.pEmpty : undefined}>
+                  <Text style={s.empty}>{wide ? (P ? "Add blocks from the list on the right. Each one lands at the end of the workout." : "Add blocks from the right →") : "Tap “Add block” below"}</Text>
+                </View>
+              </ScrollView>
             ) : wide ? (
               // Big screens: numbered, reorderable cards (long-press the grip
               // to drag) — same grid as S&C exercises — each one the full
               // "Edit block" editor, sized like exercise cards. Tap a card's
               // header to expand/collapse it.
               <ScrollView contentContainerStyle={s.blockGrid} keyboardShouldPersistTaps="handled">
+                {paperHead && <View style={{ marginHorizontal: -BLOCK_GRID_PAD, marginTop: -18, marginBottom: 14 }}>{paperHead}</View>}
                 <ReorderableCardGrid
                   items={blocks}
                   onReorder={setBlocks}
                   widths={cardWidths}
                   onResize={resizeCard}
                   fitWithin={fitWithin}
-                  renderCard={(b) => (
+                  renderCard={(b) => frame(b, (
                     <BlockEditorRow
                       card
                       standalone
@@ -457,8 +625,9 @@ export function AthleteWorkoutBuilder({
                       onUpdate={updateBlock}
                       onDelete={() => deleteBlock(b.id)}
                     />
-                  )}
+                  ))}
                 />
+                {paperFooter}
               </ScrollView>
             ) : (
               <DraggableFlatList
@@ -469,7 +638,9 @@ export function AthleteWorkoutBuilder({
                 keyExtractor={(item) => item.id}
                 onDragEnd={({ data }) => setBlocks(data)}
                 renderItem={renderBlock}
-                contentContainerStyle={s.blockList}
+                contentContainerStyle={P ? s.pBlockList : s.blockList}
+                ListHeaderComponent={paperHead || undefined}
+                ListFooterComponent={paperFooter || undefined}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
               />
@@ -506,6 +677,11 @@ export function AthleteWorkoutBuilder({
                 >
                   <Text style={s.menuItemText}>Copy to another athlete</Text>
                 </Pressable>
+                {P && !!athlete && (
+                  <Pressable style={s.menuItem} onPress={() => { setMenuOpen(false); void saveToLibrary() }}>
+                    <Text style={s.menuItemText}>Save to library</Text>
+                  </Pressable>
+                )}
               </View>
             </>
           )}
@@ -677,7 +853,7 @@ export function AthleteWorkoutBuilder({
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </Root>
    </SCLibraryContext.Provider>
    </AuthoringAthleteContext.Provider>
   )
@@ -698,7 +874,55 @@ const PANE_DIVIDER_W = 14
 const RIGHT_PANE_MIN = 280
 const BLOCK_GRID_PAD = 18
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C, P) => StyleSheet.create({
+  // ─── Paper Mint (design chat 2026-11-22) ───
+  pTop: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, minHeight: 52,
+  },
+  pBack: { flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 1, minHeight: 44 },
+  pBackText: { fontSize: 15, fontWeight: "800", color: C.textPrimary, textDecorationLine: "underline" },
+  pDots: P ? {
+    width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: P.ghostBorder,
+    alignItems: "center", justifyContent: "center",
+  } : {},
+  pHead: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  pChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  pChip: P ? {
+    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5,
+    backgroundColor: P.card, borderWidth: 1, borderColor: P.cardBorder,
+  } : {},
+  pChipHw: P ? { borderColor: P.pink, borderWidth: 1.5 } : {},
+  pChipText: P ? { fontFamily: font.mono, fontSize: 11, letterSpacing: 0.5, color: P.ink } : {},
+  pRule: P ? { marginTop: 18, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: P.ink } : {},
+  pBlockList: { paddingHorizontal: 14, paddingBottom: 40 },
+  pEmpty: P ? {
+    margin: 16, padding: 18, borderRadius: 22, borderWidth: 1.5, borderStyle: "dashed", borderColor: P.ghostBorder,
+  } : {},
+  // A block card with its Coached / homework footer.
+  pFrame: { borderRadius: 26, borderWidth: 2, borderColor: "transparent", marginBottom: 4 },
+  pFrameHw: P ? { borderColor: P.pink } : {},
+  pFoot: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingTop: 2, paddingBottom: 10, flexWrap: "wrap" },
+  pFootSwitch: { flex: 1, minWidth: 180, flexDirection: "row", alignItems: "center", gap: 10 },
+  pFootText: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  pHwBtn: P ? {
+    flexDirection: "row", alignItems: "center", gap: 6, minHeight: 36, paddingHorizontal: 12,
+    borderRadius: 999, borderWidth: 1.5, borderColor: P.pink,
+  } : {},
+  pHwBtnOn: P ? { backgroundColor: P.pink } : {},
+  pHwText: P ? { fontFamily: font.bold, fontSize: 13, color: P.pink } : {},
+  pHwTextOn: P ? { color: P.mode === "dark" ? P.onMint : "#FFFFFF" } : {},
+  pAfter: { gap: 12, paddingTop: 10, paddingHorizontal: 2 },
+  pCard: P ? { backgroundColor: P.card, borderRadius: 26, borderWidth: 1, borderColor: P.cardBorder, padding: 18, gap: 8 } : {},
+  pCardHw: P ? { borderColor: P.pink, borderWidth: 1.5 } : {},
+  pCardRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  pCardTitle: { fontSize: 16, fontWeight: "800", color: C.textPrimary },
+  pCardText: { fontSize: 13, color: C.textSecondary },
+  pDueStep: P ? {
+    width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: P.ink,
+    alignItems: "center", justifyContent: "center",
+  } : {},
+
   // Solid dark gray — same tone as the library pane, so the whole screen
   // reads as one dedicated surface instead of a scrim over Design.
   root: { flex: 1, backgroundColor: C.surface },
@@ -798,4 +1022,4 @@ const s = StyleSheet.create({
   copyPillTextSel: { color: C.bg },
   copyConfirm: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginTop: 4 },
   copyConfirmText: { fontSize: 15, fontWeight: "800", color: C.bg },
-})
+}))

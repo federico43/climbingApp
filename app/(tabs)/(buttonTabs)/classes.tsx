@@ -1,3 +1,5 @@
+import { PaperThemeOverride, usePaperStatusBar } from "@/components/paper"
+import { PaperScope } from "@/theme/paper/legacy"
 
 import { Sheet, SheetButton, SheetOption } from "@/components/schedule/Sheet"
 import { IntroButton } from "@/components/schedule/FeatureIntro"
@@ -46,7 +48,21 @@ type SheetState =
 // can't teach, answer athletes' requests, add packages. A planned week is a
 // draft on the phone until it's published. If this week wasn't published in
 // time, it can still be planned and published (from now on).
+// The calendar is dark-only (calTheme), so shared Paper pieces on it
+// (settings button, intro sheets) stay dark in the light theme too.
 export default function ClassesScreen() {
+  return (
+    <PaperThemeOverride mode="dark">
+      <PaperScope>
+        <ClassesScreenBody />
+      </PaperScope>
+    </PaperThemeOverride>
+  )
+}
+
+function ClassesScreenBody() {
+  // The calendar is dark-only (calTheme): light status bar text in both themes.
+  usePaperStatusBar({ dark: true })
   const st = useClassSchedule()
   useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
   // Next week from Saturday, when the coach is reminded to plan it.

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { tasksAllowedFor } from "@/utils/sessionTasks"
 import { AthleteCustomizeWorkout } from "@/components/AthleteCustomizeWorkout"
 import { ConsumeAuth } from "@/components/auth-context"
@@ -34,6 +34,8 @@ function blockCount(p: ProtocolRow): { blocks: any[]; label: string } {
 // Settings › My workouts — every workout the athlete has: the coach's
 // (start only) and their own picks from the shared library (edit / delete).
 export default function MyWorkoutsScreen() {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = ConsumeAuth()
   const router = useRouter()
   const workoutCtx = useWorkoutContext()
@@ -210,7 +212,7 @@ export default function MyWorkoutsScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   scroll: { paddingHorizontal: 16, paddingBottom: 40, gap: 20 },
   section: { backgroundColor: C.surface, borderRadius: 18, padding: 16, gap: 12 },
@@ -233,4 +235,4 @@ const styles = StyleSheet.create({
   cardArrow: { fontSize: 26, color: C.green, marginLeft: 12 },
   empty: { backgroundColor: C.surfaceHigh, borderRadius: 14, padding: 16, alignItems: "center" },
   emptyText: { fontSize: 14, color: C.textMuted },
-})
+}))

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { CreateSequenceModal } from "@/components/AthleteSequenceCreator"
 import { useAuth } from "@/components/auth-context"
 import { useWorkoutContext } from "@/contexts/WorkoutContext"
@@ -12,6 +12,8 @@ import { Alert, Pressable, StyleSheet, Text } from "react-native"
 // now or find it later in Settings › My sequences.
 // `paper`: the Paper Mint small mint button (redesigned screens).
 export function NewSequenceButton({ paper }: { paper?: boolean } = {}) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const { User } = useAuth()
   const workoutCtx = useWorkoutContext()
   const [open, setOpen] = useState(false)
@@ -66,7 +68,7 @@ export function NewSequenceButton({ paper }: { paper?: boolean } = {}) {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   btn: {
     flexDirection: "row",
     alignItems: "center",
@@ -78,4 +80,4 @@ const styles = StyleSheet.create({
     borderColor: C.green,
   },
   text: { fontSize: 13, fontWeight: "600", color: C.green },
-})
+}))

@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { deleteProtocol, setHomeworkDeadline, type ProtocolRow } from "@/services/BoulderGraphService"
 import { notifyHomeworkAssigned } from "@/services/homework"
 import { dueByOf, shortDay } from "@/utils/homework"
@@ -14,6 +14,8 @@ export function HomeworkCoachSheet({ hw, onClose, onChanged }: {
   onClose: () => void
   onChanged: () => void
 }) {
+  const C = useC()
+  const s = useSheet(sSheet)
   const today = localDateStr(new Date())
   const current = dueByOf(hw)
   // Start from whichever is later: the current deadline or today, + 2 days.
@@ -95,7 +97,7 @@ export function HomeworkCoachSheet({ hw, onClose, onChanged }: {
   )
 }
 
-const s = StyleSheet.create({
+const sSheet = paperSheet((C) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
   sheet: { width: "100%", maxWidth: 420, backgroundColor: C.surface, borderRadius: 18, padding: 20, gap: 8 },
   title: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
@@ -113,4 +115,4 @@ const s = StyleSheet.create({
   danger: { borderRadius: 14, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: C.red },
   dangerText: { fontSize: 15, fontWeight: "800", color: C.red },
   close: { fontSize: 14, fontWeight: "700", color: C.textSecondary, textAlign: "center", paddingVertical: 6 },
-})
+}))

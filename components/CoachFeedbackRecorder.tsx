@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { PaperDark, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { DebugLogOverlay } from "@/components/DebugLogOverlay"
 import { DrawingCanvas } from "@/components/DrawingCanvas"
 import { useFeedbackReplay } from "@/hooks/useFeedbackReplay"
@@ -81,7 +81,18 @@ interface Props {
 // TimelineEvent log, which — together with the bubble recording — is all the
 // athlete's replay needs to reconstruct the session (see
 // hooks/useFeedbackReplay.ts). No flattened video is ever produced.
-export function CoachFeedbackRecorder({ player, video, positionMs, durationMs, onClose, onSent }: Props) {
+// Media screen: always dark Paper (photos and video read best on a dark frame).
+export function CoachFeedbackRecorder(props: Props) {
+  return (
+    <PaperDark>
+      <CoachFeedbackRecorderBody {...props} />
+    </PaperDark>
+  )
+}
+
+function CoachFeedbackRecorderBody({ player, video, positionMs, durationMs, onClose, onSent }: Props) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const [recPhase, setRecPhase] = useState<RecPhase>("ready")
@@ -823,7 +834,7 @@ export function CoachFeedbackRecorder({ player, video, positionMs, durationMs, o
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   chrome: { flex: 1, justifyContent: "space-between" },
   canvasFill: { flex: 1, backgroundColor: "transparent" },
@@ -885,4 +896,4 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: C.bg, fontSize: 16, fontWeight: "700" },
   secondaryBtn: { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 16, paddingVertical: 16, paddingHorizontal: 24, alignItems: "center" },
   secondaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-})
+}))

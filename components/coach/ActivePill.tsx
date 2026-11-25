@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { setUserActive, type AppUser } from "@/services/BoulderGraphService"
 import { isAccountActive } from "@/utils/coachRoster"
 import { Ionicons } from "@expo/vector-icons"
@@ -9,6 +9,8 @@ import { Alert, Pressable, StyleSheet, Text } from "react-native"
 // off or on. A deactivated athlete sees "talk to your coach" instead of the
 // app (components/InactiveAccount.tsx) and leaves the roster's main list.
 export function ActivePill({ athlete, onChanged }: { athlete: AppUser; onChanged?: () => void }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [active, setActive] = useState(isAccountActive(athlete))
   const [saving, setSaving] = useState(false)
   useEffect(() => { setActive(isAccountActive(athlete)) }, [athlete])
@@ -58,7 +60,7 @@ export function ActivePill({ athlete, onChanged }: { athlete: AppUser; onChanged
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   pill: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
@@ -67,4 +69,4 @@ const styles = StyleSheet.create({
   pillOff: { borderColor: C.yellow },
   text: { fontSize: 12, fontWeight: "700", color: C.textSecondary },
   textOff: { color: C.yellow },
-})
+}))

@@ -1,6 +1,6 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { groupByDay, sessionDayKey } from "@/components/AthleteRecentSessionsSummary"
-import { card } from "@/components/coach/styles"
+import { cardSheet } from "@/components/coach/styles"
 import { SessionRow } from "@/services/BoulderGraphService"
 import { formatMinutes } from "@/utils/workoutSummary"
 import { Ionicons } from "@expo/vector-icons"
@@ -24,6 +24,9 @@ export function RecentActivityCard({ sessions, onOpenDay }: {
   sessions: SessionRow[]
   onOpenDay: (dateKey: string) => void
 }) {
+  const C = useC()
+  const card = useSheet(cardSheet)
+  const styles = useSheet(stylesSheet)
   const [count, setCount] = useState(PAGE)
   const days = useMemo(() => groupByDay(sessions, count), [sessions, count])
   const minutesBy = useMemo(() => new Map(sessions.map((s) => [s.$id, sessionMinutes(s)])), [sessions])
@@ -65,7 +68,7 @@ export function RecentActivityCard({ sessions, onOpenDay }: {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
   dateCol: { width: 92, gap: 2 },
   date: { fontSize: 12.5, fontWeight: "700", color: C.textPrimary },
@@ -73,4 +76,4 @@ const styles = StyleSheet.create({
   blocks: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 5 },
   chip: { backgroundColor: C.surfaceHigh, borderRadius: 6, borderLeftWidth: 3, paddingHorizontal: 7, paddingVertical: 3, maxWidth: 160 },
   chipText: { fontSize: 11.5, fontWeight: "600", color: C.textSecondary },
-})
+}))

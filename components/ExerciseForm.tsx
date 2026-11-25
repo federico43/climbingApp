@@ -1,5 +1,5 @@
 import { useHoldUpdates } from "@/utils/updateHold"
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { createExercise, ExerciseRow, listExercises, updateExercise, uploadPhoto } from "@/services/BoulderGraphService"
 import { ExerciseUnit } from "@/utils/exerciseUnit"
 import { invalidateExerciseLibrary } from "@/utils/exerciseLibraryCache"
@@ -86,6 +86,8 @@ export function ExerciseForm({
   onCancel: () => void
   onCreated: (ex: ExerciseRow) => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
   const [name, setName] = useState(exercise?.name ?? "")
@@ -663,6 +665,8 @@ function LevelExercisePicker({ visible, type, title = "Pick a level", excludeIds
   onSelect: (ex: ExerciseRow) => void
   onClose: () => void
 }) {
+  const C = useC()
+  const styles = useSheet(stylesSheet)
   const [exercises, setExercises] = useState<ExerciseRow[] | null>(null)
   const [search, setSearch] = useState("")
 
@@ -718,7 +722,7 @@ function LevelExercisePicker({ visible, type, title = "Pick a level", excludeIds
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
@@ -797,4 +801,4 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border,
   },
   levelPickRowText: { fontSize: 15, color: C.textPrimary },
-})
+}))

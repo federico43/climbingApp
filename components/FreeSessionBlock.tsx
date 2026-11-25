@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useNextBlockLabel } from "@/utils/blockNav"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
+import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 
 const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
@@ -154,10 +155,17 @@ export function FreeSessionBlock({ block, goToNextBlock, goToPreviousBlock, logA
           </View>
         )}
         <View style={hasRoute ? styles.timerFooter : styles.centerContent}>
-          <Text style={styles.timerLabel}>{hasLimit ? (over ? "time's up" : "remaining") : "elapsed"}</Text>
-          <Text style={[styles.timer, over && { color: C.red }, hasRoute && styles.timerCompact]}>
-            {hasLimit ? formatElapsed(remaining) : formatElapsed(elapsed)}
-          </Text>
+          {/* The standard timer ring (the 1 on 1 off look). No limit: it
+              counts up, one lap a minute. */}
+          <TimerRing
+            size={hasRoute ? 150 : 260}
+            fill={hasLimit ? ringFill(limitSec, remaining) : ((elapsed % 60) / 60) * 100}
+            color={timerColor(C, over ? "over" : "work")}
+            title={hasLimit ? (over ? "Time's up" : "Remaining") : "Elapsed"}
+            seconds={hasLimit ? remaining : elapsed}
+            text={formatElapsed(hasLimit ? remaining : elapsed)}
+            glow={!over}
+          />
           <Pressable style={styles.stopBtn} onPress={stop}>
             <Text style={styles.stopBtnText}>Stop</Text>
           </Pressable>

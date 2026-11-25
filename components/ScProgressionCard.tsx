@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import type { CoachExerciseView } from "@/utils/scCoach"
 import { Ionicons } from "@expo/vector-icons"
 import React from "react"
@@ -14,6 +14,8 @@ function shortDate(iso: string): string {
 // swapped to an easier exercise), then each recent session as
 // suggested → did → result.
 export function ScProgressionCard({ view }: { view: CoachExerciseView }) {
+  const C = useC()
+  const progStyles = useSheet(progStylesSheet)
   const warnings: { icon: React.ComponentProps<typeof Ionicons>["name"]; color: string; text: string }[] = []
   if (view.flags.deload) warnings.push({ icon: "trending-down", color: C.red, text: "Went down two sessions in a row — consider backing off. The athlete isn't told; the app keeps its normal suggestion." })
   if (view.flags.stalled) warnings.push({ icon: "pause-circle-outline", color: C.yellow, text: "Same load three sessions running — consider changing the exercise or the rep target." })
@@ -48,7 +50,7 @@ export function ScProgressionCard({ view }: { view: CoachExerciseView }) {
   )
 }
 
-const progStyles = StyleSheet.create({
+const progStylesSheet = paperSheet((C) => StyleSheet.create({
   card: { backgroundColor: C.surface, borderRadius: 16, padding: 16, gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   title: { fontSize: 12, fontWeight: "700", color: C.green, textTransform: "uppercase", letterSpacing: 0.6 },
   warning: { flexDirection: "row", gap: 10, alignItems: "flex-start", borderWidth: 1, borderRadius: 12, padding: 10 },
@@ -57,5 +59,5 @@ const progStyles = StyleSheet.create({
   rowHead: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   line: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   lineLabel: { fontWeight: "700", color: C.textMuted },
-})
+}))
 

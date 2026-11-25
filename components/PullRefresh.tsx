@@ -1,5 +1,5 @@
 import { freshReads } from "@/utils/readCache"
-import { C } from "@/utils/theme"
+import { useC } from "@/theme/paper/legacy"
 import { useCallback, useState } from "react"
 import { RefreshControl } from "react-native"
 
@@ -7,6 +7,7 @@ import { RefreshControl } from "react-native"
 // few-minute read cache (utils/readCache.ts), so someone else's change
 // (an athlete's workout, a coach's edit) shows right away.
 export function usePullRefresh(load: () => unknown) {
+  const C = useC()
   const [refreshing, setRefreshing] = useState(false)
   const onRefresh = useCallback(async () => {
     setRefreshing(true)

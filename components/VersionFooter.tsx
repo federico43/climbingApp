@@ -1,4 +1,4 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useSheet } from "@/theme/paper/legacy"
 import Constants from "expo-constants"
 import * as Updates from "expo-updates"
 import { useUpdates } from "expo-updates"
@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text } from "react-native"
 // "Version x.y.z · <status>" footer. The status reflects the EAS update state;
 // when an update is ready it's tappable to restart and apply.
 export function VersionFooter() {
+  const styles = useSheet(stylesSheet)
   const { isChecking, isDownloading, isUpdatePending, isUpdateAvailable } = useUpdates()
   const [restarting, setRestarting] = useState(false)
   const version = Constants.expoConfig?.version ?? "—"
@@ -34,8 +35,8 @@ export function VersionFooter() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C) => StyleSheet.create({
   version: { textAlign: "right", fontSize: 12, fontWeight: "700", color: C.textSecondary },
   status: { textAlign: "right", fontSize: 10, color: C.textMuted, marginTop: 1 },
   textReady: { color: C.green, fontWeight: "700" },
-})
+}))

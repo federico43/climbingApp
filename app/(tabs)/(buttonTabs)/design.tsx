@@ -1,4 +1,5 @@
-import { C } from "@/utils/theme"
+import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
+import { Melt, Mono, PosterHeadline } from "@/components/paper"
 import { ScalePressable } from "@/components/ScalePressable"
 import { ScreenEntry } from "@/components/ScreenEntry"
 import { ScreenGradient } from "@/components/ScreenGradient"
@@ -31,6 +32,9 @@ const TOOLS: Tool[] = [
 ]
 
 export default function DesignScreen() {
+  const C = useC()
+  const P = usePaperScope()
+  const styles = useSheet(stylesSheet)
   const router = useRouter()
   const { width } = useWindowDimensions()
   const isWide = width >= WIDE
@@ -121,6 +125,34 @@ export default function DesignScreen() {
       onRefresh={pullRefresh}
     />
   )
+  // The coach's tools: the top bar on a phone, the athlete header's top row
+  // on wide Paper layouts (design chat 2026-11-22).
+  const toolButtons = (
+    <View style={styles.tools}>
+      {TOOLS.map((t) => (
+        <ScalePressable
+          key={t.key}
+          style={styles.toolBtn}
+          onPress={() => router.push(t.route as any)}
+          accessibilityRole="button"
+          accessibilityLabel={t.label}
+        >
+          <Ionicons name={t.icon} size={18} color={P ? P.ink : C.green} />
+          {isWide && <Text style={styles.toolLabel}>{t.label}</Text>}
+        </ScalePressable>
+      ))}
+      {isWide && (
+        <Pressable style={styles.toolBtn} onPress={pullRefresh} accessibilityLabel="Refresh">
+          {refreshing ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={18} color={P ? P.ink : C.green} />}
+        </Pressable>
+      )}
+      <SettingsButton paper={!!P} />
+    </View>
+  )
+  // Wide Paper: no screen header — the roster has its own, the athlete's
+  // poster is the page headline.
+  const paperWide = !!P && isWide
+
   const detail = selected && (
     <AthleteDetail
       key={`${selected.$id}:${detailReloads}`}
@@ -131,6 +163,7 @@ export default function DesignScreen() {
       onBack={isWide ? undefined : () => setDetailOpen(false)}
       onChanged={refresh}
       onRefresh={() => { freshReads(); setDetailReloads((n) => n + 1); refresh() }}
+      toolbar={paperWide ? toolButtons : undefined}
     />
   )
 
@@ -138,23 +171,26 @@ export default function DesignScreen() {
     <ScreenGradient>
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <ScreenEntry>
-          {!phoneDetail && (
-            <View style={styles.topBar}>
-              <Text style={styles.title}>Coach</Text>
-              <View style={styles.tools}>
-                {TOOLS.map((t) => (
-                  <ScalePressable key={t.key} style={styles.toolBtn} onPress={() => router.push(t.route as any)}>
-                    <Ionicons name={t.icon} size={18} color={C.green} />
-                    {isWide && <Text style={styles.toolLabel}>{t.label}</Text>}
-                  </ScalePressable>
-                ))}
-                {isWide && (
-                  <Pressable style={styles.toolBtn} onPress={pullRefresh} accessibilityLabel="Refresh">
-                    {refreshing ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="refresh" size={18} color={C.green} />}
-                  </Pressable>
-                )}
-                <SettingsButton />
+          {!phoneDetail && !paperWide && (
+            <View style={styles.topWrap}>
+              {/* Melt behind the headline only: clipped to the header so the
+                  athlete list below sits on plain paper (design system §4). */}
+              {P && (
+                <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+                  <Melt top={40} height={200} />
+                </View>
+              )}
+              <View style={styles.topBar}>
+                {!P && <Text style={styles.title}>Coach</Text>}
+                {P && <View style={{ flex: 1 }} />}
+                {toolButtons}
               </View>
+              {P && (
+                <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+                  <Mono>{`Your athletes · ${roster.summaries.length}`}</Mono>
+                  <PosterHeadline size={64} style={{ marginTop: 6 }}>Coach</PosterHeadline>
+                </View>
+              )}
             </View>
           )}
 
@@ -167,10 +203,19 @@ export default function DesignScreen() {
             </Pressable>
           ) : isWide ? (
             <View style={styles.wide}>
-              <View style={[styles.rosterPane, { width: split ? 300 : 280 }]}>{rosterList}</View>
+              <View style={[styles.rosterPane, { width: split ? 300 : 280 }]}>
+                {paperWide && (
+                  <View style={styles.rosterHead}>
+                    <Text style={styles.rosterTitle}>Athletes</Text>
+                    <Mono>{`${roster.summaries.filter((a) => a.active).length} active`}</Mono>
+                  </View>
+                )}
+                {rosterList}
+              </View>
               <View style={styles.detailPane}>
                 {detail ?? (
                   <View style={styles.center}>
+                    {paperWide && <View style={styles.emptyTools}>{toolButtons}</View>}
                     <Ionicons name="people-outline" size={32} color={C.textMuted} />
                     <Text style={styles.centerText}>Pick an athlete to see their homework, plan and activity.</Text>
                   </View>
@@ -188,23 +233,31 @@ export default function DesignScreen() {
   )
 }
 
-const styles = StyleSheet.create({
+const stylesSheet = paperSheet((C, P) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
+  topWrap: {
+    paddingBottom: P ? 16 : 0,
+    borderBottomWidth: P ? 0 : 1, borderBottomColor: C.border,
+  },
   topBar: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: C.border,
   },
   title: { flex: 1, fontSize: 26, fontWeight: "800", color: C.textPrimary, letterSpacing: -0.5 },
   tools: { flexDirection: "row", alignItems: "center", gap: 8 },
   toolBtn: {
     flexDirection: "row", alignItems: "center", gap: 6, minWidth: 38, height: 38, justifyContent: "center",
     backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 10,
+    // Paper: the 40px outlined icon button.
+    ...(P && { minWidth: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: P.ink, backgroundColor: "transparent" }),
   },
   toolLabel: { fontSize: 13, fontWeight: "700", color: C.textPrimary },
   wide: { flex: 1, flexDirection: "row" },
   rosterPane: { borderRightWidth: 1, borderRightColor: C.border, paddingTop: 10 },
+  rosterHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
+  rosterTitle: { fontSize: 30, fontWeight: "800", color: C.textPrimary },
+  emptyTools: { position: "absolute", top: 8, right: 16 },
   detailPane: { flex: 1, minWidth: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   centerText: { fontSize: 14, color: C.textMuted, textAlign: "center" },
-})
+}))
