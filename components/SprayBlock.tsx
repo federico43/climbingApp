@@ -1,4 +1,4 @@
-import { BlockNotes } from "@/components/BlockNotes"
+import { BlockIntro } from "@/components/BlockIntro"
 import { applyRouteFilters, EMPTY_ROUTE_FILTERS, RouteFilterBar, type RouteFilters } from "@/components/RouteFilterBar"
 import { StepList } from "@/components/cardio/CardioVisuals"
 import CustomButton from "@/components/customButton"
@@ -444,27 +444,25 @@ export function SprayBlock({
   // ── 1. Intro ──────────────────────────────────────────────────────────────────
 
   if (phase === "intro") {
+    const locked = !!(block.lockRoute && block.routeId)
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title={title} onBack={goToPreviousBlock} poster />
-        <ScrollView contentContainerStyle={shared_styles.introContent}>
-          <StatsCard
-            kicker={`${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`}
-            items={[
-              ...(sprayShowsAttempts(block, settings) ? [{ value: String(settings.attempts), label: "attempts", color: C.textPrimary }] : []),
-              ...(timed ? [{ value: `${isTime ? settings.minutes : settings.timeCap}`, label: "min", color: C.green }] : []),
-              { value: restLabel(settings.rest), label: "rest", color: C.textSecondary },
-            ]}
-          />
-          {sprayShowsCoachNotes(block) && <BlockNotes text={block.description} />}
-          <StepList steps={sprayBlockSteps(block, settings)} />
-        </ScrollView>
-        <View style={shared_styles.footer}>
-          {block.lockRoute && block.routeId
-            ? <CustomButton title="Start" onPress={() => choose(block.routeId!)} />
-            : <CustomButton title="Choose sequence" onPress={openChooser} />}
-        </View>
-      </View>
+      <BlockIntro
+        title={title}
+        onBack={goToPreviousBlock}
+        facts={[
+          `${ROUTE_TYPE_LABEL[routeType] ?? "Spray wall"} sequences`,
+          sprayShowsAttempts(block, settings) && `${settings.attempts} attempts`,
+          timed && `${isTime ? settings.minutes : settings.timeCap} min`,
+          `${restLabel(settings.rest)} rest`,
+        ]}
+        note={sprayShowsCoachNotes(block) ? block.description : null}
+        startLabel={locked ? "Start" : "Choose sequence"}
+        startSub={`Spray wall${timed ? ` · ${isTime ? settings.minutes : settings.timeCap} min` : ""}`}
+        startIcon={locked ? "play" : "arrow-forward"}
+        onStart={() => (locked ? choose(block.routeId!) : openChooser())}
+      >
+        <StepList steps={sprayBlockSteps(block, settings)} />
+      </BlockIntro>
     )
   }
 

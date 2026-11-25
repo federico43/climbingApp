@@ -1,7 +1,7 @@
 // Paper Send · Mint components (docs/design-system.md §5).
 export { PaperBackground, PaperScreen, Grain, Melt, usePaperStatusBar } from "./Surface"
 export { PosterHeadline, posterSize, Mono, SectionHeader, SpecsRow, CardTitle, Body } from "./Type"
-export { PrimaryCTA, MintButton, GhostButton, IconButton, TextButton } from "./Buttons"
+export { PrimaryCTA, MintButton, GhostButton, IconButton, TextButton, StartBar } from "./Buttons"
 export { Card, CollapsibleBlockCard, hexAlpha } from "./Cards"
 export { IconCircle, ListRow, SettingsRow, SelectValue } from "./Rows"
 export { TextField, HeadlineInput, Stepper, PaperSwitch } from "./Inputs"
