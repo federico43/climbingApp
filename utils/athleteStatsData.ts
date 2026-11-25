@@ -1,4 +1,5 @@
 import type { SessionRow } from "@/services/BoulderGraphService"
+import { isTaskBlock } from "@/utils/sessionTasks"
 import type { Attempt } from "@/hooks/WorkoutHook"
 import type {
   DensitySessionStat, PeriodStats, ProjectSessionStat, ScExerciseStats, ScPatternStats, StatFocus, StatMetric, StatPoint, WarmupSessionStat,
@@ -208,7 +209,9 @@ export function densitySessions(
 // a session logged after the fact (one placeholder attempt, no grade) never
 // counts as a send.
 export function projectSessions(sessions: ParsedSession[], from: string, to: string): ProjectSessionStat[] {
-  return blockLogs(sessions, from, to, (b) => b?.type === "project_bouldering").map((log) => {
+  // Next-session task blocks run as project blocks but aren't the plan's
+  // project work (a tries-mode one has no time limit to count).
+  return blockLogs(sessions, from, to, (b) => b?.type === "project_bouldering" && !isTaskBlock(b)).map((log) => {
     const settings = normalizeProjectBlock(log.block)
     const real = log.attempts.filter((a) => !(a.coached && !a.routeId))
     const times = real.map((a) => a.timestamp).filter((t) => typeof t === "number")

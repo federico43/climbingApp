@@ -1,3 +1,4 @@
+import { TasksCardWithEditor } from "@/components/SessionTasks"
 import { ConsumeAuth } from "@/components/auth-context"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { introAlreadyPlayed, LaunchExtras } from "@/components/LaunchExtras"
@@ -146,7 +147,10 @@ function HomeContent() {
               </View>
             )}
             {workout ? (
-              <LatestWorkoutCard workout={workout} scPart={scPart} />
+              <>
+                <LatestWorkoutCard workout={workout} scPart={scPart} />
+                <TasksCardWithEditor style={{ marginTop: 16 }} />
+              </>
             ) : (
               <Animated.View entering={FadeInDown.duration(420)}>
                 <Card style={{ alignItems: "center", paddingVertical: 36, gap: 10 }}>

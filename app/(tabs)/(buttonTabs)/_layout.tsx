@@ -2,11 +2,13 @@ import { useAuth } from "@/components/auth-context"
 import { HomeworkNotificationRouter } from "@/components/HomeworkNotificationRouter"
 import { ClassNotificationRouter } from "@/components/schedule/ClassNotificationRouter"
 import { PackageLock } from "@/components/schedule/PackageLock"
+import { SessionTasksIntro } from "@/components/SessionTasksIntro"
 import { WorkOutState } from "@/components/workOutState"
 import { PaperScope } from "@/theme/paper/legacy"
 import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
+import { SessionTasksProvider } from "@/contexts/SessionTasksContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
 import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
@@ -51,6 +53,7 @@ function TabsWithPlan() {
   const hideBar = hasPlan && role !== "coach"
 
   return (
+    <SessionTasksProvider>
     <WorkoutProvider>
       {/* Paper Mint everywhere (theme/paper/legacy.tsx): every old screen,
           sheet and modal under the tabs follows the Paper light/dark theme. */}
@@ -133,10 +136,12 @@ function TabsWithPlan() {
         <Tabs.Screen name="workout-library" options={{ href: null }} />
         <Tabs.Screen name="schedule" options={{ href: null }} />
         <Tabs.Screen name="push-log" options={{ href: null }} />
-      </Tabs>
+        </Tabs>
 
       {/* Workout modal lives at the layout level so it overlays everything */}
       <WorkoutModalHost />
+      {/* Next-session tasks intro: one instance for Plan, Home and the summary */}
+      <SessionTasksIntro />
       {/* Tapped homework notifications → the homework card on home */}
       <HomeworkNotificationRouter hasPlan={hasPlan} />
       {/* Class pushes: reload the calendar, and open it when tapped */}
@@ -144,6 +149,7 @@ function TabsWithPlan() {
       <PackageLock />
       </PaperScope>
     </WorkoutProvider>
+    </SessionTasksProvider>
   )
 }
 

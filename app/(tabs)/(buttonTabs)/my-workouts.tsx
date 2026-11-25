@@ -1,4 +1,5 @@
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
+import { tasksAllowedFor } from "@/utils/sessionTasks"
 import { AthleteCustomizeWorkout } from "@/components/AthleteCustomizeWorkout"
 import { ConsumeAuth } from "@/components/auth-context"
 import { ScalePressable } from "@/components/ScalePressable"
@@ -139,7 +140,7 @@ export default function MyWorkoutsScreen() {
                     <ScalePressable
                       key={t.$id}
                       style={styles.card}
-                      onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t))}
+                      onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t), { tasks: tasksAllowedFor(t) })}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.cardTitle}>{t.name}</Text>
@@ -176,7 +177,7 @@ export default function MyWorkoutsScreen() {
                     <View key={t.$id} style={styles.card}>
                       <ScalePressable
                         style={{ flex: 1 }}
-                        onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t))}
+                        onPress={() => workoutCtx.openWorkout(blocks, t.name, sessionLinkFor(t), { tasks: tasksAllowedFor(t) })}
                       >
                         <Text style={styles.cardTitle}>{t.name}</Text>
                         <Text style={styles.cardSub}>{label} · Tap to start</Text>
