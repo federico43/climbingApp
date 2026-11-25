@@ -58,7 +58,7 @@ import { getExerciseLibrary } from "@/utils/exerciseLibraryCache"
 import { chainIds, chainIndexOf, findLibraryRow, resolveExerciseChain, type ChainMember } from "@/utils/levelChain"
 import { exerciseDraftFromLibrary, inheritFocus } from "@/utils/scPlanBuilder"
 import { findBlockRuns } from "@/utils/blockHistory"
-import { EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN } from "@/utils/routeExploration"
+import { EXPLORATION_BREATHING_MIN, EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, EXPLORATION_WARMUP_MIN } from "@/utils/routeExploration"
 import { routesVisibleTo, suggestNextSequence, type SequenceSuggestion } from "@/utils/progression/sequence"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -172,6 +172,8 @@ interface RouteExplorationBlock extends BaseBlock {
   description: string
   timeLimit?: number    // part 1, minutes
   projectTime?: number  // part 2, minutes
+  warmupTime?: number   // warm-up before part 1, minutes (default 5)
+  breathingTime?: number // breathing before part 1, minutes (default 2)
   // Colour part 1 starts at (the athlete's flash, blue at least). Unset →
   // the athlete's flash level at workout time.
   startColour?: string
@@ -277,7 +279,7 @@ export function makeDefaultBlock(type: BlockType, name: string = ""): Block {
     case "intervals":
       return { id: generateId(), type, blockName: name, description: "", series: 6, workTime: 30, restTime: 60 }
     case "route_exploration":
-      return { id: generateId(), type, blockName: name, description: EXPLORATION_DEFAULT_DESCRIPTION, timeLimit: EXPLORATION_PART_MIN, projectTime: EXPLORATION_PART_MIN }
+      return { id: generateId(), type, blockName: name, description: EXPLORATION_DEFAULT_DESCRIPTION, timeLimit: EXPLORATION_PART_MIN, projectTime: EXPLORATION_PART_MIN, warmupTime: EXPLORATION_WARMUP_MIN, breathingTime: EXPLORATION_BREATHING_MIN }
   }
 }
 
@@ -2651,8 +2653,10 @@ function RouteExplorationFields({ block, onUpdate }: { block: RouteExplorationBl
   const rows = useContext(SheetRowsContext)
   return (
     <>
+      <StepperField label={rows ? "Warm-up" : "Warm-up (min)"} unit="′" value={block.warmupTime ?? EXPLORATION_WARMUP_MIN} onChange={(n) => update({ warmupTime: n })} min={1} step={1} />
+      <StepperField label={rows ? "Breathing" : "Breathing (min)"} unit="′" value={block.breathingTime ?? EXPLORATION_BREATHING_MIN} onChange={(n) => update({ breathingTime: n })} min={1} step={1} />
       <StepperField label={rows ? "2 · Project" : "Part 2 · project (min)"} unit="′" value={block.projectTime ?? EXPLORATION_PART_MIN} onChange={(n) => update({ projectTime: n })} min={5} step={5} />
-      {rows && <SheetTotalRow minutes={(block.timeLimit || EXPLORATION_PART_MIN) + (block.projectTime ?? EXPLORATION_PART_MIN)} />}
+      {rows && <SheetTotalRow minutes={(block.warmupTime ?? EXPLORATION_WARMUP_MIN) + (block.breathingTime ?? EXPLORATION_BREATHING_MIN) + (block.timeLimit || EXPLORATION_PART_MIN) + (block.projectTime ?? EXPLORATION_PART_MIN)} />}
       <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What should athletes know before starting?" />
     </>
   )
