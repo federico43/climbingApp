@@ -1,5 +1,5 @@
 import { AdaptationPicker, BLOCK_LABELS, Block, BlockSheetFields, SCLibraryContext } from "@/components/workoutBlocks"
-import { Melt, Mono, PosterHeadline, posterSize, StartBar, hexAlpha } from "@/components/paper"
+import { Mono, PosterHeadline, posterSize, StartBar, TitleGlow, hexAlpha } from "@/components/paper"
 import { usePaper } from "@/theme/paper/PaperThemeProvider"
 import { font } from "@/theme/paper/tokens"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL, resolveAdaptation } from "@/utils/adaptations"
@@ -176,6 +176,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
   const [renaming, setRenaming] = useState(false)
   const [editingNote, setEditingNote] = useState(false)
   const [trainsOpen, setTrainsOpen] = useState(false)
+  const [glowH, setGlowH] = useState(0)
   // S&C "Add exercise" opens the builder's exercise library, which sits
   // under this sheet: close the sheet first so the library shows.
   const library = useContext(SCLibraryContext)
@@ -193,11 +194,15 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
         <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close the block" />
         {block && (
           <View style={[styles.sheet, { backgroundColor: t.paper, marginTop: insets.top + 64, paddingBottom: insets.bottom + 8 }]}>
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden", borderTopLeftRadius: 28, borderTopRightRadius: 28 }]}>
-              <Melt top={30} height={230} />
-            </View>
             <View style={[styles.handle, { backgroundColor: hexAlpha(t.ink, 0.3) }]} />
             <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* The glow stays behind the title (up to the settings card),
+                  the cards below sit on plain paper — as in the mock-up. */}
+              {glowH > 0 && (
+                <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0 }}>
+                  <TitleGlow width={width} height={glowH + 24} variant="sheet" />
+                </View>
+              )}
               <View style={styles.sheetTop}>
                 <Mono color={t.ink} style={{ flex: 1 }}>{blockOrdinal(index, total)}</Mono>
                 {block.type !== "strength_conditioning" && (
@@ -240,7 +245,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
                 </>
               )}
 
-              <View style={[styles.fieldsCard, { backgroundColor: t.card, borderColor: t.cardBorder }]}>
+              <View style={[styles.fieldsCard, { backgroundColor: t.card, borderColor: t.cardBorder }]} onLayout={(e) => setGlowH(e.nativeEvent.layout.y)}>
                 <SCLibraryContext.Provider value={sheetLibrary}>
                   <BlockSheetFields block={block} onUpdate={onUpdate} />
                 </SCLibraryContext.Provider>

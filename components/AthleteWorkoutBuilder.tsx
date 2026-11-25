@@ -1,6 +1,6 @@
 import { useHoldUpdates } from "@/utils/updateHold"
 import { paperSheet, useC, usePaperScope, useSheet } from "@/theme/paper/legacy"
-import { GhostButton, HeadlineInput, Melt, MintButton, Mono, PaperBackground, PaperSwitch, StartBar } from "@/components/paper"
+import { GhostButton, HeadlineInput, Melt, MintButton, Mono, PaperBackground, PaperSwitch, StartBar, TitleGlow } from "@/components/paper"
 import { BlockSheet, SpineBlockRow, SpineWarmup } from "@/components/coach/BuilderSpine"
 import { blockMode, workoutMinutes, type BlockMode } from "@/utils/builderSpine"
 import { font } from "@/theme/paper/tokens"
@@ -163,6 +163,8 @@ export function AthleteWorkoutBuilder({
   // Phone (Paper): the block open in its sheet.
   const [sheetId, setSheetId] = useState<string | null>(null)
   const spine = !!P && !wide
+  // Phone header: where the chips end (the title glow's height).
+  const [titleH, setTitleH] = useState(0)
 
   // Right pane (block picker/library) width — user-resizable by dragging the
   // divider. Kept in a ref too so the pan handlers (created once) always read
@@ -450,14 +452,25 @@ export function AthleteWorkoutBuilder({
   // Name, chips and the athlete's context — scrolls with the blocks.
   const paperHead = P && (
     <View style={s.pHead}>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
-        <Melt top={10} height={wide ? 240 : 190} />
-      </View>
+      {spine ? (
+        // Phone (mock-ups 2026-11-25): a soft glow behind the name only —
+        // blue-violet top right, mint under it — ending at the chips, so
+        // the training days, warm-up and blocks sit on plain paper.
+        titleH > 0 && (
+          <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0 }}>
+            <TitleGlow width={width} height={titleH} variant="header" />
+          </View>
+        )
+      ) : (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+          <Melt top={10} height={wide ? 240 : 190} />
+        </View>
+      )}
       <Mono color={P.ink} size={11} numberOfLines={1}>
         {[athleteName ?? "Library", focusLabel ? `${focusLabel} focus` : editing ? "editing" : plan ? "from the plan" : "new workout"].join(" · ")}
       </Mono>
       <HeadlineInput value={name} onChangeText={setName} placeholder="Workout name" style={{ marginTop: 10 }} />
-      <View style={s.pChips}>
+      <View style={s.pChips} onLayout={(e) => setTitleH(e.nativeEvent.layout.y + e.nativeEvent.layout.height + 12)}>
         {chips.map((c) => <View key={c} style={[s.pChip, spine && s.pChipSpine]}><Text style={[s.pChipText, spine && s.pChipTextSpine]}>{c}</Text></View>)}
         {flash && (
           // The flash grade's own colour is data (a route colour), not UI.
