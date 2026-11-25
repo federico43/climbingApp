@@ -1188,6 +1188,26 @@ function StandaloneBlockFields({ block, onUpdate, hideName }: { block: Block; on
   )
 }
 
+// Phone builder block sheet (mock-ups 2026-11-25): the block's own settings
+// — numbers, time limit and type fields — without the name, the adaptation
+// and the description, which the sheet shows on its own (rename, "Trains"
+// pill, note for the athlete).
+export function BlockSheetFields({ block, onUpdate }: { block: Block; onUpdate: (b: Block) => void }) {
+  const styles = useSheet(stylesSheet)
+  return (
+    <NoteOutsideContext.Provider value={true}>
+      <View style={[styles.standaloneFields, { paddingHorizontal: 0, paddingBottom: 0 }]}>
+        <TimeLimitToggle block={block} onUpdate={onUpdate} />
+        <BlockNumerics block={block} onUpdate={onUpdate} standalone />
+        <TypeSpecificFields block={block} onUpdate={onUpdate} />
+      </View>
+    </NoteOutsideContext.Provider>
+  )
+}
+
+/** The adaptation chips, for the block sheet's "Trains" pill. */
+export { AdaptationPicker }
+
 // ─── Field Components ─────────────────────────────────────────────────────────
 
 // "general"/"test" are fallback-only buckets (used when a block has no real
@@ -1340,6 +1360,16 @@ function FieldLabel({ label }: { label: string }) {
   const styles = useSheet(stylesSheet)
   const compact = useContext(CompactFieldsContext)
   return <Text style={[styles.fieldLabel, compact && styles.fieldLabelCompact]}>{label}</Text>
+}
+
+// The phone builder's block sheet shows the description as its own "Note
+// for {athlete}" section, so the fields inside it leave it out.
+const NoteOutsideContext = createContext(false)
+
+function DescField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const outside = useContext(NoteOutsideContext)
+  if (outside) return null
+  return (<><FieldLabel label="Description" /><FieldInput value={value} onChange={onChange} multiline placeholder={placeholder} /></>)
 }
 
 // Collapsed description preview: ~3 lines of 14px text.
@@ -1668,7 +1698,7 @@ function ProjectBoulderingFields({ block, onUpdate }: { block: ProjectBouldering
           <Text style={styles.boulderSlotClear}>Let the athlete pick</Text>
         </Pressable>
       )}
-      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} />
       <View style={styles.timeLimitToggleRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.timeLimitToggleLabel}>Ask for review clips</Text>
@@ -1769,7 +1799,7 @@ function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdat
           )}
         </View>
       )}
-      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} />
       <Text style={styles.fieldLabel}>
         Boulder colours{" "}
         <Text style={styles.fieldLabelHint}>· blank = one below the athlete&apos;s flash level</Text>
@@ -1788,6 +1818,7 @@ function FourByFourFields({ block, onUpdate }: { block: FourByFourBlock; onUpdat
 function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate: (b: Block) => void }) {
   const C = useC()
   const styles = useSheet(stylesSheet)
+  const noteOutside = useContext(NoteOutsideContext)
   function update(fields: Partial<IntervalsBlock>) { onUpdate({ ...block, ...fields }) }
 
   // When authoring for a specific athlete, show what the progression rule
@@ -1852,11 +1883,13 @@ function IntervalsFields({ block, onUpdate }: { block: IntervalsBlock; onUpdate:
       </View>
       <FieldLabel label="Description" />
       <Text style={styles.generatedDesc}>{intervalsDescription(block)}</Text>
-      <Text style={styles.fieldLabel}>
-        Notes{" "}
-        <Text style={styles.fieldLabelHint}>· optional, shown under the description</Text>
-      </Text>
-      <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      {!noteOutside && (<>
+        <Text style={styles.fieldLabel}>
+          Notes{" "}
+          <Text style={styles.fieldLabelHint}>· optional, shown under the description</Text>
+        </Text>
+        <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      </>)}
     </>
   )
 }
@@ -1905,7 +1938,7 @@ function ConstraintWarmupFields({ block, onUpdate }: { block: ConstraintWarmupBl
 
   return (
     <>
-      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} />
       <FieldLabel label="Grade" /><GradePicker value={block.level} onChange={(v) => update({ level: v })} />
 
       <Text style={styles.fieldLabel}>
@@ -2482,7 +2515,7 @@ function StrengthConditioningFields({ block, onUpdate }: { block: StrengthCondit
 
   return (
     <View onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
-      <FieldLabel label="Description" /><FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} />
       <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Exercises</Text>
       {movementCollisions.length > 0 && (
         <View style={styles.movementWarning}>
@@ -2521,8 +2554,7 @@ function ExplorationSessionFields({ block, onUpdate }: { block: ExplorationSessi
   function update(fields: Partial<ExplorationSessionBlock>) { onUpdate({ ...block, ...fields }) }
   return (
     <>
-      <FieldLabel label="Description" />
-      <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline placeholder="What should athletes know before starting?" />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What should athletes know before starting?" />
     </>
   )
 }
@@ -2534,8 +2566,7 @@ function RouteExplorationFields({ block, onUpdate }: { block: RouteExplorationBl
   return (
     <>
       <StepperField label="Part 2 · project (min)" value={block.projectTime ?? EXPLORATION_PART_MIN} onChange={(n) => update({ projectTime: n })} min={5} step={5} />
-      <FieldLabel label="Description" />
-      <FieldInput value={block.description} onChange={(v) => update({ description: v })} multiline placeholder="What should athletes know before starting?" />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What should athletes know before starting?" />
     </>
   )
 }
@@ -2878,13 +2909,7 @@ function SequenceFields({ block, onUpdate }: { block: SequenceBlock; onUpdate: (
           )}
         </View>
       )}
-      <FieldLabel label="Description" />
-      <FieldInput
-        value={block.description}
-        onChange={(v) => update({ description: v })}
-        multiline
-        placeholder="What should athletes know before starting?"
-      />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What should athletes know before starting?" />
       <View style={styles.switchRow}>
         <Text style={[styles.fieldLabel, { flex: 1, marginRight: 12 }]}>
           Let athlete choose the sequence{" "}
@@ -3017,13 +3042,7 @@ function FreeSessionFields({ block, onUpdate }: { block: FreeSessionBlock; onUpd
 
   return (
     <>
-      <FieldLabel label="Description" />
-      <FieldInput
-        value={block.description}
-        onChange={(v) => update({ description: v })}
-        placeholder="What will athletes do during this session?"
-        multiline
-      />
+      <DescField value={block.description} onChange={(v) => update({ description: v })} placeholder="What will athletes do during this session?" />
 
       <Text style={styles.fieldLabel}>
         Note prompt <Text style={styles.fieldLabelHint}>· optional</Text>
