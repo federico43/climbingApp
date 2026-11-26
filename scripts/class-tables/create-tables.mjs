@@ -47,6 +47,12 @@ const TABLES = [
     columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
     indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
   },
+  {
+    // Virtual (online) classes the coach logs: each uses a package session.
+    id: "virtual_classes", name: "Virtual classes",
+    columns: [str("athleteId", 36, req), str("date", 10, req)],
+    indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }, { key: "idx_date", columns: ["date"] }],
+  },
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).
 // The Edge Lifts max (kg) and its log, JSON newest first (utils/edgeWarmup.ts).
