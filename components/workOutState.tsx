@@ -338,7 +338,7 @@ export function WorkOutState({
                 ? (ds === 0 ? `${dm}m` : `${dm}m ${ds}s`)
                 : `${ds}s`
               // Project bouldering: grade · attempts · sent + fall reasons under the row.
-              const projectAttempts = block.type === "project_bouldering" && !block.coached
+              const projectAttempts = block.type === "project_bouldering"
                 ? attempts.filter((a) => a.blockIndex === originalIndex)
                 : null
               const homework = homeworkBlocks.has(originalIndex)
