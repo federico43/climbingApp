@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "215602788113",
+    "project_id": "climbingzone-5a421",
+    "storage_bucket": "climbingzone-5a421.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:215602788113:android:789e8b139260d924f6feb0",
+        "android_client_info": {
+          "package_name": "com.fdqg18.testApp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCoBXVMO-HqGaI-t5h14M-JOJNFNyq-y9o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
