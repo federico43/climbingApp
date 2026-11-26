@@ -5,7 +5,6 @@ import { font } from "@/theme/paper/tokens"
 import { ADAPTATION_COLOR, ADAPTATION_LABEL, resolveAdaptation } from "@/utils/adaptations"
 import { blockMinutes, blockOrdinal, noteExcerpt, type BlockMode } from "@/utils/builderSpine"
 import { noteParts } from "@/utils/blockNotes"
-import { isSprayBlock } from "@/utils/sprayBlocks"
 import { Ionicons } from "@expo/vector-icons"
 import React, { useContext, useMemo, useState } from "react"
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native"
@@ -14,8 +13,8 @@ import type { EdgeInsets } from "react-native-safe-area-context"
 // Phone workout builder (mock-ups 2026-11-25, "Mobile builder · spine +
 // expanded block"): the blocks hang off a vertical spine of numbered nodes,
 // each one a short card (category, minutes, name, the note's first line, a
-// Coached / Homework chip). A tap opens the block's sheet: rename, the
-// adaptation it trains, its settings, Coached / Own / Homework and the note
+// Homework chip). A tap opens the block's sheet: rename, the
+// adaptation it trains, its settings, Own / Homework and the note
 // for the athlete, closed with the Done bar.
 
 const SPINE_W = 34
@@ -132,12 +131,6 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
             <Ionicons name="chevron-forward" size={18} color={t.ink} />
           </View>
           {!!note && <Text style={[styles.cardNote, { color: t.textMuted }]} numberOfLines={1}>{note}</Text>}
-          {mode === "coached" && (
-            <View style={[styles.chip, { backgroundColor: hexAlpha(t.mint, t.mode === "dark" ? 0.18 : 0.35), borderColor: "transparent" }]}>
-              <Ionicons name="people-outline" size={11} color={t.mintText} />
-              <Mono color={t.mintText} size={9.5}>Coached</Mono>
-            </View>
-          )}
           {homework && (
             <View style={[styles.chip, { borderColor: t.pink }]}>
               <Ionicons name="home-outline" size={11} color={t.pink} />
@@ -151,7 +144,6 @@ export function SpineBlockRow({ block, index, total, mode, dueLabel, isActive, o
 }
 
 const MODES: { key: BlockMode; label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
-  { key: "coached", label: "Coached", icon: "people-outline" },
   { key: "own", label: "Own", icon: "person-outline" },
   { key: "homework", label: "Homework", icon: "home-outline" },
 ]
@@ -162,7 +154,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
   index: number
   total: number
   mode: BlockMode
-  /** null = library workout: no Coached / Own / Homework. */
+  /** null = library workout: no Own / Homework. */
   athleteName: string | null
   canHomework: boolean
   insets: EdgeInsets
@@ -185,7 +177,7 @@ export function BlockSheet({ block, index, total, mode, athleteName, canHomework
   const close = () => { setRenaming(false); setEditingNote(false); setTrainsOpen(false); onClose() }
   const title = block ? blockTitle(block) : ""
   const adaptation = block ? resolveAdaptation(block) : "general"
-  const modes = MODES.filter((m) => (m.key !== "homework" || canHomework) && (m.key !== "coached" || (block && !isSprayBlock(block)) || mode === "coached"))
+  const modes = MODES.filter((m) => (m.key !== "homework" || canHomework))
   const posterPx = Math.min(58, posterSize(title, 58, width))
 
   return (
