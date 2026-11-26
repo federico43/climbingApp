@@ -43,8 +43,8 @@ export const EXPLORATION_DEFAULT_DESCRIPTION = [
   "Try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
   "*No trying single moves*: every go starts from the start holds.",
-  "*Don't read the routes before the timer starts.*",
   "Sent every {colour}? Move up one colour and try every route of that colour, until time runs out.",
+  "*Don't read the routes before the timer starts.*",
   "Tried everything and there's still time? Tap *Finish early*.",
 ].join("\n")
 
