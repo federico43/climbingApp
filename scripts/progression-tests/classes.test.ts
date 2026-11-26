@@ -526,4 +526,42 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.equal(third.low, 0)
 }
 
+// ── Correcting a week gone by, and virtual classes ──────────────────────────
+{
+  const today = new Date().toISOString().slice(0, 10)
+  const lastWeek = addDays(mondayOfYmd(today), -7)
+  t("users").set("gil", { $id: "gil", role: "athlete", username: "gil", defaultClasses: [] })
+  t("users").set("hal", { $id: "hal", role: "athlete", username: "hal", defaultClasses: [] })
+  // Added before last week's classes (they count from when it was added).
+  const gilPkg = await ctx.db.create("packages", { athleteId: "gil", total: 3, startsOn: lastWeek, useBy: addDays(lastWeek, 40) })
+  t("packages").get(gilPkg.$id)!.$createdAt = `${lastWeek}T00:00:00.000Z`
+  const full = await ctx.db.create("classes", { weekStart: lastWeek, day: 1, start: 9, roster: ["x1", "x2", "x3", "x4"] })
+  const ahead = await ctx.db.create("classes", { weekStart: addDays(lastWeek, 14), day: 1, start: 9, roster: ["gil"] })
+  pushes.length = 0
+  // Came to a full class that wasn't in the planner: no spot limit, no push
+  assert.equal((await call("classRoster", "coach", { classId: full.$id, athleteId: "gil", add: true })).status, 200)
+  assert.ok(t("classes").get(full.$id)!.roster.includes("gil"))
+  assert.equal(pushes.length, 0)
+  // A class that happened but was never planned
+  assert.equal((await call("classPast", "gil", { weekStart: lastWeek, day: 3, start: 9, athleteId: "gil" })).status, 403)
+  assert.equal((await call("classPast", "coach", { weekStart: addDays(lastWeek, 14), day: 3, start: 9, athleteId: "gil" })).status, 409) // still ahead
+  assert.equal((await call("classPast", "coach", { weekStart: lastWeek, day: 1, start: 9, athleteId: "hal" })).status, 409) // a class is there
+  const made = await call("classPast", "coach", { weekStart: lastWeek, day: 3, start: 9, athleteId: "gil" })
+  assert.equal(made.status, 200, made.json.error)
+  assert.deepEqual(made.json.class.roster, ["gil"])
+  // Virtual: not ahead of today, coaches only
+  assert.equal((await call("classVirtual", "gil", { athleteId: "gil", date: today })).status, 403)
+  assert.equal((await call("classVirtual", "coach", { athleteId: "gil", date: addDays(today, 1) })).status, 409)
+  // 3 sessions: two classes + one virtual uses it up → out of the class ahead
+  const v = await call("classVirtual", "coach", { athleteId: "gil", date: today })
+  assert.equal(v.status, 200, v.json.error)
+  assert.deepEqual(t("classes").get(ahead.$id)!.roster, [], "used up by the virtual class")
+  // Taking it back and marking a class absent gives the sessions back
+  assert.equal((await call("classVirtual", "coach", { removeId: v.json.virtual.$id })).status, 200)
+  assert.ok(!t("virtual_classes").has(v.json.virtual.$id))
+  assert.equal((await call("classRoster", "coach", { classId: made.json.class.$id, athleteId: "gil", add: false })).status, 200)
+  assert.deepEqual(t("classes").get(made.json.class.$id)!.roster, [])
+  assert.equal(pushes.length, 0)
+}
+
 console.log("classes: all tests passed")

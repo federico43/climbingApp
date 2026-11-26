@@ -20,6 +20,9 @@ const PACKAGES = "packages"
 const USERS = "users"
 const PLANS = "training_plans"
 const PROTOCOLS = "protocol"
+// Virtual (online) classes the coach logs per athlete: { athleteId, date }.
+// Each one uses a session of the athlete's package, like a class at the gym.
+const VIRTUAL = "virtual_classes"
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const KINDS = ["move", "propose", "extra", "skip"]
@@ -239,11 +242,13 @@ async function join(ctx, userId, body) {
 // ── Coach: put an athlete in a class, or take them out ──────────────────────
 // body: { classId, athleteId, add: boolean }. The coach's call, so only the
 // spots are checked (not the rest day). The athlete is told.
+// A class that already happened can be corrected too (who really came):
+// no spot limit and no push, and the package count follows.
 async function roster(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   const cls = await ctx.db.get(CLASSES, String(body.classId ?? ""))
   if (!cls) return fail(404, "No such class.")
-  if (classMs(cls) <= now.ms) return fail(409, "That class already started.")
+  const past = classMs(cls) <= now.ms
   const athleteId = String(body.athleteId ?? "")
   const athlete = await ctx.getUserRow(athleteId)
   const list = cls.roster ?? []
@@ -253,7 +258,7 @@ async function roster(ctx, userId, body) {
     if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
     if (athlete.active === false) return fail(409, `${name(athlete)} is deactivated.`)
     if (list.includes(athlete.$id)) return fail(409, `${name(athlete)} is already in that class.`)
-    if (list.length >= CAPACITY) return fail(409, "That class is full.")
+    if (!past && list.length >= CAPACITY) return fail(409, "That class is full.")
   } else if (!list.includes(athleteId)) {
     return ok({ class: cls })
   }
@@ -261,6 +266,11 @@ async function roster(ctx, userId, body) {
   // booked itself (shows up as a drop-in) or a user row that is gone.
   const saved = await setRoster(ctx, cls, add ? [...list, athleteId] : list.filter((u) => u !== athleteId))
   if (!saved) return fail(502, "Could not save.")
+  if (past) {
+    // Adding a class they came to can use their package up.
+    if (add) await dropIfLocked(ctx, athleteId, now)
+    return ok({ class: saved })
+  }
   if (!add) {
     // Their pending changes from this class no longer make sense.
     for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.equal("weekStart", cls.weekStart)])) {
@@ -274,6 +284,51 @@ async function roster(ctx, userId, body) {
       { type: "class_roster", classId: cls.$id })
   }
   return ok({ class: saved })
+}
+
+// ── Coach: a class that happened but wasn't in the planner ───────────────────
+// body: { weekStart, day, start, athleteId }. Only for a time already gone
+// by; the rules for planning (classes a day, blocked times) don't apply to
+// what already happened. More athletes go in with classRoster.
+async function pastClass(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  const weekStart = String(body.weekStart ?? "")
+  const day = Number(body.day)
+  const start = Number(body.start)
+  if (!DAY_RE.test(weekStart) || mondayOfYmd(weekStart) !== weekStart) return fail(400, "Bad week.")
+  const problem = classProblem([], [], day, start)
+  if (problem) return fail(400, PROBLEM_TEXT[problem])
+  if (classMs({ weekStart, day, start }) > now.ms) return fail(409, "That time is still ahead. Plan it in the week instead.")
+  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
+  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const existing = (await weekClasses(ctx, weekStart)).find((c) => c.day === day && c.start === start)
+  if (existing) return fail(409, `There's already a class at ${classLabel(existing)}. Add ${name(athlete)} to it.`)
+  const made = await ctx.db.create(CLASSES, { weekStart, day, start, roster: [athlete.$id] })
+  if (!made) return fail(502, "Could not save.")
+  await dropIfLocked(ctx, athlete.$id, now)
+  return ok({ class: made })
+}
+
+// ── Coach: virtual classes ───────────────────────────────────────────────────
+// body: { athleteId, date } logs one (today or a day gone by), or
+// { removeId } takes one back. No push: the coach logs what happened.
+async function virtualClass(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  if (body.removeId != null) {
+    const row = await ctx.db.get(VIRTUAL, String(body.removeId))
+    if (!row) return ok({ removed: false })
+    await ctx.db.remove(VIRTUAL, row.$id)
+    return ok({ removed: true })
+  }
+  const date = String(body.date ?? "")
+  if (!DAY_RE.test(date)) return fail(400, "Bad date.")
+  if (date > now.ymd) return fail(409, "Log a virtual class once it's happened.")
+  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
+  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const row = await ctx.db.create(VIRTUAL, { athleteId: athlete.$id, date })
+  if (!row) return fail(502, "Could not save.")
+  await dropIfLocked(ctx, athlete.$id, now)
+  return ok({ virtual: row })
 }
 
 // ── Coach: recurring classes (series) ───────────────────────────────────────
@@ -648,7 +703,10 @@ async function athletePackage(ctx, athleteId, now) {
   }).length
   const skips = (await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("weekStart", from)]))
     .filter((r) => r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
+  // Virtual classes on the package's days, up to today.
+  const virtual = (await ctx.db.list(VIRTUAL, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("date", pkg.startsOn)]))
+    .filter((v) => v.date <= now.ymd).length
+  const left = sessionsLeft(pkg.total, done + virtual, skips)
   return { left, locked: packageLocked(pkg, left, now.ymd) }
 }
 
@@ -667,6 +725,8 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPause": return coach ? setPauses(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classPast": return coach ? pastClass(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classVirtual": return coach ? virtualClass(ctx, userId, body) : fail(403, "Coaches only.")
     default: return null
   }
 }
