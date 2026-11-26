@@ -9,10 +9,10 @@ import { SettingsButton } from "@/components/SettingsButton"
 import { CalendarHeader, DetailRow, Legend, OpenSpot, PersonRow, longDay, monthName } from "@/components/schedule/CalendarBits"
 import {
   BlockedTime, CAPACITY, CHANGE_DEADLINE_H, GymClass, LOW_SESSIONS, CLASS_HOURS, CLASSES_PER_DAY, GRID_END, GRID_START, MAX_BIG_DAYS, MAX_CLASSES_PER_DAY, WEEK_DAYS,
-  dateOf, formatTime, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
+  dateOf, formatTime, mondayOf, slotKey, startFromOffset, weekDates, weekdayOf, ymd,
 } from "@/utils/classSchedule"
 import {
-  addAthletePackage, addNextClass, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, reloadClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
+  addAthletePackage, addNextClass, addPastClass, logVirtualClass, removeVirtualClass, showPastWeek, setClassRoster, setSeriesSlot, answerRequest, refreshClassSchedule, reloadClassSchedule, blockDay, blockTime, moveBlock, moveNextClass, classStarted, resizeBlock, pendingRequests, planProblem, planWeek, publishWeek, removeNextClass, unblock,
   unblockDay, useClassSchedule, type ClassRequest, type PlanProblem, type Slot,
 } from "@/utils/classScheduleStore"
 import { K as C, KF, WIDE } from "@/components/schedule/calTheme"
@@ -41,7 +41,12 @@ type SheetState =
   | { kind: "packages" }
   | { kind: "package"; athleteId: string }
   | { kind: "addAthlete"; classId: string }
+  | { kind: "pastClass"; day: number; start: number }   // log a class that happened, pick who came
+  | { kind: "virtual"; athleteId: string }
   | null
+
+// How many weeks back the coach can go to correct who came.
+const MAX_BACK = 8
 
 // Coach tab: this week as it stands (who's in each class, read only), and
 // next week to plan (2 classes a day, 3 on up to 2 days), block the times you
@@ -66,13 +71,24 @@ function ClassesScreenBody() {
   const st = useClassSchedule()
   useFocusEffect(useCallback(() => { refreshClassSchedule() }, []))
   // Next week from Saturday, when the coach is reminded to plan it.
-  const [week, setWeek] = useState<"this" | "next">(() => (weekdayOf(new Date()) >= 5 ? "next" : "this"))
-  useEffect(() => { planWeek(week) }, [week])
+  const [week, setWeek] = useState<"this" | "next" | "past">(() => (weekdayOf(new Date()) >= 5 ? "next" : "this"))
+  useEffect(() => { if (week !== "past") planWeek(week) }, [week])
+  // A week gone by: only who came can change (no planning, no publishing).
+  const isPast = week === "past"
+  const goWeek = (w: "this" | "next") => { setWeek(w); setSheet(null); showPastWeek(0) }
+  const goPast = (back: number) => { setWeek("past"); setSheet(null); showPastWeek(back) }
   // Coaches can always plan both weeks (classes already started stay put).
-  const live = week === "this" && !st.thisOpen
-  const weekStart = live ? st.thisWeek.weekStart : st.nextWeekStart
-  const classes = live ? st.thisWeek.classes : st.nextClasses
-  const blocks = live ? st.thisWeek.blocks : st.blocks
+  const live = isPast || (week === "this" && !st.thisOpen)
+  const pastWeekStart = useMemo(() => {
+    const d = mondayOf(new Date())
+    d.setDate(d.getDate() - 7 * Math.max(1, st.pastBack))
+    return ymd(d)
+  }, [st.pastBack])
+  const weekStart = isPast ? pastWeekStart : live ? st.thisWeek.weekStart : st.nextWeekStart
+  const classes = isPast ? st.past?.classes ?? [] : live ? st.thisWeek.classes : st.nextClasses
+  const blocks = isPast ? st.past?.blocks ?? [] : live ? st.thisWeek.blocks : st.blocks
+  // A class that already happened: the coach fixes who came (no pushes).
+  const happened = (c: Slot) => isPast || classStarted(c)
   const dates = useMemo(() => weekDates(dateOf(weekStart || "2000-01-03")), [weekStart])
   const [sheet, setSheet] = useState<SheetState>(null)
   // A new package: sessions and weeks to use them.
@@ -153,7 +169,10 @@ function ClassesScreenBody() {
   }
 
   const slot = sheet?.kind === "slot" ? sheet : null
-  const slotProblem = slot ? planProblem(st.nextClasses, slot.day, slot.start) : null
+  const slotProblem = slot && !isPast ? planProblem(st.nextClasses, slot.day, slot.start) : null
+  // A time gone by: log a class that happened there but wasn't planned.
+  const slotGone = !!slot && (isPast || slotProblem === "past")
+  const pastSlot = sheet?.kind === "pastClass" ? sheet : null
   // A class already sits in (part of) this time: remove it before blocking.
   const slotHasClass = !!slot && st.nextClasses.some((c) => c.day === slot.day && c.start < slot.start + CLASS_HOURS && slot.start < c.start + CLASS_HOURS)
   const dayS = sheet?.kind === "day" ? sheet : null
@@ -178,12 +197,21 @@ function ClassesScreenBody() {
   const addTo = sheet?.kind === "addAthlete" ? classes.find((c) => c.id === sheet.classId) ?? null : null
   const [athleteQuery, setAthleteQuery] = useState("")
 
-  const openPackage = (athleteId: string) => {
-    if (!sheet) return setSheet({ kind: "package", athleteId })
+  const openPackage = (athleteId: string) => openSheet({ kind: "package", athleteId })
+  const openSheet = (next: NonNullable<SheetState>) => {
+    if (!sheet) return setSheet(next)
     setSheet(null)
     // iOS won't present a sheet while the previous one is still closing.
-    setTimeout(() => setSheet({ kind: "package", athleteId }), 400)
+    setTimeout(() => setSheet(next), 400)
   }
+  // Virtual class sheet: the day it happened, as days before today (0 = today).
+  const [virtualBack, setVirtualBack] = useState(0)
+  const virtualDate = (back: number) => { const d = new Date(); d.setDate(d.getDate() - back); return d }
+  const dayText = (d: Date) => {
+    const back = Math.round((dateOf(ymd(new Date())).getTime() - dateOf(ymd(d)).getTime()) / 86400000)
+    return back === 0 ? "Today" : back === 1 ? "Yesterday" : `${WEEK_DAYS[weekdayOf(d)]} ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+  }
+  const virtualOf = sheet?.kind === "virtual" ? sheet.athleteId : null
   // Searchable list of every athlete's sessions left (sheet, or side panel).
   const packagesList = (
       <>
@@ -216,6 +244,13 @@ function ClassesScreenBody() {
                 <Text style={s.reqWho}>{a.name}</Text>
                 <Text style={[s.reqText, low && { color: C.red }]}>{leftText(a.id)}</Text>
               </View>
+              <Pressable
+                style={[s.reqBtn, s.reqNo]}
+                accessibilityLabel={`Virtual classes for ${a.name}`}
+                onPress={() => { setVirtualBack(0); openSheet({ kind: "virtual", athleteId: a.id }) }}
+              >
+                <Text style={s.reqNoText}>Virtual</Text>
+              </Pressable>
               <Pressable
                 style={[s.reqBtn, s.reqNo]}
                 onPress={() => openPackage(a.id)}
@@ -268,7 +303,10 @@ function ClassesScreenBody() {
           title={monthName(dates)}
           week={week}
           canNext
-          onWeek={(w) => { setWeek(w); setSheet(null) }}
+          onWeek={goWeek}
+          back={st.pastBack}
+          maxBack={MAX_BACK}
+          onPast={goPast}
           right={<><TourSpot name="c-info"><IntroButton id="coach-classes-tour" /></TourSpot><SettingsButton /></>}
           summary={[
             `${classes.length} classes`,
@@ -307,7 +345,7 @@ function ClassesScreenBody() {
           dimPast={week === "this"}
           offDays={DAYS.filter(dayBlocked)}
           onPressDay={live ? undefined : (day) => setSheet({ kind: "day", day })}
-          onPressTime={live ? undefined : (day, y) => {
+          onPressTime={isPast ? (day, y) => setSheet({ kind: "slot", day, start: startFromOffset(y, HOUR_HEIGHT) }) : live ? undefined : (day, y) => {
             if (dayBlocked(day)) return setSheet({ kind: "day", day })
             setSheet({ kind: "slot", day, start: startFromOffset(y, HOUR_HEIGHT) })
           }}
@@ -355,7 +393,20 @@ function ClassesScreenBody() {
         title={slot ? `${dayName(slot.day)} · ${formatTime(slot.start)} – ${formatTime(slot.start + CLASS_HOURS)}` : ""}
         onClose={() => setSheet(null)}
       >
-        {slot && (
+        {slot && slotGone && (
+          <SheetOption
+            title="Log a class that happened"
+            detail="Someone came at this time but it wasn't in the planner"
+            disabled={classes.some((c) => c.day === slot.day && c.start === slot.start)}
+            onPress={() => {
+              setSheet(null)
+              setAthleteQuery("")
+              // iOS won't present a sheet while the previous one is still closing.
+              setTimeout(() => setSheet({ kind: "pastClass", day: slot.day, start: slot.start }), 400)
+            }}
+          />
+        )}
+        {slot && !isPast && (
           <>
             <SheetOption
               title="Add a class"
@@ -400,7 +451,7 @@ function ClassesScreenBody() {
           <>
             <DetailRow icon="time-outline" text={`${formatTime(cls.start)} – ${formatTime(cls.start + CLASS_HOURS)}`} />
             {/* Recurring series: this time pre-fills every new week. */}
-            <View style={s.seriesRow}>
+            {!isPast && <View style={s.seriesRow}>
               <Ionicons name="repeat" size={20} color={inSeries(cls) ? C.green : C.textSecondary} style={{ width: 24 }} />
               <View style={{ flex: 1 }}>
                 <Text style={s.reqWho}>Repeats every week</Text>
@@ -417,7 +468,7 @@ function ClassesScreenBody() {
                 trackColor={{ true: C.greenDeep, false: C.surfaceHigh }}
                 thumbColor={C.textPrimary}
               />
-            </View>
+            </View>}
             <DetailRow
               icon="people-outline"
               text={`${cls.roster.length} of ${CAPACITY} climbers`}
@@ -427,7 +478,9 @@ function ClassesScreenBody() {
               {cls.roster.map((n, i) => {
                 const id = cls.ids?.[i]
                 const fixed = !!id && !!st.athletes.find((a) => a.id === id)?.defaultClasses.includes(slotKey(cls))
-                const canEdit = !!id && !classStarted(cls)
+                const canEdit = !!id && !classStarted(cls) && !isPast
+                // Gone by: × marks them absent (off the class, session back).
+                const canFix = !!id && happened(cls)
                 return (
                   <PersonRow
                     key={`${n}${i}`}
@@ -447,15 +500,28 @@ function ClassesScreenBody() {
                       >
                         <Ionicons name="close-circle" size={22} color={C.textMuted} />
                       </Pressable>
+                    ) : canFix ? (
+                      <Pressable
+                        hitSlop={10}
+                        accessibilityLabel={`Mark ${n} absent`}
+                        disabled={st.busy}
+                        onPress={() => Alert.alert(`${n} didn't come?`, `${n} comes off this class and gets the session back. No notification goes out.`, [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Mark absent", style: "destructive", onPress: () => { setClassRoster(cls.id, id!, false) } },
+                        ])}
+                      >
+                        <Ionicons name="close-circle" size={22} color={C.textMuted} />
+                      </Pressable>
                     ) : undefined}
                   />
                 )
               })}
-              {Array.from({ length: Math.max(0, CAPACITY - cls.roster.length) }, (_, i) => (
+              {/* Gone by, there's always room for someone who came (even when it showed full). */}
+              {Array.from({ length: Math.max(happened(cls) && savedClass(cls) ? 1 : 0, CAPACITY - cls.roster.length) }, (_, i) => (
                 <OpenSpot
                   key={`o${i}`}
-                  label={savedClass(cls) && !classStarted(cls) ? "Add athlete" : "Free spot"}
-                  onPress={savedClass(cls) && !classStarted(cls) ? () => {
+                  label={!savedClass(cls) ? "Free spot" : happened(cls) ? "Add someone who came" : "Add athlete"}
+                  onPress={savedClass(cls) && (happened(cls) || !classStarted(cls)) ? () => {
                     setSheet(null)
                     setAthleteQuery("")
                     // iOS won't present a sheet while the previous one is still closing.
@@ -473,15 +539,18 @@ function ClassesScreenBody() {
             {clsRequests.map(requestRow)}
           </View>
         )}
-        {!live && cls && classStarted(cls) && <Text style={s.hint}>This class has already started.</Text>}
+        {cls && happened(cls) && <Text style={s.hint}>Already happened: fix who came. Their sessions left update, and no notifications go out.</Text>}
         {!live && cls && !classStarted(cls) && <SheetButton kind="red" label="Remove class" onPress={() => { if (cls) removeNextClass(cls.id); setSheet(null) }} />}
         {!live && cls && !classStarted(cls) && cls.roster.length > 0 && <Text style={s.hint}>Its athletes get a notification.</Text>}
       </Sheet>
 
       <Sheet
-        visible={!!addTo}
-        title={addTo ? `Add to ${longDay(dates, addTo.day)}` : ""}
-        subtitle={addTo ? `${formatTime(addTo.start)} – ${formatTime(addTo.start + CLASS_HOURS)} · ${CAPACITY - addTo.roster.length} free spot${CAPACITY - addTo.roster.length === 1 ? "" : "s"}` : ""}
+        visible={!!addTo || !!pastSlot}
+        title={addTo ? `Add to ${longDay(dates, addTo.day)}` : pastSlot ? `Who came ${longDay(dates, pastSlot.day)}?` : ""}
+        subtitle={
+          addTo ? `${formatTime(addTo.start)} – ${formatTime(addTo.start + CLASS_HOURS)} · ${happened(addTo) ? "already happened" : `${CAPACITY - addTo.roster.length} free spot${CAPACITY - addTo.roster.length === 1 ? "" : "s"}`}`
+          : pastSlot ? `${formatTime(pastSlot.start)} – ${formatTime(pastSlot.start + CLASS_HOURS)} · not in the planner. Add more after.` : ""
+        }
         onClose={() => setSheet(null)}
       >
         <View style={s.search}>
@@ -497,17 +566,24 @@ function ClassesScreenBody() {
             clearButtonMode="while-editing"
           />
         </View>
-        {addTo && st.athletes
+        {(addTo || pastSlot) && st.athletes
           .filter((a) => a.name.toLowerCase().includes(athleteQuery.trim().toLowerCase()))
           .map((a) => {
-            const inIt = !!addTo.ids?.includes(a.id)
-            const near = !inIt && classes.some((c) => c.id !== addTo.id && c.ids?.includes(a.id) && adjacentOrSame(c.day, addTo.day))
+            const inIt = !!addTo?.ids?.includes(a.id)
+            // Gone by, it's a record of who came: no spot limit, no rest-day check.
+            const gone = !addTo || happened(addTo)
+            const near = !!addTo && !gone && !inIt && classes.some((c) => c.id !== addTo.id && c.ids?.includes(a.id) && adjacentOrSame(c.day, addTo.day))
             return (
               <Pressable
                 key={a.id}
-                disabled={inIt || st.busy || addTo.roster.length >= CAPACITY}
+                disabled={inIt || st.busy || (!!addTo && !gone && addTo.roster.length >= CAPACITY)}
                 onPress={async () => {
-                  const go = async () => { if (await setClassRoster(addTo.id, a.id, true)) setSheet(null) }
+                  const go = async () => {
+                    const saved = addTo
+                      ? await setClassRoster(addTo.id, a.id, true)
+                      : await addPastClass(weekStart, pastSlot!.day, pastSlot!.start, a.id)
+                    if (saved) setSheet(null)
+                  }
                   if (!near) return go()
                   Alert.alert(`${a.name} has a class next to this day`, "Add them anyway?", [
                     { text: "Cancel", style: "cancel" },
@@ -556,6 +632,59 @@ function ClassesScreenBody() {
         onClose={() => setSheet(null)}
       >
         {packagesList}
+      </Sheet>
+
+      <Sheet
+        visible={!!virtualOf}
+        title={virtualOf ? `Virtual classes · ${st.names[virtualOf] ?? "athlete"}` : ""}
+        subtitle={virtualOf ? `${leftText(virtualOf)}. Each virtual class uses a session.` : ""}
+        onClose={() => setSheet(null)}
+      >
+        {virtualOf && (
+          <>
+            <View style={s.stepRow}>
+              <Text style={s.reqWho}>Day</Text>
+              <View style={s.stepper}>
+                <Pressable style={s.step} accessibilityLabel="Day before" onPress={() => setVirtualBack(Math.min(60, virtualBack + 1))}><Text style={s.reqNoText}>−</Text></Pressable>
+                <Text style={s.stepValue}>{dayText(virtualDate(virtualBack))}</Text>
+                <Pressable style={[s.step, virtualBack === 0 && { opacity: 0.4 }]} disabled={virtualBack === 0} accessibilityLabel="Day after" onPress={() => setVirtualBack(Math.max(0, virtualBack - 1))}><Text style={s.reqNoText}>+</Text></Pressable>
+              </View>
+            </View>
+            {!leftOf(virtualOf) && <Text style={s.names}>No package yet, so this won&apos;t count against one.</Text>}
+            <SheetButton
+              label={st.busy ? "Saving…" : "Log virtual class"}
+              disabled={st.busy}
+              onPress={() => { logVirtualClass(virtualOf, ymd(virtualDate(virtualBack))) }}
+            />
+            <View>
+              <Text style={s.reqTitle}>In this package</Text>
+              {st.virtual
+                .filter((v) => v.athleteId === virtualOf)
+                .sort((x, y) => (x.date < y.date ? 1 : -1))
+                .map((v) => (
+                  <PersonRow
+                    key={v.$id}
+                    name={dayText(dateOf(v.date))}
+                    sub="Virtual class"
+                    right={(
+                      <Pressable
+                        hitSlop={10}
+                        accessibilityLabel="Remove this virtual class"
+                        disabled={st.busy}
+                        onPress={() => Alert.alert("Remove this virtual class?", "The session goes back to the package.", [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Remove", style: "destructive", onPress: () => { removeVirtualClass(v.$id) } },
+                        ])}
+                      >
+                        <Ionicons name="close-circle" size={22} color={C.textMuted} />
+                      </Pressable>
+                    )}
+                  />
+                ))}
+              {!st.virtual.some((v) => v.athleteId === virtualOf) && <Text style={s.names}>None logged yet.</Text>}
+            </View>
+          </>
+        )}
       </Sheet>
 
       <Sheet

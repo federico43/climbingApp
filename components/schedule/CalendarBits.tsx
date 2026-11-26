@@ -27,17 +27,28 @@ export function monthName(dates: Date[]): string {
 
 // Google-Calendar-style header: back, poster month, Today, ‹ › weeks, extras.
 // Only this week and next week exist (the coach plans one week ahead).
+// With `onPast` (the coach), ‹ goes on back from this week to weeks gone
+// by, up to `maxBack` weeks; `back` is how many weeks back is shown.
 export function CalendarHeader({
-  title, week, canNext, onWeek, onBack, right, summary,
+  title, week, canNext, onWeek, onBack, right, summary, back = 0, maxBack = 0, onPast,
 }: {
   title: string
-  week: "this" | "next"
+  week: "this" | "next" | "past"
   canNext: boolean
   onWeek: (w: "this" | "next") => void
   onBack?: () => void
   right?: React.ReactNode
   summary?: string
+  back?: number
+  maxBack?: number
+  onPast?: (back: number) => void
 }) {
+  const past = week === "past"
+  const canPrev = week === "next" || (!!onPast && (past ? back < maxBack : maxBack > 0))
+  const prev = () => (week === "next" ? onWeek("this") : onPast?.(past ? back + 1 : 1))
+  const next = () => (past ? (back > 1 ? onPast?.(back - 1) : onWeek("this")) : onWeek("next"))
+  const canGoNext = past || (week === "this" && canNext)
+  const word = past ? (back === 1 ? "Last week" : `${back} weeks ago`) : week === "this" ? "This week" : "Next week"
   return (
     <View style={s.head}>
       <View style={s.headRow}>
@@ -60,13 +71,13 @@ export function CalendarHeader({
         <Pressable style={[s.todayBtn, week === "this" && { opacity: 0.5 }]} disabled={week === "this"} onPress={() => onWeek("this")}>
           <Text style={s.todayText}>Today</Text>
         </Pressable>
-        <Pressable hitSlop={8} disabled={week === "this"} onPress={() => onWeek("this")} accessibilityLabel="This week">
-          <Ionicons name="chevron-back" size={20} color={week === "this" ? C.textMuted : C.textPrimary} />
+        <Pressable hitSlop={8} disabled={!canPrev} onPress={prev} accessibilityLabel="Week before">
+          <Ionicons name="chevron-back" size={20} color={canPrev ? C.textPrimary : C.textMuted} />
         </Pressable>
-        <Pressable hitSlop={8} disabled={week === "next" || !canNext} onPress={() => onWeek("next")} accessibilityLabel="Next week">
-          <Ionicons name="chevron-forward" size={20} color={week === "next" || !canNext ? C.textMuted : C.textPrimary} />
+        <Pressable hitSlop={8} disabled={!canGoNext} onPress={next} accessibilityLabel="Week after">
+          <Ionicons name="chevron-forward" size={20} color={canGoNext ? C.textPrimary : C.textMuted} />
         </Pressable>
-        <Text style={s.weekWord}>{week === "this" ? "This week" : "Next week"}{!canNext && week === "this" ? " · next not out yet" : ""}</Text>
+        <Text style={s.weekWord}>{word}{!canNext && week === "this" ? " · next not out yet" : ""}</Text>
       </View>
       {summary ? <Text style={s.summary}>{summary}</Text> : null}
     </View>
