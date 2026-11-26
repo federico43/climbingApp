@@ -61,7 +61,6 @@ export function WorkOutState({
   onMinimize,
   autoStart = false,
   workout,
-  onSetCoached,
   onSwapMain,
 }: {
   protocol: any[]
@@ -72,9 +71,6 @@ export function WorkOutState({
   onMinimize?: () => void
   autoStart?: boolean
   workout: ReturnType<typeof useWorkout>
-  // Switches the current block between guided and coached (§12a). Omitted →
-  // no switch.
-  onSetCoached?: (index: number, coached: boolean) => void
   // ⇄ the current main block to the other one of its type (plan workouts,
   // utils/mainSwap.ts). Omitted → no switch.
   onSwapMain?: (index: number) => Promise<void>
@@ -425,7 +421,6 @@ export function WorkOutState({
     )
   }
 
-  const coached = !!currentBlock?.coached
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={[styles.progressBar, { paddingTop: insets.top + 8 }]}>
@@ -466,32 +461,18 @@ export function WorkOutState({
         </View>
         <ProgressBar progress={(currentBlockIndex + 1) / Math.max(1, totalBlocks)} />
       </View>
-      {/* Coach is here / On my own and ⇄ main block — only before anything's logged on the block. */}
+      {/* ⇄ main block — only before anything's logged on the block. */}
       <View style={styles.blockSwitches}>
-        {onSetCoached && currentBlock && nothingLogged && !isSprayBlock(currentBlock) && !taskBlock && (
-          <Pressable
-            style={[styles.coachSwitch, coached && styles.coachSwitchOn]}
-            onPress={() => onSetCoached(currentBlockIndex, !coached)}
-            hitSlop={6}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: coached }}
-          >
-            <Ionicons name={coached ? "person" : "person-outline"} size={13} color={coached ? t.onMint : t.ink} />
-            <Text style={[styles.coachSwitchText, coached && { color: t.onMint }]}>
-              {coached ? "Coach is here · switch to on my own" : "Coach is here?"}
-            </Text>
-          </Pressable>
-        )}
         {mainSwap && (
-          <Pressable style={styles.coachSwitch} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
+          <Pressable style={styles.switchPill} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
             <Ionicons name="swap-horizontal" size={13} color={t.ink} />
-            <Text style={styles.coachSwitchText}>
+            <Text style={styles.switchPillText}>
               {swapping ? "Switching…" : `Switch to ${mainSwap.to.name}`}
             </Text>
           </Pressable>
         )}
       </View>
-      <BlockEntry key={`${currentBlockIndex}-${currentBlock?.blockName ?? ""}-${currentBlock?.coached ? "c" : "g"}`}>
+      <BlockEntry key={`${currentBlockIndex}-${currentBlock?.blockName ?? ""}`}>
         <BlockTimerContext.Provider value={blockTimer}>
           <RestPauseContext.Provider value={restPause}>
           <LastBlockContext.Provider value={isLastBlock}>
@@ -580,14 +561,13 @@ const makeStyles = (t: PaperTheme) => StyleSheet.create({
     borderRadius: 17, paddingHorizontal: 11, borderWidth: 1.5, borderColor: t.mintDeep,
   },
   blockSwitches: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: space.gutter },
-  coachSwitch: {
+  switchPill: {
     flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
     marginTop: 4, marginBottom: 2, height: 32,
     paddingHorizontal: 12, borderRadius: 16,
     borderWidth: 1.5, borderColor: t.ghostBorder,
   },
-  coachSwitchOn: { backgroundColor: t.mint, borderColor: t.mode === "dark" ? t.mint : t.ink },
-  coachSwitchText: { fontFamily: font.bold, fontSize: 12.5, color: t.ink },
+  switchPillText: { fontFamily: font.bold, fontSize: 12.5, color: t.ink },
   menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
   menuSheet: {
     backgroundColor: t.paper, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card,

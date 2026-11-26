@@ -103,8 +103,7 @@ interface BaseBlock {
   // library row's own data (see withoutLibraryRef).
   libraryBlockId?: string
   // Run by the coach in person, not the app (docs/training-plan-implementation.md
-  // §12): set by the coach in the builder or by the athlete mid-workout
-  // ("Coach is here"). The workout shows it as a title + Done (sequence
+  // §12): set by the coach in the builder. The workout shows it as a title + Done (sequence
   // blocks: + the coach's sequences); progression skips it (except
   // sequences — utils/blockHistory.ts).
   coached?: boolean

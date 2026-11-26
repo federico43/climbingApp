@@ -41,9 +41,6 @@ interface WorkoutContextValue {
   // `opts.tasks`: add a block per next-session task after the warm-up
   // (utils/sessionTasks.ts — tasksAllowedFor decides which workouts).
   openWorkout: (protocol: any[], name: string, link?: SessionLink, opts?: { tasks?: boolean }) => void
-  // "Coach is here" / "On my own" mid-workout — this session's copy of the
-  // block only, never the saved workout (docs/training-plan-implementation.md §12a).
-  setBlockCoached: (index: number, coached: boolean) => void
   // A task block's "Keep it" / "Close it" (docs/session-tasks.md) — this
   // session's copy; the task leaves the list once the workout is saved.
   setTaskClosed: (index: number, closed: boolean) => void
@@ -248,10 +245,6 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setWorkoutMinimized(false)
   }, [currentTasks, isIntroSeen, role])
 
-  const setBlockCoached = useCallback((index: number, coached: boolean) => {
-    setProtocol((p) => p.map((b, i) => (i === index ? { ...b, coached: coached || undefined } : b)))
-  }, [])
-
   const setTaskClosed = useCallback((index: number, closed: boolean) => {
     setProtocol((p) => p.map((b, i) => (i === index && b?.focusTask ? { ...b, focusTask: { ...b.focusTask, closed: closed || undefined } } : b)))
   }, [])
@@ -296,7 +289,6 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     workoutMinimized,
     modalVisible,
     openWorkout,
-    setBlockCoached,
     setTaskClosed,
     setIntroTask,
     swapMainBlock,

@@ -8,8 +8,7 @@ import type { RouteType } from "@/utils/sequenceVariations"
 // like Project bouldering (coach 2026-11-10): instructions → choose a
 // sequence (add a new one, or one of the suggested ones — sequences of the
 // block's type they've already logged, fewest sends first) → work on it
-// (Top / Fell, rest timer) until the time or the attempts run out. No
-// "Coach is here?" switch on them.
+// (Top / Fell, rest timer) until the time or the attempts run out.
 // Pure: no fetching or UI (components/SprayBlock.tsx is the screen).
 
 // How a spray block ends (coach 2026-11-10): "time" — a countdown from the

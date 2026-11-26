@@ -12,7 +12,7 @@ type IconName = React.ComponentProps<typeof Ionicons>["name"]
 // the block name as a huge poster, the melt filling the screen under it, a
 // mono meta line ("4 MIN · 6 ROUNDS · NOSE IN · MOUTH OUT") and the ink Start
 // bar at the bottom. The workout's own header (Block 01 / 03, ⋯, close,
-// progress, "Coach is here?") sits above it, inside the safe area.
+// progress) sits above it, inside the safe area.
 //
 // A short coach note rides on the meta line; a longer one keeps its notes
 // card, which scrolls between the poster and the meta line with any
