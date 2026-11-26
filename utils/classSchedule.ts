@@ -239,12 +239,14 @@ export const packageLocked = (pkg: { useBy: string } | null, left: number, today
 
 // Sessions left in `pkg` on `now`, from the athlete's classes and requests
 // since the package's week (same count as athletePackage on the server):
-// classes ended since the package was added, and skips made after it.
+// classes ended since the package was added, skips made after it, and
+// virtual classes logged on the package's days up to today.
 export function packageUsage(
   pkg: { total: number; startsOn: string; useBy: string; $createdAt?: string },
   classes: { weekStart: string; day: number; start: number }[],
   requests: { kind: string; status: string; $createdAt?: string }[],
   now: Date,
+  virtual: { date: string }[] = [],
 ): { total: number; left: number; useBy: string; locked: boolean } {
   const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
   const done = classes.filter((c) => {
@@ -254,7 +256,8 @@ export function packageUsage(
   }).length
   const skips = requests.filter((r) =>
     r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
+  const online = virtual.filter((v) => v.date >= pkg.startsOn && v.date <= ymd(now)).length
+  const left = sessionsLeft(pkg.total, done + online, skips)
   return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, ymd(now)) }
 }
 

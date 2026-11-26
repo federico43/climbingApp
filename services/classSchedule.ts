@@ -13,9 +13,11 @@ const CLASSES_TABLE = "classes"
 const WEEKS_TABLE = "class_weeks"
 const REQUESTS_TABLE = "class_requests"
 const PACKAGES_TABLE = "packages"
+const VIRTUAL_TABLE = "virtual_classes"
 
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
 export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[]; active?: boolean }
+export interface VirtualClass { $id: string; athleteId: string; date: string }
 export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string }
 
 const toClass = (r: any): GymClass => ({ id: r.$id, day: r.day, start: r.start, roster: r.roster ?? [] })
@@ -46,22 +48,35 @@ export async function loadPackages(athleteId?: string): Promise<ClassPackage[]> 
   return listAllRows<ClassPackage>(PACKAGES_TABLE, athleteId ? [Query.equal("athleteId", athleteId)] : [])
 }
 
-// The athlete's classes and skips since `weekStart`, to count sessions used.
-export async function loadHistory(athleteId: string, weekStart: string): Promise<{ classes: (GymClass & { weekStart: string })[]; requests: (ClassRequestRow & { $createdAt?: string })[] }> {
-  const [classes, requests] = await Promise.all([
-    listAllRows<any>(CLASSES_TABLE, [Query.contains("roster", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
-    listAllRows<ClassRequestRow & { $createdAt?: string }>(REQUESTS_TABLE, [Query.equal("athleteId", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
-  ])
-  return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests }
+// Virtual classes from `date` on (one athlete's, or everyone's for the
+// coach). Before the table exists (scripts/class-tables/create-tables.mjs)
+// there are none, rather than the whole calendar failing to load.
+async function loadVirtual(date: string, athleteId?: string): Promise<VirtualClass[]> {
+  const q = [Query.greaterThanEqual("date", date)]
+  if (athleteId) q.push(Query.equal("athleteId", athleteId))
+  try { return await listAllRows<VirtualClass>(VIRTUAL_TABLE, q) } catch { return [] }
 }
 
-// Every class and request since `weekStart` (coach: sessions left for all athletes).
-export async function loadAllHistory(weekStart: string): Promise<{ classes: (GymClass & { weekStart: string })[]; requests: (ClassRequestRow & { $createdAt?: string })[] }> {
-  const [classes, requests] = await Promise.all([
+type History = { classes: (GymClass & { weekStart: string })[]; requests: (ClassRequestRow & { $createdAt?: string })[]; virtual: VirtualClass[] }
+
+// The athlete's classes, skips and virtual classes since `weekStart`, to count sessions used.
+export async function loadHistory(athleteId: string, weekStart: string): Promise<History> {
+  const [classes, requests, virtual] = await Promise.all([
+    listAllRows<any>(CLASSES_TABLE, [Query.contains("roster", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
+    listAllRows<ClassRequestRow & { $createdAt?: string }>(REQUESTS_TABLE, [Query.equal("athleteId", athleteId), Query.greaterThanEqual("weekStart", weekStart)]),
+    loadVirtual(weekStart, athleteId),
+  ])
+  return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests, virtual }
+}
+
+// Every class, skip and virtual class since `weekStart` (coach: sessions left for all athletes).
+export async function loadAllHistory(weekStart: string): Promise<History> {
+  const [classes, requests, virtual] = await Promise.all([
     listAllRows<any>(CLASSES_TABLE, [Query.greaterThanEqual("weekStart", weekStart)]),
     listAllRows<ClassRequestRow & { $createdAt?: string }>(REQUESTS_TABLE, [Query.equal("kind", "skip"), Query.greaterThanEqual("weekStart", weekStart)]),
+    loadVirtual(weekStart),
   ])
-  return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests }
+  return { classes: classes.map((r) => ({ ...toClass(r), weekStart: r.weekStart })), requests, virtual }
 }
 
 async function call(action: string, body: Record<string, any>): Promise<any> {
@@ -99,6 +114,12 @@ export const setRoster = (classId: string, athleteId: string, add: boolean) => c
 export const saveDefaults = (slots: string[]) => call("classDefaults", { slots })
 export const publishWeek = (weekStart: string, classes: { id?: string; day: number; start: number }[], blocks: BlockedTime[]) =>
   call("classPublish", { weekStart, classes, blocks })
+// Coach: a class that happened but wasn't in the planner (a time gone by).
+export const addPastClass = (weekStart: string, day: number, start: number, athleteId: string) =>
+  call("classPast", { weekStart, day, start, athleteId })
+// Coach: log a virtual class on `date` (uses a package session), or take one back.
+export const logVirtual = (athleteId: string, date: string) => call("classVirtual", { athleteId, date })
+export const removeVirtual = (id: string) => call("classVirtual", { removeId: id })
 export const addPackage = (athleteId: string, total: number, startsOn: string, useBy: string) =>
   call("classPackage", { athleteId, total, startsOn, useBy })
 // The plan's whole list of pauses (utils/planPauses.ts); the server moves the
