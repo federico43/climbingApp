@@ -9,13 +9,13 @@ import type { Attempt } from "@/hooks/WorkoutHook"
 import { getSessions, getUsers } from "@/services/BoulderGraphService"
 import { shared_stylesSheet, topBar_stylesSheet, TopBar } from "@/utils/BlockStyles"
 import { useNextBlockLabel } from "@/utils/blockNav"
-import { BoulderLevelOptions, colourLabel } from "@/utils/boulderColours"
+import { BoulderLevelOptions, colourIndex, colourLabel } from "@/utils/boulderColours"
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   BREATH_IN_MS, BREATH_OUT_MS, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
-  EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
-  explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
-  notSentColours, routePoints, summarizeExploration, wallLabel, WALLS, warmupColours, type ExplorationSummary,
+  EXPLORATION_HOW_IT_WORKS, EXPLORATION_INTRO_NOTES, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
+  explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration,
+  routePoints, summarizeExploration, wallLabel, WALLS, warmupColours, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerBar } from "@/components/IntervalVisuals"
@@ -28,20 +28,24 @@ import React, { useEffect, useRef, useState } from "react"
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 
 // Route exploration (utils/routeExploration.ts), laid out like the Density
-// test (ExplorationSessionBlock). Part 1 Flash: pick wall, colour and go,
-// then "+ Log route"; "Tried all" moves up a colour (all sent) or on to
-// part 2. Part 2 Project: a timer on the routes that didn't go, then "what
-// did you realise you did wrong". Routes live in the logged attempts, so a
-// resumed workout picks up where it was.
+// test (ExplorationSessionBlock). Part 1 Explore: pick colour, wall and go,
+// then "+ Log route"; the athlete moves up a colour on their own, and
+// "Finish early" ends the part. Right after it (review, then "what did you
+// realise you did wrong"), Part 2 Project: a timer on the routes that
+// didn't go. Routes live in the logged attempts, so a resumed workout picks
+// up where it was.
+// Each screen shows only the instructions for its own step (audit
+// 2026-11-26): the intro the four parts, Part 1's coach notes on its intro,
+// a cue line while logging.
 // Before part 1 (coach 2026-11-12): a timed warm-up on easy routes, then
 // guided breathing, then a "ready" screen that starts part 1's timer. The
 // first time, slides explain why (components/ExplorationFocusSlides.tsx).
 
 // review = part 1's points vs last time, before part 2 (coach 2026-11-05).
-type Phase = "intro" | "warmup" | "breathingIntro" | "breathing" | "flashIntro" | "flash" | "review" | "projectIntro" | "project" | "question" | "done"
+type Phase = "intro" | "warmup" | "breathingIntro" | "breathing" | "flashIntro" | "flash" | "review" | "question" | "projectIntro" | "project" | "done"
 
 const RESULTS = [
-  { label: "Flash", tries: 1, sent: true },
+  { label: "1st go", tries: 1, sent: true },
   { label: "2nd go", tries: 2, sent: true },
   { label: "3rd go", tries: 3, sent: true },
   { label: "Not sent", tries: EXPLORATION_MAX_TRIES, sent: false },
@@ -120,7 +124,6 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   const [colour, setColour] = useState<string>(routes.length > 0 ? routes[routes.length - 1].colour : startColour)
   const [wall, setWall] = useState<string | null>(routes.length > 0 ? routes[routes.length - 1].wall : null)
   const [result, setResult] = useState(0)
-  const [notice, setNotice] = useState<string | null>(null)
   const [reasons, setReasons] = useState<string[]>([])
   const [notes, setNotes] = useState("")
   // The previous exploration, for the review (undefined = still loading).
@@ -156,12 +159,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   const firstTime = useExplorationFocusFirstTime()
   const [slidesSeen, setSlidesSeen] = useState(false)
   const [slidesOpen, setSlidesOpen] = useState(false)
+  const [slidesStart, setSlidesStart] = useState(0)
   const autoSlides = usePopupTurn(firstTime && !slidesSeen && phase === "intro")
   const closeSlides = () => { setSlidesSeen(true); setSlidesOpen(false) }
   const slides = (
     <ExplorationFocusSlides
       visible={autoSlides || slidesOpen}
       minutes={{ warmup: warmupMin, breathing: breathingMin, flash: flashMin, project: projectMin }}
+      startAt={autoSlides ? 0 : slidesStart}
       onClose={closeSlides}
     />
   )
@@ -179,9 +184,10 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
     setPhase("review")
   })
+  // At zero the screen says "Time's up" and waits for "Done": no jump to
+  // another screen while they may be mid-attempt.
   const project = useCountdown(projectMin, phase === "project", `${title} · part 2`, () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
-    setPhase("question")
   })
   const flashLeft = flash.left
   const projectLeft = project.left
@@ -191,18 +197,10 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     const r = RESULTS[result]
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
     logAttempt({ success: r.sent, level: colour, wall, tries: r.tries, part: 1 })
-    setNotice(null)
   }
 
-  function triedAll() {
-    const next = nextExplorationColour(colour, routes)
-    if (next) {
-      setColour(next)
-      setResult(0)
-      setNotice(`Every ${colourLabel(colour).toLowerCase()} sent. Now try every ${colourLabel(next).toLowerCase()}.`)
-    } else {
-      setPhase("review")
-    }
+  function finishEarly() {
+    setPhase("review")
   }
 
   function save() {
@@ -258,21 +256,21 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (phase === "intro") {
-    const text = explorationNotes(explorationDescription(block?.description), startColour)
+    const text = explorationNotes(EXPLORATION_INTRO_NOTES, startColour)
     return (
       <>
         <BlockIntro
           title={title}
           onBack={goToPreviousBlock}
-          facts={[`1 · Warm-up ${warmupMin} min`, `2 · Breathe ${breathingMin} min`, `3 · Explore ${flashMin} min`, `4 · Project ${projectMin} min`]}
+          facts={[`Warm-up ${warmupMin} min`, `Breathing ${breathingMin} min`, `Part 1 ${flashMin} min`, `Part 2 ${projectMin} min`]}
           note={text}
-          notesTitle="Coach notes"
+          notesTitle="Today's session"
           startLabel="Start warm-up"
           startSub={`Route exploration · ${minutesLabel(warmupMin + breathingMin + flashMin + projectMin)}`}
           onStart={() => setPhase("warmup")}
         >
-          <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
-            <Text style={styles.whyLink}>Why breathe? See the 5 slides</Text>
+          <Pressable onPress={() => { setSlidesStart(0); setSlidesOpen(true) }} hitSlop={10} style={{ alignSelf: "flex-start" }}>
+            <Text style={styles.whyLink}>Why start with breathing?</Text>
           </Pressable>
         </BlockIntro>
         {slides}
@@ -317,12 +315,12 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           onBack={() => setPhase("intro")}
           facts={[`4 s in · 6 s out · ${breathingMin} min`]}
           note={EXPLORATION_BREATHING_NOTES}
-          notesTitle="Before part 1"
+          notesTitle="How to breathe"
           startLabel="Start breathing"
           startSub={minutesLabel(breathingMin) ?? undefined}
           onStart={() => setPhase("breathing")}
         >
-          <Pressable onPress={() => setSlidesOpen(true)} hitSlop={10} style={{ alignSelf: "flex-start" }}>
+          <Pressable onPress={() => { setSlidesStart(1); setSlidesOpen(true) }} hitSlop={10} style={{ alignSelf: "flex-start" }}>
             <Text style={styles.whyLink}>Why breathe?</Text>
           </Pressable>
           <Pressable onPress={() => setPhase("flashIntro")} hitSlop={10} style={styles.skipLink}>
@@ -342,11 +340,12 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         title="Breathing"
         meta={`${clockText(breathingMin * 60)} total`}
         onBack={() => setPhase("breathingIntro")}
-        action={{ label: "I'm ready", next: "Part 1, explore", onPress: () => setPhase("flashIntro") }}
+        action={{ label: "I'm ready", next: "Part 1 · Explore", onPress: () => setPhase("flashIntro") }}
       >
         <TimerBar total={breathingMin * 60} left={breathing.left} text={formatTime(breathing.left)} paused={breathing.paused} onTogglePause={breathing.toggle} />
         <View style={styles.breathArea}>
           <BreathingCircle paused={breathing.paused} />
+          <Text style={styles.breathHint}>In through the nose · out through the mouth</Text>
         </View>
       </ActiveScreen>
     )
@@ -357,15 +356,17 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
       <BlockIntro
-        title="Part 1 · Flash"
+        title="Part 1 · Explore"
         onBack={() => setPhase("breathingIntro")}
-        facts={[`1 · Explore ${flashMin} min`, `2 · Project ${projectMin} min`]}
+        facts={[`${flashMin} min`, "Log every route"]}
         note={text}
-        notesTitle="Head on the wall. One move at a time."
+        notesTitle="Coach notes"
         startLabel="Start part 1"
         startSub={minutesLabel(flashMin) ?? undefined}
         onStart={() => setPhase("flash")}
-      />
+      >
+        <BlockNotes text={EXPLORATION_HOW_IT_WORKS} title="How it works" />
+      </BlockIntro>
     )
   }
 
@@ -373,12 +374,12 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   if (phase === "flash") {
     return (
       <View style={shared_styles.screen}>
-        {activeBar("Part 1 · Flash", flashLeft, flashMin * 60, () => setPhase("flashIntro"))}
+        {activeBar("Part 1 · Explore", flashLeft, flashMin * 60, () => setPhase("flashIntro"))}
         <View style={styles.container}>
-          {notice && <Text style={styles.notice}>{notice}</Text>}
+          <Text style={styles.cue}>3 goes max per route. Every go starts from the start holds. Done with a colour? Pick the next one up.</Text>
 
           <View style={styles.pickerSection}>
-            <Text style={styles.pickerLabel}>Grade</Text>
+            <Text style={styles.pickerLabel}>Colour</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
               {BoulderLevelOptions.filter((o) => o.value !== "orange").map((o) => {
                 const on = colour === o.value
@@ -410,7 +411,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           </View>
 
           <View style={styles.pickerSection}>
-            <Text style={styles.pickerLabel}>Attempts · max {EXPLORATION_MAX_TRIES}</Text>
+            <Text style={styles.pickerLabel}>Goes · max {EXPLORATION_MAX_TRIES}</Text>
             <View style={styles.chipRow}>
               {RESULTS.map((r, i) => {
                 const on = result === i
@@ -435,8 +436,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
             <Pressable style={[styles.logBoulderBtn, !wall && { opacity: 0.35 }]} onPress={logRoute} disabled={!wall}>
               <Text style={styles.logBoulderBtnText}>+ Log route</Text>
             </Pressable>
-            <Pressable style={styles.finishPill} onPress={triedAll}>
-              <Text style={styles.finishPillText}>Tried all {colourLabel(colour).toLowerCase()}s</Text>
+            <Pressable style={[styles.finishPill, routes.length === 0 && { opacity: 0.35 }]} onPress={finishEarly} disabled={routes.length === 0}>
+              <Text style={styles.finishPillText}>Finish early</Text>
             </Pressable>
           </View>
         </View>
@@ -449,13 +450,14 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     const running = phase === "project"
     const list = notSent.length > 0
       ? routeRows(notSent, false)
-      : <Text style={styles.emptyText}>Every route went. Work the hardest ones you tried.</Text>
+      : <Text style={styles.emptyText}>Work the hardest ones you tried.</Text>
     if (!running) {
       return (
         <View style={shared_styles.screen}>
           <TopBar title="Part 2 · Project" />
           <ScrollView contentContainerStyle={shared_styles.introContent}>
             <BlockNotes text={EXPLORATION_PROJECT_NOTES} title="Coach notes" />
+            <Text style={styles.listHeading}>{notSent.length > 0 ? "Routes that didn't go" : "Every route went"}</Text>
             <View style={styles.climbListContent}>{list}</View>
           </ScrollView>
           <View style={shared_styles.footer}>
@@ -465,9 +467,13 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
       )
     }
     // Running (components/ActiveScreen.tsx): the notes with the colours
-    // that didn't go as chips, the countdown dial and Done; what they
-    // realised is asked at the end. Back goes to the start of part 2.
-    const chips = notSentColours(routes).map((c) => ({ label: colourLabel(c), color: swatch(c, C) }))
+    // that didn't go as chips (colour and wall), the countdown dial and
+    // Done. Back goes to the start of part 2.
+    const seen = new Set<string>()
+    const chips = [...notSent]
+      .sort((a, b) => colourIndex(a.colour) - colourIndex(b.colour))
+      .map((r) => ({ label: `${colourLabel(r.colour)} · ${wallLabel(r.wall)}`, color: swatch(r.colour, C) }))
+      .filter((c) => !seen.has(c.label) && !!seen.add(c.label))
     return (
       <ActiveScreen
         title="Part 2 · Project"
@@ -485,17 +491,19 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           paused: project.paused,
           onTogglePause: project.toggle,
         }}
-        action={{ label: "Done", next: "one question", onPress: () => setPhase("question") }}
+        action={{ label: "Done", next: nextLabel, onPress: save }}
       />
     )
   }
 
-  // ── End-of-block question ──────────────────────────────────────────────────
+  // ── Question, right after part 1 ───────────────────────────────────────────
+  // What they realised is kept with the part 2 attempt, saved when part 2
+  // ends (a block with that attempt counts as finished).
   if (phase === "question") {
     const toggle = (key: string) => setReasons((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
     return (
       <View style={shared_styles.screen}>
-        <TopBar title="Part 2 · Project" />
+        <TopBar title="Part 1 · What went wrong" />
         <ScrollView contentContainerStyle={styles.questionContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.question}>What did you realise you did wrong in the first {flashMin} minutes?</Text>
           <View style={styles.chipRow}>
@@ -518,7 +526,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           />
         </ScrollView>
         <View style={shared_styles.footer}>
-          <CustomButton title="Save" onPress={save} />
+          <CustomButton title="Go to part 2" onPress={() => setPhase("projectIntro")} />
         </View>
       </View>
     )
@@ -531,14 +539,16 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   const diff = last ? Math.round((summary.points - last.summary.points) * 10) / 10 : 0
   return (
     <View style={shared_styles.screen}>
-      <TopBar title={phase === "review" ? "Part 1 · Review" : "Session complete"} onBack={phase === "review" ? undefined : goToPreviousBlock} />
+      <TopBar title={phase === "review" ? "Part 1 · Review" : "Exploration complete"} onBack={phase === "review" ? undefined : goToPreviousBlock} />
       <ScrollView contentContainerStyle={styles.reviewScroll}>
         <View style={styles.scoreCard}>
+          {phase === "review" && <Text style={styles.scoreSub}>Part 1 done</Text>}
           <Text style={styles.scoreLabel}>Points today</Text>
           <Text style={styles.scoreValue}>{formatPoints(summary.points)}</Text>
           <Text style={styles.scoreSub}>
             {routes.length} route{routes.length !== 1 ? "s" : ""} · {routes.length - notSent.length} sent
           </Text>
+          <Text style={styles.scoreNote}>Each sent route scores its colour&apos;s points: 1st go ×1, 2nd go ×0.9, 3rd go ×0.8.</Text>
         </View>
 
         <View style={styles.lastCard}>
@@ -591,9 +601,9 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         )}
         <Pressable
           style={[styles.startButton, { width: "100%" }]}
-          onPress={phase === "review" ? () => setPhase("projectIntro") : goToNextBlock}
+          onPress={phase === "review" ? () => setPhase("question") : goToNextBlock}
         >
-          <Text style={styles.startButtonText}>{phase === "review" ? "Go to part 2" : nextLabel}</Text>
+          <Text style={styles.startButtonText}>{phase === "review" ? "Next · one question" : nextLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -697,6 +707,8 @@ const sheet = paperSheet((C) => StyleSheet.create({
   breathWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
   breathCircle: { position: "absolute", width: 240, height: 240, borderRadius: 120, backgroundColor: C.green, opacity: 0.22 },
   breathCue: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  breathHint: { marginTop: 24, fontSize: 15, fontWeight: "600", color: C.textSecondary, textAlign: "center" },
+  cue: { fontSize: 14, fontWeight: "600", color: C.textSecondary, lineHeight: 20, marginBottom: 10 },
 
   questionContent: { padding: 20, gap: 14 },
   question: { fontSize: 18, fontWeight: "700", color: C.textPrimary, lineHeight: 24 },
@@ -711,6 +723,8 @@ const sheet = paperSheet((C) => StyleSheet.create({
   scoreLabel: { fontSize: 12, fontWeight: "600", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   scoreValue: { fontSize: 64, fontWeight: "800", color: C.yellow, lineHeight: 72, letterSpacing: -2 },
   scoreSub: { fontSize: 14, color: C.textSecondary },
+  scoreNote: { fontSize: 12, color: C.textMuted, textAlign: "center", marginTop: 4 },
+  listHeading: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 4 },
   breakdownCard: { width: "100%", backgroundColor: C.surface, borderRadius: 14, padding: 16, gap: 10, marginBottom: 8 },
   breakdownTitle: { fontSize: 13, fontWeight: "700", color: C.textSecondary, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
   breakdownRow: { flexDirection: "row", alignItems: "center", gap: 10 },

@@ -36,16 +36,31 @@ export function wallLabel(key: string | null | undefined): string {
   return WALLS.find((w) => w.key === key)?.label ?? (key || "—")
 }
 
-// {colour} is replaced with the athlete's starting colour when shown.
+// Part 1's coach notes (the editable text; {colour} is replaced with the
+// athlete's starting colour when shown). The warm-up, breathing and Part 2
+// have their own notes below, so each screen only says what it needs.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "Warm-up (5 min): easy routes *below your flash level*.",
-  "Then *2 min of breathing* to get your head on the wall.",
   "*Don't read the routes before the timer starts.*",
-  "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+  "Try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
   "*No trying single moves*: every go starts from the start holds.",
-  "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
-  "Tried every {colour} and there's still time left? Go on to part 2.",
+  "Sent every {colour}? Move up one colour and try every route of that colour, until time runs out.",
+  "Tried everything and there's still time? Tap *Finish early*.",
+].join("\n")
+
+// Part 1's "How it works" card on its intro: what the screen's buttons do.
+export const EXPLORATION_HOW_IT_WORKS = [
+  "Pick the *colour*, the *wall* and how it went, then tap *+ Log route*.",
+  "Done with a colour? Pick the next colour up yourself. Your points show top right.",
+  "Out of routes or time? Tap *Finish early* to go to the review.",
+].join("\n")
+
+// What the block's first screen says: the four parts, in order.
+export const EXPLORATION_INTRO_NOTES = [
+  "*Warm-up* on easy routes below your flash level, the colour you usually send first try ({colour} for you).",
+  "*Breathing* to get your head on the wall.",
+  "*Part 1 · Explore*: the week's new routes, logged one by one.",
+  "*Part 2 · Project*: go back to the routes that didn't go.",
 ].join("\n")
 
 // Defaults shipped before, saved into workouts built back then. Shown as
@@ -67,6 +82,16 @@ const OLD_EXPLORATION_DESCRIPTIONS = [
     "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
     "Tried every {colour} and there's still time left? Go on to part 2.",
   ].join("\n"),
+  [
+    "Warm-up (5 min): easy routes *below your flash level*.",
+    "Then *2 min of breathing* to get your head on the wall.",
+    "*Don't read the routes before the timer starts.*",
+    "Part 1 · Flash (25 min): try every new route of the week at your flash level: *{colour}*.",
+    "*3 goes max* per route. Sent or not, move on to the next one.",
+    "*No trying single moves*: every go starts from the start holds.",
+    "Sent every {colour}? Go up one colour and try every route of that colour until time runs out.",
+    "Tried every {colour} and there's still time left? Go on to part 2.",
+  ].join("\n"),
 ]
 
 // The notes to show for a block: its own, unless empty or an old default.
@@ -78,19 +103,18 @@ export function explorationDescription(saved: string | null | undefined): string
 
 // Worded as in Federico's mock-up of the warm-up screen (2026-11-25).
 export const EXPLORATION_WARMUP_NOTES = [
-  "Easy routes *below your flash level*, a little harder each time.",
+  "About *4 easy routes* below your flash level, a little harder each time. Leave the crossed-out colour for part 1.",
   "*Not the new routes.* Save them for part 1.",
 ].join("\n")
 
 export const EXPLORATION_BREATHING_NOTES = [
-  "Sit or stand still and follow the circle.",
-  "*In through the nose, slow out through the mouth.*",
+  "Sit or stand still and follow the circle: *4 s in through the nose, 6 s out through the mouth*.",
   "When a thought shows up, let it go and come back to the breath.",
 ].join("\n")
 
 export const EXPLORATION_PROJECT_NOTES = [
-  "Part 2 · Project: go back to the routes that didn't go.",
-  "Rest more between goes and work the moves you couldn't do.",
+  "Go back to the routes that didn't go.",
+  "*Rest 3 min* between goes and work the moves you couldn't do.",
 ].join("\n")
 
 // The coach's notes with {colour} (the start colour) filled in with its name.
@@ -147,7 +171,8 @@ export interface ExplorationSlide {
 }
 
 // The slides shown the first time an athlete does the exploration with the
-// warm-up and breathing (coach 2026-11-12), with the block's own minutes.
+// warm-up and breathing (coach 2026-11-12); the audit of 2026-11-26 cut them
+// to the two that explain why. The block's own minutes go in the text.
 export function explorationFocusSlides(min: { warmup: number; breathing: number; flash: number; project: number }): ExplorationSlide[] {
   return [
     {
@@ -161,24 +186,6 @@ export function explorationFocusSlides(min: { warmup: number; breathing: number;
       icon: "leaf",
       title: "Why breathe first",
       text: `${min.breathing} minutes of slow breathing calm your body and quiet your thoughts. It's the switch from warming up to paying full attention.`,
-    },
-    {
-      poster: "One move",
-      icon: "footsteps",
-      title: "One move at a time",
-      text: "On the wall, focus on each movement: where your feet go, how you hold, where your weight is. Not on the thoughts that show up while you climb.",
-    },
-    {
-      poster: "Remember",
-      icon: "bulb",
-      title: "Remember your plan",
-      text: "A calm head remembers what you are working on. When a thought pulls you away, breathe out and come back to the next move.",
-    },
-    {
-      poster: "Today",
-      icon: "list",
-      title: "How the session goes",
-      text: `Warm-up ${min.warmup} min on easy routes · Breathing ${min.breathing} min · Part 1 Flash ${min.flash} min · Part 2 Project ${min.project} min.`,
     },
   ]
 }
