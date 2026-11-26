@@ -1,5 +1,5 @@
-import { noteParts, noteSteps, slideAt } from "@/utils/blockNotes"
-import { paperSheet, useSheet } from "@/theme/paper/legacy"
+import { noteParts, noteSteps, slideAt, type NoteChip } from "@/utils/blockNotes"
+import { onInk, paperSheet, usePaperScope, useSheet } from "@/theme/paper/legacy"
 import { font } from "@/theme/paper/tokens"
 import React, { useEffect, useRef, useState } from "react"
 import {
@@ -11,47 +11,91 @@ import {
 // `words`) in green.
 // Several steps become swipeable slides, one idea per slide, with dots and a
 // "2 / 4" counter; a tap on the slide goes to the next one.
-// `compact` is the small, title-less list for running screens.
-export function BlockNotes({ text, title = "Coach notes", compact = false, words }: {
+// `compact` is the card for running screens (Federico's mock-up 2026-11-25):
+// no title, every step at once, numbered in ink circles, key phrases in bold
+// green, and colour chips under a step (`chips`, by step index).
+export function BlockNotes({ text, title = "Coach notes", compact = false, words, chips }: {
   text: string | null | undefined
   title?: string
   compact?: boolean
   /** Extra words to highlight (e.g. CONSTRAINT_WORDS). */
   words?: string[]
+  /** Running screens: colour chips under a step, by step index (0 = first). */
+  chips?: Record<number, NoteChip[]>
 }) {
   const styles = useSheet(sheet)
   const steps = noteSteps(text)
   if (steps.length === 0) return null
-  if (!compact && steps.length > 1) return <NoteSlides steps={steps} title={title} words={words} />
-  const numbered = steps.length > 1
+  if (compact) return <RunningNotes steps={steps} words={words} chips={chips} />
+  if (steps.length > 1) return <NoteSlides steps={steps} title={title} words={words} />
 
   return (
-    <View style={compact ? styles.compact : styles.card}>
-      {!compact && <Text style={styles.title}>{title}</Text>}
+    <View style={styles.card}>
+      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.text}>
+        <StepText step={steps[0]} words={words} />
+      </Text>
+    </View>
+  )
+}
+
+function StepText({ step, words, keyStyle }: { step: string; words?: string[]; keyStyle?: object }) {
+  const styles = useSheet(sheet)
+  return (
+    <>
+      {noteParts(step, words).map((p, j) => p.key
+        ? <Text key={j} style={keyStyle ?? styles.key}>{p.text}</Text>
+        : p.text)}
+    </>
+  )
+}
+
+// The running screen's card: "1 Easy routes *below your flash level*…" with
+// the chips under their step.
+function RunningNotes({ steps, words, chips }: { steps: string[]; words?: string[]; chips?: Record<number, NoteChip[]> }) {
+  const styles = useSheet(sheet)
+  const numbered = steps.length > 1
+  return (
+    <View style={styles.running}>
       {steps.map((step, i) => (
         <View key={i} style={styles.step}>
           {numbered && (
-            <View style={[styles.num, compact && styles.numCompact]}>
-              <Text style={[styles.numText, compact && styles.numTextCompact]}>{i + 1}</Text>
+            <View style={styles.runNum}>
+              <Text style={styles.runNumText}>{i + 1}</Text>
             </View>
           )}
-          <Text style={[styles.text, compact && styles.textCompact]}>
-            <StepText step={step} words={words} />
-          </Text>
+          <View style={styles.runBody}>
+            <Text style={styles.runText}>
+              <StepText step={step} words={words} keyStyle={styles.runKey} />
+            </Text>
+            {!!chips?.[i]?.length && <ChipRow chips={chips[i]} />}
+          </View>
         </View>
       ))}
     </View>
   )
 }
 
-function StepText({ step, words }: { step: string; words?: string[] }) {
+/** Route colour chips: a dot and the name; a struck one is dashed and crossed out. */
+function ChipRow({ chips }: { chips: NoteChip[] }) {
   const styles = useSheet(sheet)
+  const P = usePaperScope()
+  // Inline, not in the sheet: the Paper pass would turn a light white wash into ink.
+  const fill = P ? (P.mode === "light" ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.06)") : "transparent"
   return (
-    <>
-      {noteParts(step, words).map((p, j) => p.key
-        ? <Text key={j} style={styles.key}>{p.text}</Text>
-        : p.text)}
-    </>
+    <View style={styles.chips}>
+      {chips.map((c) => (
+        <View
+          key={c.label}
+          style={[styles.chip, c.struck ? styles.chipStruck : { backgroundColor: fill }]}
+          accessible
+          accessibilityLabel={c.struck ? `Not ${c.label}` : c.label}
+        >
+          <View style={[styles.chipDot, { backgroundColor: c.color }]} />
+          <Text style={[styles.chipText, c.struck && styles.chipTextStruck]}>{c.label}</Text>
+        </View>
+      ))}
+    </View>
   )
 }
 
@@ -130,7 +174,6 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
     // Paper: frosted card floating over the melt.
     ...(P && { backgroundColor: P.card, borderWidth: 1, borderColor: P.cardBorder, borderRadius: 26, padding: 18 }),
   },
-  compact: { alignSelf: "stretch", paddingHorizontal: 20, gap: 6 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: {
     fontSize: 12, fontWeight: "700", color: C.textSecondary,
@@ -143,12 +186,33 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
     backgroundColor: C.surfaceHigh, alignItems: "center", justifyContent: "center",
     ...(P && { backgroundColor: P.iconCircle }),
   },
-  numCompact: { width: 18, height: 18, borderRadius: 9, marginTop: 1 },
   numText: { fontSize: 13, fontWeight: "700", color: C.green, ...(P && { fontFamily: font.mono, fontSize: 11, color: P.mint }) },
-  numTextCompact: { fontSize: 11 },
   text: { flex: 1, fontSize: 16, lineHeight: 24, color: C.textPrimary },
-  textCompact: { fontSize: 14, lineHeight: 20, color: C.textSecondary },
   key: { color: C.green, fontWeight: "700" },
+
+  // Running screens (RunningNotes)
+  running: {
+    alignSelf: "stretch", marginHorizontal: 16, marginTop: 12, padding: 16, gap: 12,
+    backgroundColor: C.surface, borderRadius: 16,
+    ...(P && { backgroundColor: P.card, borderWidth: 1, borderColor: P.cardBorder, borderRadius: 22 }),
+  },
+  runNum: {
+    width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center",
+    backgroundColor: P ? P.ink : C.textPrimary,
+  },
+  runNumText: { fontSize: 12, color: P ? onInk(P) : C.bg, ...(P ? { fontFamily: font.bold } : { fontWeight: "800" }) },
+  runBody: { flex: 1, gap: 8 },
+  runText: { fontSize: 15, lineHeight: 21, color: C.textPrimary, ...(P ? { fontFamily: font.body } : { fontWeight: "600" }) },
+  runKey: { color: C.green, ...(P ? { fontFamily: font.bold } : { fontWeight: "800" }) },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: {
+    flexDirection: "row", alignItems: "center", gap: 6, height: 28, paddingLeft: 9, paddingRight: 11,
+    borderRadius: 14, borderWidth: 1, borderColor: P ? P.hairline : C.border,
+  },
+  chipStruck: { borderStyle: "dashed", borderColor: P ? P.ghostBorder : C.textMuted },
+  chipDot: { width: 9, height: 9, borderRadius: 4.5 },
+  chipText: { fontSize: 12.5, color: C.textPrimary, ...(P ? { fontFamily: font.bold } : { fontWeight: "800" }) },
+  chipTextStruck: { color: C.textMuted, textDecorationLine: "line-through" },
   slide: { minHeight: 96, justifyContent: "center", paddingVertical: 4 },
   slideText: { fontSize: 20, lineHeight: 28, fontWeight: "600", color: C.textPrimary },
   dots: { flexDirection: "row", justifyContent: "center", gap: 6 },

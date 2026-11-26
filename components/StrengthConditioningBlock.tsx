@@ -3314,13 +3314,6 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
     tick()
   }
 
-  const pauseButton = (
-    <Pressable style={styles.pauseBtn} onPress={paused ? resume : pause} hitSlop={8}>
-      <Ionicons name={paused ? "play" : "pause"} size={20} color={C.textPrimary} />
-      <Text style={styles.pauseBtnText}>{paused ? "Resume" : "Pause"}</Text>
-    </Pressable>
-  )
-
   function handleStart() {
     setSeriesDone(0)
     setInnerPhase("prepare")
@@ -3378,22 +3371,18 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
           <Text style={styles.exerciseName}>Get ready</Text>
           <Text style={styles.exerciseTarget}>{exercise.edge}</Text>
 
-          <AnimatedCircularProgress
-            style={styles.circularProgress}
-            size={200}
-            width={10}
-            fill={((timeRemaining ?? 0) / 5) * 100}
-            tintColor={C.textMuted}
-            backgroundColor={C.surfaceHigh}
-          >
-            {() => (
-              <>
-                <Text style={styles.hangRestLabel}>{paused ? "PAUSED" : "PREPARE"}</Text>
-                <Text style={styles.timerText}>{timeRemaining}s</Text>
-              </>
-            )}
-          </AnimatedCircularProgress>
-          {pauseButton}
+          {/* The standard timer dial; its button pauses (Federico 2026-11-25). */}
+          <View style={styles.circularProgress}>
+            <TimerRing
+              size={200}
+              fill={ringFill(5, timeRemaining ?? 0)}
+              color={timerColor(C, "prepare")}
+              title="Prepare"
+              seconds={timeRemaining ?? 0}
+              paused={paused}
+              onTogglePause={paused ? resume : pause}
+            />
+          </View>
         </View>
       </ExerciseScreen>
     )
@@ -3420,7 +3409,6 @@ function SevenThreesUI({ exercise, onDone }: SevenThreesUIProps) {
               onTogglePause={paused ? resume : pause}
             />
           </View>
-          {pauseButton}
         </View>
       </ExerciseScreen>
     )
@@ -3599,14 +3587,7 @@ const sheet = paperSheet((C) => StyleSheet.create({
   exerciseTarget: { fontSize: 15, color: C.textSecondary, marginBottom: 8, textAlign: "center" },
 
   circularProgress: { alignSelf: "center" },
-  pauseBtn: {
-    alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, marginTop: 20,
-    paddingHorizontal: 22, height: 48, borderRadius: 16, backgroundColor: C.surfaceHigh,
-  },
-  pauseBtnText: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
   seriesCounter: { fontSize: 16, color: C.textSecondary, marginBottom: 12, textAlign: "center" },
-  hangRestLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 1, color: C.textSecondary, textAlign: "center" },
-  timerText: { fontSize: 42, fontWeight: "700", textAlign: "center", color: C.textPrimary },
 
   input: { width: "100%", borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.textPrimary, backgroundColor: C.surfaceHigh },
 

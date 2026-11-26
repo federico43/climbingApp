@@ -41,6 +41,10 @@ assert.deepEqual(cw("Nothing known here; another notion"), [])
 assert.deepEqual(cw("Don't match, 3 moves"), ["Don't", "3 moves"])
 // Without words, nothing but numbers.
 assert.deepEqual(keys("Use only one hand"), [])
+// A part's number is its name, not an amount: it stays plain.
+assert.deepEqual(keys("*Not the new routes.* Save them for part 1."), ["Not the new routes."])
+assert.deepEqual(keys("Part 1 · Flash (25 min): every new route."), ["25 min"])
+assert.deepEqual(keys("Rest 2 min between parts"), ["2 min"])
 
 console.log("blockNotes: ok")
 

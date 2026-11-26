@@ -1,3 +1,4 @@
+import { ActiveScreen } from "@/components/ActiveScreen"
 import { BlockIntro } from "@/components/BlockIntro"
 import { minutesLabel } from "@/utils/blockIntro"
 import CustomButton from "@/components/customButton"
@@ -14,10 +15,11 @@ import {
   BREATH_IN_MS, BREATH_OUT_MS, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
   EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration, nextExplorationColour,
-  routePoints, summarizeExploration, wallLabel, WALLS, type ExplorationSummary,
+  notSentColours, routePoints, summarizeExploration, wallLabel, WALLS, warmupColours, type ExplorationSummary,
 } from "@/utils/routeExploration"
 import { Palette, paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor, TimerBar } from "@/components/IntervalVisuals"
+import { clockText } from "@/utils/timerDial"
 import * as Haptics from "expo-haptics"
 import { useBlockTimerAlert } from "@/hooks/useBlockTimerAlert"
 import { usePopupTurn } from "@/utils/popupTurn"
@@ -279,27 +281,30 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
   }
 
   // ── Warm-up ────────────────────────────────────────────────────────────────
+  // Federico's mock-up 2026-11-25 (components/ActiveScreen.tsx): the notes
+  // with the colours to warm up on as chips (the flash colour crossed out),
+  // the dial, and "I'm warm" leading to the breathing.
   if (phase === "warmup") {
+    const chips = warmupColours(startColour).map((c) => ({ label: colourLabel(c.colour), color: swatch(c.colour, C), struck: c.struck }))
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Warm-up" onBack={() => setPhase("intro")} />
-        <BlockNotes text={EXPLORATION_WARMUP_NOTES} compact />
-        <View style={styles.centerContent}>
-          <TimerRing
-            fill={ringFill(warmupMin * 60, warmup.left)}
-            color={timerColor(C, "work")}
-            title="Warm-up"
-            seconds={warmup.left}
-            text={formatTime(warmup.left)}
-            glow={warmup.left > 0}
-            paused={warmup.paused}
-            onTogglePause={warmup.toggle}
-          />
-          <Pressable style={styles.nextBtn} onPress={() => setPhase("breathingIntro")}>
-            <Text style={styles.nextBtnText}>I&apos;m warm</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ActiveScreen
+        title="Warm-up"
+        meta={`${clockText(warmupMin * 60)} total`}
+        onBack={() => setPhase("intro")}
+        notes={EXPLORATION_WARMUP_NOTES}
+        chips={chips.length ? { 0: chips } : undefined}
+        ring={{
+          fill: ringFill(warmupMin * 60, warmup.left),
+          color: timerColor(C, "work"),
+          title: "Warm-up · left",
+          seconds: warmup.left,
+          text: clockText(warmup.left),
+          glow: warmup.left > 0,
+          paused: warmup.paused,
+          onTogglePause: warmup.toggle,
+        }}
+        action={{ label: "I'm warm", next: "Breathing", onPress: () => setPhase("breathingIntro") }}
+      />
     )
   }
 
@@ -329,18 +334,21 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     )
   }
 
+  // The same running screen around the circle: title row, the countdown
+  // strip, and "I'm ready" on the ink bar.
   if (phase === "breathing") {
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Breathing" onBack={() => setPhase("breathingIntro")} />
+      <ActiveScreen
+        title="Breathing"
+        meta={`${clockText(breathingMin * 60)} total`}
+        onBack={() => setPhase("breathingIntro")}
+        action={{ label: "I'm ready", next: "Part 1, explore", onPress: () => setPhase("flashIntro") }}
+      >
         <TimerBar total={breathingMin * 60} left={breathing.left} text={formatTime(breathing.left)} paused={breathing.paused} onTogglePause={breathing.toggle} />
-        <View style={styles.centerContent}>
+        <View style={styles.breathArea}>
           <BreathingCircle paused={breathing.paused} />
-          <Pressable style={styles.nextBtn} onPress={() => setPhase("flashIntro")}>
-            <Text style={styles.nextBtnText}>I&apos;m ready</Text>
-          </Pressable>
         </View>
-      </View>
+      </ActiveScreen>
     )
   }
 
@@ -456,28 +464,29 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         </View>
       )
     }
-    // Running: like a free session — a big countdown and Stop; what they
-    // realised is asked at the end.
+    // Running (components/ActiveScreen.tsx): the notes with the colours
+    // that didn't go as chips, the countdown dial and Done; what they
+    // realised is asked at the end. Back goes to the start of part 2.
+    const chips = notSentColours(routes).map((c) => ({ label: colourLabel(c), color: swatch(c, C) }))
     return (
-      <View style={shared_styles.screen}>
-        <TopBar title="Part 2 · Project" />
-        <BlockNotes text={EXPLORATION_PROJECT_NOTES} compact />
-        <View style={styles.centerContent}>
-          <TimerRing
-            fill={ringFill(projectMin * 60, projectLeft)}
-            color={timerColor(C, projectLeft > 0 ? "work" : "over")}
-            title={projectLeft > 0 ? "Remaining" : "Time's up"}
-            seconds={projectLeft}
-            text={formatTime(projectLeft)}
-            glow={projectLeft > 0}
-            paused={project.paused}
-            onTogglePause={project.toggle}
-          />
-          <Pressable style={styles.stopBtn} onPress={() => setPhase("question")}>
-            <Text style={styles.stopBtnText}>Stop</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ActiveScreen
+        title="Part 2 · Project"
+        meta={`${clockText(projectMin * 60)} total`}
+        onBack={() => setPhase("projectIntro")}
+        notes={EXPLORATION_PROJECT_NOTES}
+        chips={chips.length ? { 0: chips } : undefined}
+        ring={{
+          fill: ringFill(projectMin * 60, projectLeft),
+          color: timerColor(C, projectLeft > 0 ? "work" : "over"),
+          title: projectLeft > 0 ? "Project · left" : "Time's up",
+          seconds: projectLeft,
+          text: clockText(projectLeft),
+          glow: projectLeft > 0,
+          paused: project.paused,
+          onTogglePause: project.toggle,
+        }}
+        action={{ label: "Done", next: "one question", onPress: () => setPhase("question") }}
+      />
     )
   }
 
@@ -681,16 +690,10 @@ const sheet = paperSheet((C) => StyleSheet.create({
   startButton: { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
   startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
 
-  // Part 2's countdown — same as FreeSessionBlock.
-  centerContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 20 },
-  stopBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.red, marginTop: 8 },
-  stopBtnText: { fontSize: 18, fontWeight: "700", color: C.red, letterSpacing: 0.3 },
-
   whyLink: { fontSize: 15, fontWeight: "700", color: C.green, textDecorationLine: "underline" },
   skipLink: { alignSelf: "center", paddingTop: 12 },
   skipLinkText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
-  nextBtn: { width: "100%", borderRadius: 16, paddingVertical: 18, alignItems: "center", borderWidth: 2, borderColor: C.green, marginTop: 8 },
-  nextBtnText: { fontSize: 18, fontWeight: "700", color: C.green, letterSpacing: 0.3 },
+  breathArea: { flex: 1, alignItems: "center", justifyContent: "center" },
   breathWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
   breathCircle: { position: "absolute", width: 240, height: 240, borderRadius: 120, backgroundColor: C.green, opacity: 0.22 },
   breathCue: { fontSize: 24, fontWeight: "800", color: C.textPrimary },

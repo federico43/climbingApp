@@ -12,7 +12,7 @@ import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { Audio } from "expo-av"
 import React, { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
-import { IntervalStats, PauseButton, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
+import { IntervalStats, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
 import { Ionicons } from "@expo/vector-icons"
 import { useNextBlockLabel } from "@/utils/blockNav"
 
@@ -388,7 +388,6 @@ export function IntervalsBlock({ block, logAttempt, attempts, goToNextBlock, goT
             </>
           )
         })()}
-        <PauseButton paused={paused} onPress={paused ? resumeTimer : pauseTimer} />
       </View>
     </View>
   )
