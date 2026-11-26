@@ -1,26 +1,25 @@
 // Thursday 2026-11-26 (coach 2026-11-25, thread "Build tomorrow's workouts
 // for four athletes"). Run AFTER building the plan workouts from each Plan
-// card in the app (Felipe Uribe W8, Paula Cadena W9, AleFuego W7):
+// card in the app: Felipe Uribe W8, Paula Cadena W9, AleFuego W7 and Pablo W1
+// (Pablo first needs his new Fear management plan, made in the app).
 //   1. Felipe Uribe: takes the fingers / grip exercise out of his new plan
 //      workout's S&C (he's coming back from an injury) and gives him one
 //      session task (runs after his warm-up).
-//   2. Paula Cadena + AleFuego: adds "Show de talentos" (15 min rehearse +
-//      10 min show) as the first blocks of their new plan workout, each with
-//      their own boulder.
-//   3. Pablo (p1blis81): creates and assigns a one-off workout: 1 on 1 off →
-//      Show de talentos → Project bouldering → Stretching.
-//   4. Saves "Show de talentos" in the block library if it's missing (not
-//      in the automatic rotation).
+//   2. Paula, AleFuego and Pablo train together, same order: Quitapresas
+//      (2 attempts) → Show de talentos (15 min rehearse, each with their own
+//      boulder, + 10 min show) → route exploration → the rest of their plan
+//      workout (main block, S&C…). The plan's own warm-up is dropped.
+//   3. Saves "Show de talentos" (and "Quitapresas" if missing) in the block
+//      library. Not in the automatic rotation.
 // Every step skips itself when it's already done, so it's safe to re-run.
 //
 // Dry run by default (prints what it would do):
 //   node --env-file=.env.local scripts/single-session/group-2026-11-26.mjs [--apply]
-// Options: --pablo=<username> (default p1blis81), --no-assign (Pablo's workout)
+// Options: --pablo=<username> (default p1blis81)
 
 const { APPWRITE_ENDPOINT: E, APPWRITE_PROJECT_ID: P, APPWRITE_API_KEY: K, APPWRITE_DATABASE_ID: DB } = process.env
 for (const [n, v] of Object.entries({ E, P, K, DB })) if (!v) { console.error("Missing env var", n); process.exit(1) }
 const APPLY = process.argv.includes("--apply")
-const ASSIGN = !process.argv.includes("--no-assign")
 const arg = (key, fallback) => process.argv.find((a) => a.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const PABLO = arg("pablo", "p1blis81")
 const TODAY = "2026-11-26"
@@ -140,52 +139,44 @@ if (felipe) {
   }
 }
 
-// ── 2. Paula Cadena + AleFuego ──
-for (const [username, index, who] of [["Paula Cadena", 9, "paula"], ["AleFuego", 7, "alefuego"]]) {
+// ── 2. The group: Paula Cadena, AleFuego, Pablo ──
+// Same order for the three (coach 2026-11-25): Quitapresas (2 attempts) →
+// Show de talentos (rehearse + show) → route exploration → whatever the plan
+// workout has next (its main block, S&C…). The plan's own warm-up (1 on 1 off
+// / constraints) is dropped; its route exploration is kept and moved.
+let quita = library.find((b) => /quita\s*presas/i.test(b.name ?? ""))
+const quitaData = quita
+  ? { ...json(quita.data, {}), blockName: quita.name, type: quita.type }
+  : { type: "constraint_warmup", blockName: "Quitapresas", description: "Quitapresas, the warm-up game you know. 2 attempts.", level: "orange", targetAttempts: 2, adaptation: "technique" }
+if (quita) say(`\nLibrary: using "${quita.name}" (${quita.type}, ${quita.$id})`)
+else if (!APPLY) would('create library block "Quitapresas" (constraint warm-up, 2 attempts, orange)')
+else {
+  const body = { rowId: newId(), data: { name: "Quitapresas", type: "constraint_warmup", data: JSON.stringify(quitaData) } }
+  if (oldTalent?.$permissions?.length) body.permissions = oldTalent.$permissions
+  quita = await api("POST", `${db}/blocks/rows`, body)
+  say(`Library: created "Quitapresas" (${quita.$id})`)
+}
+const quitaBlock = () => ({ ...quitaData, ...(quitaData.type === "constraint_warmup" ? { targetAttempts: 2 } : {}), ...(quita ? { libraryBlockId: quita.$id } : {}) })
+const exploreRow = library.find((b) => b.type === "route_exploration")
+const isWarmup = (b) => b?.type === "constraint_warmup" || (b?.type === "intervals" && (b.kind === "warmup" || same(b.blockName, "1 on 1 off")))
+
+for (const [username, index, who] of [["Paula Cadena", 9, "paula"], ["AleFuego", 7, "alefuego"], [PABLO, 1, "pablo"]]) {
   say(`\n── ${username} ──`)
   const u = user(username)
   const w = u && (await planWorkout(u, index))
   if (!w) continue
   const blocks = json(w.blocks, [])
   if (hasTalent(blocks)) { say(`  "${w.name}" already has ${TALENT_NAME}.`); continue }
-  say(`  "${w.name}": adding ${TALENT_NAME} first`)
-  await saveBlocks(w, [...talentBlocks(who), ...blocks], TALENT_NAME)
-}
-
-// ── 3. Pablo ──
-say(`\n── Pablo (${PABLO}) ──`)
-const pablo = user(PABLO)
-if (pablo) {
-  const NAME = "Show de talentos + project"
-  const theirs = (await list("protocol", [{ method: "equal", attribute: "athleteId", values: [pablo.$id] }])).sort((a, b) => b.$createdAt.localeCompare(a.$createdAt))
-  say(`  flash ${pablo.flashLevel ?? "?"}`)
-  if (theirs.some((w) => w.name === NAME && w.$createdAt.slice(0, 10) >= "2026-11-25")) say(`  "${NAME}" already created.`)
-  else {
-    const oneOn = library.find((b) => b.type === "intervals" && same(b.name, "1 on 1 off"))
-    const project = library.find((b) => b.type === "project_bouldering" && same(b.name, "Project Bouldering"))
-    const warm = oneOn ? (({ adaptation: _a, ...d }) => ({ ...d, kind: "warmup", series: 4, libraryBlockId: oneOn.$id }))(json(oneOn.data, {}))
-      : { type: "intervals", blockName: "1 on 1 off", kind: "warmup", description: "1 minute climbing, 1 minute rest.", series: 4, workTime: 60, restTime: 60 }
-    const blocks = [
-      warm,
-      ...talentBlocks("pablo"),
-      { type: "project_bouldering", blockName: "Project Bouldering", description: "", grade: "", timeLimit: 20, restTime: 180, reviewPrompts: true, ...(project ? { libraryBlockId: project.$id } : {}) },
-      { type: "free_session", blockName: "Stretching", description: "10 minutes of easy stretching: forearms, shoulders, hips and hamstrings.", timeLimit: 10 },
-    ]
-    say(`  → ${blocks.map(blockLine).join(" · ")}`)
-    if (!APPLY) {
-      would(`create "${NAME}" for ${pablo.username}${ASSIGN ? " and assign it" : ""}`)
-    } else {
-      const body = { rowId: newId(), data: { name: NAME, blocks: JSON.stringify(blocks), athleteId: pablo.$id, source: "coach" } }
-      if (theirs[0]?.$permissions?.length) body.permissions = theirs[0].$permissions
-      const row = await api("POST", `${db}/protocol/rows`, body)
-      say(`  created "${NAME}" (${row.$id})`)
-      if (ASSIGN) {
-        await api("PATCH", `${db}/users/rows/${pablo.$id}`, { data: { assignedProtocolId: row.$id, assignedAt: TODAY } })
-          .catch(() => api("PATCH", `${db}/users/rows/${pablo.$id}`, { data: { assignedProtocolId: row.$id } }))
-        say(`  assigned as ${pablo.username}'s active workout`)
-      }
-    }
+  say(`  "${w.name}" now: ${blocks.map(blockLine).join(" · ")}`)
+  let explore = blocks.find((b) => b?.type === "route_exploration")
+  if (!explore) {
+    if (!exploreRow) say("! No route exploration in the workout or the library: left out.")
+    else { explore = { ...json(exploreRow.data, {}), type: "route_exploration", blockName: exploreRow.name, libraryBlockId: exploreRow.$id }; say(`  (no exploration in it: adding "${exploreRow.name}" from the library)`) }
   }
+  const dropped = blocks.filter(isWarmup).map((b) => b.blockName)
+  if (dropped.length) say(`  dropping the plan's warm-up: ${dropped.join(", ")}`)
+  const rest = blocks.filter((b) => !isWarmup(b) && b?.type !== "route_exploration")
+  await saveBlocks(w, [quitaBlock(), ...talentBlocks(who), ...(explore ? [explore] : []), ...rest], "group order")
 }
 
 say(APPLY ? "\nDone." : "\nDry run only. Re-run with --apply to write.")
