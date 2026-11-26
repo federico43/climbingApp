@@ -34,7 +34,7 @@ There are no adaptation targets anymore — the rotation replaced them
 | `services/BoulderGraphService.tsx` | `training_plans` (create/update/delete/get/list), `listPlanWorkouts`, plan fields on protocols, `ExerciseRow.focuses` |
 | `components/TrainingPlanModal.tsx` | Coach: new / edit plan |
 | `components/coach/PlanCard.tsx` | Coach: Training plan card — header, progress, next workout, Edit details / Create (was `AthleteAnalytics.tsx`; see docs/coach-dashboard.md) |
-| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework, coached blocks) |
+| `components/AthleteWorkoutBuilder.tsx` | Saves plan workouts (+ homework) |
 | `utils/planProgress.ts` | Pure. Athlete progress: workouts done (linked sessions, else block-id match), days, pace |
 | `utils/workoutSummary.ts` | Pure. A workout as phases (S&C / warm-up / test / main) with estimated minutes — built or upcoming |
 | `app/(tabs)/(buttonTabs)/plan.tsx` | Athlete: Plan page (read-only; the app's home when there's an active plan) |
@@ -357,16 +357,14 @@ none the coach decides. Athlete writes go through the `aiProtocol`
 function's `homeworkUpdate` action. Details:
 `training-plan-implementation.md` §9–10.
 
-### 7.7 Coached blocks
+### 7.7 Coached blocks — removed 2026-11-26
 
-A block the coach runs in person is **coached** (`coached: true`), set by
-the coach in the builder (**Coached** row) or by the athlete mid-workout
-("Coach is here?"). It keeps its type, so the rotation is unchanged (a
-coached Max bouldering still counts for the alternation). The athlete sees
-the title + Done; on sequence blocks they save each sequence the coach set
-(Original only, level 1–8) with attempts and sends. Progression skips
-coached runs except those sequences, which count like guided sessions on
-their route. Details: `training-plan-implementation.md` §12.
+The "Coached" mode (the builder's **Coached** row and the athlete's
+"Coach is here?" switch) is gone: every block runs as a normal guided
+block. Old workouts and sessions may still carry `coached: true`; live
+workouts ignore it, and history code keeps reading it so progression still
+skips those runs and the session detail still shows them. History:
+`training-plan-implementation.md` §12.
 
 ## 8. Coach screens
 
