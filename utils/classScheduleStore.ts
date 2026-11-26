@@ -4,7 +4,7 @@ import type { ClassPackage, ClassUser, ClassWeek, VirtualClass } from "@/service
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
   CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, packageUsage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
-  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
+  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd, type PackageUsage,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -44,7 +44,7 @@ export interface AthleteWeek {
 }
 
 // `locked`: used up or past its use-by date; the app is locked until the coach renews.
-export interface PackageInfo { total: number; left: number; useBy: string; locked: boolean }
+export type PackageInfo = PackageUsage
 
 interface State {
   status: "idle" | "loading" | "ready" | "error"
@@ -524,8 +524,8 @@ export function setClassRoster(classId: string, athleteId: string, add: boolean)
   return run(() => api.setRoster(classId, athleteId, add))
 }
 
-export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string): Promise<boolean> {
-  return run(() => api.addPackage(athleteId, total, startsOn, useBy))
+export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string, virtual?: number): Promise<boolean> {
+  return run(() => api.addPackage(athleteId, total, startsOn, useBy, virtual))
 }
 
 // ── Coach: weeks gone by and virtual classes ───────────────────────────────

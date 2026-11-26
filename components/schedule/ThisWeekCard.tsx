@@ -34,6 +34,7 @@ export function ThisWeekCard() {
   const dayLabel = (d: number) => `${WEEK_DAYS[d]} ${dates[d].getDate()}`
   const left = st.pkg?.left ?? 0
   const low = !!st.pkg && left <= LOW_SESSIONS
+  const kind = st.pkg?.virtualTotal != null ? "gym sessions" : "sessions"
 
   return (
     <View style={{ gap: 10 }}>
@@ -60,10 +61,10 @@ export function ThisWeekCard() {
           </View>
           <View style={[s.left, low && s.leftLow]}>
             <Text style={[s.leftN, low && { color: t.ink }]}>{st.pkg ? left : "–"}</Text>
-            <Text style={[s.leftL, low && { color: t.label }]}>sessions{"\n"}left</Text>
+            <Text style={[s.leftL, low && { color: t.label }]}>{st.pkg?.virtualTotal != null ? "gym" : "sessions"}{"\n"}left</Text>
           </View>
         </View>
-        {low && <Text style={s.lowLine}>{left ? `Only ${left} sessions left.` : "No sessions left."} Talk to your coach to renew your package.</Text>}
+        {low && <Text style={s.lowLine}>{left ? `Only ${left} ${kind} left.` : `No ${kind} left.`} Talk to your coach to renew your package.</Text>}
         {!st.pkg && st.status === "ready" && <Text style={s.lowLine}>No package yet. Ask your coach to add one.</Text>}
         {st.status === "ready" && !st.defaults.length && answer === null && (
           <View style={s.setup}>
@@ -76,7 +77,7 @@ export function ThisWeekCard() {
           {week.map((e) => <Row key={e.cls.id} e={e} today={today} label={dayLabel(e.cls.day)} />)}
         </View>
         <View style={s.foot}>
-          <Text style={s.footText}>{st.pkg ? `Use them by ${st.pkg.useBy}` : ""}</Text>
+          <Text style={s.footText}>{st.pkg ? `${st.pkg.virtualTotal != null ? `${st.pkg.virtualLeft} virtual left · ` : ""}Use them by ${st.pkg.useBy}` : ""}</Text>
           <View style={s.see}>
             <Text style={s.seeText}>See the week</Text>
             <Ionicons name="chevron-forward" size={14} color={t.mintText} />

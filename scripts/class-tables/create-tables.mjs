@@ -44,7 +44,8 @@ const TABLES = [
   },
   {
     id: "packages", name: "Packages",
-    columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
+    // virtual: virtual sessions on their own (Pablo's 4 gym + 4 virtual); empty = virtual comes out of total.
+    columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req), int("virtual", { min: 0, max: 100 })],
     indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
   },
   {

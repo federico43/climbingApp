@@ -92,7 +92,8 @@ function ClassesScreenBody() {
   const dates = useMemo(() => weekDates(dateOf(weekStart || "2000-01-03")), [weekStart])
   const [sheet, setSheet] = useState<SheetState>(null)
   // A new package: sessions and weeks to use them.
-  const [pkgForm, setPkgForm] = useState({ total: 8, weeks: 4 })
+  // `virtual`: virtual sessions bought on their own (0 = none).
+  const [pkgForm, setPkgForm] = useState({ total: 8, virtual: 0, weeks: 4 })
   const [pkgQuery, setPkgQuery] = useState("")
   const requests = pendingRequests(st)
   const gridRequests = requests.filter((r) => r.weekStart === weekStart)
@@ -185,6 +186,8 @@ function ClassesScreenBody() {
     const p = leftOf(id)
     if (!p) return "No package"
     if (p.locked) return p.left <= 0 ? "No sessions left" : `Expired ${p.useBy}`
+    // A split package: gym and virtual counted on their own.
+    if (p.virtualTotal != null) return `${p.left} of ${p.total} gym · ${p.virtualLeft} of ${p.virtualTotal} virtual · use by ${p.useBy}`
     return `${p.left} of ${p.total} left · use by ${p.useBy}`
   }
   const wide = useWindowDimensions().width >= WIDE
@@ -637,7 +640,7 @@ function ClassesScreenBody() {
       <Sheet
         visible={!!virtualOf}
         title={virtualOf ? `Virtual classes · ${st.names[virtualOf] ?? "athlete"}` : ""}
-        subtitle={virtualOf ? `${leftText(virtualOf)}. Each virtual class uses a session. Usually you turn on Virtual class when you send the workout; log one here when there's no workout.` : ""}
+        subtitle={virtualOf ? `${leftText(virtualOf)}. Usually you turn on Virtual class when you send the workout; log one here when there's no workout.` : ""}
         onClose={() => setSheet(null)}
       >
         {virtualOf && (
@@ -694,7 +697,8 @@ function ClassesScreenBody() {
         onClose={() => setSheet(null)}
       >
         {[
-          { label: "Sessions", value: `${pkgForm.total}`, step: (n: number) => setPkgForm({ ...pkgForm, total: Math.max(0, pkgForm.total + n) }) },
+          { label: "Gym classes", value: `${pkgForm.total}`, step: (n: number) => setPkgForm({ ...pkgForm, total: Math.max(0, pkgForm.total + n) }) },
+          { label: "Virtual classes", value: `${pkgForm.virtual}`, step: (n: number) => setPkgForm({ ...pkgForm, virtual: Math.max(0, pkgForm.virtual + n) }) },
           { label: "Use within", value: `${pkgForm.weeks} weeks`, step: (n: number) => setPkgForm({ ...pkgForm, weeks: Math.max(1, pkgForm.weeks + n) }) },
         ].map((row) => (
           <View key={row.label} style={s.stepRow}>
@@ -706,11 +710,14 @@ function ClassesScreenBody() {
             </View>
           </View>
         ))}
-        {pkgForm.total === 0 && (
+        {pkgForm.total === 0 && pkgForm.virtual === 0 && (
           <Text style={s.names}>0 sessions takes them out of their classes and locks the app until you add a new package.</Text>
         )}
+        {pkgForm.total === 0 && pkgForm.virtual > 0 && (
+          <Text style={s.names}>Virtual only: they come out of their gym classes.</Text>
+        )}
         <SheetButton
-          label={st.busy ? "Saving…" : pkgForm.total === 0 ? "Set to 0 sessions" : "Add package"}
+          label={st.busy ? "Saving…" : pkgForm.total === 0 && pkgForm.virtual === 0 ? "Set to 0 sessions" : "Add package"}
           disabled={st.busy}
           onPress={async () => {
             if (sheet?.kind !== "package") return
@@ -719,9 +726,9 @@ function ClassesScreenBody() {
             const useBy = new Date(today)
             useBy.setDate(today.getDate() + pkgForm.weeks * 7)
             const save = async () => {
-              if (await addAthletePackage(athleteId, pkgForm.total, ymd(today), ymd(useBy))) setSheet(null)
+              if (await addAthletePackage(athleteId, pkgForm.total, ymd(today), ymd(useBy), pkgForm.virtual || undefined)) setSheet(null)
             }
-            if (pkgForm.total > 0) return save()
+            if (pkgForm.total > 0 || pkgForm.virtual > 0) return save()
             Alert.alert("Set to 0 sessions?", `${st.names[athleteId] ?? "This athlete"} leaves their classes and can't use the app until you add a new package.`, [
               { text: "Cancel", style: "cancel" },
               { text: "Set to 0", style: "destructive", onPress: save },

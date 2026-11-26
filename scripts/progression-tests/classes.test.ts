@@ -569,4 +569,26 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.equal([...t("virtual_classes").values()].filter((v) => v.protocolId === "p1").length, 1)
 }
 
+// ── A split package: gym and virtual sessions counted on their own ──────────
+{
+  const today = new Date().toISOString().slice(0, 10)
+  const wk = addDays(mondayOfYmd(today), 14)
+  t("users").set("ivo", { $id: "ivo", role: "athlete", username: "ivo", defaultClasses: [] })
+  await ctx.db.create("class_weeks", { published: true, blocks: "[]" }, wk)
+  const gymClass = await ctx.db.create("classes", { weekStart: wk, day: 1, start: 9, roster: [] })
+  // Only virtual sessions: no gym classes, the app stays open
+  assert.equal((await call("classPackage", "coach", { athleteId: "ivo", total: 0, virtual: 1, startsOn: today, useBy: addDays(today, 30) })).status, 200)
+  assert.equal((await call("classJoin", "ivo", { classId: gymClass.$id })).status, 409)
+  assert.equal((await call("classVirtual", "coach", { athleteId: "ivo", date: today, protocolId: "pv1" })).status, 200)
+  // The one virtual session is used: no more
+  const none = await call("classVirtual", "coach", { athleteId: "ivo", date: today, protocolId: "pv2" })
+  assert.equal(none.status, 409)
+  assert.match(none.json.error, /no virtual sessions left/)
+  // 1 gym + 4 virtual: virtual classes don't touch the gym one
+  assert.equal((await call("classPackage", "coach", { athleteId: "ivo", total: 1, virtual: 4, startsOn: today, useBy: addDays(today, 30) })).status, 200)
+  assert.equal((await call("classVirtual", "coach", { athleteId: "ivo", date: today, protocolId: "pv3" })).status, 200)
+  const j = await call("classJoin", "ivo", { classId: gymClass.$id })
+  assert.equal(j.status, 200, j.json.error)
+}
+
 console.log("classes: all tests passed")

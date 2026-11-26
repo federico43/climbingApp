@@ -18,7 +18,8 @@ const VIRTUAL_TABLE = "virtual_classes"
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
 export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[]; active?: boolean }
 export interface VirtualClass { $id: string; athleteId: string; date: string; protocolId?: string | null }
-export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string }
+// `virtual` set: a split package (gym `total` + virtual sessions, each counted on its own).
+export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string; virtual?: number | null }
 
 const toClass = (r: any): GymClass => ({ id: r.$id, day: r.day, start: r.start, roster: r.roster ?? [] })
 
@@ -124,8 +125,8 @@ export async function virtualForWorkout(protocolId: string): Promise<VirtualClas
   try { return (await listAllRows<VirtualClass>(VIRTUAL_TABLE, [Query.equal("protocolId", protocolId)]))[0] ?? null } catch { return null }
 }
 export const removeVirtual = (id: string) => call("classVirtual", { removeId: id })
-export const addPackage = (athleteId: string, total: number, startsOn: string, useBy: string) =>
-  call("classPackage", { athleteId, total, startsOn, useBy })
+export const addPackage = (athleteId: string, total: number, startsOn: string, useBy: string, virtual?: number) =>
+  call("classPackage", { athleteId, total, startsOn, useBy, ...(virtual ? { virtual } : {}) })
 // The plan's whole list of pauses (utils/planPauses.ts); the server moves the
 // plan's end date and the package's use-by date, and the athlete's classes.
 export const savePlanPauses = (planId: string, pauses: PlanPause[]) => call("classPause", { planId, pauses })
