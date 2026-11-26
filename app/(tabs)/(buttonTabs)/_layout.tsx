@@ -239,7 +239,6 @@ function WorkoutModalHost() {
               onWorkoutEnd={ctx.endWorkout}
               onClose={ctx.closeModal}
               onMinimize={ctx.minimize}
-              onSetCoached={ctx.setBlockCoached}
               onSwapMain={ctx.link?.planId ? ctx.swapMainBlock : undefined}
             />
           </PaperBackground>

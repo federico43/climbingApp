@@ -43,7 +43,6 @@ import {
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
-import { isSprayBlock } from "@/utils/sprayBlocks"
 
 // Narrow screens: share of the window the S&C exercise library takes as a
 // bottom sheet, leaving the workout visible above it.
@@ -129,14 +128,7 @@ export function AthleteWorkoutBuilder({
   const [homeworkIds, setHomeworkIds] = useState<Set<string>>(() => new Set(initialHomeworkIds ?? []))
   const [dueBy, setDueBy] = useState(() => defaultDueBy(today))
   const [homeworkOpen, setHomeworkOpen] = useState(false)
-  // Blocks the coach will run in person (§12a) — the flag lives on the block.
-  const [coachedOpen, setCoachedOpen] = useState(false)
-  const coachedBlocks = blocks.filter((b) => b.coached && !isSprayBlock(b))
-  function toggleCoached(id: string) {
-    setBlocks((p) => p.map((b) => (b.id === id ? { ...b, coached: b.coached ? undefined : true } : b)))
-  }
   function toggleHomework(id: string) {
-    // (Homework is saved uncoached — see save().)
     setHomeworkIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
   const [menuOpen, setMenuOpen] = useState(false)
@@ -242,7 +234,7 @@ export function AthleteWorkoutBuilder({
       block={item}
       index={getIndex() ?? blocks.indexOf(item)}
       total={blocks.length}
-      mode={blockMode(item, canHomework && homeworkIds.has(item.id))}
+      mode={blockMode(canHomework && homeworkIds.has(item.id))}
       dueLabel={shortDay(dueBy).split(" ").slice(0, 2).join(" ")}
       isActive={isActive}
       onOpen={() => setSheetId(item.id)}
@@ -318,8 +310,7 @@ export function AthleteWorkoutBuilder({
     if (homework.length > 0) {
       try {
         homeworkRow = await createProtocol({
-          // Homework is done alone — never coached.
-          name: homeworkName(name, homework), blocks: stripLocalIds(homework.map((b) => ({ ...b, coached: undefined }))), athleteId: athlete!.$id,
+          name: homeworkName(name, homework), blocks: stripLocalIds(stripCoached(homework)), athleteId: athlete!.$id,
           ...slot, planPart: "homework", dueBy,
         })
       } catch (e: any) {
@@ -337,11 +328,11 @@ export function AthleteWorkoutBuilder({
       if (wholeToHomework) {
         await deleteProtocol(protocol!.$id)
       } else if (editing) {
-        await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(kept), source })
+        await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(stripCoached(kept)), source })
       } else if (kept.length === 0) {
         // The whole workout is homework.
       } else {
-        await createProtocol({ name: name.trim(), blocks: stripLocalIds(kept), athleteId: athlete?.$id, source, ...plan })
+        await createProtocol({ name: name.trim(), blocks: stripLocalIds(stripCoached(kept)), athleteId: athlete?.$id, source, ...plan })
         if (athlete) await clearHomeWorkout(athlete.$id)
       }
     } catch (e: any) {
@@ -366,7 +357,7 @@ export function AthleteWorkoutBuilder({
     try {
       // Each target gets its own copy (a new template) so they can diverge later.
       for (const id of ids) {
-        await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks), athleteId: id })
+        await createProtocol({ name: name.trim(), blocks: stripLocalIds(stripCoached(blocks)), athleteId: id })
       }
       setCopyOpen(false)
       setCopyTargets(new Set())
@@ -389,7 +380,7 @@ export function AthleteWorkoutBuilder({
     if (!validate()) return
     setSavingLibrary(true)
     try {
-      await createProtocol({ name: name.trim(), blocks: stripLocalIds(blocks.map((b) => ({ ...b, coached: undefined }))), source: "library" })
+      await createProtocol({ name: name.trim(), blocks: stripLocalIds(stripCoached(blocks)), source: "library" })
       Alert.alert("Saved to the library", `"${name.trim()}" is in the workout library now. This workout is still open here.`)
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save to the library.")
@@ -399,22 +390,16 @@ export function AthleteWorkoutBuilder({
   }
 
   // ─── Paper Mint (design chat 2026-11-22) ───────────────────────────────
-  // Each block card gets its own Coached switch and Move to homework toggle
-  // (instead of the two pickers); a homework block is outlined in pink.
+  // Each block card gets its own Move to homework toggle (instead of the
+  // picker); a homework block is outlined in pink.
   function frame(b: Block, node: React.ReactElement) {
     if (!P || !athlete) return node
     const hw = homeworkIds.has(b.id)
-    const canCoach = !hw && !isSprayBlock(b)
     return (
       <View style={[s.pFrame, hw && s.pFrameHw]}>
         {node}
         <View style={s.pFoot}>
-          {canCoach ? (
-            <View style={s.pFootSwitch}>
-              <PaperSwitch value={!!b.coached} onValueChange={() => toggleCoached(b.id)} label={`Coached: ${blockLabel(b)}`} />
-              <Text style={s.pFootText} numberOfLines={2}>Coached · you run it in person</Text>
-            </View>
-          ) : <View style={{ flex: 1 }} />}
+          <View style={{ flex: 1 }} />
           {canHomework && (
             <Pressable
               onPress={() => toggleHomework(b.id)}
@@ -431,10 +416,9 @@ export function AthleteWorkoutBuilder({
     )
   }
 
-  // Coached / Own / Homework from the phone's block sheet (homework is saved uncoached).
+  // Own / Homework from the phone's block sheet.
   function setMode(id: string, m: BlockMode) {
     setHomeworkIds((prev) => { const n = new Set(prev); if (m === "homework") n.add(id); else n.delete(id); return n })
-    setBlocks((p) => p.map((b) => (b.id === id ? { ...b, coached: m === "coached" ? true : undefined } : b)))
   }
   const sheetIndex = sheetId ? blocks.findIndex((b) => b.id === sheetId) : -1
   const sheetBlock = sheetIndex >= 0 ? blocks[sheetIndex] : null
@@ -445,7 +429,6 @@ export function AthleteWorkoutBuilder({
     plan ? `Workout ${plan.planIndex} of 12` : null,
     `${blocks.length} block${blocks.length === 1 ? "" : "s"}`,
     blocks.length ? `${totalMin} min` : null,
-    coachedBlocks.length ? `${coachedBlocks.length} coached` : null,
   ].filter(Boolean) as string[]
   const warmup = athlete && !plan ? <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} spine={spine} /> : null
 
@@ -633,21 +616,6 @@ export function AthleteWorkoutBuilder({
             </Pressable>
           )}
 
-          {/* Coached: blocks the coach runs in person — the athlete just sees the title + Done. */}
-          {!!athlete && blocks.length > 0 && (
-            <Pressable style={s.splitRow} onPress={() => setCoachedOpen(true)}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.splitLabel}>Coached</Text>
-                <Text style={s.homeworkSub} numberOfLines={2}>
-                  {coachedBlocks.length === 0
-                    ? "None — tap if you'll run blocks in person"
-                    : coachedBlocks.map(blockLabel).join(", ")}
-                </Text>
-              </View>
-              <Text style={s.homeworkEdit}>{coachedBlocks.length ? "Edit" : "Add"}</Text>
-            </Pressable>
-          )}
-
           {/* The constraint warm-up rotation for this athlete (3 blocks). */}
           {athlete && !plan && <SuggestedWarmupCard athleteId={athlete.$id} blocks={blocks} onApply={setBlocks} />}
           </>)}
@@ -813,7 +781,7 @@ export function AthleteWorkoutBuilder({
           block={sheetBlock}
           index={Math.max(0, sheetIndex)}
           total={blocks.length}
-          mode={sheetBlock ? blockMode(sheetBlock, canHomework && homeworkIds.has(sheetBlock.id)) : "own"}
+          mode={sheetBlock ? blockMode(canHomework && homeworkIds.has(sheetBlock.id)) : "own"}
           athleteName={athleteName}
           canHomework={canHomework}
           insets={insets}
@@ -880,32 +848,6 @@ export function AthleteWorkoutBuilder({
         </Pressable>
       </Modal>
 
-      {/* Coached picker: blocks the coach runs in person. */}
-      <Modal visible={coachedOpen} transparent animationType="fade" onRequestClose={() => setCoachedOpen(false)}>
-        <Pressable style={s.copyBackdrop} onPress={() => setCoachedOpen(false)}>
-          <Pressable style={s.copyCard} onPress={() => {}}>
-            <Text style={s.copyTitle}>Coached blocks</Text>
-            <Text style={s.copySub}>
-              {"Blocks you'll run in person. "}{athleteName ?? "The athlete"}{" just sees the title and Done — on sequence blocks they save the sequences you set, with their sends. They can also switch a block during the workout."}
-            </Text>
-            <View style={s.copyPills}>
-              {/* Spray blocks are never coached (utils/sprayBlocks.ts). */}
-              {blocks.filter((b) => !homeworkIds.has(b.id) && !isSprayBlock(b)).map((b) => {
-                const sel = !!b.coached
-                return (
-                  <Pressable key={b.id} style={[s.copyPill, sel && s.copyPillSel]} onPress={() => toggleCoached(b.id)}>
-                    <Text style={[s.copyPillText, sel && s.copyPillTextSel]}>{blockLabel(b)}</Text>
-                  </Pressable>
-                )
-              })}
-            </View>
-            <Pressable style={s.copyConfirm} onPress={() => setCoachedOpen(false)}>
-              <Text style={s.copyConfirmText}>Done</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       {/* Copy-to-athlete picker */}
       <Modal visible={copyOpen} transparent animationType="fade" onRequestClose={() => setCopyOpen(false)}>
         <Pressable style={s.copyBackdrop} onPress={() => setCopyOpen(false)}>
@@ -948,6 +890,11 @@ export function AthleteWorkoutBuilder({
    </SCLibraryContext.Provider>
    </AuthoringAthleteContext.Provider>
   )
+}
+
+// The "Coached" mode is gone: an older workout's coached flag isn't saved again.
+function stripCoached(bs: Block[]): Block[] {
+  return bs.map((b) => (b.coached ? { ...b, coached: undefined } : b))
 }
 
 function blockLabel(b: Block): string {
@@ -997,12 +944,10 @@ const sSheet = paperSheet((C, P) => StyleSheet.create({
   pEmpty: P ? {
     margin: 16, padding: 18, borderRadius: 22, borderWidth: 1.5, borderStyle: "dashed", borderColor: P.ghostBorder,
   } : {},
-  // A block card with its Coached / homework footer.
+  // A block card with its homework footer.
   pFrame: { borderRadius: 26, borderWidth: 2, borderColor: "transparent", marginBottom: 4 },
   pFrameHw: P ? { borderColor: P.pink } : {},
   pFoot: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingTop: 2, paddingBottom: 10, flexWrap: "wrap" },
-  pFootSwitch: { flex: 1, minWidth: 180, flexDirection: "row", alignItems: "center", gap: 10 },
-  pFootText: { flexShrink: 1, fontSize: 13, fontWeight: "700", color: C.textSecondary },
   pHwBtn: P ? {
     flexDirection: "row", alignItems: "center", gap: 6, minHeight: 36, paddingHorizontal: 12,
     borderRadius: 999, borderWidth: 1.5, borderColor: P.pink,

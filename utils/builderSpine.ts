@@ -3,13 +3,11 @@
 
 import { estimateBlockSeconds } from "@/utils/workoutSummary"
 
-// How the athlete gets the block: the coach runs it in person, the athlete
-// does it on their own in the workout, or it moves to homework on save.
-export type BlockMode = "coached" | "own" | "homework"
+// How the athlete gets the block: in the workout, or moved to homework on save.
+export type BlockMode = "own" | "homework"
 
-export function blockMode(block: { coached?: boolean }, homework: boolean): BlockMode {
-  if (homework) return "homework"
-  return block.coached ? "coached" : "own"
+export function blockMode(homework: boolean): BlockMode {
+  return homework ? "homework" : "own"
 }
 
 // Estimated minutes from the block's own settings (no history reads here).

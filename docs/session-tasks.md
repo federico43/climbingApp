@@ -26,7 +26,7 @@ Federico 2026-11-22: the intro comes the first time the athlete meets a task, in
 - **Record:** the task block is saved with the session like any project block (tries, sends, fall reasons), with the task on the block (`focusTask`), including whether it was closed. The coach sees it in the athlete's session history.
 - **Close happens when the workout is saved.** A closed task leaves the list only when the workout completes. A cancelled workout changes nothing.
 - **Not called "homework"**, which already means the coach's homework workouts.
-- Task blocks (and the intro block) have no "Coach is here?" switch, no main-block switch, no "Leave as homework" and no video-review prompt. Project time stats leave them out (a tries-mode block has no time limit to count).
+- Task blocks (and the intro block) have no main-block switch, no "Leave as homework" and no video-review prompt. Project time stats leave them out (a tries-mode block has no time limit to count).
 
 ## Storage
 

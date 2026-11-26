@@ -4,10 +4,8 @@
 import assert from "node:assert/strict"
 import { blockMinutes, blockMode, blockOrdinal, noteExcerpt, workoutMinutes } from "@/utils/builderSpine"
 
-assert.equal(blockMode({ coached: true }, false), "coached")
-assert.equal(blockMode({}, false), "own")
-// Homework wins (homework is saved uncoached).
-assert.equal(blockMode({ coached: true }, true), "homework")
+assert.equal(blockMode(false), "own")
+assert.equal(blockMode(true), "homework")
 
 assert.equal(blockMinutes({ type: "free_session", timeLimit: 4 }), 4)
 assert.equal(blockMinutes({ type: "route_exploration", timeLimit: 25, projectTime: 25 }), 50)

@@ -20,7 +20,7 @@ export interface Block {
   // and future adaptation-based analytics. See utils/adaptations.ts for the
   // taxonomy and per-type defaults when unset.
   adaptation?: string
-  coached?: boolean // run by the coach in person — see workoutBlocks.tsx BaseBlock
+  coached?: boolean // legacy (mode removed) — see workoutBlocks.tsx BaseBlock
 }
 
 export interface Attempt {
@@ -37,7 +37,7 @@ export interface Attempt {
   highPoint?: number
   routeId?: string    // sequence: which spray-wall route
   variation?: string  // sequence: which variation (easy/original/hard)
-  coached?: boolean   // logged on a coached block (the Done marker, or a coach's sequence)
+  coached?: boolean   // legacy: logged on a coached block (old sessions)
   // Project bouldering v2 (docs/project-bouldering-v2.md):
   fallReasons?: string[]  // FallReason keys tagged while resting
   videoId?: string        // `videos` row id of the clip filmed on this attempt

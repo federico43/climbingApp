@@ -499,7 +499,16 @@ Two new actions (free tier: 2 functions), ahead of the Anthropic key check:
 - After "Can't attend": depends on the days left — days left before the
   deadline → the athlete reschedules; none → the coach decides.
 
-## 12. Coached blocks — done 2026-10-10
+## 12. Coached blocks — done 2026-10-10, UI removed 2026-11-26
+
+> **Removed 2026-11-26 (coach's call):** the builder's Coached row / mode,
+> the athlete's "Coach is here?" switch (`WorkoutContext.setBlockCoached`)
+> and the coached-block screen (`CoachedBlock.tsx`) are gone; a live
+> workout ignores a `coached` flag. Kept on purpose, for old data:
+> `coached?: boolean` on blocks / attempts, `findBlockRuns` (skips coached
+> runs, one run per route for sequences), `warmupUsage`, duration history,
+> the stats readers and the session-detail "Coached" view. The text below
+> is the history of the feature.
 
 The plan's blocks are built for when the coach isn't there. When the coach
 is, they run the block live (attempts and rest on project bouldering, the

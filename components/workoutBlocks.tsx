@@ -102,11 +102,9 @@ interface BaseBlock {
   // break a name match) — see utils/blockHistory.ts. Never saved into a
   // library row's own data (see withoutLibraryRef).
   libraryBlockId?: string
-  // Run by the coach in person, not the app (docs/training-plan-implementation.md
-  // §12): set by the coach in the builder or by the athlete mid-workout
-  // ("Coach is here"). The workout shows it as a title + Done (sequence
-  // blocks: + the coach's sequences); progression skips it (except
-  // sequences — utils/blockHistory.ts).
+  // LEGACY: the "Coached" mode was removed (2026-11-26). Old saved workouts
+  // and sessions still carry the flag; it is only read by history code
+  // (utils/blockHistory.ts etc.) and never set or acted on in a live workout.
   coached?: boolean
 }
 

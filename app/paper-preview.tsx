@@ -17,7 +17,6 @@ export default function PaperPreview() {
   const { preference, setPreference } = usePaperPreference()
   const [open, setOpen] = useState(0)
   const [homework, setHomework] = useState(true)
-  const [coached, setCoached] = useState(false)
   const [reps, setReps] = useState(6)
   const [name, setName] = useState("")
   const [note, setNote] = useState("")
@@ -110,7 +109,6 @@ export default function PaperPreview() {
         <View style={{ paddingHorizontal: 18 }}>
           <SettingsRow icon="git-branch" title="Based on" description="Start from a saved workout" trailing={<SelectValue value="None" />} />
           <SettingsRow icon="school" title="Homework" description="Athlete does it on their own" trailing={<PaperSwitch label="Homework" value={homework} onValueChange={setHomework} />} />
-          <SettingsRow icon="person" title="Coached" description="You run it in class" trailing={<PaperSwitch label="Coached" value={coached} onValueChange={setCoached} />} />
           <SettingsRow icon="add-circle" title="Exercises" description="Add from the library" trailing={<GhostButton compact tone="mint" label="Add" onPress={() => {}} />} last />
         </View>
       </Card>
