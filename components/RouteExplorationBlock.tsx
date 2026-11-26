@@ -13,7 +13,7 @@ import { BoulderLevelOptions, colourIndex, colourLabel } from "@/utils/boulderCo
 import { FALL_REASONS } from "@/utils/progression/projectBouldering"
 import {
   BREATH_IN_MS, BREATH_OUT_MS, EXPLORATION_BREATHING_MIN, EXPLORATION_BREATHING_NOTES,
-  EXPLORATION_HOW_IT_WORKS, EXPLORATION_INTRO_NOTES, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
+  EXPLORATION_INTRO_NOTES, EXPLORATION_MAX_TRIES, EXPLORATION_PART_MIN, EXPLORATION_PROJECT_NOTES, EXPLORATION_WARMUP_MIN, EXPLORATION_WARMUP_NOTES,
   explorationDescription, explorationNotes, explorationStartColour, formatPoints, lastExploration,
   routePoints, summarizeExploration, wallLabel, WALLS, warmupColours, type ExplorationSummary,
 } from "@/utils/routeExploration"
@@ -262,7 +262,7 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
         <BlockIntro
           title={title}
           onBack={goToPreviousBlock}
-          facts={[`Warm-up ${warmupMin} min`, `Breathing ${breathingMin} min`, `Part 1 ${flashMin} min`, `Part 2 ${projectMin} min`]}
+          facts={[`Warm-up ${warmupMin} min`, `Breath ${breathingMin} min`, `Part 1 ${flashMin} min`, `Part 2 ${projectMin} min`]}
           note={text}
           notesTitle="Today's session"
           startLabel="Start warm-up"
@@ -323,8 +323,8 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
           <Pressable onPress={() => { setSlidesStart(1); setSlidesOpen(true) }} hitSlop={10} style={{ alignSelf: "flex-start" }}>
             <Text style={styles.whyLink}>Why breathe?</Text>
           </Pressable>
-          <Pressable onPress={() => setPhase("flashIntro")} hitSlop={10} style={styles.skipLink}>
-            <Text style={styles.skipLinkText}>Skip breathing</Text>
+          <Pressable onPress={() => setPhase("flashIntro")} hitSlop={10} style={{ alignSelf: "flex-start" }}>
+            <Text style={styles.whyLink}>Skip breathing</Text>
           </Pressable>
         </BlockIntro>
         {slides}
@@ -356,17 +356,15 @@ export function RouteExplorationBlock({ block, attempts, logAttempt, removeAttem
     const text = explorationNotes(explorationDescription(block?.description), startColour)
     return (
       <BlockIntro
-        title="Part 1 · Explore"
+        title="Explore"
         onBack={() => setPhase("breathingIntro")}
-        facts={[`${flashMin} min`, "Log every route"]}
+        facts={["Part 1", `${flashMin} min`, "Log every route"]}
         note={text}
         notesTitle="Coach notes"
         startLabel="Start part 1"
         startSub={minutesLabel(flashMin) ?? undefined}
         onStart={() => setPhase("flash")}
-      >
-        <BlockNotes text={EXPLORATION_HOW_IT_WORKS} title="How it works" />
-      </BlockIntro>
+      />
     )
   }
 
@@ -701,8 +699,6 @@ const sheet = paperSheet((C) => StyleSheet.create({
   startButtonText: { color: C.onAccent, fontSize: 16, fontWeight: "700", padding: 10 },
 
   whyLink: { fontSize: 15, fontWeight: "700", color: C.green, textDecorationLine: "underline" },
-  skipLink: { alignSelf: "center", paddingTop: 12 },
-  skipLinkText: { fontSize: 14, fontWeight: "600", color: C.textSecondary },
   breathArea: { flex: 1, alignItems: "center", justifyContent: "center" },
   breathWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
   breathCircle: { position: "absolute", width: 240, height: 240, borderRadius: 120, backgroundColor: C.green, opacity: 0.22 },

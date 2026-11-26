@@ -40,25 +40,18 @@ export function wallLabel(key: string | null | undefined): string {
 // athlete's starting colour when shown). The warm-up, breathing and Part 2
 // have their own notes below, so each screen only says what it needs.
 export const EXPLORATION_DEFAULT_DESCRIPTION = [
-  "*Don't read the routes before the timer starts.*",
   "Try every new route of the week at your flash level: *{colour}*.",
   "*3 goes max* per route. Sent or not, move on to the next one.",
   "*No trying single moves*: every go starts from the start holds.",
+  "*Don't read the routes before the timer starts.*",
   "Sent every {colour}? Move up one colour and try every route of that colour, until time runs out.",
   "Tried everything and there's still time? Tap *Finish early*.",
-].join("\n")
-
-// Part 1's "How it works" card on its intro: what the screen's buttons do.
-export const EXPLORATION_HOW_IT_WORKS = [
-  "Pick the *colour*, the *wall* and how it went, then tap *+ Log route*.",
-  "Done with a colour? Pick the next colour up yourself. Your points show top right.",
-  "Out of routes or time? Tap *Finish early* to go to the review.",
 ].join("\n")
 
 // What the block's first screen says: the four parts, in order.
 export const EXPLORATION_INTRO_NOTES = [
   "*Warm-up* on easy routes below your flash level, the colour you usually send first try ({colour} for you).",
-  "*Breathing* to get your head on the wall.",
+  "*Breath* to get your head on the wall.",
   "*Part 1 · Explore*: the week's new routes, logged one by one.",
   "*Part 2 · Project*: go back to the routes that didn't go.",
 ].join("\n")
@@ -108,7 +101,7 @@ export const EXPLORATION_WARMUP_NOTES = [
 ].join("\n")
 
 export const EXPLORATION_BREATHING_NOTES = [
-  "Sit or stand still and follow the circle: *4 s in through the nose, 6 s out through the mouth*.",
+  "Sit or stand still: *4 s in through the nose, 6 s out through the mouth*.",
   "When a thought shows up, let it go and come back to the breath.",
 ].join("\n")
 
