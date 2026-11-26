@@ -17,7 +17,7 @@ const VIRTUAL_TABLE = "virtual_classes"
 
 export interface ClassWeek { weekStart: string; classes: GymClass[]; published: boolean; blocks: BlockedTime[] }
 export interface ClassUser { id: string; name: string; role: string | null; defaultClasses: string[]; active?: boolean }
-export interface VirtualClass { $id: string; athleteId: string; date: string }
+export interface VirtualClass { $id: string; athleteId: string; date: string; protocolId?: string | null }
 export interface ClassPackage { $id: string; $createdAt?: string; athleteId: string; total: number; startsOn: string; useBy: string }
 
 const toClass = (r: any): GymClass => ({ id: r.$id, day: r.day, start: r.start, roster: r.roster ?? [] })
@@ -118,7 +118,11 @@ export const publishWeek = (weekStart: string, classes: { id?: string; day: numb
 export const addPastClass = (weekStart: string, day: number, start: number, athleteId: string) =>
   call("classPast", { weekStart, day, start, athleteId })
 // Coach: log a virtual class on `date` (uses a package session), or take one back.
-export const logVirtual = (athleteId: string, date: string) => call("classVirtual", { athleteId, date })
+export const logVirtual = (athleteId: string, date: string, protocolId?: string) => call("classVirtual", { athleteId, date, protocolId })
+// The virtual class a workout was sent as, if any.
+export async function virtualForWorkout(protocolId: string): Promise<VirtualClass | null> {
+  try { return (await listAllRows<VirtualClass>(VIRTUAL_TABLE, [Query.equal("protocolId", protocolId)]))[0] ?? null } catch { return null }
+}
 export const removeVirtual = (id: string) => call("classVirtual", { removeId: id })
 export const addPackage = (athleteId: string, total: number, startsOn: string, useBy: string) =>
   call("classPackage", { athleteId, total, startsOn, useBy })

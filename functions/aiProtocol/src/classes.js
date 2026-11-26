@@ -310,8 +310,9 @@ async function pastClass(ctx, userId, body) {
 }
 
 // ── Coach: virtual classes ───────────────────────────────────────────────────
-// body: { athleteId, date } logs one (today or a day gone by), or
-// { removeId } takes one back. No push: the coach logs what happened.
+// body: { athleteId, date, protocolId? } logs one (today or a day gone by),
+// or { removeId } takes one back. protocolId: the workout the coach sent as
+// that virtual class (one class per workout). No push: the coach logs it.
 async function virtualClass(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   if (body.removeId != null) {
@@ -325,7 +326,12 @@ async function virtualClass(ctx, userId, body) {
   if (date > now.ymd) return fail(409, "Log a virtual class once it's happened.")
   const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
   if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
-  const row = await ctx.db.create(VIRTUAL, { athleteId: athlete.$id, date })
+  const protocolId = typeof body.protocolId === "string" && body.protocolId ? body.protocolId.slice(0, 36) : null
+  if (protocolId) {
+    const already = (await ctx.db.list(VIRTUAL, [ctx.q.equal("protocolId", protocolId)]))[0]
+    if (already) return ok({ virtual: already })
+  }
+  const row = await ctx.db.create(VIRTUAL, { athleteId: athlete.$id, date, ...(protocolId ? { protocolId } : {}) })
   if (!row) return fail(502, "Could not save.")
   await dropIfLocked(ctx, athlete.$id, now)
   return ok({ virtual: row })

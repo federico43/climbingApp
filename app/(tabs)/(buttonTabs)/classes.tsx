@@ -637,7 +637,7 @@ function ClassesScreenBody() {
       <Sheet
         visible={!!virtualOf}
         title={virtualOf ? `Virtual classes · ${st.names[virtualOf] ?? "athlete"}` : ""}
-        subtitle={virtualOf ? `${leftText(virtualOf)}. Each virtual class uses a session.` : ""}
+        subtitle={virtualOf ? `${leftText(virtualOf)}. Each virtual class uses a session. Usually you turn on Virtual class when you send the workout; log one here when there's no workout.` : ""}
         onClose={() => setSheet(null)}
       >
         {virtualOf && (
@@ -665,7 +665,7 @@ function ClassesScreenBody() {
                   <PersonRow
                     key={v.$id}
                     name={dayText(dateOf(v.date))}
-                    sub="Virtual class"
+                    sub={v.protocolId ? "Sent as a workout" : "Logged here"}
                     right={(
                       <Pressable
                         hitSlop={10}

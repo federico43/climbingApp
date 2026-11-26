@@ -562,6 +562,11 @@ assert.ok(pushes.some((p) => p.to === "ana" && p.title === "Pause changed"))
   assert.equal((await call("classRoster", "coach", { classId: made.json.class.$id, athleteId: "gil", add: false })).status, 200)
   assert.deepEqual(t("classes").get(made.json.class.$id)!.roster, [])
   assert.equal(pushes.length, 0)
+  // Sent as a workout: one virtual class per workout, however often it's saved
+  const w1 = await call("classVirtual", "coach", { athleteId: "gil", date: today, protocolId: "p1" })
+  const w2 = await call("classVirtual", "coach", { athleteId: "gil", date: today, protocolId: "p1" })
+  assert.equal(w2.json.virtual.$id, w1.json.virtual.$id)
+  assert.equal([...t("virtual_classes").values()].filter((v) => v.protocolId === "p1").length, 1)
 }
 
 console.log("classes: all tests passed")

@@ -50,8 +50,9 @@ const TABLES = [
   {
     // Virtual (online) classes the coach logs: each uses a package session.
     id: "virtual_classes", name: "Virtual classes",
-    columns: [str("athleteId", 36, req), str("date", 10, req)],
-    indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }, { key: "idx_date", columns: ["date"] }],
+    // protocolId: the workout sent as that virtual class (the builder's switch).
+    columns: [str("athleteId", 36, req), str("date", 10, req), str("protocolId", 36)],
+    indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }, { key: "idx_date", columns: ["date"] }, { key: "idx_protocolId", columns: ["protocolId"] }],
   },
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).
