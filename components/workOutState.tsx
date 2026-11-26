@@ -425,20 +425,19 @@ export function WorkOutState({
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={[styles.progressBar, { paddingTop: insets.top + 8 }]}>
         <View style={styles.progressHeader}>
-          <Mono color={t.ink}>
-            Block {String(currentBlockIndex + 1).padStart(2, "0")}
-            <Text style={{ color: t.label }}> / {String(totalBlocks).padStart(2, "0")}</Text>
+          <Mono color={t.ink} size={12}>
+            Block {String(currentBlockIndex + 1).padStart(2, "0")} / {String(totalBlocks).padStart(2, "0")}
           </Mono>
           <View style={styles.progressActions}>
             {(currentBlock?.timeLimit ?? 0) > 0 && !SELF_TIMED_BLOCKS.has(currentBlock?.type ?? "") && !isSprayBlock(currentBlock) && timerStartedAt !== null && (
               <BlockCountdown key={currentBlockIndex} minutes={currentBlock.timeLimit ?? 0} label={currentBlock.blockName || "Block"} />
             )}
-            <IconButton icon="ellipsis-horizontal" label="Block options" size={34} onPress={() => setBlockMenu(true)} />
-            {onMinimize && <IconButton icon="chevron-down" label="Minimize workout" size={34} onPress={onMinimize} />}
+            <IconButton icon="ellipsis-horizontal" label="Block options" size={40} onPress={() => setBlockMenu(true)} />
+            {onMinimize && <IconButton icon="chevron-down" label="Minimize workout" size={40} onPress={onMinimize} />}
             <IconButton
               icon="close"
               label="Exit workout"
-              size={34}
+              size={40}
               onPress={() => {
                 Alert.alert(
                   "Exit workout",
@@ -465,7 +464,7 @@ export function WorkOutState({
       <View style={styles.blockSwitches}>
         {mainSwap && (
           <Pressable style={styles.switchPill} onPress={handleSwapMain} disabled={swapping} hitSlop={6}>
-            <Ionicons name="swap-horizontal" size={13} color={t.ink} />
+            <Ionicons name="swap-horizontal" size={15} color={t.ink} />
             <Text style={styles.switchPillText}>
               {swapping ? "Switching…" : `Switch to ${mainSwap.to.name}`}
             </Text>
@@ -561,13 +560,14 @@ const makeStyles = (t: PaperTheme) => StyleSheet.create({
     borderRadius: 17, paddingHorizontal: 11, borderWidth: 1.5, borderColor: t.mintDeep,
   },
   blockSwitches: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: space.gutter },
+  // Mock-up 2026-11-25: 36 pt pills, 14 pt text.
   switchPill: {
-    flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
-    marginTop: 4, marginBottom: 2, height: 32,
-    paddingHorizontal: 12, borderRadius: 16,
+    flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 8,
+    marginTop: 4, marginBottom: 2, height: 36,
+    paddingHorizontal: 15, borderRadius: 18,
     borderWidth: 1.5, borderColor: t.ghostBorder,
   },
-  switchPillText: { fontFamily: font.bold, fontSize: 12.5, color: t.ink },
+  switchPillText: { fontFamily: font.bold, fontSize: 14, color: t.ink },
   menuBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
   menuSheet: {
     backgroundColor: t.paper, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card,

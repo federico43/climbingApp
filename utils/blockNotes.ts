@@ -4,6 +4,10 @@
 
 export interface NotePart { text: string; key: boolean }
 
+/** A colour chip under a step on a running screen (e.g. the route colours a
+ *  warm-up may use). `struck`: the colour to leave alone, crossed out. */
+export interface NoteChip { label: string; color: string; struck?: boolean }
+
 const BULLET = /^\s*(?:[-•*·–]|\d{1,2}[.)])\s+/
 
 // One step per line. A single paragraph with several sentences becomes one
@@ -81,6 +85,8 @@ function numbers(text: string): [number, number][] {
     const after = text[m.index + m[0].length]
     // Digits glued to a letter (grades like "V5" or "6a+", names like "B2") stay plain.
     if ((before && /[A-Za-z]/.test(before)) || (after && /[A-Za-z+]/.test(after) && !/[x×]/i.test(after))) continue
+    // So does a part's number ("save them for part 1"): a name, not an amount.
+    if (/\bpart\s+$/i.test(text.slice(0, m.index))) continue
     out.push([m.index, m.index + m[0].length])
   }
   return out

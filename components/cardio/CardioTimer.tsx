@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { Audio } from "expo-av"
 import { useEffect, useRef, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
-import { fmtSec, PauseButton, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
+import { fmtSec, SeriesBar, TimerRing } from "@/components/IntervalVisuals"
 
 // Work / rest countdown for jump rope cardio: 5 s to get ready, then
 // `series` rounds of work and rest, with the interval blocks' beeps. Also
@@ -136,7 +136,6 @@ export function CardioTimer({ series, workSec, restSec, label, doublesEverySec, 
           </Text>
         </View>
       ) : null}
-      <PauseButton paused={paused} onPress={togglePause} />
       {__DEV__ && (
         <Pressable onPress={skipAll} hitSlop={8} style={s.skip} accessibilityLabel="Skip (dev)">
           <Text style={s.skipText}>Skip (dev)</Text>
