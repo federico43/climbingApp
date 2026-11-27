@@ -67,6 +67,11 @@ export const PROGRESSION_PROFILES: Record<BlockType, ProgressionProfile> = {
     signals: "Routes sent per colour and go, goes in part 1; part 2 answer and fall reasons",
     lever: "Starting colour = flash level (blue at least); up a colour in-session when all sent",
   },
+  technique_module: {
+    kind: "progress", built: true,
+    signals: "Rule breaks and feel per route (utils/techniqueProgress.ts)",
+    lever: "One colour up when too easy, else the next level (the coach confirms)",
+  },
   exploration_session: {
     kind: "test", built: true,
     signals: "Results recorded only",

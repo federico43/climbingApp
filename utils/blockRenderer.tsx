@@ -10,6 +10,7 @@ import { FreeSessionBlock } from "@/components/FreeSessionBlock"
 import { ProjectBoulderingBlock } from "@/components/ProjectBoulderingBlock"
 import { SprayBlock } from "@/components/SprayBlock"
 import { isSprayBlock } from "@/utils/sprayBlocks"
+import { FOOTWORK, getTechniqueModule, moduleStandIn } from "@/utils/techniqueModules"
 import { BoulderLevelOptions } from "@/components/ProjectPickerModal"
 import { SequenceBlock } from "@/components/SequenceBlock"
 import { StrengthConditioningBlock } from "@/components/StrengthConditioningBlock"
@@ -165,6 +166,16 @@ export function BlockRenderer({
           restTimeRemaining={restTimeRemaining}
           startRestTimer={startRestTimer}
           attempts={blockAttempts}
+          goToNextBlock={goToNextBlock}
+          goToPreviousBlock={onPrevBlock}
+        />
+      )
+
+    case "technique_module":
+      return (
+        <FreeSessionBlock
+          block={moduleStandIn(getTechniqueModule((block as any).moduleId) ?? FOOTWORK, block.blockName)}
+          logAttempt={logAttempt}
           goToNextBlock={goToNextBlock}
           goToPreviousBlock={onPrevBlock}
         />

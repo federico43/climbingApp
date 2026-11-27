@@ -201,7 +201,7 @@ export function taskBlock(task: SessionTask): any {
 // Block types you climb in. A workout with none of them (S&C, cardio, a
 // stretching break) gets no task blocks — nobody can try a boulder there.
 const CLIMBING_TYPES = new Set([
-  "constraint_warmup", "project_bouldering", "four_by_four", "sequence", "exploration_session", "route_exploration",
+  "constraint_warmup", "project_bouldering", "four_by_four", "sequence", "exploration_session", "route_exploration", "technique_module",
 ])
 
 // Does a workout started from this row get the task blocks? Plan workouts,
@@ -227,7 +227,7 @@ export function taskInsertIndex(blocks: any[]): number {
   let afterWarmup = -1
   for (let i = 0; i < blocks.length; i++) {
     const type = blocks[i]?.type
-    if (type === "constraint_warmup") afterWarmup = i + 1
+    if (type === "constraint_warmup" || type === "technique_module") afterWarmup = i + 1
     else if (CLIMBING_TYPES.has(type)) return afterWarmup >= 0 ? afterWarmup : i
   }
   return afterWarmup >= 0 ? afterWarmup : blocks.length

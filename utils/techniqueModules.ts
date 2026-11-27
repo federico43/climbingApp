@@ -58,6 +58,8 @@ export interface TechniqueModule {
   retest: string
   sprayMinutes: number
   routesPerSession: number
+  // The whole module block, start to reveal (the plan's warm-up slot).
+  sessionMinutes: number
   passRule: PassRule
 }
 
@@ -134,6 +136,7 @@ export const FOOTWORK: TechniqueModule = {
   retest: "Same colour as your first session. Climb a route once normally, then again with your level's rule, and compare with your start.",
   sprayMinutes: 10,
   routesPerSession: 2,
+  sessionMinutes: 20,
   passRule: { routesInARow: 2, maxBreaks: 1, passFeels: ["ok", "easy"], maxColourStep: 1 },
 }
 
@@ -155,6 +158,25 @@ export function getTechniqueModule(id: string | null | undefined): TechniqueModu
 export function moduleLevel(module: TechniqueModule, level: number): ModuleLevel {
   const i = Math.max(1, Math.min(module.levels.length, Math.round(level))) - 1
   return module.levels[i]
+}
+
+// Until the module screen exists (PR 4 of docs/technique-modules.md), the
+// block runs as a free session: the goal and the Level 1 rule, the session's
+// minutes, and the chip question as the notes prompt.
+export function moduleStandIn(module: TechniqueModule, blockName?: string) {
+  const level = module.levels[0]
+  return {
+    type: "free_session" as const,
+    blockName: blockName || moduleBlockName(module),
+    description: `${module.goal}\n\nLevel ${level.number} · ${level.name}: ${level.rule}`,
+    timeLimit: module.sessionMinutes,
+    notePrompt: module.reflection.question,
+  }
+}
+
+// The block's name in workouts and summaries: "Footwork module".
+export function moduleBlockName(module: TechniqueModule): string {
+  return `${module.name} module`
 }
 
 export function techniqueCard(module: TechniqueModule, id: TechniqueId): TechniqueCard | null {
