@@ -13,7 +13,7 @@ import { donePlanWorkouts, doneThisWeek } from "@/utils/planProgress"
 import { pauseOn } from "@/utils/planPauses"
 import {
   alternateMainBlock, canRotate, isConditioningOnly, localDateStr, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, mainTypeLabel, nextPlanIndex, planIsOver, planWeek, workoutSpec,
-  PLAN_FOCUS_LABEL, PLAN_WEEKS, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
+  PLAN_FOCUS_LABEL, planTechniqueModule, swappedWarmup, PLAN_WEEKS, PLAN_WORKOUTS, WORKOUTS_PER_WEEK,
   type BuiltPlanWorkout, type PlanShape, type WorkoutSpec,
 } from "@/utils/planRotation"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
@@ -376,15 +376,13 @@ export function PlanCard({
           color={t.C.textMuted}
           text={nextSpec.warmup === "constraints"
             ? `Warm-up · 3 ${PLAN_FOCUS_LABEL[plan.focus].toLowerCase()} constraints`
+            : nextSpec.warmup === "module"
+              ? `Warm-up · ${planTechniqueModule(plan)?.name ?? "Technique"} module`
             : nextSpec.warmup === "exploration"
               ? "First · Route exploration (new routes)"
               : "Warm-up · 1 on 1 off"}
           detail={P && nextSpec.warmup === "constraints" ? preview?.warmup.join(" · ") : undefined}
-          onSwap={() => swap({
-            warmup: nextSpec.warmup !== "one_on_one_off"
-              ? "one_on_one_off"
-              : plan.focus === "fear_management" ? "exploration" : "constraints",
-          })}
+          onSwap={() => swap({ warmup: swappedWarmup(plan, nextSpec.warmup) })}
         />
         {!P && nextSpec.warmup === "constraints" && !!preview?.warmup.length && <ExerciseChips names={preview.warmup} />}
         {nextSpec.mainBlock && (

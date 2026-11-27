@@ -3,7 +3,8 @@ import type { BlockRow, ExerciseRow, SessionRow } from "@/services/BoulderGraphS
 import { suggestWarmup, warmupCandidates, warmupPillarFor, warmupUsage, type WarmupPick } from "@/utils/progression/constraintWarmup"
 import { INTERVALS_RULES } from "@/utils/progression/profiles"
 import { EXPLORATION_BREATHING_MIN, EXPLORATION_DEFAULT_DESCRIPTION, EXPLORATION_PART_MIN, EXPLORATION_WARMUP_MIN, explorationStartColour } from "@/utils/routeExploration"
-import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
+import { EXPLORATION_BLOCK, MAIN_BLOCK_COPIES, MAIN_COMPANION_BLOCK, mainBlockRun, planTechniqueModule, TEST_BLOCK, WARMUP_INTERVALS_BLOCK, type LibraryBlockRef, type PlanShape, type WorkoutSpec } from "@/utils/planRotation"
+import { moduleBlockName, type TechniqueModule } from "@/utils/techniqueModules"
 import { buildScBlocks, type ScBlockDraft } from "@/utils/scPlanBuilder"
 import { benchmarkBlockDraft, benchmarkComparison } from "@/utils/benchmark"
 import type { SavedPullupTest } from "@/utils/pullupAssessment"
@@ -75,6 +76,19 @@ export function explorationDraft(library: BlockRow[], flash: string | null | und
   } as PlanBlockDraft
 }
 
+// The technique module block: just the module. The athlete's level and
+// colour are read when it starts (docs/technique-modules.md).
+export function techniqueModuleDraft(module: TechniqueModule): PlanBlockDraft {
+  return {
+    type: "technique_module",
+    blockName: moduleBlockName(module),
+    description: module.goal,
+    moduleId: module.id,
+    timeLimit: module.sessionMinutes,
+    adaptation: "technique",
+  }
+}
+
 function warmupDrafts(plan: PlanShape, spec: WorkoutSpec, library: BlockRow[], sessions: SessionRow[], flash: string | null | undefined, warnings: string[]): PlanBlockDraft[] {
   if (spec.warmup === "one_on_one_off") {
     const row = findLibraryBlock(WARMUP_INTERVALS_BLOCK, library)
@@ -88,6 +102,11 @@ function warmupDrafts(plan: PlanShape, spec: WorkoutSpec, library: BlockRow[], s
     return [{ ...base, kind: "warmup", series: INTERVALS_RULES.warmupSeries }]
   }
   if (spec.warmup === "none") return []
+  if (spec.warmup === "module") {
+    const module = planTechniqueModule(plan)
+    if (module) return [techniqueModuleDraft(module)]
+    warnings.push("This plan has no technique module any more — 3 constraints instead.")
+  }
   const pillar = plan.focus ? warmupPillarFor(plan.focus) : null
   const candidates = warmupCandidates(library)
   const picks = pillar ? suggestWarmup(candidates, pillar, warmupUsage(sessions, candidates), flash) : null

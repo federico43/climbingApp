@@ -6,11 +6,12 @@ import { EXPLORATION_PART_MIN } from "@/utils/routeExploration"
 import { isBenchmarkBlock } from "@/utils/benchmark"
 import type { BlockRow } from "@/services/BoulderGraphService"
 import { type Adaptation, resolveAdaptation } from "@/utils/adaptations"
-import { findLibraryBlock } from "@/utils/planWorkout"
+import { findLibraryBlock, techniqueModuleDraft } from "@/utils/planWorkout"
 import {
   MAIN_COMPANION_BLOCK,
   mainBlockRun,
   PLAN_FOCUS_LABEL,
+  planTechniqueModule,
   type PlanFocus,
   TEST_BLOCK,
   WARMUP_INTERVALS_BLOCK,
@@ -131,7 +132,7 @@ const toMinutes = (secs: number) => Math.max(5, Math.round(secs / 60 / 5) * 5)
 
 function phaseOf(b: any): PhaseKey {
   if (b.type === "strength_conditioning") return "sc"
-  if (b.type === "constraint_warmup" || b.type === "route_exploration" || (b.type === "intervals" && b.kind === "warmup")) return "warmup"
+  if (b.type === "constraint_warmup" || b.type === "route_exploration" || b.type === "technique_module" || (b.type === "intervals" && b.kind === "warmup")) return "warmup"
   if (b.adaptation === "test" || isBenchmarkBlock(b) || (b.type === TEST_BLOCK.type && (b.blockName ?? "").trim().toLowerCase() === TEST_BLOCK.name.toLowerCase())) return "test"
   return "main"
 }
@@ -188,6 +189,7 @@ function summarizeGroup(key: PhaseKey, blocks: any[], minutes: number): PhaseSum
   }
   if (key === "warmup") {
     if (first.type === "route_exploration") return { ...base, title: first.blockName || "Route exploration", detail: explorationDetail(first) }
+    if (first.type === "technique_module") return { ...base, adaptation: "technique", title: first.blockName || "Technique module", detail: "Spray wall + routes · level by level" }
     if (first.type === "intervals") {
       // 1 on 1 off goes in untagged (§6.2) — a general warm-up, not power endurance.
       const adaptation: Adaptation = first.adaptation ? resolveAdaptation(first) : "general"
@@ -243,7 +245,7 @@ export function summarizeBlocks(blocks: any[], history: DurationHistory): Workou
 // build time, so they're counted, not named.
 export function summarizeSpec(
   spec: WorkoutSpec,
-  plan: { focus: PlanFocus | null; hasMobility: boolean; scPatterns: unknown[] },
+  plan: { focus: PlanFocus | null; hasMobility: boolean; scPatterns: unknown[]; techniqueModuleId?: string | null },
   library: BlockRow[],
   history: DurationHistory,
 ): WorkoutSummary {
@@ -308,6 +310,9 @@ export function summarizeSpec(
       detail: `${PLAN_FOCUS_LABEL[plan.focus]} focus`,
       minutes: toMinutes(3 * estimateBlockSeconds(one, history)),
     })
+  } else if (spec.warmup === "module" && planTechniqueModule(plan)) {
+    const mod = techniqueModuleDraft(planTechniqueModule(plan)!)
+    phases.push(summarizeGroup("warmup", [mod], toMinutes(estimateBlockSeconds(mod, history))))
   } else if (spec.warmup === "one_on_one_off") {
     const warm = { ...fromLibrary(WARMUP_INTERVALS_BLOCK), kind: "warmup", series: 4 }
     phases.push(summarizeGroup("warmup", [warm], toMinutes(estimateBlockSeconds(warm, history))))
