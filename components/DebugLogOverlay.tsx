@@ -1,6 +1,7 @@
 import { clearDebugLogs, formatDebugLogs, getDebugLogs, installDebugLogCapture, LogEntry, subscribeDebugLogs } from "@/utils/debugLog"
-import { useEffect, useState } from "react"
+import { useContext, useState, useSyncExternalStore } from "react"
 import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native"
+import { SafeAreaInsetsContext } from "react-native-safe-area-context"
 
 installDebugLogCapture()
 
@@ -18,11 +19,14 @@ const LEVEL_COLOR: Record<LogEntry["level"], string> = {
 // issue it's being used to chase is resolved.
 export function DebugLogOverlay() {
   const [visible, setVisible] = useState(false)
-  const [, forceRender] = useState(0)
-
-  useEffect(() => subscribeDebugLogs(() => forceRender((n) => n + 1)), [])
-
-  const logs = getDebugLogs()
+  // Read through useSyncExternalStore, not getDebugLogs() during render: with
+  // the React Compiler on, a plain call has no reactive inputs and gets cached
+  // on first render, so the 🐞 count froze at whatever it was when the button
+  // appeared and the list only refreshed when the sheet was opened.
+  const logs = useSyncExternalStore(subscribeDebugLogs, getDebugLogs, getDebugLogs)
+  // Full-screen sheet: keep the header clear of the notch / Dynamic Island.
+  const insets = useContext(SafeAreaInsetsContext)
+  const topPad = Math.max(insets?.top ?? 0, 44) + 12
 
   return (
     <>
@@ -31,7 +35,7 @@ export function DebugLogOverlay() {
       </Pressable>
 
       <Modal visible={visible} animationType="slide" onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalRoot}>
+        <View style={[styles.modalRoot, { paddingTop: topPad }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Debug logs ({logs.length})</Text>
             <View style={styles.headerBtns}>
@@ -71,7 +75,7 @@ const styles = StyleSheet.create({
   },
   fabText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 
-  modalRoot: { flex: 1, backgroundColor: "#0b0b0b", paddingTop: 56 },
+  modalRoot: { flex: 1, backgroundColor: "#0b0b0b" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth,
