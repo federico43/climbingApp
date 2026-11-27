@@ -5,6 +5,7 @@ import {
   localDateStr, mainTypeFor, mainTypeLabel, planEndFor, type MainType, type PlanFocus, type PlanKind, type ScPattern,
 } from "@/utils/planRotation"
 import { SPECIAL_CASE_EXERCISES } from "@/utils/scPlanBuilder"
+import { TECHNIQUE_MODULE_IDS, TECHNIQUE_MODULES, type TechniqueModuleId } from "@/utils/techniqueModules"
 import { FOCUS_LABEL, FOCUSES, type Focus } from "@/utils/scProgression"
 import {
   ExerciseRow,
@@ -56,6 +57,8 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [kind, setKind] = useState<PlanKind>("climbing")
   const [focus, setFocus] = useState<PlanFocus | null>(null)
+  // Technique plans: the technique module in the constraints' place; null = none.
+  const [techniqueModuleId, setTechniqueModuleId] = useState<TechniqueModuleId | null>(null)
   // Main type of workout 1; strength unless the coach picks another.
   const [startType, setStartType] = useState<MainType>(DEFAULT_START_TYPE)
   const [hasSc, setHasSc] = useState(false)
@@ -80,6 +83,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setWindowStart(current.windowStart)
       setKind(current.kind)
       setFocus(current.focus)
+      setTechniqueModuleId(current.techniqueModuleId)
       setStartType(current.startType ?? DEFAULT_START_TYPE)
       setHasSc(current.hasSc)
       setHasMobility(current.hasMobility)
@@ -91,6 +95,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
       setWindowStart(localDateStr(new Date()))
       setKind("climbing")
       setFocus(null)
+      setTechniqueModuleId(null)
       setStartType(DEFAULT_START_TYPE)
       setHasSc(false)
       setHasMobility(false)
@@ -193,6 +198,7 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
         windowEnd,
         kind,
         focus: conditioning ? null : focus,
+        techniqueModuleId: !conditioning && focus === "technique" ? techniqueModuleId : null,
         // Picked once, when the plan starts — editing never changes it.
         ...(mode === "new" ? { startType } : {}),
         hasSc: withSc,
@@ -309,6 +315,26 @@ export function TrainingPlanModal({ visible, athleteId, mode, current, onClose, 
                     )
                   })}
                 </View>
+                {focus === "technique" && (
+                  <>
+                    <Text style={s.label}>Technique module</Text>
+                    <Text style={s.sub2}>
+                      {techniqueModuleId
+                        ? `Odd workouts: the ${TECHNIQUE_MODULES[techniqueModuleId].name} module instead of the 3 constraints`
+                        : "None: odd workouts keep the 3 technique constraints"}
+                    </Text>
+                    <View style={s.chipWrap}>
+                      {[null, ...TECHNIQUE_MODULE_IDS].map((id) => {
+                        const sel = techniqueModuleId === id
+                        return (
+                          <Pressable key={id ?? "none"} style={[s.chip, sel && s.chipSelected]} onPress={() => setTechniqueModuleId(id)}>
+                            <Text style={[s.chipText, sel && s.chipTextSelected]}>{id ? TECHNIQUE_MODULES[id].name : "None"}</Text>
+                          </Pressable>
+                        )
+                      })}
+                    </View>
+                  </>
+                )}
               </>
             )}
 
