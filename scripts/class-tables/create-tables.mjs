@@ -44,8 +44,16 @@ const TABLES = [
   },
   {
     id: "packages", name: "Packages",
-    columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req)],
+    // virtual: virtual sessions on their own (Pablo's 4 gym + 4 virtual); empty = virtual comes out of total.
+    columns: [str("athleteId", 36, req), int("total", { ...req, min: 0, max: 100 }), str("startsOn", 10, req), str("useBy", 10, req), int("virtual", { min: 0, max: 100 })],
     indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }],
+  },
+  {
+    // Virtual (online) classes the coach logs: each uses a package session.
+    id: "virtual_classes", name: "Virtual classes",
+    // protocolId: the workout sent as that virtual class (the builder's switch).
+    columns: [str("athleteId", 36, req), str("date", 10, req), str("protocolId", 36)],
+    indexes: [{ key: "idx_athleteId", columns: ["athleteId"] }, { key: "idx_date", columns: ["date"] }, { key: "idx_protocolId", columns: ["protocolId"] }],
   },
 ]
 // The athlete's usual classes, "day@start" ("0@9.5" = Monday 9:30).

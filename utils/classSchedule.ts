@@ -239,13 +239,15 @@ export const packageLocked = (pkg: { useBy: string } | null, left: number, today
 
 // Sessions left in `pkg` on `now`, from the athlete's classes and requests
 // since the package's week (same count as athletePackage on the server):
-// classes ended since the package was added, and skips made after it.
+// classes ended since the package was added, skips made after it, and
+// virtual classes logged on the package's days up to today.
 export function packageUsage(
-  pkg: { total: number; startsOn: string; useBy: string; $createdAt?: string },
+  pkg: { total: number; startsOn: string; useBy: string; $createdAt?: string; virtual?: number | null },
   classes: { weekStart: string; day: number; start: number }[],
   requests: { kind: string; status: string; $createdAt?: string }[],
   now: Date,
-): { total: number; left: number; useBy: string; locked: boolean } {
+  virtual: { date: string }[] = [],
+): PackageUsage {
   const since = pkg.$createdAt ? new Date(pkg.$createdAt).getTime() : 0
   const done = classes.filter((c) => {
     const at = classDate(c.weekStart, c)
@@ -254,8 +256,24 @@ export function packageUsage(
   }).length
   const skips = requests.filter((r) =>
     r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
-  return { total: pkg.total, left, useBy: pkg.useBy, locked: packageLocked(pkg, left, ymd(now)) }
+  const online = virtual.filter((v) => v.date >= pkg.startsOn && v.date <= ymd(now)).length
+  // A split package counts virtual classes on their own (same as athletePackage).
+  const split = Number.isInteger(pkg.virtual)
+  const left = sessionsLeft(pkg.total, done + (split ? 0 : online), skips)
+  const virtualLeft = split ? Math.max(0, pkg.virtual! - online) : null
+  const gymOut = packageLocked(pkg, left, ymd(now))
+  return {
+    total: pkg.total, left, useBy: pkg.useBy,
+    virtualTotal: split ? pkg.virtual! : null, virtualLeft,
+    gymOut, locked: gymOut && !((virtualLeft ?? 0) > 0 && pkg.useBy >= ymd(now)),
+  }
+}
+
+// `left` is gym classes on a split package (virtualTotal set), all sessions otherwise.
+// gymOut: no gym class left or expired; locked: nothing left at all, or expired.
+export interface PackageUsage {
+  total: number; left: number; useBy: string; locked: boolean
+  virtualTotal: number | null; virtualLeft: number | null; gymOut: boolean
 }
 
 // A request row from the server (table class_requests).

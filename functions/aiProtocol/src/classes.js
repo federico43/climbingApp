@@ -20,6 +20,9 @@ const PACKAGES = "packages"
 const USERS = "users"
 const PLANS = "training_plans"
 const PROTOCOLS = "protocol"
+// Virtual (online) classes the coach logs per athlete: { athleteId, date }.
+// Each one uses a session of the athlete's package, like a class at the gym.
+const VIRTUAL = "virtual_classes"
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const KINDS = ["move", "propose", "extra", "skip"]
@@ -86,8 +89,8 @@ async function setRoster(ctx, cls, roster) {
 async function request(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   if (!KINDS.includes(body.kind)) return fail(400, "Bad request.")
-  if (body.kind !== "skip" && (await athletePackage(ctx, userId, now)).locked) {
-    return fail(409, "Your package is used up or expired. Ask your coach to renew it.")
+  if (body.kind !== "skip" && (await athletePackage(ctx, userId, now)).gymOut) {
+    return fail(409, "Your package has no gym classes left, or it expired. Ask your coach to renew it.")
   }
   const from = body.kind === "extra" ? null : await ctx.db.get(CLASSES, String(body.classId ?? ""))
   const to = ["move", "extra"].includes(body.kind) ? await ctx.db.get(CLASSES, String(body.toClassId ?? "")) : null
@@ -204,7 +207,7 @@ async function cancel(ctx, userId, body) {
 async function join(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   const pkg = await athletePackage(ctx, userId, now)
-  if (pkg.locked) return fail(409, "Your package is used up or expired. Ask your coach to renew it.")
+  if (pkg.gymOut) return fail(409, "Your package has no gym classes left, or it expired. Ask your coach to renew it.")
   const to = await ctx.db.get(CLASSES, String(body.classId ?? ""))
   if (!to) return fail(404, "No such class.")
   if (!(await weekRow(ctx, to.weekStart))?.published) return fail(409, "This week isn't published yet.")
@@ -239,11 +242,13 @@ async function join(ctx, userId, body) {
 // ── Coach: put an athlete in a class, or take them out ──────────────────────
 // body: { classId, athleteId, add: boolean }. The coach's call, so only the
 // spots are checked (not the rest day). The athlete is told.
+// A class that already happened can be corrected too (who really came):
+// no spot limit and no push, and the package count follows.
 async function roster(ctx, userId, body) {
   const now = gymNow(new Date(), ctx.tz)
   const cls = await ctx.db.get(CLASSES, String(body.classId ?? ""))
   if (!cls) return fail(404, "No such class.")
-  if (classMs(cls) <= now.ms) return fail(409, "That class already started.")
+  const past = classMs(cls) <= now.ms
   const athleteId = String(body.athleteId ?? "")
   const athlete = await ctx.getUserRow(athleteId)
   const list = cls.roster ?? []
@@ -253,7 +258,7 @@ async function roster(ctx, userId, body) {
     if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
     if (athlete.active === false) return fail(409, `${name(athlete)} is deactivated.`)
     if (list.includes(athlete.$id)) return fail(409, `${name(athlete)} is already in that class.`)
-    if (list.length >= CAPACITY) return fail(409, "That class is full.")
+    if (!past && list.length >= CAPACITY) return fail(409, "That class is full.")
   } else if (!list.includes(athleteId)) {
     return ok({ class: cls })
   }
@@ -261,6 +266,11 @@ async function roster(ctx, userId, body) {
   // booked itself (shows up as a drop-in) or a user row that is gone.
   const saved = await setRoster(ctx, cls, add ? [...list, athleteId] : list.filter((u) => u !== athleteId))
   if (!saved) return fail(502, "Could not save.")
+  if (past) {
+    // Adding a class they came to can use their package up.
+    if (add) await dropIfLocked(ctx, athleteId, now)
+    return ok({ class: saved })
+  }
   if (!add) {
     // Their pending changes from this class no longer make sense.
     for (const r of await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.equal("weekStart", cls.weekStart)])) {
@@ -274,6 +284,59 @@ async function roster(ctx, userId, body) {
       { type: "class_roster", classId: cls.$id })
   }
   return ok({ class: saved })
+}
+
+// ── Coach: a class that happened but wasn't in the planner ───────────────────
+// body: { weekStart, day, start, athleteId }. Only for a time already gone
+// by; the rules for planning (classes a day, blocked times) don't apply to
+// what already happened. More athletes go in with classRoster.
+async function pastClass(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  const weekStart = String(body.weekStart ?? "")
+  const day = Number(body.day)
+  const start = Number(body.start)
+  if (!DAY_RE.test(weekStart) || mondayOfYmd(weekStart) !== weekStart) return fail(400, "Bad week.")
+  const problem = classProblem([], [], day, start)
+  if (problem) return fail(400, PROBLEM_TEXT[problem])
+  if (classMs({ weekStart, day, start }) > now.ms) return fail(409, "That time is still ahead. Plan it in the week instead.")
+  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
+  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const existing = (await weekClasses(ctx, weekStart)).find((c) => c.day === day && c.start === start)
+  if (existing) return fail(409, `There's already a class at ${classLabel(existing)}. Add ${name(athlete)} to it.`)
+  const made = await ctx.db.create(CLASSES, { weekStart, day, start, roster: [athlete.$id] })
+  if (!made) return fail(502, "Could not save.")
+  await dropIfLocked(ctx, athlete.$id, now)
+  return ok({ class: made })
+}
+
+// ── Coach: virtual classes ───────────────────────────────────────────────────
+// body: { athleteId, date, protocolId? } logs one (today or a day gone by),
+// or { removeId } takes one back. protocolId: the workout the coach sent as
+// that virtual class (one class per workout). No push: the coach logs it.
+async function virtualClass(ctx, userId, body) {
+  const now = gymNow(new Date(), ctx.tz)
+  if (body.removeId != null) {
+    const row = await ctx.db.get(VIRTUAL, String(body.removeId))
+    if (!row) return ok({ removed: false })
+    await ctx.db.remove(VIRTUAL, row.$id)
+    return ok({ removed: true })
+  }
+  const date = String(body.date ?? "")
+  if (!DAY_RE.test(date)) return fail(400, "Bad date.")
+  if (date > now.ymd) return fail(409, "Log a virtual class once it's happened.")
+  const athlete = await ctx.getUserRow(String(body.athleteId ?? ""))
+  if (!athlete || athlete.role === "coach") return fail(404, "No such athlete.")
+  const protocolId = typeof body.protocolId === "string" && body.protocolId ? body.protocolId.slice(0, 36) : null
+  if (protocolId) {
+    const already = (await ctx.db.list(VIRTUAL, [ctx.q.equal("protocolId", protocolId)]))[0]
+    if (already) return ok({ virtual: already })
+  }
+  const pkg = await athletePackage(ctx, athlete.$id, now)
+  if (pkg.virtualLeft === 0) return fail(409, `${name(athlete)} has no virtual sessions left. Add a package first.`)
+  const row = await ctx.db.create(VIRTUAL, { athleteId: athlete.$id, date, ...(protocolId ? { protocolId } : {}) })
+  if (!row) return fail(502, "Could not save.")
+  await dropIfLocked(ctx, athlete.$id, now)
+  return ok({ virtual: row })
 }
 
 // ── Coach: recurring classes (series) ───────────────────────────────────────
@@ -367,7 +430,7 @@ async function fillFromDefaults(ctx, classes, users, onlyUser, paused, stepsOut)
     if (onlyUser && u.$id !== onlyUser) continue
     const slots = (u.defaultClasses ?? []).map(parseSlot).filter(Boolean)
     if (!slots.length || classes.some((c) => (c.roster ?? []).includes(u.$id))) continue
-    if ((await athletePackage(ctx, u.$id, now)).locked) continue
+    if ((await athletePackage(ctx, u.$id, now)).gymOut) continue
     for (const s of slots) {
       const c = classes.find((x) => x.day === s.day && x.start === s.start)
       if (!c || (c.roster ?? []).length >= CAPACITY || stepsOut?.has(c.$id)) continue
@@ -595,10 +658,20 @@ async function addPackage(ctx, userId, body) {
     || !DAY_RE.test(body.startsOn ?? "") || !DAY_RE.test(body.useBy ?? "") || body.useBy < body.startsOn) {
     return fail(400, "Bad package.")
   }
-  const row = await ctx.db.create(PACKAGES, { athleteId: body.athleteId, total, startsOn: body.startsOn, useBy: body.useBy })
+  // Virtual sessions on their own (a split package), or none: virtual
+  // classes then come out of `total`.
+  const virtual = body.virtual == null ? null : Number(body.virtual)
+  if (virtual != null && (!Number.isInteger(virtual) || virtual < 0 || virtual > 100)) return fail(400, "Bad package.")
+  const row = await ctx.db.create(PACKAGES, { athleteId: body.athleteId, total, startsOn: body.startsOn, useBy: body.useBy, ...(virtual != null ? { virtual } : {}) })
   if (!row) return fail(502, "Could not save.")
   // 0 sessions ends their classes: out of the ones still ahead, pending
   // requests dropped, and the app locks (packageLocked) until a new package.
+  // Only virtual ones: out of the gym classes ahead, the app stays open.
+  if (total === 0 && virtual) {
+    await dropFromClassesAhead(ctx, body.athleteId, gymNow(new Date(), ctx.tz))
+    await pushUser(ctx, body.athleteId, "Package ready", `${virtual} virtual sessions, use them by ${body.useBy}.`, { type: "class_package" })
+    return ok({ package: row })
+  }
   if (total === 0) {
     await dropFromClassesAhead(ctx, body.athleteId, gymNow(new Date(), ctx.tz))
     return ok({ package: row })
@@ -606,7 +679,7 @@ async function addPackage(ctx, userId, body) {
   // A renewal unlocks the athlete: back into their usual classes still ahead.
   const athlete = await ctx.getUserRow(body.athleteId)
   if (athlete) await joinUsualClasses(ctx, athlete, await pausesByAthlete(ctx))
-  await pushUser(ctx, body.athleteId, "Package ready", `${total} sessions, use them by ${body.useBy}.`, { type: "class_package" })
+  await pushUser(ctx, body.athleteId, "Package ready", `${virtual ? `${total} gym + ${virtual} virtual` : total} sessions, use them by ${body.useBy}.`, { type: "class_package" })
   return ok({ package: row })
 }
 
@@ -614,7 +687,7 @@ async function addPackage(ctx, userId, body) {
 // can use the package up. Out of the classes ahead right away, rather than
 // at the cron's once-a-day check.
 async function dropIfLocked(ctx, athleteId, now) {
-  if ((await athletePackage(ctx, athleteId, now)).locked) await dropFromClassesAhead(ctx, athleteId, now)
+  if ((await athletePackage(ctx, athleteId, now)).gymOut) await dropFromClassesAhead(ctx, athleteId, now)
 }
 
 // Out of every class still ahead, pending requests dropped (a locked athlete
@@ -636,9 +709,14 @@ async function dropFromClassesAhead(ctx, athleteId, now) {
 // The athlete's package right now: sessions left (null without a package)
 // and whether they're locked out. Classes count from when the package was
 // added (a renewal right after a class doesn't pay for it twice).
+// A split package (`virtual` set: Pablo's 4 gym + 4 virtual) counts each
+// kind on its own: `left` is gym classes, `virtualLeft` virtual ones. Without
+// it, virtual classes come out of the same `total`.
+// `gymOut`: no gym class left (or expired), so out of the classes ahead.
+// `locked`: nothing left at all (or expired), so the app locks.
 async function athletePackage(ctx, athleteId, now) {
   const pkg = currentPackage(await ctx.db.list(PACKAGES, [ctx.q.equal("athleteId", athleteId)]), now.ymd)
-  if (!pkg) return { left: null, locked: false }
+  if (!pkg) return { left: null, virtualLeft: null, locked: false, gymOut: false }
   const from = mondayOfYmd(pkg.startsOn)
   const since = pkg.$createdAt ? gymNow(new Date(pkg.$createdAt), ctx.tz).ms : 0
   const classes = await ctx.db.list(CLASSES, [ctx.q.contains("roster", athleteId), ctx.q.gte("weekStart", from)])
@@ -648,8 +726,14 @@ async function athletePackage(ctx, athleteId, now) {
   }).length
   const skips = (await ctx.db.list(REQUESTS, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("weekStart", from)]))
     .filter((r) => r.kind === "skip" && r.status === "accepted" && (!pkg.$createdAt || (r.$createdAt ?? "") >= pkg.$createdAt)).length
-  const left = sessionsLeft(pkg.total, done, skips)
-  return { left, locked: packageLocked(pkg, left, now.ymd) }
+  // Virtual classes on the package's days, up to today.
+  const virtual = (await ctx.db.list(VIRTUAL, [ctx.q.equal("athleteId", athleteId), ctx.q.gte("date", pkg.startsOn)]))
+    .filter((v) => v.date <= now.ymd).length
+  const split = Number.isInteger(pkg.virtual)
+  const left = sessionsLeft(pkg.total, done + (split ? 0 : virtual), skips)
+  const virtualLeft = split ? Math.max(0, pkg.virtual - virtual) : null
+  const gymOut = packageLocked(pkg, left, now.ymd)
+  return { left, virtualLeft, split, gymOut, locked: gymOut && !(virtualLeft > 0 && pkg.useBy >= now.ymd) }
 }
 
 export async function handleClassAction(action, userId, body, ctx) {
@@ -667,6 +751,8 @@ export async function handleClassAction(action, userId, body, ctx) {
     case "classPublish": return coach ? publish(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPackage": return coach ? addPackage(ctx, userId, body) : fail(403, "Coaches only.")
     case "classPause": return coach ? setPauses(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classPast": return coach ? pastClass(ctx, userId, body) : fail(403, "Coaches only.")
+    case "classVirtual": return coach ? virtualClass(ctx, userId, body) : fail(403, "Coaches only.")
     default: return null
   }
 }
@@ -784,15 +870,16 @@ export async function runClassCron(baseCtx, date = new Date()) {
     const end = classMs(c, CLASS_HOURS)
     for (const a of c.roster) {
       justUsed.add(a)
-      const { left } = await athletePackage(ctx, a, { ymd: classDate(c), ms: end })
+      const { left, split } = await athletePackage(ctx, a, { ymd: classDate(c), ms: end })
       if (left !== LOW_SESSIONS && left !== 0) continue
+      const kind = split ? "gym session" : "session"
       if (!(await claim(`package:${c.$id}:${a}`))) continue
       report.low++
       const u = await ctx.getUserRow(a)
-      await pushUser(ctx, a, left ? `${left} sessions left` : "No sessions left",
+      await pushUser(ctx, a, left ? `${left} ${kind}s left` : `No ${kind}s left`,
         left ? "Talk to your coach to renew your package." : "Your package is used up, so you're out of your next classes. Your coach can renew it.", { type: "class_package" })
       await pushCoaches(ctx, a, left ? "Package running low" : "Package used up",
-        `${name(u)} has ${left} session${left === 1 ? "" : "s"} left.`, { type: "class_package", athleteId: a })
+        `${name(u)} has ${left} ${kind}${left === 1 ? "" : "s"} left.`, { type: "class_package", athleteId: a })
     }
   }
   // Package used up or past its use-by date: out of the classes still ahead
@@ -804,7 +891,7 @@ export async function runClassCron(baseCtx, date = new Date()) {
     ? new Set((await allClasses()).filter((c) => classMs(c) > now.ms).flatMap((c) => c.roster ?? []))
     : justUsed
   for (const a of booked) {
-    if (!(await athletePackage(ctx, a, now)).locked) continue
+    if (!(await athletePackage(ctx, a, now)).gymOut) continue
     if (await dropFromClassesAhead(ctx, a, now)) report.dropped++
   }
   // A list Appwrite didn't answer reads as no rows (no package, no classes),

@@ -11,6 +11,7 @@ import { AthleteRecentSessionsSummary } from "@/components/AthleteRecentSessions
 import { SuggestedWarmupCard } from "@/components/SuggestedWarmupCard"
 import { defaultDueBy, homeworkName, shortDay } from "@/utils/homework"
 import { notifyHomeworkAssigned } from "@/services/homework"
+import { logVirtual, removeVirtual, virtualForWorkout, type VirtualClass } from "@/services/classSchedule"
 import { addDays, localDateStr } from "@/utils/planRotation"
 import {
   AuthoringAthleteContext,
@@ -271,6 +272,18 @@ export function AthleteWorkoutBuilder({
   // Homework only for an athlete's workout — and only for a workout that's
   // itself a plain one (not an S&C part or homework being edited).
   const canHomework = !!athlete && !protocol?.planPart
+  // "Virtual class": the workout is sent as an online class, so it uses a
+  // session of the athlete's package (functions/aiProtocol classVirtual).
+  // Editing one already sent shows the switch on; turning it off gives the
+  // session back.
+  const [virtualOn, setVirtualOn] = useState(false)
+  const [virtualRow, setVirtualRow] = useState<VirtualClass | null>(null)
+  useEffect(() => {
+    if (!protocol?.$id || !athlete) return
+    let live = true
+    virtualForWorkout(protocol.$id).then((v) => { if (live && v) { setVirtualRow(v); setVirtualOn(true) } })
+    return () => { live = false }
+  }, [protocol?.$id, athlete])
   const homework = canHomework ? blocks.filter((b) => homeworkIds.has(b.id)) : []
   const kept = homework.length ? blocks.filter((b) => !homeworkIds.has(b.id)) : blocks
 
@@ -324,15 +337,18 @@ export function AthleteWorkoutBuilder({
       }
     }
 
+    // The saved workout's id, for its virtual class.
+    let savedId: string | null = null
     try {
       if (wholeToHomework) {
         await deleteProtocol(protocol!.$id)
       } else if (editing) {
         await updateProtocol(protocol!.$id, { name: name.trim(), blocks: stripLocalIds(stripCoached(kept)), source })
+        savedId = protocol!.$id
       } else if (kept.length === 0) {
         // The whole workout is homework.
       } else {
-        await createProtocol({ name: name.trim(), blocks: stripLocalIds(stripCoached(kept)), athleteId: athlete?.$id, source, ...plan })
+        savedId = (await createProtocol({ name: name.trim(), blocks: stripLocalIds(stripCoached(kept)), athleteId: athlete?.$id, source, ...plan })).$id
         if (athlete) await clearHomeWorkout(athlete.$id)
       }
     } catch (e: any) {
@@ -345,6 +361,15 @@ export function AthleteWorkoutBuilder({
 
     // Only now that both are saved does the athlete hear about it.
     if (homeworkRow) notifyHomeworkAssigned(homeworkRow.$id, shortDay(dueBy))
+    // The virtual class: logged today when switched on, given back when off
+    // (or the workout became homework). The workout is saved either way.
+    try {
+      const want = virtualOn && !!savedId && !!athlete
+      if (want && !virtualRow) await logVirtual(athlete!.$id, today, savedId!)
+      if (!want && virtualRow) await removeVirtual(virtualRow.$id)
+    } catch (e: any) {
+      Alert.alert("Workout saved", `The virtual class wasn't ${virtualOn ? "counted" : "taken back"}: ${e?.message ?? "try again"}. Fix it in Classes › Sessions left › Virtual.`)
+    }
     onSaved?.()
     onClose()
   }
@@ -514,6 +539,17 @@ export function AthleteWorkoutBuilder({
           label="Move the whole workout to homework"
         />
       </View>
+      {kept.length > 0 && (
+        <View style={[s.pCard, s.pCardRow]}>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={s.pCardTitle}>Virtual class</Text>
+            <Text style={s.pCardText}>
+              {virtualRow ? `Counted on ${shortDay(virtualRow.date)}. Turn off to give the session back.` : `Uses 1 session of ${athleteName ?? "the athlete"}'s package, today.`}
+            </Text>
+          </View>
+          <PaperSwitch value={virtualOn} onValueChange={setVirtualOn} label="Virtual class" />
+        </View>
+      )}
     </View>
   )
 

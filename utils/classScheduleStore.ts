@@ -1,10 +1,10 @@
 import { useAuth } from "@/components/auth-context"
 import * as api from "@/services/classSchedule"
-import type { ClassPackage, ClassUser, ClassWeek } from "@/services/classSchedule"
+import type { ClassPackage, ClassUser, ClassWeek, VirtualClass } from "@/services/classSchedule"
 import {
   AddClassProblem, BlockedTime, ClassChange, ClassRequestRow, ExtraClass, GRID_END, GRID_START, GymClass,
   CLASS_HOURS, addClassProblem, athleteView, classDate, classLabel, currentPackage, packageUsage, dateOf, formatTime, mondayOf, packageLocked, sessionsLeft,
-  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd,
+  CHANGE_DEADLINE_H, WEEK_DAYS, slotKey, usualFits, weekdayOf, ymd, type PackageUsage,
 } from "@/utils/classSchedule"
 import { useEffect, useSyncExternalStore } from "react"
 import { Alert } from "react-native"
@@ -44,7 +44,7 @@ export interface AthleteWeek {
 }
 
 // `locked`: used up or past its use-by date; the app is locked until the coach renews.
-export interface PackageInfo { total: number; left: number; useBy: string; locked: boolean }
+export type PackageInfo = PackageUsage
 
 interface State {
   status: "idle" | "loading" | "ready" | "error"
@@ -72,6 +72,10 @@ interface State {
   packages: ClassPackage[]
   series: Slot[]                     // coach: classes that repeat every week (pre-fill)
   left: Record<string, PackageInfo>  // coach: sessions left per athlete with a package
+  virtual: VirtualClass[]            // coach: virtual classes in the current packages
+  // Coach: a week gone by, to correct who came (pastBack weeks before this one; 0 = none shown)
+  pastBack: number
+  past: { weekStart: string; classes: GymClass[]; blocks: BlockedTime[] } | null
 }
 
 const emptyWeek = (weekStart: string): AthleteWeek => ({
@@ -82,6 +86,7 @@ let state: State = {
   status: "idle", error: null, busy: false, me: "", names: {}, athletes: [], requests: [],
   thisWeek: emptyWeek(""), shown: emptyWeek(""), shownNext: false, nextWeek: null, defaults: [], pkg: null,
   planning: "next", thisOpen: false, nextWeekStart: "", nextClasses: [], blocks: [], published: false, packages: [], left: {}, series: [],
+  virtual: [], pastBack: 0, past: null,
 }
 const listeners = new Set<() => void>()
 
@@ -180,6 +185,7 @@ export function planWeek(which: "this" | "next") {
 // ── Loading ─────────────────────────────────────────────────────────────────
 
 let who: { me: string; coach: boolean } | null = null
+let pastWeek: ClassWeek | null = null
 let loading: Promise<void> | null = null
 
 function weekFor(w: ClassWeek, requests: ClassRequestRow[], me: string, names: Record<string, string>): AthleteWeek {
@@ -192,31 +198,50 @@ function weekFor(w: ClassWeek, requests: ClassRequestRow[], me: string, names: R
 async function packageInfo(me: string, now: Date): Promise<PackageInfo | null> {
   const pkg = currentPackage(await api.loadPackages(me), ymd(now))
   if (!pkg) return null
-  const { classes, requests } = await api.loadHistory(me, ymd(mondayOf(dateOf(pkg.startsOn))))
-  return packageUsage(pkg, classes, requests, now)
+  const { classes, requests, virtual } = await api.loadHistory(me, ymd(mondayOf(dateOf(pkg.startsOn))))
+  return packageUsage(pkg, classes, requests, now, virtual)
 }
 
 // Coach: every athlete's sessions left, in two reads (all classes and
 // requests since the oldest current package's week).
-async function allPackageInfo(packages: ClassPackage[], athleteIds: string[], now: Date): Promise<Record<string, PackageInfo>> {
+// Also returns the virtual classes logged in each current package.
+async function allPackageInfo(packages: ClassPackage[], athleteIds: string[], now: Date): Promise<{ left: Record<string, PackageInfo>; virtual: VirtualClass[] }> {
   const today = ymd(now)
   const current = athleteIds
     .map((id) => [id, currentPackage(packages.filter((p) => p.athleteId === id), today)] as const)
     .filter((x): x is readonly [string, ClassPackage] => !!x[1])
-  if (!current.length) return {}
+  if (!current.length) return { left: {}, virtual: [] }
   const from = current.map(([, p]) => ymd(mondayOf(dateOf(p.startsOn)))).sort()[0]
-  const { classes, requests } = await api.loadAllHistory(from)
+  const { classes, requests, virtual } = await api.loadAllHistory(from)
   const out: Record<string, PackageInfo> = {}
+  const inPackages: VirtualClass[] = []
   for (const [id, p] of current) {
     const weekFrom = ymd(mondayOf(dateOf(p.startsOn)))
+    const mine = virtual.filter((v) => v.athleteId === id && v.date >= p.startsOn)
+    inPackages.push(...mine)
     out[id] = packageUsage(
       p,
       classes.filter((c) => c.weekStart >= weekFrom && c.roster.includes(id)),
       requests.filter((r) => r.athleteId === id && r.weekStart >= weekFrom),
       now,
+      mine,
     )
   }
-  return out
+  return { left: out, virtual: inPackages }
+}
+
+// The coach's week gone by, rosters as names (and user ids in `ids`).
+function pastView(w: ClassWeek, names: Record<string, string>): State["past"] {
+  return {
+    weekStart: w.weekStart,
+    blocks: w.blocks,
+    classes: w.classes.map((c) => ({ ...c, roster: c.roster.map((u) => names[u] ?? "athlete"), ids: c.roster })),
+  }
+}
+const pastStart = (back: number, now = new Date()) => {
+  const d = mondayOf(now)
+  d.setDate(d.getDate() - 7 * back)
+  return ymd(d)
 }
 
 async function load() {
@@ -240,8 +265,11 @@ async function load() {
       api.loadRequests([thisStart, nextStart], coach ? undefined : me),
       // The coach's recurring classes: they pre-fill each new week.
       coach ? api.loadSeries() : Promise.resolve([] as Slot[]),
-    ]).then(([a, b, c, d, e, series]) => {
+      // The week gone by the coach is correcting, if any.
+      coach && state.pastBack > 0 ? api.loadWeek(pastStart(state.pastBack, now)) : Promise.resolve(null),
+    ]).then(([a, b, c, d, e, series, past]) => {
       state.series = series
+      pastWeek = past
       return [a, b, c, d, e] as const
     })
     const names = Object.fromEntries(users.map((u) => [u.id, u.name]))
@@ -251,7 +279,7 @@ async function load() {
       coach ? api.loadPackages() : Promise.resolve([]),
     ])
     const athletes = users.filter((u) => u.role !== "coach" && u.active !== false)
-    const left = coach ? await allPackageInfo(packages, athletes.map((a) => a.id), now) : {}
+    const { left, virtual } = coach ? await allPackageInfo(packages, athletes.map((a) => a.id), now) : { left: {}, virtual: [] }
     server = { this: thisWeek, next: nextWeek }
     const thisOpen = coach
     if (coach) {
@@ -262,7 +290,8 @@ async function load() {
     const shownNext = weekdayOf(now) >= 5 && nextWeek.published
     const thisView = weekFor(thisWeek, requests, me, names)
     set({
-      status: "ready", error: null, me, names, requests, pkg, packages, left,
+      status: "ready", error: null, me, names, requests, pkg, packages, left, virtual,
+      past: pastWeek ? pastView(pastWeek, names) : null,
       // Deactivated accounts can't be added to classes.
       athletes,
       defaults: meRow?.defaultClasses ?? [],
@@ -495,6 +524,36 @@ export function setClassRoster(classId: string, athleteId: string, add: boolean)
   return run(() => api.setRoster(classId, athleteId, add))
 }
 
-export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string): Promise<boolean> {
-  return run(() => api.addPackage(athleteId, total, startsOn, useBy))
+export function addAthletePackage(athleteId: string, total: number, startsOn: string, useBy: string, virtual?: number): Promise<boolean> {
+  return run(() => api.addPackage(athleteId, total, startsOn, useBy, virtual))
+}
+
+// ── Coach: weeks gone by and virtual classes ───────────────────────────────
+
+// Show the week `back` weeks before this one (1 = last week), or none (0).
+// Only that week's classes are read.
+export async function showPastWeek(back: number): Promise<void> {
+  set({ pastBack: back, past: back > 0 && state.past?.weekStart === pastStart(back) ? state.past : null })
+  if (back <= 0) return
+  try {
+    const w = await api.loadWeek(pastStart(back))
+    if (state.pastBack === back) set({ past: pastView(w, state.names) })
+  } catch (e: any) {
+    Alert.alert("Couldn't load that week", e?.message ?? "Try again.")
+  }
+}
+
+// A class that happened at a time gone by but wasn't planned, with the
+// athlete who came (more can be added to it after).
+export function addPastClass(weekStart: string, day: number, start: number, athleteId: string): Promise<boolean> {
+  return run(() => api.addPastClass(weekStart, day, start, athleteId))
+}
+
+// A virtual class on `date` ("YYYY-MM-DD"): one session of the package.
+export function logVirtualClass(athleteId: string, date: string): Promise<boolean> {
+  return run(() => api.logVirtual(athleteId, date))
+}
+
+export function removeVirtualClass(id: string): Promise<boolean> {
+  return run(() => api.removeVirtual(id))
 }

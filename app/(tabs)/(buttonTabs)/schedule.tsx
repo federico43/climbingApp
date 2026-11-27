@@ -288,7 +288,7 @@ function ScheduleScreenBody() {
           summary={[
             `${booked} booked`,
             ...(pendingN ? [`${pendingN} pending`] : []),
-            st.pkg ? `${st.pkg.left} sessions left` : "No package",
+            st.pkg ? (st.pkg.virtualTotal != null ? `${st.pkg.left} gym · ${st.pkg.virtualLeft} virtual left` : `${st.pkg.left} sessions left`) : "No package",
           ].join(" · ")}
         />
         </TourSpot>

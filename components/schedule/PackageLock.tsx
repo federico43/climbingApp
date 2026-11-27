@@ -38,7 +38,7 @@ function Lock() {
         <Text style={s.title}>{usedUp ? "No sessions left" : "Your package expired"}</Text>
         <Text style={s.body}>
           {usedUp
-            ? `You used all ${pkg.total} sessions of your package.`
+            ? `You used all ${pkg.total + (pkg.virtualTotal ?? 0)} sessions of your package.`
             : `It had to be used by ${pkg.useBy}.`}{" "}
           Ask your coach to renew it. The app opens again as soon as they do.
         </Text>

@@ -172,6 +172,9 @@ console.log("classSchedule tests passed")
   assert.equal(u.left, 5) // 8 − 2 done − 1 skip past the 2 that carry over
   assert.equal(u.locked, false)
   assert.equal(packageUsage(pkg, [], [], new Date(2026, 11, 2)).locked, true) // past use-by
+  // Virtual classes count too: only on the package's days, not ahead of today
+  const online = [{ date: "2026-11-01" }, { date: "2026-11-04" }, { date: "2026-11-09" }, { date: "2026-11-20" }]
+  assert.equal(packageUsage(pkg, [...done, ...ahead], skips, new Date(2026, 10, 10, 12), online).left, 3)
 }
 
 console.log("usual schedule ok")
