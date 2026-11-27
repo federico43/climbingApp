@@ -5,6 +5,7 @@ import { isNetworkError } from "@/utils/network"
 import { FOCUSES, type Focus, type LevelStep } from "@/utils/scProgression"
 import { DEFAULT_START_TYPE, localDateStr, MAIN_CYCLE, type MainType, type PlanFocus, type PlanKind, type ScPattern } from "@/utils/planRotation"
 import { parsePauses, type PlanPause } from "@/utils/planPauses"
+import { isTechniqueModuleId, type TechniqueModuleId } from "@/utils/techniqueModules"
 import { parseMaxLog, withNewMax, type MaxSource } from "@/utils/edgeWarmup"
 import type { SavedBands } from "@/utils/bands"
 import { parseHangLog, withHangMax } from "@/utils/maxHangs"
@@ -467,6 +468,10 @@ export const TRAINING_PLANS_TABLE = "training_plans"
 // scFocuses (string, JSON Focus[], optional): the S&C focuses the coach left
 // on (coach 2026-11-12); empty = all three. Only written when some are off
 // (or were), like mobilityIds (scripts/sc-focuses/create-column.mjs).
+// techniqueModuleId (string, optional): Technique plans' technique module
+// (utils/techniqueModules.ts, docs/technique-modules.md); missing = none.
+// Only written once a plan has one (or had one), so other plans save before
+// the column exists (scripts/technique-modules/create-column.mjs).
 
 export interface TrainingPlanRow {
   $id: string
@@ -484,6 +489,7 @@ export interface TrainingPlanRow {
   mobilityIds: string[]       // coach-chosen mobility exercises; empty = app picks
   scFocuses: Focus[]          // S&C focuses on; empty = all three
   startType: MainType | null  // null = strength (the default cycle)
+  techniqueModuleId: TechniqueModuleId | null // Technique plans only; null = none
   pauses: PlanPause[]         // utils/planPauses.ts; empty when never paused
   movementTypeFocus: string[] // pre-v2 only, see utils/movementTypes.ts
 }
@@ -509,6 +515,7 @@ function toTrainingPlan(row: any): TrainingPlanRow {
     mobilityIds: parseJsonArray(row.mobilityIds).filter((id): id is string => typeof id === "string"),
     scFocuses: parseJsonArray(row.scFocuses).filter((f): f is Focus => (FOCUSES as string[]).includes(f)),
     startType: MAIN_CYCLE.includes(row.startType) ? row.startType : null,
+    techniqueModuleId: isTechniqueModuleId(row.techniqueModuleId) ? row.techniqueModuleId : null,
     pauses: parsePauses(row.pauses),
     movementTypeFocus: parseJsonArray(row.movementTypeFocus),
   }
@@ -553,6 +560,7 @@ export interface TrainingPlanInput {
   mobilityIds?: string[]
   scFocuses?: Focus[]
   startType?: MainType | null
+  techniqueModuleId?: TechniqueModuleId | null
 }
 
 // `previous`: the plan being edited, if any. startType is left out when it's
@@ -585,6 +593,13 @@ function planData(input: Partial<TrainingPlanInput>, previous?: TrainingPlanRow)
     if (!all || previous?.scFocuses.length) data.scFocuses = JSON.stringify(all ? [] : on)
     else delete data.scFocuses
   }
+  if ("techniqueModuleId" in input) {
+    // Technique plans only; none = nothing stored, so the column is only
+    // needed once a coach picks a module.
+    const id = input.focus === "technique" || (!("focus" in input) && previous?.focus === "technique") ? input.techniqueModuleId ?? null : null
+    if (id || previous?.techniqueModuleId) data.techniqueModuleId = id
+    else delete data.techniqueModuleId
+  }
   return data
 }
 
@@ -602,6 +617,9 @@ function planWriteError(e: unknown): unknown {
   }
   if (/Unknown attribute:?\s*"?scFocuses/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Run scripts/sc-focuses/create-column.mjs --apply: training_plans needs the "scFocuses" column to turn S&C focuses off.')
+  }
+  if (/Unknown attribute:?\s*"?techniqueModuleId/i.test(String((e as any)?.message ?? ""))) {
+    return new Error('Run scripts/technique-modules/create-column.mjs --apply: training_plans needs the "techniqueModuleId" column for technique modules.')
   }
   if (/Unknown attribute:?\s*"?mobilityIds/i.test(String((e as any)?.message ?? ""))) {
     return new Error('Add the optional string column "mobilityIds" to the training_plans table in Appwrite (scripts/plan-mobility/create-column.mjs) to choose the mobility exercises.')
