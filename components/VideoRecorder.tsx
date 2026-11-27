@@ -5,10 +5,13 @@ import {
   elapsedLabel,
   failureKind,
   formatBytes,
+  NO_SOUND_STORAGE_KEY,
   RECORDING_STOP_TIMEOUT_MS,
   recorderContextLine,
+  rememberNoSoundAfter,
   type RecordingFailureKind,
 } from "@/utils/recordingAttempt"
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
@@ -95,6 +98,12 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   // "Record without sound": the camera is remounted with `mute`, so the
   // capture session never asks for the microphone (works during a call).
   const [muted, setMuted] = useState(false)
+  // The camera waits for the saved "no sound" choice, so a phone where the
+  // mic hangs never opens a camera that asks for it.
+  const [soundPrefLoaded, setSoundPrefLoaded] = useState(false)
+  // Why this camera records without sound: the failure (with sound) that
+  // led to it. A clip that then works without sound proves it's the mic.
+  const soundFailureRef = useRef<RecordingFailureKind | null>(null)
   // Bumped to throw away the native camera (and whatever state a stuck
   // recording left in it) and mount a fresh one.
   const [cameraKey, setCameraKey] = useState(0)
@@ -125,6 +134,20 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
       sub.remove()
       console.log("VideoRecorder: component unmounted")
     }
+  }, [])
+
+  // On a phone where recording with sound got stuck and then worked without
+  // it, start straight without sound (Pauli's iPhone 11: the mic setup hangs
+  // the capture session). The "No sound" chip turns sound back on.
+  useEffect(() => {
+    AsyncStorage.getItem(NO_SOUND_STORAGE_KEY)
+      .then((saved) => {
+        if (saved !== "1") return
+        console.log("VideoRecorder: starting without sound (remembered after a mic failure on this phone)")
+        setMuted(true)
+      })
+      .catch((err) => console.warn("VideoRecorder: couldn't read the sound setting:", err))
+      .finally(() => setSoundPrefLoaded(true))
   }, [])
 
   // Lens set differs between front/back cameras — drop the previous pick
@@ -316,6 +339,12 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
       // replaces the failure screen when the clip arrives after the timeout.)
       setFailure(null)
       setPreviewUri(video.uri);
+      if (muted && rememberNoSoundAfter(soundFailureRef.current)) {
+        soundFailureRef.current = null
+        console.log(`${tag()} worked without sound after a failure with sound: this phone now starts without sound`)
+        AsyncStorage.setItem(NO_SOUND_STORAGE_KEY, "1")
+          .catch((err) => console.warn("VideoRecorder: couldn't save the sound setting:", err))
+      }
     } catch (err: any) {
       const message = String(err?.message ?? err)
       console.error(`${tag()} recording failed ${sinceStop()}${isCurrent() ? "" : " (abandoned attempt)"}: ${message}`)
@@ -349,12 +378,24 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
     const abandoned = attemptRef.current
     console.log(`VideoRecorder: fresh camera ${withoutSound ? "without" : "with"} sound${abandoned ? `, leaving rec#${abandoned.id} behind` : ""}`)
     attemptRef.current = null
+    // Remember what went wrong with sound, if that's why sound goes off now.
+    if (withoutSound && !muted && failure) soundFailureRef.current = failure.kind
+    if (!withoutSound) soundFailureRef.current = null
     setFailure(null)
     setIsSaving(false)
     setIsRecording(false)
     setCameraReady(false)
     setMuted(withoutSound)
     setCameraKey((k) => k + 1)
+  }
+
+  // From the "No sound" chip: forget the saved choice and try the mic again.
+  // If it hangs again, the failure screen offers "Record without sound".
+  const turnSoundOn = () => {
+    console.log("VideoRecorder: sound turned back on from the chip")
+    AsyncStorage.removeItem(NO_SOUND_STORAGE_KEY)
+      .catch((err) => console.warn("VideoRecorder: couldn't clear the sound setting:", err))
+    newCamera(false)
   }
 
   const closeAfterFailure = () => {
@@ -396,7 +437,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
 
   return (
     <View style={{ flex: 1, backgroundColor: "black" }}>
-      <CameraView
+      {soundPrefLoaded && <CameraView
         key={cameraKey}
         ref={cameraRef}
         style={{ width: "100%", height: "100%" }}
@@ -408,7 +449,7 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         onAvailableLensesChanged={(e) => setAvailableLenses(e.lenses)}
         onCameraReady={() => { console.log(`VideoRecorder: camera ready${muted ? " (no sound)" : ""}`); setCameraReady(true) }}
         onMountError={(e) => console.error("VideoRecorder: camera mount error:", e.message)}
-      />
+      />}
 
       {/* Recording indicator chip at top */}
       {isRecording && (
@@ -418,13 +459,20 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         </View>
       )}
 
-      {/* Shown for as long as this camera records without the microphone */}
-      {muted && (
+      {/* Shown for as long as this camera records without the microphone.
+          Between recordings it also turns sound back on. */}
+      {muted && (isRecording || isSaving || failure ? (
         <View style={styles.mutedChip} pointerEvents="none">
           <Ionicons name="mic-off" size={14} color="white" />
           <Text style={styles.mutedText}>No sound</Text>
         </View>
-      )}
+      ) : (
+        <Pressable onPress={turnSoundOn} style={styles.mutedChip} hitSlop={8}>
+          <Ionicons name="mic-off" size={14} color="white" />
+          <Text style={styles.mutedText}>No sound</Text>
+          <Text style={styles.mutedAction}>Turn on</Text>
+        </Pressable>
+      ))}
 
       {/* Lens picker — only meaningful on iOS devices with multiple back lenses */}
       {lensOptions.length > 1 && (
@@ -603,6 +651,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 14,
   },
   mutedText: { color: "white", fontSize: 12, fontWeight: "700" },
+  mutedAction: { color: "white", fontSize: 12, fontWeight: "700", textDecorationLine: "underline", marginLeft: 4 },
 
   // Lens picker (.5×/1×/2×)
   lensRow: {

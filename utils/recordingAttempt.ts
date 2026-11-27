@@ -38,6 +38,21 @@ export function formatBytes(bytes: number | null | undefined): string {
 // "interrupted=true" and "audio setup error" parts point at the mic.
 const MIC_PATTERN = /microphone|\bmic\b|interrupted=true|audio setup error|audiodeviceinuse|in use by another|-11818|-11815|!pri|561017449|insufficient ?priority/
 
+/**
+ * AsyncStorage key: "1" when this phone records without sound by default,
+ * because recording with sound got stuck on it and then worked without.
+ */
+export const NO_SOUND_STORAGE_KEY = "videoRecorder.noSound.v1"
+
+/**
+ * After a clip recorded without sound works, should the phone start without
+ * sound from now on? Only when sound went off because recording with it got
+ * stuck or the mic failed, not when it failed for another reason.
+ */
+export function rememberNoSoundAfter(soundFailure: RecordingFailureKind | null): boolean {
+  return soundFailure === "stuck" || soundFailure === "mic"
+}
+
 /** How to read the message recordAsync rejected with. */
 export function failureKind(message: string): RecordingFailureKind {
   return MIC_PATTERN.test(message.toLowerCase()) ? "mic" : "other"
