@@ -31,12 +31,12 @@ export function useExplorationFocusFirstTime(): boolean {
   return first
 }
 
-export function ExplorationFocusSlides({ visible, minutes, onClose }: { visible: boolean; minutes: ExplorationMinutes; onClose: () => void }) {
+export function ExplorationFocusSlides({ visible, minutes, onClose, startAt = 0 }: { visible: boolean; minutes: ExplorationMinutes; onClose: () => void; startAt?: number }) {
   const t = usePaper()
   const [i, setI] = useState(0)
   const slides = explorationFocusSlides(minutes)
 
-  useEffect(() => { if (visible) setI(0) }, [visible])
+  useEffect(() => { if (visible) setI(startAt) }, [visible, startAt])
 
   const close = () => {
     AsyncStorage.setItem(SEEN_KEY, "1").catch(() => {})
