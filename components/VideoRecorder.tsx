@@ -1,12 +1,24 @@
 import { useHoldUpdates } from "@/utils/updateHold"
 import { DebugLogOverlay } from '@/components/DebugLogOverlay';
+import { useHoldTimerSound } from "@/services/timerSound"
+import {
+  elapsedLabel,
+  failureKind,
+  formatBytes,
+  RECORDING_STOP_TIMEOUT_MS,
+  recorderContextLine,
+  type RecordingFailureKind,
+} from "@/utils/recordingAttempt"
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import Constants from "expo-constants"
+import * as Device from "expo-device"
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Updates from "expo-updates"
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -20,11 +32,6 @@ const RING_SIZE   = 84
 const RING_BORDER = 4
 const INNER_IDLE  = 64
 const INNER_REC   = 28
-
-// After tapping stop, recordAsync normally resolves within a second or two.
-// Past this, assume it never will and offer a way out instead of leaving
-// the athlete stuck on "Saving video…".
-const SAVING_TIMEOUT_MS = 10000
 
 // Same settings on mount and right before every recording: other screens
 // (expo-video players, the Intervals / S&C timers) switch the shared iOS
@@ -56,15 +63,42 @@ function classifyLens(name: string): { id: string; label: string } | null {
   return null
 }
 
+// One tap of the record button. Its result only counts while it is still
+// `attemptRef.current`: "Try again" / "Close" abandon it, and a recordAsync
+// that settles after that is logged and ignored.
+type Attempt = { id: number; startedAt: number; stoppedAt: number | null }
+type Failure = { kind: RecordingFailureKind; message: string }
+
+// Module-level so attempt numbers keep counting across camera remounts in one
+// app session, which keeps the debug logs readable.
+let attemptCounter = 0
+
+const FAILURE_TEXT: Record<RecordingFailureKind, string> = {
+  stuck: "The camera got stuck while recording. This can happen during a phone or WhatsApp call, or when another app is using the microphone.",
+  mic: "The phone didn't let the camera use the microphone. A call or another app may be using it.",
+  other: "Something went wrong while recording.",
+}
+const FAILURE_TEXT_MUTED = "It didn't work without sound either. Close the camera and try again. If it keeps happening, share the debug logs (🐞) with your coach."
+
 export default function VideoRecorder({ onFinish, onClose }: any) {
   // A reload here would lose unsaved work — see utils/updateHold.ts.
   useHoldUpdates()
+  // The camera holds the microphone while it's open; a timer beep now would
+  // reset the iOS audio session under it (see services/timerSound.ts).
+  useHoldTimerSound()
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [micPermission, requestMicPermission] = useMicrophonePermissions()
   const cameraRef = useRef<any>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [savingTimedOut, setSavingTimedOut] = useState(false)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  // "Record without sound": the camera is remounted with `mute`, so the
+  // capture session never asks for the microphone (works during a call).
+  const [muted, setMuted] = useState(false)
+  // Bumped to throw away the native camera (and whatever state a stuck
+  // recording left in it) and mount a fresh one.
+  const [cameraKey, setCameraKey] = useState(0)
+  const attemptRef = useRef<Attempt | null>(null)
   const [cameraReady, setCameraReady] = useState(false)
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [facing, setFacing] = useState<CameraType>("back")
@@ -73,8 +107,24 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   const [selectedLens, setSelectedLens] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    console.log("VideoRecorder: component mounted")
-    return () => console.log("VideoRecorder: component unmounted")
+    // Which phone, iOS version, native build and EAS update these logs come
+    // from: the native build says whether the patched expo-camera is in it.
+    console.log("VideoRecorder: component mounted ·", recorderContextLine({
+      model: Device.modelName,
+      os: Platform.OS,
+      osVersion: Platform.Version,
+      nativeBuild: Platform.OS === "ios" ? Constants.platform?.ios?.buildNumber : null,
+      updateId: Updates.updateId,
+      updateCreatedAt: Updates.createdAt,
+      channel: Updates.channel,
+    }))
+    // An incoming call or Control Center turns the app "inactive"; going to
+    // the background stops the camera session.
+    const sub = AppState.addEventListener("change", (state) => console.log("VideoRecorder: app state", state))
+    return () => {
+      sub.remove()
+      console.log("VideoRecorder: component unmounted")
+    }
   }, [])
 
   // Lens set differs between front/back cameras — drop the previous pick
@@ -103,16 +153,6 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
 
   const activeLensId = selectedLens
 
-  // Preview playback of the just-recorded clip, looping and autoplaying.
-  // expo-video's default audioMixingMode ("auto") makes iOS stop other apps'
-  // audio as soon as an unmuted player starts, so the athlete's music
-  // (Spotify etc.) died on every preview. Mixing keeps it going.
-  const previewPlayer = useVideoPlayer(previewUri ? { uri: previewUri } : null, (p) => {
-    p.audioMixingMode = "mixWithOthers"
-    p.loop = true
-    p.play()
-  })
-
   // Let the camera's mic activate without cutting off music/podcasts already
   // playing in another app (e.g. Spotify) — default iOS/Android behavior
   // otherwise stops other audio the moment recording starts.
@@ -123,15 +163,26 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
       .catch((err) => console.error("VideoRecorder: setAudioModeAsync failed:", err))
   }, [])
 
-  // The CameraView unmounts while saving / previewing, so a later remount
-  // has to wait for its own onCameraReady again.
+  // The CameraView unmounts while previewing, so a later remount has to wait
+  // for its own onCameraReady again (a fresh camera after a failure resets
+  // this itself, see newCamera).
   useEffect(() => {
-    if (isSaving || previewUri) setCameraReady(false)
-  }, [isSaving, previewUri])
+    if (previewUri) setCameraReady(false)
+  }, [previewUri])
 
+  // After stop, give the native side RECORDING_STOP_TIMEOUT_MS to hand back
+  // the clip. Past that, show what happened and how to go on. The attempt
+  // stays current, so a clip that still arrives late is shown as normal.
   useEffect(() => {
-    if (!isSaving) { setSavingTimedOut(false); return }
-    const id = setTimeout(() => setSavingTimedOut(true), SAVING_TIMEOUT_MS)
+    if (!isSaving) return
+    const attempt = attemptRef.current
+    const id = setTimeout(() => {
+      if (!attempt || attemptRef.current !== attempt) return
+      console.error(`rec#${attempt.id} recording still not saved ${RECORDING_STOP_TIMEOUT_MS / 1000}s after stop, showing the failure screen`)
+      setIsSaving(false)
+      setIsRecording(false)
+      setFailure({ kind: "stuck", message: `recordAsync didn't finish ${RECORDING_STOP_TIMEOUT_MS / 1000}s after stop` })
+    }, RECORDING_STOP_TIMEOUT_MS)
     return () => clearTimeout(id)
   }, [isSaving])
 
@@ -217,54 +268,101 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   }
 
   const startRecording = async () => {
-    if (!cameraRef.current || !cameraReady) {
+    const camera = cameraRef.current
+    // The iOS simulator has no camera, so onCameraReady never fires there.
+    // Letting the tap through makes recordAsync fail at once, which shows the
+    // failure screen: the only part of this flow a simulator can show.
+    if (!camera || (!cameraReady && Device.isDevice)) {
       console.warn("startRecording: camera not ready yet")
       return;
     }
+    const attempt: Attempt = { id: ++attemptCounter, startedAt: Date.now(), stoppedAt: null }
+    attemptRef.current = attempt
+    const tag = () => `rec#${attempt.id} ${elapsedLabel(attempt.startedAt, Date.now())}`
+    const isCurrent = () => attemptRef.current === attempt
+    // How long the native side took to finish (or fail) after the stop tap.
+    const sinceStop = () =>
+      attempt.stoppedAt == null ? "before stop" : `${elapsedLabel(attempt.stoppedAt, Date.now()).slice(1)} after stop`
+    const lens = lensOptions.find((l) => l.id === selectedLens)?.label ?? "default lens"
+    console.log(`${tag()} record tapped · ${muted ? "no sound" : "with sound"} · ${facing} · ${lens}`)
+    setIsRecording(true);
     try {
-      setIsRecording(true);
       const freeBytes = await FileSystem.getFreeDiskStorageAsync().catch(() => null)
-      await setRecordingAudioMode().catch((err) => console.warn("startRecording: setAudioModeAsync failed:", err))
-      console.log("startRecording: calling recordAsync, free disk space:", freeBytes)
+      if (!muted) {
+        await setRecordingAudioMode().catch((err) => console.warn(`${tag()} setAudioModeAsync failed:`, err))
+      }
+      if (attempt.stoppedAt != null || !isCurrent()) {
+        // Stopped (or the camera was replaced) before the native recording
+        // was even asked to start: there's nothing to wait for.
+        console.log(`${tag()} ${attempt.stoppedAt != null ? "stopped" : "replaced"} before recordAsync was called`)
+        return
+      }
+      console.log(`${tag()} calling recordAsync · free disk ${formatBytes(freeBytes)}`)
       // `quality` is not a recordAsync option (CameraRecordingOptions has no
       // such field — it silently did nothing); video quality is controlled
       // via the CameraView `videoQuality` prop below instead.
-      const video = await cameraRef.current.recordAsync({
+      const video = await camera.recordAsync({
         maxDuration: 120,
       });
-      console.log("startRecording: recordAsync resolved", video?.uri)
+      console.log(`${tag()} recordAsync resolved ${sinceStop()}${isCurrent() ? "" : " (abandoned attempt, ignored)"}`, video?.uri)
       // Set by the patched expo-camera when the first attempt failed and it
       // retried with iOS's automatic audio session setup.
       if (video?.audioFallbackReason) {
-        console.warn("startRecording: recorded via audio fallback, first attempt failed:", video.audioFallbackReason)
+        console.warn(`${tag()} recorded via audio fallback, first attempt failed:`, video.audioFallbackReason)
       }
+      if (!isCurrent()) return
       if (!video?.uri) throw new Error("Recording finished without a file.")
-      // Don't commit yet — show the preview so the user can review.
+      // Don't commit yet — show the preview so the user can review. (Also
+      // replaces the failure screen when the clip arrives after the timeout.)
+      setFailure(null)
       setPreviewUri(video.uri);
     } catch (err: any) {
-      console.error("startRecording failed:", err?.message ?? err);
-      Alert.alert(
-        "Couldn't record",
-        "Something went wrong starting the camera. Try again — if it keeps happening, close and reopen the app and share the debug logs.",
-      )
+      const message = String(err?.message ?? err)
+      console.error(`${tag()} recording failed ${sinceStop()}${isCurrent() ? "" : " (abandoned attempt)"}: ${message}`)
+      if (isCurrent()) setFailure({ kind: failureKind(message), message })
     } finally {
-      setIsRecording(false);
-      setIsSaving(false);
+      if (isCurrent()) {
+        setIsRecording(false);
+        setIsSaving(false);
+      }
     }
   };
 
   const stopRecording = () => {
-    if (cameraRef.current && isRecording) {
-      // Immediately swap the camera for a "Saving…" view so the camera
-      // surface releases cleanly without leaving a frozen black frame.
-      setIsSaving(true)
-      try {
-        cameraRef.current.stopRecording();
-      } catch (err) {
-        console.error("stopRecording failed:", err)
-      }
+    const attempt = attemptRef.current
+    if (!cameraRef.current || !isRecording || !attempt || attempt.stoppedAt != null) return
+    attempt.stoppedAt = Date.now()
+    console.log(`rec#${attempt.id} ${elapsedLabel(attempt.startedAt, attempt.stoppedAt)} stop tapped`)
+    // Cover the camera with "Saving…" but keep it mounted until recordAsync
+    // settles: unmounting tears the capture session down (inputs and outputs
+    // removed) while the clip is still being finalized.
+    setIsSaving(true)
+    try {
+      cameraRef.current.stopRecording();
+    } catch (err) {
+      console.error(`rec#${attempt.id} stopRecording threw:`, err)
     }
   };
+
+  // Drops the current camera (and any recording stuck in it) for a fresh one.
+  const newCamera = (withoutSound: boolean) => {
+    const abandoned = attemptRef.current
+    console.log(`VideoRecorder: fresh camera ${withoutSound ? "without" : "with"} sound${abandoned ? `, leaving rec#${abandoned.id} behind` : ""}`)
+    attemptRef.current = null
+    setFailure(null)
+    setIsSaving(false)
+    setIsRecording(false)
+    setCameraReady(false)
+    setMuted(withoutSound)
+    setCameraKey((k) => k + 1)
+  }
+
+  const closeAfterFailure = () => {
+    const abandoned = attemptRef.current
+    console.log(`VideoRecorder: closed from the failure screen${abandoned ? `, leaving rec#${abandoned.id} behind` : ""}`)
+    attemptRef.current = null
+    onClose?.()
+  }
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0")
   const ss = String(elapsed % 60).padStart(2, "0")
@@ -274,70 +372,41 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
   // surface releases cleanly with no frozen frame.
   if (previewUri) {
     return (
-      <View style={{ flex: 1, backgroundColor: "black" }}>
-        <VideoView
-          player={previewPlayer}
-          style={{ flex: 1 }}
-          contentFit="contain"
-          nativeControls={false}
-        />
-        <View style={styles.previewControls}>
-          <Pressable
-            style={[styles.previewBtn, styles.previewBtnSecondary]}
-            onPress={() => setPreviewUri(null)}
-            hitSlop={10}
-          >
-            <Text style={styles.previewBtnText}>Retry</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.previewBtn, styles.previewBtnPrimary]}
-            onPress={() => onFinish(previewUri)}
-            hitSlop={10}
-          >
-            <Text style={[styles.previewBtnText, { color: "#111" }]}>Use video</Text>
-          </Pressable>
-        </View>
-        <DebugLogOverlay />
-      </View>
+      <RecordingPreview
+        uri={previewUri}
+        onRetry={() => setPreviewUri(null)}
+        onUse={() => onFinish(previewUri)}
+      />
     )
   }
 
-  // Once the user taps stop, swap the camera for a "Saving…" overlay so the
-  // camera surface unmounts immediately and we don't get a frozen black frame.
-  if (isSaving) {
-    return (
-      <View style={[styles.savingWrap, { backgroundColor: "rgba(0,0,0,0.92)" }]}>
-        <Text style={styles.savingText}>Saving video…</Text>
-        {savingTimedOut && (
-          <Pressable
-            style={[styles.previewBtn, styles.previewBtnSecondary, styles.savingCloseBtn]}
-            onPress={() => {
-              console.error("VideoRecorder: recording never finished saving, closing")
-              setIsSaving(false)
-              setIsRecording(false)
-              onClose?.()
-            }}
-            hitSlop={10}
-          >
-            <Text style={styles.previewBtnText}>Close</Text>
-          </Pressable>
-        )}
-        <DebugLogOverlay />
-      </View>
-    )
+  // Failure screen buttons: the microphone-free retry comes first when the
+  // microphone is the likely culprit.
+  const micSuspected = failure != null && failure.kind !== "other"
+  const failureButtons: { label: string; primary: boolean; onPress: () => void }[] = []
+  if (failure) {
+    if (muted) {
+      failureButtons.push({ label: "Try again", primary: true, onPress: () => newCamera(true) })
+    } else {
+      const withoutSound = { label: "Record without sound", primary: micSuspected, onPress: () => newCamera(true) }
+      const again = { label: micSuspected ? "Try again with sound" : "Try again", primary: !micSuspected, onPress: () => newCamera(false) }
+      failureButtons.push(...(micSuspected ? [withoutSound, again] : [again, withoutSound]))
+    }
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: "black" }}>
       <CameraView
+        key={cameraKey}
         ref={cameraRef}
         style={{ width: "100%", height: "100%" }}
         facing={facing}
         mode="video"
+        mute={muted}
         videoQuality="720p"
         selectedLens={Platform.OS === "ios" ? selectedLens : undefined}
         onAvailableLensesChanged={(e) => setAvailableLenses(e.lenses)}
-        onCameraReady={() => { console.log("VideoRecorder: camera ready"); setCameraReady(true) }}
+        onCameraReady={() => { console.log(`VideoRecorder: camera ready${muted ? " (no sound)" : ""}`); setCameraReady(true) }}
         onMountError={(e) => console.error("VideoRecorder: camera mount error:", e.message)}
       />
 
@@ -349,13 +418,24 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         </View>
       )}
 
+      {/* Shown for as long as this camera records without the microphone */}
+      {muted && (
+        <View style={styles.mutedChip} pointerEvents="none">
+          <Ionicons name="mic-off" size={14} color="white" />
+          <Text style={styles.mutedText}>No sound</Text>
+        </View>
+      )}
+
       {/* Lens picker — only meaningful on iOS devices with multiple back lenses */}
       {lensOptions.length > 1 && (
         <View style={styles.lensRow} pointerEvents="box-none">
           {lensOptions.map((lens) => (
             <TouchableOpacity
               key={lens.id}
-              onPress={() => setSelectedLens(lens.id)}
+              onPress={() => {
+                if (lens.id !== activeLensId) console.log("VideoRecorder: lens", lens.label)
+                setSelectedLens(lens.id)
+              }}
               style={[styles.lensBtn, activeLensId === lens.id && styles.lensBtnActive]}
             >
               <Text style={[styles.lensBtnText, activeLensId === lens.id && styles.lensBtnTextActive]}>
@@ -394,6 +474,83 @@ export default function VideoRecorder({ onFinish, onClose }: any) {
         </Animated.View>
       </Pressable>
 
+      {/* Once the user taps stop, cover the camera (its last frame may be
+          frozen) until the clip comes back. */}
+      {isSaving && (
+        <View style={styles.cover}>
+          <Text style={styles.savingText}>Saving video…</Text>
+        </View>
+      )}
+
+      {failure && (
+        <View style={[styles.cover, styles.failWrap]}>
+          <Ionicons name={micSuspected ? "mic-off-outline" : "alert-circle-outline"} size={36} color="white" />
+          <Text style={styles.failTitle}>The video didn&apos;t save</Text>
+          <Text style={styles.failText}>{muted ? FAILURE_TEXT_MUTED : FAILURE_TEXT[failure.kind]}</Text>
+          <Text style={styles.failDetail} numberOfLines={4}>{failure.message}</Text>
+          <View style={styles.failBtns}>
+            {failureButtons.map((b) => (
+              <Pressable
+                key={b.label}
+                style={[styles.previewBtn, styles.failBtn, b.primary ? styles.previewBtnPrimary : styles.previewBtnSecondary]}
+                onPress={b.onPress}
+                hitSlop={6}
+              >
+                <Text style={[styles.previewBtnText, b.primary && { color: "#111" }]}>{b.label}</Text>
+              </Pressable>
+            ))}
+            {onClose && (
+              <Pressable style={styles.failClose} onPress={closeAfterFailure} hitSlop={10}>
+                <Text style={styles.failCloseText}>Close</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      )}
+
+      <DebugLogOverlay />
+    </View>
+  )
+}
+
+// Its own component so the expo-video player only exists while there's a
+// clip to show. Created next to the live camera (even with no video loaded,
+// as soon as audioMixingMode is set), expo-video tries to switch the iOS
+// audio session to playback under a capture session that holds the mic.
+function RecordingPreview({ uri, onRetry, onUse }: { uri: string; onRetry: () => void; onUse: () => void }) {
+  // Looping autoplay. expo-video's default audioMixingMode ("auto") makes iOS
+  // stop other apps' audio as soon as an unmuted player starts, so the
+  // athlete's music (Spotify etc.) died on every preview. Mixing keeps it going.
+  const player = useVideoPlayer({ uri }, (p) => {
+    p.audioMixingMode = "mixWithOthers"
+    p.loop = true
+    p.play()
+  })
+
+  return (
+    <View style={{ flex: 1, backgroundColor: "black" }}>
+      <VideoView
+        player={player}
+        style={{ flex: 1 }}
+        contentFit="contain"
+        nativeControls={false}
+      />
+      <View style={styles.previewControls}>
+        <Pressable
+          style={[styles.previewBtn, styles.previewBtnSecondary]}
+          onPress={onRetry}
+          hitSlop={10}
+        >
+          <Text style={styles.previewBtnText}>Retry</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.previewBtn, styles.previewBtnPrimary]}
+          onPress={onUse}
+          hitSlop={10}
+        >
+          <Text style={[styles.previewBtnText, { color: "#111" }]}>Use video</Text>
+        </Pressable>
+      </View>
       <DebugLogOverlay />
     </View>
   )
@@ -438,6 +595,15 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
 
+  // "No sound" chip, just above the lens picker
+  mutedChip: {
+    position: "absolute", bottom: 190, alignSelf: "center",
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 14,
+  },
+  mutedText: { color: "white", fontSize: 12, fontWeight: "700" },
+
   // Lens picker (.5×/1×/2×)
   lensRow: {
     position: "absolute", bottom: 140, alignSelf: "center",
@@ -472,17 +638,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF3B30",
   },
 
-  // Saving overlay (replaces camera the instant user taps stop)
-  savingWrap: {
-    flex: 1, alignItems: "center", justifyContent: "center",
+  // Opaque cover over the (still mounted) camera: "Saving…" and failures
+  cover: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: "#000",
+    alignItems: "center", justifyContent: "center",
   },
   savingText: {
     color: "white", fontSize: 16, fontWeight: "600",
     letterSpacing: 0.5,
   },
-  savingCloseBtn: {
-    flex: 0, marginTop: 24, paddingHorizontal: 40,
+
+  // Failure screen
+  failWrap: { paddingHorizontal: 32, gap: 12 },
+  failTitle: { color: "white", fontSize: 18, fontWeight: "700", textAlign: "center" },
+  failText: { color: "rgba(255,255,255,0.75)", fontSize: 14, lineHeight: 20, textAlign: "center" },
+  failDetail: {
+    color: "rgba(255,255,255,0.4)", fontSize: 11, lineHeight: 15, textAlign: "center",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
+  failBtns: { alignSelf: "stretch", gap: 10, marginTop: 8 },
+  failBtn: { flex: 0 },
+  failClose: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 24 },
+  failCloseText: { color: "rgba(255,255,255,0.75)", fontSize: 15, fontWeight: "600" },
 
   // Preview screen
   previewControls: {
