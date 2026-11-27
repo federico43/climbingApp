@@ -17,10 +17,19 @@ Each module session: spray wall to explore (feet free, find two ways to do the h
 ## Build order (one draft PR each)
 
 1. **Rules, no UI** (this file's first version): `utils/techniqueModules.ts` (the module definition) and `utils/techniqueProgress.ts` (the rules). Tests: `scripts/progression-tests/techniqueModules.test.ts`.
-2. Plan picker and rotation: `training_plans.techniqueModuleId`; on Technique plans, the module replaces the 3 technique constraints on odd workouts.
+2. **Plan picker and rotation** (see below): `training_plans.techniqueModuleId`; on Technique plans, the module replaces the 3 technique constraints on odd workouts.
 3. Progress storage: `users.techniqueProgress` (TEXT column), phone copy first, like next-session tasks.
 4. The athlete's module block.
 5. Coach confirmation on the plan card.
+
+## In the plan (PR 2)
+
+- **Plan editor:** with focus Technique, a "Technique module" row: None (the 3 technique constraints, as before) or Footwork. Stored in `training_plans.techniqueModuleId` (string 32, optional), only written once a plan has one, so other plans save before the column exists. Run `scripts/technique-modules/create-column.mjs` (dry run, then `--apply`) before picking a module. Changing the focus away from Technique clears it.
+- **Rotation:** `warmupFor` returns `"module"` instead of `"constraints"` on odd workouts when `planTechniqueModule(plan)` is set. Even workouts keep 1 on 1 off. The coach's ⇄ on the warm-up row swaps module ↔ 1 on 1 off (`swappedWarmup`).
+- **The block:** `technique_module` (`components/workoutBlocks.tsx`) saves only `moduleId`, the name ("Footwork module"), the goal and 20 min. The level and colour are read from the athlete's progress when it starts (PR 3–4), so workouts built ahead never go stale. It isn't in the block picker. Next-session tasks go right after it, like after the constraints.
+- **Until PR 4:** the block runs as a free session (`moduleStandIn`): the goal, the Level 1 rule, a 20-min timer and the chip question as the notes prompt.
+- **Summaries:** the coach's Plan card says "Warm-up · Footwork module"; the athlete's Plan page and the workout summary show a "Footwork module" warm-up, 20 min.
+- Tests: `scripts/progression-tests/techniqueRotation.test.ts`.
 
 ## Text and instruction types
 
