@@ -3,6 +3,7 @@ import type { MovementType } from "@/utils/movementTypes"
 import { FOCUS_LABEL, type Focus } from "@/utils/scProgression"
 import { pausedDayCount, planClockDate, type PlanPause } from "@/utils/planPauses"
 import { explorationAllowed, hasExplorationBlock } from "@/utils/routeExploration"
+import { getTechniqueModule, type TechniqueModule } from "@/utils/techniqueModules"
 
 // The training plan's fixed rotation (docs/training-plan.md §9): what
 // workout n of a plan is — main type, main block, warm-up kind, S&C focus,
@@ -80,6 +81,14 @@ export interface PlanShape {
   startType?: MainType | null
   // Weeks the coach paused the plan (utils/planPauses.ts).
   pauses?: PlanPause[]
+  // Technique plans: the technique module (utils/techniqueModules.ts) that
+  // takes the constraint warm-ups' place. Missing / null / unknown = none.
+  techniqueModuleId?: string | null
+}
+
+// The plan's technique module: Technique plans only, a known module only.
+export function planTechniqueModule(plan: { focus: PlanFocus | null; techniqueModuleId?: string | null }): TechniqueModule | null {
+  return plan.focus === "technique" ? getTechniqueModule(plan.techniqueModuleId) : null
 }
 
 // A workout already built from this plan (a protocol row with planId set).
@@ -97,7 +106,9 @@ export interface WorkoutSpec {
   mainType: MainType
   mainBlock: LibraryBlockRef | null // null on conditioning plans (no climbing)
   // "exploration": route exploration, Fear management plans only — first in
-  // the workout, before S&C (utils/routeExploration.ts). "none":
+  // the workout, before S&C (utils/routeExploration.ts). "module": the
+  // plan's technique module, in the constraints' place (Technique plans with
+  // a module, docs/technique-modules.md). "none":
   // conditioning plans (the warm-ups are climbing).
   warmup: WarmupKind
   scFocus: Focus | null       // null when the plan has no S&C
@@ -105,7 +116,7 @@ export interface WorkoutSpec {
   withTest: boolean
 }
 
-export type WarmupKind = "constraints" | "one_on_one_off" | "exploration" | "none"
+export type WarmupKind = "constraints" | "one_on_one_off" | "exploration" | "module" | "none"
 
 export const PLAN_WEEKS = 6
 export const WORKOUTS_PER_WEEK = 2
@@ -341,18 +352,28 @@ function mainBlockFor(index: number, built: BuiltPlanWorkout[], startType?: Main
 }
 
 // The warm-up of workout `index`. Constraints and 1 on 1 off alternate
-// (odd, even). Fear management plans swap the constraints for the route
+// (odd, even). Technique plans with a module run the module instead of the
+// constraints (Federico 2026-11-27). Fear management plans swap the constraints for the route
 // exploration (coach 2026-11-05), once a week and never on a Monday — the
 // day the new routes are set: the next workout gets it when allowed today,
 // otherwise 1 on 1 off. Slots further ahead keep the plain alternation.
 function warmupFor(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WarmupKind {
   const alternate: WarmupKind = index % 2 === 1 ? "constraints" : "one_on_one_off"
+  if (alternate === "constraints" && planTechniqueModule(plan)) return "module"
   if (plan.focus !== "fear_management") return alternate
   if (index > nextPlanIndex(built)) return alternate === "constraints" ? "exploration" : alternate
   const others = built
     .filter((w) => w.planIndex !== index) // a slot being rebuilt doesn't count against itself
     .map((w) => ({ day: localDateStr(new Date(w.createdAt)), hasExploration: hasExplorationBlock(w.blocks) }))
   return explorationAllowed(today, others) ? "exploration" : "one_on_one_off"
+}
+
+// The coach's ⇄ on the warm-up row: 1 on 1 off ↔ the plan's other kind
+// (route exploration, the technique module, or the constraints).
+export function swappedWarmup(plan: { focus: PlanFocus | null; techniqueModuleId?: string | null }, current: WarmupKind): WarmupKind {
+  if (current !== "one_on_one_off") return "one_on_one_off"
+  if (plan.focus === "fear_management") return "exploration"
+  return planTechniqueModule(plan) ? "module" : "constraints"
 }
 
 export function workoutSpec(plan: PlanShape, index: number, built: BuiltPlanWorkout[], today: string): WorkoutSpec {

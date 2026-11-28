@@ -84,7 +84,7 @@ const WALL_IMAGE = require("@/assets/images/spraywall.jpg")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals" | "route_exploration"
+export type BlockType = "project_bouldering" | "constraint_warmup" | "strength_conditioning" | "exploration_session" | "sequence" | "free_session" | "four_by_four" | "intervals" | "route_exploration" | "technique_module"
 
 interface BaseBlock {
   id: string
@@ -177,6 +177,17 @@ interface RouteExplorationBlock extends BaseBlock {
   startColour?: string
 }
 
+// Technique module (docs/technique-modules.md): a Technique plan's warm-up
+// slot on odd workouts. Only the module is saved: the athlete's level and
+// colour are read from their progress when the block starts, so workouts
+// built ahead never go stale. Only the plan adds it (not in the block
+// picker).
+interface TechniqueModuleBlock extends BaseBlock {
+  type: "technique_module"
+  description: string
+  moduleId: string   // TechniqueModuleId (utils/techniqueModules.ts)
+}
+
 interface SequenceBlock extends BaseBlock {
   type: "sequence"
   description: string
@@ -252,7 +263,7 @@ interface IntervalsBlock extends BaseBlock {
   kind?: IntervalsKind
 }
 
-export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock | RouteExplorationBlock
+export type Block = ProjectBoulderingBlock | ConstraintWarmupBlock | StrengthConditioningBlock | ExplorationSessionBlock | SequenceBlock | FreeSessionBlock | FourByFourBlock | IntervalsBlock | RouteExplorationBlock | TechniqueModuleBlock
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -278,6 +289,8 @@ export function makeDefaultBlock(type: BlockType, name: string = ""): Block {
       return { id: generateId(), type, blockName: name, description: "", series: 6, workTime: 30, restTime: 60 }
     case "route_exploration":
       return { id: generateId(), type, blockName: name, description: EXPLORATION_DEFAULT_DESCRIPTION, timeLimit: EXPLORATION_PART_MIN, projectTime: EXPLORATION_PART_MIN, warmupTime: EXPLORATION_WARMUP_MIN, breathingTime: EXPLORATION_BREATHING_MIN }
+    case "technique_module":
+      return { id: generateId(), type, blockName: name, description: "", moduleId: "footwork" }
   }
 }
 
@@ -326,6 +339,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   four_by_four: "4×4",
   intervals: "Intervals",
   route_exploration: "Route exploration",
+  technique_module: "Technique module",
 }
 
 export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
@@ -338,6 +352,7 @@ export const BLOCK_ICONS: Record<BlockType, keyof typeof Ionicons.glyphMap> = {
   four_by_four: "grid",
   intervals: "timer",
   route_exploration: "compass",
+  technique_module: "footsteps-outline",
 }
 
 const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
@@ -350,6 +365,7 @@ const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   four_by_four: "Sets of boulders for power endurance",
   intervals: "Timed work / rest rounds",
   route_exploration: "New routes: flash, then project",
+  technique_module: "A technique course, level by level",
 }
 
 // ─── Block Picker Modal ───────────────────────────────────────────────────────

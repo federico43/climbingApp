@@ -137,7 +137,7 @@ function summarizeSession(session: SessionRow, attempts: any[]): SessionSummary 
       blockType: block.type ?? "",
       color: adaptationColor(block),
       focus: adaptationLabel(block),
-      warmup: block.type === "constraint_warmup" || resolveAdaptation(block) === "general",
+      warmup: block.type === "constraint_warmup" || block.type === "technique_module" || resolveAdaptation(block) === "general",
       isSC,
       scLines: isSC ? scSummaryLines(blockAttempts.filter((a: any) => a.scData).map((a: any) => a.scData)) : [],
       projectLine: block.type === "project_bouldering" && !block.coached && blockAttempts.some((a: any) => a.pbv === PROJECT_V2)
