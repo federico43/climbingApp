@@ -222,13 +222,18 @@ function TimerDial({ size, fill, color, title, clock, next, glow, paused, pausab
  * bar that fills as time passes. Same colours and pause rule as TimerRing:
  * mint while running, ink when paused or over; tap anywhere to pause.
  */
-export function TimerBar({ total, left, text, paused, onTogglePause }: {
+export function TimerBar({ total, left, text, paused, onTogglePause, compact, lead }: {
   /** Full time and time left, in seconds. */
   total: number; left: number
   /** Clock text (e.g. "24:59"). */
   text: string
   paused?: boolean
   onTogglePause?: () => void
+  /** One short row (smaller digits, no label) for screens where the content
+   *  below (e.g. the wall photo) needs the height. */
+  compact?: boolean
+  /** Compact only: what sits left of the clock (e.g. the sequence name). */
+  lead?: React.ReactNode
 }) {
   const C = useC()
   const s = useSheet(sheet)
@@ -237,7 +242,22 @@ export function TimerBar({ total, left, text, paused, onTogglePause }: {
   const label = over ? "Time's up" : paused ? "Paused · tap to resume" : "Remaining"
   const fill = Math.min(100, Math.max(0, ringFill(total, left)))
   const mark = onTogglePause && !over ? (paused ? "play" : "pause") : null
-  const body = (
+  const body = compact ? (
+    <View style={[s.barWrap, s.barWrapCompact]}>
+      <View style={s.barRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>{lead}</View>
+        <Text style={[s.barClock, s.barClockCompact, { color: paused || over ? C.textPrimary : color }]} numberOfLines={1}>{text}</Text>
+        {mark && (
+          <View style={[s.barMark, s.barMarkCompact, paused && { backgroundColor: C.textPrimary, borderColor: C.textPrimary }]}>
+            <Ionicons name={mark} size={20} color={paused ? C.bg : C.textPrimary} />
+          </View>
+        )}
+      </View>
+      <View style={[s.barTrack, s.barTrackCompact]}>
+        <View style={[s.barFill, { width: `${fill}%`, backgroundColor: color }]} />
+      </View>
+    </View>
+  ) : (
     <View style={s.barWrap}>
       <View style={s.barRow}>
         <View style={{ flex: 1 }}>
@@ -323,4 +343,8 @@ const sheet = paperSheet((C, P) => StyleSheet.create({
   },
   barTrack: { height: 10, borderRadius: 5, overflow: "hidden", backgroundColor: P ? P.hairline : C.surfaceHigh },
   barFill: { height: "100%", borderRadius: 5 },
+  barWrapCompact: { paddingTop: 8, paddingBottom: 8, gap: 8 },
+  barClockCompact: { fontSize: 44, lineHeight: 50, ...(P && { fontSize: 46, lineHeight: 52, letterSpacing: -1.5 }) },
+  barMarkCompact: { width: 44, height: 44, borderRadius: 22 },
+  barTrackCompact: { height: 6, borderRadius: 3 },
 }))

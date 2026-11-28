@@ -325,10 +325,13 @@ export function SprayBlock({
   const pendingPreviewChoose = useRef<string | null>(null)
   const previewRow = preview ? routes?.get(preview) ?? null : null
 
-  // The block clock: the big full-width strip (readable from the wall, Federico
-  // 2026-11-28: the 46 pt ring was too small). Tap anywhere on it to pause.
-  const timeBar = timed && startedAt != null && (
+  // The block clock: a compact strip with the sequence name on the left
+  // (Federico 2026-11-28: the 46 pt ring was too small, but the wall photo
+  // must keep its height). Tap anywhere on it to pause.
+  const timeBar = (lead: React.ReactNode) => timed && startedAt != null && (
     <TimerBar
+      compact
+      lead={lead}
       total={limitSecs}
       left={secondsLeft}
       text={secondsLeft > 0 ? clock(secondsLeft) : "0:00"}
@@ -607,17 +610,23 @@ export function SprayBlock({
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={loggedTries === 0 ? openChooser : undefined} />
-        {timeBar}
-        <View style={s.workHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.routeName} numberOfLines={1}>{route?.name ?? "Sequence"}</Text>
-            <Text style={s.meta}>
-              {onRoute.tries === 0
-                ? "First attempt on this one"
-                : `This one: ${onRoute.sends} top${onRoute.sends !== 1 ? "s" : ""} · ${onRoute.tries} attempt${onRoute.tries !== 1 ? "s" : ""}`}
-            </Text>
-          </View>
-        </View>
+        {(() => {
+          const lead = (
+            <>
+              <Text style={s.routeName} numberOfLines={1}>{route?.name ?? "Sequence"}</Text>
+              <Text style={s.meta} numberOfLines={1}>
+                {onRoute.tries === 0
+                  ? "First attempt on this one"
+                  : `This one: ${onRoute.sends} top${onRoute.sends !== 1 ? "s" : ""} · ${onRoute.tries} attempt${onRoute.tries !== 1 ? "s" : ""}`}
+              </Text>
+            </>
+          )
+          return timeBar(lead) || (
+            <View style={s.workHeader}>
+              <View style={{ flex: 1 }}>{lead}</View>
+            </View>
+          )
+        })()}
         {attemptBar(`Attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.wall}>
           {route ? (
