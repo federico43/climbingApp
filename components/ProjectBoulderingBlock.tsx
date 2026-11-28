@@ -1,7 +1,7 @@
 import { BlockIntro } from "@/components/BlockIntro"
 import { minutesLabel } from "@/utils/blockIntro"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
 import CustomButton from "@/components/customButton"
 import { useAuth } from "@/components/auth-context"
 import VideoRecorder from "@/components/VideoRecorder"
@@ -241,12 +241,12 @@ function ProjectBoulderingRun({
     setPhase("ready")
   }
 
-  const timeChip = timed && startedAt != null && (
-    <TimerRing
-      size={46}
-      fill={ringFill(limitSecs, secondsLeft)}
-      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
-      seconds={Math.max(0, secondsLeft)}
+  // The block clock: the big full-width strip (readable from the wall, Federico
+  // 2026-11-28: the 46 pt ring was too small). Tap anywhere on it to pause.
+  const timeBar = timed && startedAt != null && (
+    <TimerBar
+      total={limitSecs}
+      left={secondsLeft}
       text={secondsLeft > 0 ? clock(secondsLeft) : `+${clock(-secondsLeft)}`}
       paused={pause.paused}
       onTogglePause={phase !== "review" ? pause.toggle : undefined}
@@ -366,13 +366,15 @@ function ProjectBoulderingRun({
           title={blockTitle}
           onBack={attempts.length === 0 ? () => setPhase(settings.grade || task ? "intro" : "grade") : undefined}
         />
+        {timeBar}
         <View style={s.readyBody}>
           <View style={s.readyTop}>
-            {/* Grade beside the clock — TopBar's side slot is too narrow for it. */}
-            <View style={s.readyMeta}>
-              {!!grade && <GradePill grade={grade} />}
-              {timeChip}
-            </View>
+            {/* Grade under the clock — TopBar's side slot is too narrow for it. */}
+            {!!grade && (
+              <View style={s.readyMeta}>
+                <GradePill grade={grade} />
+              </View>
+            )}
             {task && <Text style={s.taskTextSmall} numberOfLines={2}>{task.text}</Text>}
             <Text style={s.countNum}>{attempts.length}</Text>
             <Text style={s.countLabel}>

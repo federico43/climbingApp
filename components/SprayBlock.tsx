@@ -19,7 +19,7 @@ import {
   newSprayRoutes, routeRecords, SPRAY_REST_OPTIONS_S, sprayBlockSteps, sprayShowsAttempts, sprayShowsCoachNotes, SPRAY_SUGGESTION_COUNT, spraySettings, sequenceLevelColour, sprayTargetLevel, suggestSprayRoutes,
 } from "@/utils/sprayBlocks"
 import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
-import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
+import { ringFill, timerColor, TimerBar, TimerRing } from "@/components/IntervalVisuals"
 import { usePauseClock } from "@/hooks/usePauseClock"
 import { Ionicons } from "@expo/vector-icons"
 import * as Haptics from "expo-haptics"
@@ -304,12 +304,12 @@ export function SprayBlock({
   const pendingPreviewChoose = useRef<string | null>(null)
   const previewRow = preview ? routes?.get(preview) ?? null : null
 
-  const timeChip = timed && startedAt != null && (
-    <TimerRing
-      size={46}
-      fill={ringFill(limitSecs, secondsLeft)}
-      color={timerColor(C, secondsLeft > 0 ? "work" : "over")}
-      seconds={Math.max(0, secondsLeft)}
+  // The block clock: the big full-width strip (readable from the wall, Federico
+  // 2026-11-28: the 46 pt ring was too small). Tap anywhere on it to pause.
+  const timeBar = timed && startedAt != null && (
+    <TimerBar
+      total={limitSecs}
+      left={secondsLeft}
       text={secondsLeft > 0 ? clock(secondsLeft) : "0:00"}
       paused={pause.paused}
       onTogglePause={secondsLeft > 0 ? pause.toggle : undefined}
@@ -586,6 +586,7 @@ export function SprayBlock({
     return (
       <View style={shared_styles.screen}>
         <TopBar title={title} onBack={loggedTries === 0 ? openChooser : undefined} />
+        {timeBar}
         <View style={s.workHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.routeName} numberOfLines={1}>{route?.name ?? "Sequence"}</Text>
@@ -595,7 +596,6 @@ export function SprayBlock({
                 : `This one: ${onRoute.sends} top${onRoute.sends !== 1 ? "s" : ""} · ${onRoute.tries} attempt${onRoute.tries !== 1 ? "s" : ""}`}
             </Text>
           </View>
-          {timeChip}
         </View>
         {attemptBar(`Attempt ${nextAttempt} of ${settings.attempts}`)}
         <View style={s.wall}>
