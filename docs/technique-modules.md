@@ -18,7 +18,7 @@ Each module session: spray wall to explore (feet free, find two ways to do the h
 
 1. **Rules, no UI** (this file's first version): `utils/techniqueModules.ts` (the module definition) and `utils/techniqueProgress.ts` (the rules). Tests: `scripts/progression-tests/techniqueModules.test.ts`.
 2. **Plan picker and rotation** (see below): `training_plans.techniqueModuleId`; on Technique plans, the module replaces the 3 technique constraints on odd workouts.
-3. Progress storage: `users.techniqueProgress` (TEXT column), phone copy first, like next-session tasks.
+3. **Progress storage** (see below): `users.techniqueProgress` (TEXT column), phone copy first, like next-session tasks.
 4. The athlete's module block.
 5. Coach confirmation on the plan card.
 
@@ -30,6 +30,22 @@ Each module session: spray wall to explore (feet free, find two ways to do the h
 - **Until PR 4:** the block runs as a free session (`moduleStandIn`): the goal, the Level 1 rule, a 20-min timer and the chip question as the notes prompt.
 - **Summaries:** the coach's Plan card says "Warm-up · Footwork module"; the athlete's Plan page and the workout summary show a "Footwork module" warm-up, 20 min.
 - Tests: `scripts/progression-tests/techniqueRotation.test.ts`.
+
+## Progress storage (PR 3)
+
+- `users.techniqueProgress`, a **text** column (the users table has no room for another string one). Create it with `scripts/technique-modules/create-progress-column.mjs` (dry run, then `--apply`), **before the EAS update**. Until it exists, progress stays on the phone only.
+- `services/techniqueProgress.ts`: phone copy (AsyncStorage `techniqueProgress.<userId>`) written first, then the server; the newer copy wins on load; saves run one after another.
+- `contexts/TechniqueProgressContext.tsx` (`useTechniqueProgress`): `moduleProgress(id)` and `updateModule(id, fn)`, loaded once per sign-in, under the tabs next to the next-session tasks provider.
+- **One user-row read for both:** `services/ownUserRow.ts` shares the sign-in read of the athlete's own row between next-session tasks and technique progress (reused for 60 s), so this adds no read.
+
+## First-time intro and demo video (for PR 4, Federico 2026-11-28)
+
+Rules for this intro (and every feature intro from now on):
+
+1. It's the **first thing** the athlete sees of the feature, before the block intro.
+2. Slides in this order: **there's something new** → **its name** → **why** → **how to use it**.
+
+The intro includes Federico's demo video (no audio, the constraint on the wall; he'll replace it with an edited cut later). It ships **inside the app** (`assets/videos/`), so it plays at once with no download: 29 s, 720×1280 H.264, no audio, about 2.3 MB (compressed from his 32 MB clip; source in the project files `technique-modules/footwork-demo.mp4`). Swapping in the edited video later = replace the file + EAS update.
 
 ## Text and instruction types
 
