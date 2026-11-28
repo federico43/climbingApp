@@ -22,6 +22,9 @@ import { paperSheet, useC, useSheet } from "@/theme/paper/legacy"
 import { ringFill, timerColor, TimerRing } from "@/components/IntervalVisuals"
 import { usePauseClock } from "@/hooks/usePauseClock"
 import { Ionicons } from "@expo/vector-icons"
+import VideoRecorder from "@/components/VideoRecorder"
+import { saveVideoLocally } from "@/utils/saveVideo"
+import { ID } from "appwrite"
 import * as Haptics from "expo-haptics"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -225,15 +228,33 @@ export function SprayBlock({
 
   function choose(id: string) {
     setRouteId(id)
+    setClipId(null) // a clip filmed on the previous sequence stays in the library, unlinked
     blockTimer.start()
     if (startedAt == null) { pause.reset(); setStartedAt(Date.now()); setNow(Date.now()) }
     setPhase("work")
   }
 
+  // Filming an attempt (same recorder and save as Project bouldering): the
+  // clip is saved when the camera closes, then Top / Fell logs the attempt
+  // with its videoId.
+  const [showCamera, setShowCamera] = useState(false)
+  const [clipId, setClipId] = useState<string | null>(null)
+
+  function onVideo(uri: string) {
+    setShowCamera(false)
+    const rowId = ID.unique()
+    saveVideoLocally(uri, block.type, {
+      projectName: `${title} · ${route?.name ?? "Sequence"} · attempt ${loggedTries + 1}`,
+      rowId,
+    })
+    setClipId(rowId)
+  }
+
   function record(success: boolean) {
     if (!routeId) return
     Haptics.impactAsync(success ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {})
-    logAttempt({ success, routeId, variation: "original" })
+    logAttempt({ success, routeId, variation: "original", ...(clipId ? { videoId: clipId } : {}) })
+    setClipId(null)
     // The last attempt (target reached, time's up, or the "one more" after
     // the end) goes straight to the end — no rest to sit through first.
     const endsNow = overtime || timeUp || (!isTime && loggedTries + 1 >= settings.attempts)
@@ -609,6 +630,19 @@ export function SprayBlock({
             />
           ) : <ActivityIndicator color={C.green} style={{ flex: 1 }} />}
         </View>
+        <View style={s.filmRow}>
+          {clipId ? (
+            <View style={s.linkRow}>
+              <Ionicons name="videocam" size={16} color={C.green} />
+              <Text style={[s.link, { color: C.green }]}>Clip saved · tap Top or Fell</Text>
+            </View>
+          ) : (
+            <Pressable onPress={() => setShowCamera(true)} hitSlop={8} style={s.linkRow}>
+              <Ionicons name="videocam-outline" size={16} color={C.textSecondary} />
+              <Text style={s.link}>Film this one</Text>
+            </Pressable>
+          )}
+        </View>
         <View style={s.actions}>
           <Pressable style={({ pressed }) => [s.bigBtn, s.fellBtn, pressed && s.pressed]} onPress={() => record(false)}>
             <Ionicons name="arrow-down" size={22} color={C.red} />
@@ -629,6 +663,11 @@ export function SprayBlock({
           </Pressable>
         </View>
         {modals}
+        {showCamera && (
+          <View style={s.cameraOverlay}>
+            <VideoRecorder onFinish={onVideo} onClose={() => setShowCamera(false)} />
+          </View>
+        )}
       </View>
     )
   }
@@ -869,7 +908,9 @@ const sheet = paperSheet((C) => StyleSheet.create({
   chipUrgent: { backgroundColor: C.red },
   chipText: { fontSize: 18, fontWeight: "800", color: C.textPrimary, fontVariant: ["tabular-nums"] },
   wall: { flex: 1, marginHorizontal: 12, borderRadius: 14, overflow: "hidden", backgroundColor: "#000" },
-  actions: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 14 },
+  actions: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 10 },
+  filmRow: { alignItems: "center", paddingTop: 12 },
+  cameraOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10, backgroundColor: "#000" },
   bigBtn: { flex: 1, height: 84, borderRadius: 20, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   topBtn: { backgroundColor: C.green },
   fellBtn: { backgroundColor: "rgba(219,80,74,0.10)", borderWidth: 2, borderColor: "rgba(219,80,74,0.45)" },
