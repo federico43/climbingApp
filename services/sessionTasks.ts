@@ -7,6 +7,7 @@
 
 import { tablesDB } from "@/components/AppWrite"
 import { DATABASE_ID, USERS_TABLE } from "@/services/BoulderGraphService"
+import { getOwnUserRow } from "@/services/ownUserRow"
 import { EMPTY_TASKS, newerList, parseSessionTasks, serializeSessionTasks, type SessionTaskList } from "@/utils/sessionTasks"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 
@@ -46,12 +47,13 @@ function queue(job: () => Promise<void>): Promise<void> {
   return chain
 }
 
-// The phone copy and the server's (one row read), the newer one winning.
+// The phone copy and the server's (one row read, shared with technique
+// progress — services/ownUserRow.ts), the newer one winning.
 export async function loadSessionTasks(userId: string): Promise<SessionTaskList> {
   const local = await loadLocalSessionTasks(userId)
   let server: SessionTaskList = EMPTY_TASKS
   try {
-    const row: any = await tablesDB.getRow({ databaseId: DATABASE_ID, tableId: USERS_TABLE, rowId: userId })
+    const row: any = await getOwnUserRow(userId)
     server = parseSessionTasks(row?.nextTasks)
   } catch {
     return local
