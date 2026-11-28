@@ -9,6 +9,7 @@ import { StatusBar } from "expo-status-bar"
 import { ActivePlanProvider, useActivePlan } from "@/contexts/ActivePlanContext"
 import { WorkoutProvider, useWorkoutContext } from "@/contexts/WorkoutContext"
 import { SessionTasksProvider } from "@/contexts/SessionTasksContext"
+import { TechniqueProgressProvider } from "@/contexts/TechniqueProgressContext"
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs"
 import { PaperBackground, PaperTabBar, PaperThemeOverride, usePaper as usePaperTheme } from "@/components/paper"
 import { Ionicons } from "@expo/vector-icons"
@@ -54,6 +55,7 @@ function TabsWithPlan() {
 
   return (
     <SessionTasksProvider>
+    <TechniqueProgressProvider>
     <WorkoutProvider>
       {/* Paper Mint everywhere (theme/paper/legacy.tsx): every old screen,
           sheet and modal under the tabs follows the Paper light/dark theme. */}
@@ -149,6 +151,7 @@ function TabsWithPlan() {
       <PackageLock />
       </PaperScope>
     </WorkoutProvider>
+    </TechniqueProgressProvider>
     </SessionTasksProvider>
   )
 }
