@@ -3,7 +3,8 @@
 //   node --import ./scripts/progression-tests/alias-hook.mjs scripts/progression-tests/recordingAttempt.test.ts
 import assert from "node:assert/strict"
 import {
-  elapsedLabel, failureKind, formatBytes, RECORDING_STOP_TIMEOUT_MS, recorderContextLine,
+  elapsedLabel, failureKind, formatBytes, NO_SOUND_STORAGE_KEY, RECORDING_STOP_TIMEOUT_MS, recorderContextLine,
+  rememberNoSoundAfter,
 } from "@/utils/recordingAttempt"
 
 // ── elapsedLabel ────────────────────────────────────────────────────────────
@@ -62,6 +63,14 @@ assert.equal(
   recorderContextLine({ model: "Pixel 7", os: "android", osVersion: 34, updateId: "abcdef0123", channel: "preview" }),
   "Pixel 7 · android 34 · build ? · update abcdef01 · preview",
 )
+
+// ── rememberNoSoundAfter ────────────────────────────────────────────────────
+// Pauli: stuck with sound, then fine without → start without sound next time.
+assert.equal(rememberNoSoundAfter("stuck"), true)
+assert.equal(rememberNoSoundAfter("mic"), true)
+assert.equal(rememberNoSoundAfter("other"), false, "a non-mic failure doesn't turn sound off for good")
+assert.equal(rememberNoSoundAfter(null), false, "sound turned off for no failure isn't remembered")
+assert.ok(NO_SOUND_STORAGE_KEY.length > 0)
 
 // ── timeout ─────────────────────────────────────────────────────────────────
 // Long enough for a 2-minute clip to finish writing, short enough that the
